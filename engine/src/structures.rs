@@ -1,20 +1,11 @@
-use tantivy::{DateTime, IndexWriter};
 use tantivy::schema::{
-    IntOptions,
-    TextOptions,
-    BytesOptions,
-    Cardinality,
-    Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder,
-    TextFieldIndexing,
-    TEXT,
-    STORED,
-    STRING,
+    BytesOptions, Cardinality, IntOptions, Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder, TextFieldIndexing, TextOptions, STORED, STRING, TEXT,
 };
+use tantivy::{DateTime, IndexWriter};
 
-use hashbrown::{HashSet, HashMap};
-use serde::{Serialize, Deserialize};
-
+use hashbrown::{HashMap, HashSet};
+use serde::{Deserialize, Serialize};
 
 /// A declared schema field type.
 ///
@@ -41,30 +32,24 @@ pub enum FieldDeclaration {
     /// A string field with given options.
     ///
     /// This will be tokenized.
-    Text {
-        stored: bool,
-    },
+    Text { stored: bool },
 
     /// A string field with given options.
     ///
     /// This wont be tokenized.
-    String {
-        stored: bool,
-    },
+    String { stored: bool },
 
     /// A arbitrary bytes field with given options.
     Bytes(BytesOptions),
 }
-
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexStorageType {
     TempFile,
     Memory,
-    FileSystem(String)
+    FileSystem(String),
 }
-
 
 #[derive(Serialize, Deserialize)]
 pub struct IndexDeclaration<'a> {
@@ -72,7 +57,7 @@ pub struct IndexDeclaration<'a> {
     writer_buffer: usize,
     writer_threads: usize,
     storage_type: IndexStorageType,
-    fields: HashMap<&'a str, FieldDeclaration>
+    fields: HashMap<&'a str, FieldDeclaration>,
 }
 
 impl<'a> IndexDeclaration<'a> {
@@ -81,14 +66,10 @@ impl<'a> IndexDeclaration<'a> {
 
         for (name, field) in self.fields {
             match field {
-                FieldDeclaration::F64(opts) =>
-                    schema.add_f64_field(name, opts),
-                FieldDeclaration::U64(opts) =>
-                    schema.add_u64_field(name, opts),
-                FieldDeclaration::I64(opts) =>
-                    schema.add_f64_field(name, opts),
-                FieldDeclaration::Date(opts) =>
-                    schema.add_date_field(name, opts),
+                FieldDeclaration::F64(opts) => schema.add_f64_field(name, opts),
+                FieldDeclaration::U64(opts) => schema.add_u64_field(name, opts),
+                FieldDeclaration::I64(opts) => schema.add_f64_field(name, opts),
+                FieldDeclaration::Date(opts) => schema.add_date_field(name, opts),
                 FieldDeclaration::String { stored } => {
                     let mut opts = STRING;
 
@@ -97,7 +78,7 @@ impl<'a> IndexDeclaration<'a> {
                     }
 
                     schema.add_text_field(name, opts)
-                },
+                }
                 FieldDeclaration::Text { stored } => {
                     let mut opts = TEXT;
 
@@ -106,9 +87,8 @@ impl<'a> IndexDeclaration<'a> {
                     }
 
                     schema.add_text_field(name, opts)
-                },
-                FieldDeclaration::Bytes(opts) =>
-                    schema.add_bytes_field(name, opts),
+                }
+                FieldDeclaration::Bytes(opts) => schema.add_bytes_field(name, opts),
             };
         }
 
@@ -121,7 +101,6 @@ impl<'a> IndexDeclaration<'a> {
         }
     }
 }
-
 
 pub struct LoadedIndex {
     pub(crate) name: String,

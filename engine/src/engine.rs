@@ -1,12 +1,11 @@
-use std::sync::Arc;
+use evmap::{ReadHandle, WriteHandle};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use evmap::{WriteHandle, ReadHandle};
+use std::sync::Arc;
 
 use tokio::sync;
 
 use crate::structures::LoadedIndex;
-
 
 #[derive(Clone)]
 pub struct SearchEngine {
@@ -18,11 +17,9 @@ impl SearchEngine {
     pub fn create(max_concurrency: u32) -> Self {
         Self {
             max_concurrency,
-            indexes: Arc::new(RwLock::new(HashMap::new()))
+            indexes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn add_index(&mut self, name: impl Into<String>, index: LoadedIndex) {
-
-    }
+    pub fn add_index(&mut self, name: impl Into<String>, index: LoadedIndex) {}
 }

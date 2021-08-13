@@ -1,16 +1,15 @@
+use anyhow::{Error, Result};
+use async_channel::{Receiver, Sender, TryRecvError};
+use parking_lot::RwLock;
+use slab::Slab;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use async_channel::{Sender, Receiver, TryRecvError};
-use slab::Slab;
-use parking_lot::RwLock;
-use anyhow::{Result, Error};
 
-use tantivy::{IndexWriter, Document};
 use tantivy::schema::Schema;
-use tantivy::{IndexBuilder, Index};
+use tantivy::{Document, IndexWriter};
+use tantivy::{Index, IndexBuilder};
 
-use crate::structures::{LoadedIndex, IndexStorageType};
-
+use crate::structures::{IndexStorageType, LoadedIndex};
 
 #[derive(Debug)]
 enum WriterOp {
@@ -18,14 +17,13 @@ enum WriterOp {
     Rollback,
     AddDocument(Document),
     DeleteAll,
-    __Shutdown
+    __Shutdown,
 }
-
 
 pub struct IndexWriterWorker {
     index_name: String,
     writer: IndexWriter,
-    rx: Receiver<WriterOp>
+    rx: Receiver<WriterOp>,
 }
 
 impl IndexWriterWorker {
@@ -36,23 +34,22 @@ impl IndexWriterWorker {
                     "[ WRITER @ {} ] failed handling writer operation on index due to error: {:?}",
                     &self.index_name, e,
                 ),
-                Ok(shutdown) => if shutdown { break },
+                Ok(shutdown) => {
+                    if shutdown {
+                        break;
+                    }
+                }
             }
         }
     }
 
     async fn handle_msg(&mut self, op: WriterOp) -> Result<bool> {
         let (transaction_id, type_) = match op {
-            WriterOp::__Shutdown =>
-                return Ok(true),
-            WriterOp::Commit =>
-                (self.writer.commit()?, "COMMIT"),
-            WriterOp::Rollback =>
-                (self.writer.rollback()?, "ROLLBACK"),
-            WriterOp::AddDocument(docs) =>
-                (self.writer.add_document(docs), "ADD-DOCUMENT"),
-            WriterOp::DeleteAll =>
-                (self.writer.delete_all_documents()?, "DELETE-ALL"),
+            WriterOp::__Shutdown => return Ok(true),
+            WriterOp::Commit => (self.writer.commit()?, "COMMIT"),
+            WriterOp::Rollback => (self.writer.rollback()?, "ROLLBACK"),
+            WriterOp::AddDocument(docs) => (self.writer.add_document(docs), "ADD-DOCUMENT"),
+            WriterOp::DeleteAll => (self.writer.delete_all_documents()?, "DELETE-ALL"),
         };
 
         info!(
@@ -63,7 +60,6 @@ impl IndexWriterWorker {
         Ok(false)
     }
 }
-
 
 pub struct IndexHandler {
     name: String,
@@ -76,19 +72,15 @@ impl IndexHandler {
     pub async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let (tx, rx) = async_channel::bounded(10);
 
-        let index = IndexBuilder::default()
-            .schema(loader.schema.clone());
+        let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
             IndexStorageType::TempFile => index.create_from_tempdir()?,
             IndexStorageType::Memory => index.create_in_ram()?,
-            IndexStorageType::FileSystem(path) => index.create_in_dir(path)?
+            IndexStorageType::FileSystem(path) => index.create_in_dir(path)?,
         };
 
-        let writer = index.writer_with_num_threads(
-            loader.writer_threads,
-            loader.writer_buffer
-        )?;
+        let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
 
         let worker = IndexWriterWorker {
             writer,
