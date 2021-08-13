@@ -1,4 +1,9 @@
+#[macro_use]
+extern crate log;
+
 mod structures;
+mod engine;
+mod index;
 
 #[cfg(test)]
 mod tests {
