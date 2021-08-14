@@ -133,14 +133,16 @@ impl IndexWriterHandler {
             rx,
         };
 
-        let handle = std::thread::spawn(move || {
+        let handle = std::thread::Builder::new()
+            .name(format!("index-worker-{}", &index_name))
+            .spawn(move || {
             let id = std::thread::current().id();
             info!(
                 "[ WRITER @ {} ] writer thread started with id {:?}",
                 name, id
             );
             worker.start()
-        });
+        }).expect("spawn worker thread");
 
         Self {
             index_name,
@@ -178,6 +180,11 @@ impl IndexWriterHandler {
 }
 
 /// A search engine index.
+///
+/// Each index maintains a rayon thread pool which searches are executed
+/// as well as an worker thread which is used to interact with the index writer.
+///
+/// The amount of threads `n` is determined by the the `max_concurrency` parameter.
 pub struct IndexHandler {
     name: String,
     index: Index,
@@ -187,7 +194,11 @@ pub struct IndexHandler {
 }
 
 impl IndexHandler {
-    pub async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
+    /// Creates a new index handler from a given loaded index.
+    ///
+    /// This constructs both the Tantivy index, thread pool and worker thread.
+    ///
+    pub fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
