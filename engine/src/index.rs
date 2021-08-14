@@ -568,9 +568,18 @@ impl IndexHandler {
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
-            IndexStorageType::TempFile => index.create_from_tempdir()?,
-            IndexStorageType::Memory => index.create_in_ram()?,
-            IndexStorageType::FileSystem(path) => index.create_in_dir(path)?,
+            IndexStorageType::TempFile => {
+                info!("creating index in a temporary directory for index {}", &loader.name);
+                index.create_from_tempdir()?
+            },
+            IndexStorageType::Memory => {
+                info!("creating index in memory for index {}", &loader.name);
+                index.create_in_ram()?
+            },
+            IndexStorageType::FileSystem(path) => {
+                info!("creating index in directory for index {}", &loader.name);
+                index.create_in_dir(path)?
+            },
         };
 
         // We need to extract out the fields from name to id.
@@ -581,6 +590,7 @@ impl IndexHandler {
                 raw_search_fields.push(field);
 
                 if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                    debug!("boosting field for query parser {} {}", field, boost);
                     search_fields.push((field, *boost));
                 } else {
                     search_fields.push((field, 0.0f32));
