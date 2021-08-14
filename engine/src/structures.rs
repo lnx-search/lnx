@@ -4,7 +4,9 @@ use tantivy::schema::{
 };
 
 use hashbrown::HashMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer};
+use tantivy::DocAddress;
+use serde::__private::TryFrom;
 
 /// A declared schema field type.
 ///
@@ -158,23 +160,101 @@ pub struct LoadedIndex {
 }
 
 
+/// The mode of the query.
+///
+/// This can change how the system parses and handles the query.
+#[derive(Debug, Copy, Clone, Deserialize)]
+pub enum QueryMode {
+    /// The default mode, this uses the tantivy query parser.
+    Normal,
+
+    /// Processes the query via the FuzzyQuery system.
+    Fuzzy,
+
+    /// Gets documents similar to the reference document.
+    MoreLikeThis,
+}
+
+impl Default for QueryMode {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+
+/// A reference address for a given document.
+#[derive(Debug)]
+pub struct RefAddress {
+    pub(super) segment_id: u32,
+    pub(super) doc_id: u32,
+}
+
+impl RefAddress {
+    pub(crate) fn into_doc_address(self) -> DocAddress {
+        DocAddress {
+            segment_ord: self.segment_id,
+            doc_id: self.doc_id
+        }
+    }
+}
+
+impl Into<String> for RefAddress {
+    fn into(self) -> String {
+        format!("{}-{}", self.segment_id, self.doc_id)
+    }
+}
+
+impl From<DocAddress> for RefAddress {
+    fn from(v: DocAddress) -> Self {
+        RefAddress {
+            segment_id: v.segment_ord,
+            doc_id: v.doc_id,
+        }
+    }
+}
+
+impl TryFrom<String> for RefAddress {
+    type Error = anyhow::Error;
+
+    fn try_from(v: String) -> Result<Self, Self::Error> {
+        let mut split = v.splitn(1, "-");
+
+        let segment_id = split.next()
+            .map(|v| Ok(v))
+            .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
+            .parse::<u32>().map_err(Self::Error::msg)?;
+
+        let doc_id = split.next()
+            .map(|v| Ok(v))
+            .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
+            .parse::<u32>().map_err(Self::Error::msg)?;
+
+        Ok(RefAddress {
+            segment_id,
+            doc_id,
+        })
+    }
+}
+
+
+
 #[derive(Deserialize)]
 pub struct QueryPayload {
-    pub(crate) query: String,
+    /// A query string for `QueryMode::Fuzzy` and `QueryMode::Normal` queries.
+    pub(crate) query: Option<String>,
 
-    #[serde(default = "default_query::default_fuzzy")]
-    pub(crate) fuzzy: bool,
+    /// A reference document for `QueryMode::MoreLikeThis`.
+    pub(crate) ref_document: Option<String>,
 
-    #[serde(default = "default_query::default_limit")]
+    #[serde(default)]
+    pub(crate) mode: QueryMode,
+
+    #[serde(default = "default_query_data::default_limit")]
     pub(crate) limit: usize,
 }
 
 
-mod default_query {
-    pub fn default_fuzzy() -> bool {
-        true
-    }
-
+mod default_query_data {
     pub fn default_limit() -> usize {
         20
     }

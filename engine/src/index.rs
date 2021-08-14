@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde::{Serialize, Deserialize};
 use anyhow::{Error, Result};
 
 use tokio::sync::oneshot;
@@ -13,8 +14,10 @@ use tantivy::query::{QueryParser, Query, Occur, FuzzyTermQuery, BooleanQuery};
 use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy, LeasedItem, Searcher, DocAddress, Score};
 use tantivy::{Index, IndexBuilder, Executor};
 use tantivy::collector::TopDocs;
+use tantivy::query::MoreLikeThisQuery;
 
-use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload};
+use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload, QueryMode, RefAddress};
+use std::convert::TryFrom;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -269,9 +272,19 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
 
+        let doc = if let Some(doc) = payload.ref_document {
+            Some(RefAddress::try_from(doc)?)
+        } else {
+            None
+        };
+
         let schema = self.quick_schema.clone();
         let limit = payload.limit;
-        let query = self.parse_query(&payload.query, payload.fuzzy)?;
+        let query = self.parse_query(
+            payload.query,
+            doc,
+            payload.mode,
+        )?;
         let searcher = self.reader.searcher();
         self.thread_pool.spawn(move || {
             let res = search(query, searcher, limit, schema);
@@ -283,14 +296,34 @@ impl IndexReaderHandler {
         todo!()
     }
 
-    #[timed(duration(printer = "debug!"))]
-    fn parse_query(&self, query: &str, fuzzy: bool) -> Result<Box<dyn Query>> {
-        debug!("constructing query {} with fuzzy={}", query, fuzzy);
+    #[timed::timed(duration(printer = "debug!"))]
+    fn parse_query(
+        &self,
+        query: Option<String>,
+        ref_document: Option<RefAddress>,
+        mode: QueryMode,
+    ) -> Result<Box<dyn Query>> {
+        debug!("constructing query {:?} or ref_doc {:?} with mode={:?}", query, ref_document, &mode);
 
-        if !fuzzy {
-            return Ok(self.parser.parse_query(query)?)
+        return match (mode, query, ref_document) {
+            (QueryMode::Normal, None, _) =>
+                Err(Error::msg("query mode was `Normal` but query string is `None`")),
+            (QueryMode::Normal, Some(query), _) =>
+                Ok(self.parser.parse_query(&query)?),
+            (QueryMode::Fuzzy, None, _) =>
+                Err(Error::msg("query mode was `Fuzzy` but query string is `None`")),
+            (QueryMode::Fuzzy, Some(query), _) =>
+                Ok(self.parse_fuzzy_query(&query)),
+            (QueryMode::MoreLikeThis, _, None) =>
+                Err(Error::msg("query mode was `MoreLikeThis` but reference document is `None`")),
+            (QueryMode::MoreLikeThis, _, Some(ref_document)) =>
+                Ok(self.parse_more_like_this(ref_document)),
         }
 
+
+    }
+
+    fn parse_fuzzy_query(&self, query: &str) -> Box<dyn Query> {
         let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
         for search_term in query.to_lowercase().split(" ") {
@@ -310,7 +343,21 @@ impl IndexReaderHandler {
             }
         };
 
-        Ok(Box::new(BooleanQuery::from(parts)))
+        Box::new(BooleanQuery::from(parts))
+    }
+
+    fn parse_more_like_this(&self, ref_document: RefAddress) -> Box<dyn Query> {
+        let query = MoreLikeThisQuery::builder()
+            .with_min_doc_frequency(1)
+            .with_max_doc_frequency(10)
+            .with_min_term_frequency(1)
+            .with_min_word_length(2)
+            .with_max_word_length(5)
+            .with_boost_factor(1.0)
+            .with_stop_words(vec!["for".to_string()])
+            .with_document(ref_document.into_doc_address());
+
+        Box::new(query)
     }
 }
 
@@ -323,7 +370,7 @@ pub struct QueryHit {
 
     /// The address of the given document, this can be used for
     /// 'more like this' queries.
-    ref_address: DocAddress,
+    ref_address: String,
 
     /// The content of the document itself.
     doc: NamedFieldDocument,
@@ -337,9 +384,15 @@ pub struct QueryResults {
 
     /// The total amount of documents
     count: usize,
+
+    /// The amount of time taken to search in seconds.
     time_taken: f64,
 }
 
+/// Executes a search for a given query with a given searcher, limit and schema.
+///
+/// This will process and time the execution time to build into the exportable
+/// data.
 fn search(
     query: Box<dyn Query>,
     searcher: LeasedItem<Searcher>,
@@ -351,10 +404,10 @@ fn search(
 
     let count = top_docs.len();
     let mut hits = Vec::with_capacity(count);
-    for (score, address) in top_docs {
-        let retrieved_doc = searcher.doc(address)?;
+    for (score, ref_address) in top_docs {
+        let retrieved_doc = searcher.doc(ref_address)?;
         let doc = schema.to_named_doc(&retrieved_doc);
-        hits.push(QueryHit{ score, doc });
+        hits.push(QueryHit{ score, ref_address: RefAddress::from(ref_address).into(), doc });
     }
 
     let elapsed = start.elapsed();
@@ -410,6 +463,7 @@ impl IndexHandler {
     /// The amount of threads spawned is equal the the max  concurrency + 1
     /// as well as the tokio runtime threads.
     pub fn build_loaded(loader: LoadedIndex) -> Result<Self> {
+        let quick_schema = Arc::new(loader.schema.clone());
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
@@ -458,6 +512,7 @@ impl IndexHandler {
             loader.reader_threads as usize,
             parser,
             search_fields,
+            quick_schema,
         )?;
 
         Ok(Self {
