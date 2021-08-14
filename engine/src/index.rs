@@ -101,6 +101,7 @@ impl IndexWriterWorker {
 
 
 pub struct IndexWriterHandler {
+    index_name: String,
     writer_thread: std::thread::JoinHandle<()>,
     writer_waiters: Arc<SegQueue<oneshot::Sender<()>>>,
     writer_sender: crossbeam::channel::Sender<WriterOp>,
@@ -108,18 +109,24 @@ pub struct IndexWriterHandler {
 
 impl IndexWriterHandler {
     fn create(index_name: String, writer: IndexWriter) -> Self {
+        let name = index_name.clone();
         let waiters = Arc::new(SegQueue::new());
         let (tx, rx) = channel::bounded(20);
         let worker = IndexWriterWorker {
-            index_name,
+            index_name: index_name.clone(),
             writer,
             waiters: waiters.clone(),
             rx,
         };
 
-        let handle = std::thread::spawn(move || { worker.start() });
+        let handle = std::thread::spawn(move || {
+            let id = std::thread::current().id();
+            info!("[ WRITER @ {} ] writer thread started with id {:?}", name, id);
+            worker.start()
+        });
 
         Self {
+            index_name,
             writer_thread: handle,
             writer_sender: tx,
             writer_waiters: waiters,
@@ -136,6 +143,8 @@ impl IndexWriterHandler {
                     return Err(Error::msg("writer worker has shutdown")),
                 Err(channel::TrySendError::Full(v)) => v,
             };
+
+            debug!("[ WRITER @ {} ] operation queue full, waiting for wakeup");
 
             let (resolve, waiter) = oneshot::channel();
             self.writer_waiters.push(resolve);
