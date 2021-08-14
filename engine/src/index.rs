@@ -1,16 +1,16 @@
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use parking_lot::RwLock;
 use slab::Slab;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
+use tokio::sync::oneshot;
 
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
-use tokio::sync::oneshot;
-
 use tantivy::schema::Schema;
-use tantivy::{Document, IndexWriter};
+use tantivy::{Document, IndexWriter, Term};
 use tantivy::{Index, IndexBuilder};
 
 use crate::structures::{IndexStorageType, LoadedIndex};
@@ -26,6 +26,9 @@ enum WriterOp {
 
     /// Adds a document to the index.
     AddDocument(Document),
+
+    /// Deletes any documents matching the given term.
+    DeleteTerm(Term),
 
     /// Removes all documents from the index.
     DeleteAll,
@@ -94,7 +97,9 @@ impl IndexWriterWorker {
             WriterOp::Rollback => (self.writer.rollback()?, "ROLLBACK"),
             WriterOp::AddDocument(docs) => (self.writer.add_document(docs), "ADD-DOCUMENT"),
             WriterOp::DeleteAll => (self.writer.delete_all_documents()?, "DELETE-ALL"),
+            WriterOp::DeleteTerm(term) => (self.writer.delete_term(term)?, "DELETE-TERM"),
         };
+
 
         info!(
             "[ WRITER @ {} ][ {} ] completed operation {}",
@@ -185,6 +190,12 @@ impl IndexWriterHandler {
 /// as well as an worker thread which is used to interact with the index writer.
 ///
 /// The amount of threads `n` is determined by the the `max_concurrency` parameter.
+///
+/// ### Mutating the index behaviour:
+/// This system simple schedules the operations in the order they are invoked
+/// however, this system does not wait for the operation to be completed.
+/// This essentially follows the behaviour of eventual consistency; The operations
+/// are guaranteed to be applied within some time in the near future.
 pub struct IndexHandler {
     /// The name of the index.
     name: String,
@@ -207,8 +218,8 @@ impl IndexHandler {
     ///
     /// This constructs both the Tantivy index, thread pool and worker thread.
     ///
-    /// Important note about performance:
-    /// - The concurrency limit should be set according to the machine
+    /// ### Important note about performance:
+    /// The concurrency limit should be set according to the machine
     /// this system is being deployed on hence being a required field.
     /// The amount of threads spawned is equal the the max  concurrency + 1
     /// as well as the tokio runtime threads.
@@ -241,5 +252,61 @@ impl IndexHandler {
             schema: loader.schema,
             writer: worker_handler,
         })
+    }
+
+    /// Submits a document to be processed by the index writer.
+    pub async fn add_document(&self, document: Document) -> Result<()> {
+        self.writer.send_op(WriterOp::AddDocument(document)).await
+    }
+
+    /// Submits many documents to the index writer.
+    ///
+    /// This is just an alias for adding documents in a loop.
+    pub async fn add_many_documents(&self, documents: Vec<Document>) -> Result<()> {
+        for doc in documents {
+            self.add_document(doc).await?
+        }
+
+        Ok(())
+    }
+
+    /// Submits the delete all operation to the index writer.
+    ///
+    /// This will delete all documents in the index which were
+    /// added since the last commit.
+    pub async fn delete_documents(&self) -> Result<()> {
+        self.writer.send_op(WriterOp::DeleteAll).await
+    }
+
+    /// Submits the delete term operation to the index writer.
+    ///
+    /// This will delete all documents matching the term which were
+    /// added since the last commit.
+    pub async fn delete_term(&self, term: Term) -> Result<()> {
+        self.writer.send_op(WriterOp::DeleteTerm(term)).await
+    }
+
+    /// Submits the commit operation to the index writer.
+    ///
+    /// This will finalize any operations and save the changes, flushing them
+    /// to disk.
+    ///
+    /// Any additions and deletions will become visible to readers once
+    /// the operation is complete.
+    pub async fn commit(&self) -> Result<()> {
+        self.writer.send_op(WriterOp::Commit).await
+    }
+
+    /// Submits the rollback operation to the index writer.
+    ///
+    /// This will undo / drop any changes made between the last commit
+    /// and the rollback operation.
+    pub async fn rollback(&self) -> Result<()> {
+        self.writer.send_op(WriterOp::Rollback).await
+    }
+
+    /// Searches the index with the given query.
+    pub async fn search(&self, query: &str, fuzzy: bool) -> Result<()> {
+
     }
 }
