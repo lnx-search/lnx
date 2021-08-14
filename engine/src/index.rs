@@ -4,8 +4,8 @@ use slab::Slab;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use crossbeam::queue::SegQueue;
 use crossbeam::channel;
+use crossbeam::queue::SegQueue;
 
 use tokio::sync::oneshot;
 
@@ -48,6 +48,11 @@ pub struct IndexWriterWorker {
 }
 
 impl IndexWriterWorker {
+    /// Starts processing messages until a shutdown operation is sent.
+    ///
+    /// This processes operations in waves before waking up waiters,
+    /// this means all operations currently in the queue will be processed
+    /// first before any waiters are woken up to send more data.
     fn start(mut self) {
         loop {
             if self.process_messages() {
@@ -66,6 +71,7 @@ impl IndexWriterWorker {
         }
     }
 
+    /// Purges all pending operations from the receiver.
     fn process_messages(&mut self) -> bool {
         while let Ok(msg) = self.rx.try_recv() {
             match self.handle_msg(msg) {
@@ -76,7 +82,7 @@ impl IndexWriterWorker {
                 Ok(true) => return true,
                 _ => {}
             }
-        };
+        }
 
         false
     }
@@ -99,7 +105,10 @@ impl IndexWriterWorker {
     }
 }
 
-
+/// A simple wrapper handler around a set of queues and a worker.
+///
+/// This manages creating the waiters and scheduling the operations
+/// in a new thread.
 pub struct IndexWriterHandler {
     index_name: String,
     writer_thread: std::thread::JoinHandle<()>,
@@ -108,6 +117,11 @@ pub struct IndexWriterHandler {
 }
 
 impl IndexWriterHandler {
+    /// Creates a new writer handler from a given index name and
+    /// a given index writer.
+    ///
+    /// This creates a bounded queue with a capacity of 20 and
+    /// spawns a worker in a new thread.
     fn create(index_name: String, writer: IndexWriter) -> Self {
         let name = index_name.clone();
         let waiters = Arc::new(SegQueue::new());
@@ -121,7 +135,10 @@ impl IndexWriterHandler {
 
         let handle = std::thread::spawn(move || {
             let id = std::thread::current().id();
-            info!("[ WRITER @ {} ] writer thread started with id {:?}", name, id);
+            info!(
+                "[ WRITER @ {} ] writer thread started with id {:?}",
+                name, id
+            );
             worker.start()
         });
 
@@ -133,18 +150,25 @@ impl IndexWriterHandler {
         }
     }
 
+    /// Sends a message to the writer worker
+    ///
+    /// If there is space in the queue this will complete immediately
+    /// otherwise this will wait until it's woken up again.
     async fn send_op(&self, op: WriterOp) -> anyhow::Result<()> {
         let mut op = op;
         loop {
             op = match self.writer_sender.try_send(op) {
-                Ok(()) =>
-                    return Ok(()),
-                Err(channel::TrySendError::Disconnected(v)) =>
-                    return Err(Error::msg("writer worker has shutdown")),
+                Ok(()) => return Ok(()),
+                Err(channel::TrySendError::Disconnected(_)) => {
+                    return Err(Error::msg("writer worker has shutdown"))
+                }
                 Err(channel::TrySendError::Full(v)) => v,
             };
 
-            debug!("[ WRITER @ {} ] operation queue full, waiting for wakeup");
+            debug!(
+                "[ WRITER @ {} ] operation queue full, waiting for wakeup",
+                &self.index_name
+            );
 
             let (resolve, waiter) = oneshot::channel();
             self.writer_waiters.push(resolve);
@@ -153,10 +177,12 @@ impl IndexWriterHandler {
     }
 }
 
+/// A search engine index.
 pub struct IndexHandler {
     name: String,
     index: Index,
     schema: Schema,
+    thread_pool: rayon::ThreadPool,
     writer: IndexWriterHandler,
 }
 
@@ -170,19 +196,23 @@ impl IndexHandler {
             IndexStorageType::FileSystem(path) => index.create_in_dir(path)?,
         };
 
-        let writer = index.writer_with_num_threads(
-            loader.writer_threads,
-            loader.writer_buffer,
-        )?;
+        let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
 
-        let worker_handler = IndexWriterHandler::create(
-            loader.name.clone(),
-            writer,
-        );
+        let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);
+
+        let thread_pool = {
+            let name_ref = loader.name.as_str();
+
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(loader.max_concurrency as usize)
+                .thread_name(|n| format!("index-{}-worker-{}", name_ref, n))
+                .build()?
+        };
 
         Ok(Self {
             name: loader.name,
             index,
+            thread_pool,
             schema: loader.schema,
             writer: worker_handler,
         })

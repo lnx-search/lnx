@@ -43,11 +43,17 @@ pub enum FieldDeclaration {
     Bytes(BytesOptions),
 }
 
+/// The storage backend to store index documents in.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexStorageType {
+    /// Creates a temporary file.
     TempFile,
+
+    /// Creates the index in memory (generally only for debugging)
     Memory,
+
+    /// Store the index in a persistence setup in a given directory.
     FileSystem(String),
 }
 
@@ -55,7 +61,8 @@ pub enum IndexStorageType {
 pub struct IndexDeclaration<'a> {
     name: &'a str,
     writer_buffer: usize,
-    writer_threads: usize,
+    writer_threads: Option<usize>,
+    max_concurrency: u32,
     storage_type: IndexStorageType,
     fields: HashMap<&'a str, FieldDeclaration>,
 }
@@ -95,17 +102,28 @@ impl<'a> IndexDeclaration<'a> {
         LoadedIndex {
             name: self.name.into(),
             writer_buffer: self.writer_buffer,
-            writer_threads: self.writer_threads,
+            writer_threads: self.writer_threads.unwrap_or_else(|| num_cpus::get()),
+            max_concurrency: self.max_concurrency,
             storage_type: self.storage_type,
             schema: schema.build(),
         }
     }
 }
 
+/// The loaded and processed index declaration.
+///
+/// This is used for controlling the behaviour of the
+/// generated indexes, thread pools and writers.
 pub struct LoadedIndex {
+    /// The name of the index.
     pub(crate) name: String,
+
+    /// The amount of bytes to allocate to the writer buffer.
     pub(crate) writer_buffer: usize,
+
+    /// The amount of worker threads to dedicate to a writer.
     pub(crate) writer_threads: usize,
+    pub(crate) max_concurrency: u32,
     pub(crate) storage_type: IndexStorageType,
     pub(crate) schema: InternalSchema,
 }
