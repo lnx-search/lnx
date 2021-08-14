@@ -11,7 +11,7 @@ use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::TopDocs;
-use tantivy::query::MoreLikeThisQuery;
+use tantivy::query::{MoreLikeThisQuery, BoostQuery};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
@@ -382,13 +382,23 @@ impl IndexReaderHandler {
             }
 
             for (field, boost) in self.search_fields.iter() {
+                let query = Box::new(FuzzyTermQuery::new_prefix(
+                    Term::from_field_text(*field, search_term),
+                    1,
+                    true,
+                ));
+
+                if *boost > 0.0f32 {
+                    parts.push((
+                        Occur::Should,
+                        Box::new(BoostQuery::new(query, *boost)),
+                    ));
+                    continue;
+                }
+
                 parts.push((
                     Occur::Should,
-                    Box::new(FuzzyTermQuery::new_prefix(
-                        Term::from_field_text(*field, search_term),
-                        1,
-                        true,
-                    )),
+                    query,
                 ))
             }
         }
