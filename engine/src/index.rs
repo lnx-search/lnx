@@ -4,13 +4,15 @@ use std::sync::Arc;
 use anyhow::{Error, Result};
 use parking_lot::RwLock;
 use slab::Slab;
+
 use tokio::sync::oneshot;
+use tokio::sync::Semaphore;
 
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
 use tantivy::schema::Schema;
-use tantivy::{Document, IndexWriter, Term};
+use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy};
 use tantivy::{Index, IndexBuilder};
 
 use crate::structures::{IndexStorageType, LoadedIndex};
@@ -97,7 +99,7 @@ impl IndexWriterWorker {
             WriterOp::Rollback => (self.writer.rollback()?, "ROLLBACK"),
             WriterOp::AddDocument(docs) => (self.writer.add_document(docs), "ADD-DOCUMENT"),
             WriterOp::DeleteAll => (self.writer.delete_all_documents()?, "DELETE-ALL"),
-            WriterOp::DeleteTerm(term) => (self.writer.delete_term(term)?, "DELETE-TERM"),
+            WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
         };
 
 
@@ -114,7 +116,7 @@ impl IndexWriterWorker {
 ///
 /// This manages creating the waiters and scheduling the operations
 /// in a new thread.
-pub struct IndexWriterHandler {
+struct IndexWriterHandler {
     index_name: String,
     writer_thread: std::thread::JoinHandle<()>,
     writer_waiters: Arc<SegQueue<oneshot::Sender<()>>>,
@@ -184,6 +186,57 @@ impl IndexWriterHandler {
     }
 }
 
+
+
+/// A async manager around the tantivy index reader.
+struct IndexReaderHandler {
+    /// The internal tantivy index reader.
+    reader: IndexReader,
+
+    /// A concurrency semaphore.
+    limiter: Semaphore,
+
+    /// The execution thread pool.
+    thread_pool: rayon::ThreadPool,
+}
+
+impl IndexReaderHandler {
+    /// Creates a new reader handler from an existing tantivy index reader.
+    ///
+    /// This will spawn a thread pool with `n` amount of threads equal
+    /// to the set `max_concurrency`.
+    fn create(
+        index_name: String,
+        max_concurrency: usize,
+        reader: IndexReader,
+    ) -> Result<Self> {
+        let limiter = Semaphore::new(max_concurrency);
+
+        let thread_pool = {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(max_concurrency)
+                .thread_name(move |n| format!("index-{}-worker-{}", index_name.clone(), n))
+                .build()?
+        };
+
+        Ok(Self {
+            reader,
+            limiter,
+            thread_pool,
+        })
+    }
+
+    async fn search(&self, query: &str, fuzzy: bool) -> Result<()> {
+        let _permit = self.limiter.acquire().await?;
+
+        todo!()
+
+    }
+}
+
+
+
+
 /// A search engine index.
 ///
 /// Each index maintains a rayon thread pool which searches are executed
@@ -206,11 +259,11 @@ pub struct IndexHandler {
     /// The internal tantivy schema.
     schema: Schema,
 
-    /// The execution thread pool.
-    thread_pool: rayon::ThreadPool,
-
     /// A writer actor to handle the index writer.
     writer: IndexWriterHandler,
+
+    /// The index reader handler
+    reader: IndexReaderHandler,
 }
 
 impl IndexHandler {
@@ -233,24 +286,26 @@ impl IndexHandler {
         };
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
+        let reader = index.reader_builder()
+            .num_searchers(loader.max_concurrency as usize)
+            .reload_policy(ReloadPolicy::OnCommit)
+            .try_into()?;
 
         let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);
 
-        let thread_pool = {
-            let name_ref = loader.name.as_str();
+        let reader_handler = IndexReaderHandler::create(
+            loader.name.clone(),
+            loader.max_concurrency as usize,
+            reader,
+        )?;
 
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(loader.max_concurrency as usize)
-                .thread_name(|n| format!("index-{}-worker-{}", name_ref, n))
-                .build()?
-        };
 
         Ok(Self {
             name: loader.name,
             index,
-            thread_pool,
             schema: loader.schema,
             writer: worker_handler,
+            reader: reader_handler,
         })
     }
 
@@ -307,6 +362,7 @@ impl IndexHandler {
 
     /// Searches the index with the given query.
     pub async fn search(&self, query: &str, fuzzy: bool) -> Result<()> {
-
+        self.reader.search(query, fuzzy).await
     }
+
 }

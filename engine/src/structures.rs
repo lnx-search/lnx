@@ -123,7 +123,13 @@ pub struct LoadedIndex {
 
     /// The amount of worker threads to dedicate to a writer.
     pub(crate) writer_threads: usize,
+
+    /// The maximum searches that can be done at any one time.
     pub(crate) max_concurrency: u32,
+
+    /// The storage type for the index backend.
     pub(crate) storage_type: IndexStorageType,
+
+    /// The defined tantivy schema.
     pub(crate) schema: InternalSchema,
 }
