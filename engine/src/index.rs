@@ -268,7 +268,9 @@ impl IndexReaderHandler {
                 Executor::single_thread()
             };
 
-            executors.push(executor);
+            if let Err(_) = executors.push(executor) {
+                panic!("executor pool was full yet executor was in use, this is a bug.")
+            };
         }
 
         let executors = Arc::new(executors);
@@ -320,7 +322,10 @@ impl IndexReaderHandler {
 
             let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
-            executors.push(executor);
+            // This can never happen right?
+            if let Err(_) = executors.push(executor) {
+                panic!("executor pool was full yet executor was in use, this is a bug.")
+            };
 
             let _ = resolve.send(res);
         });
@@ -566,21 +571,31 @@ impl IndexHandler {
         };
 
         // We need to extract out the fields from name to id.
+        let mut raw_search_fields = vec![];
         let mut search_fields = vec![];
         for ref_field in loader.search_fields {
             if let Some(field) = loader.schema.get_field(&ref_field) {
+                raw_search_fields.push(field);
+
                 if let Some(boost) = loader.boost_fields.get(&ref_field) {
                     search_fields.push((field, *boost));
                 } else {
                     search_fields.push((field, 0.0f32));
-                }
+                };
             } else {
                 return Err(Error::msg(format!(
                     "no field exists for index {} with the current schema,\
                      did you forget to define it in the schema?",
-                    &field
+                    &ref_field
                 )));
             };
+        }
+
+        let mut parser = QueryParser::for_index(&index, raw_search_fields);
+        for (field, boost) in search_fields.iter() {
+            if *boost != 0.0f32 {
+                parser.set_field_boost(*field, *boost);
+            }
         }
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
