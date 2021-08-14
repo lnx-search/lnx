@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::convert::TryFrom;
 
 use serde::{Serialize, Deserialize};
 use anyhow::{Error, Result};
@@ -7,9 +8,9 @@ use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
 
 use crossbeam::channel;
-use crossbeam::queue::SegQueue;
+use crossbeam::queue::{SegQueue, ArrayQueue};
 
-use tantivy::schema::{Schema, Field, NamedFieldDocument};
+use tantivy::schema::{Schema, Field, NamedFieldDocument, FieldType};
 use tantivy::query::{QueryParser, Query, Occur, FuzzyTermQuery, BooleanQuery};
 use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy, LeasedItem, Searcher, DocAddress, Score};
 use tantivy::{Index, IndexBuilder, Executor};
@@ -17,7 +18,6 @@ use tantivy::collector::TopDocs;
 use tantivy::query::MoreLikeThisQuery;
 
 use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload, QueryMode, RefAddress};
-use std::convert::TryFrom;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -203,11 +203,14 @@ struct IndexReaderHandler {
     /// The internal tantivy index reader.
     reader: IndexReader,
 
-    /// The reader thread pool executor.
+    /// The reader thread pool executors.
+    ///
+    /// This creates n amount of executors equal to the max_concurrency
+    /// **WARNING:** THIS CAN CAUSE AN *INSANE* AMOUNT OF THREADS TO BE SPAWNED.
     ///
     /// If the number of reader threads is > 1 this is a MultiThreaded executor
     /// otherwise it's SingleThreaded.
-    executor: Arc<Executor>,
+    executors: Arc<ArrayQueue<Executor>>,
 
     /// A concurrency semaphore.
     limiter: Semaphore,
@@ -246,17 +249,22 @@ impl IndexReaderHandler {
                 .build()?
         };
 
-        let executor = if reader_threads > 1 {
-            Executor::multi_thread(reader_threads, "index-reader-")?
-        } else {
-            Executor::single_thread()
-        };
+        let mut executors = ArrayQueue::new(max_concurrency);
+        for _ in 0..max_concurrency {
+            let executor = if reader_threads > 1 {
+                Executor::multi_thread(reader_threads, "index-reader-")?
+            } else {
+                Executor::single_thread()
+            };
 
-        let executor =  Arc::new(executor);
+            executors.push(executor);
+        }
+
+        let executors = Arc::new(executors);
 
         Ok(Self {
             reader,
-            executor,
+            executors,
             limiter,
             thread_pool,
             parser,
@@ -298,18 +306,23 @@ impl IndexReaderHandler {
             payload.mode,
         )?;
         let searcher = self.reader.searcher();
-        let executor = self.executor.clone();
+        let executors = self.executors.clone();
 
         self.thread_pool.spawn(move || {
+            let executor = executors.pop().expect("get executor");
+
             let res = search(
                 query,
                 searcher,
-                executor,
+                &executor,
                 limit,
                 offset,
                 schema,
                 order_by,
             );
+
+            executors.push(executor);
+
             let _ = resolve.send(res);
         });
 
@@ -411,8 +424,15 @@ pub struct QueryResults {
     time_taken: f64,
 }
 
+macro_rules! order_and_search {
+    ( $search:expr, $collector:expr, $field:expr, $query:expr, $executor:expr) => {{
+        let collector = $collector.order_by_fast_field($field);
+        $search.search_with_executor($query, &collector, $executor)
+    }}
+}
 
-macro_rules! search {
+
+macro_rules! process_search {
     ( $search:expr, $schema:expr, $top_docs:expr ) => {{
         let count = $top_docs.len();
 
@@ -435,7 +455,7 @@ macro_rules! search {
 fn search(
     query: Box<dyn Query>,
     searcher: LeasedItem<Searcher>,
-    executor: Arc<Executor>,
+    executor: &Executor,
     limit: usize,
     offset: usize,
     schema: Arc<Schema>,
@@ -446,8 +466,74 @@ fn search(
     let collector = TopDocs::with_limit(limit)
         .and_offset(offset);
 
-    let out = searcher.search_with_executor(&query, &collector, &executor)?;
-    let (count, hits) = search!(searcher, schema, out);
+    let (count, hits) =  if let Some(field) = order_by {
+        match schema.get_field_entry(field).field_type() {
+            FieldType::I64(_) => {
+                let out: Vec<(i64, DocAddress)> = order_and_search!(
+                    searcher,
+                    collector,
+                    field,
+                    &query,
+                    executor
+                )?;
+                process_search!(
+                    searcher,
+                    schema,
+                    out
+                )
+            }
+            FieldType::U64(_) => {
+                let out: Vec<(u64, DocAddress)> = order_and_search!(
+                    searcher,
+                    collector,
+                    field,
+                    &query,
+                    executor
+                )?;
+                process_search!(
+                    searcher,
+                    schema,
+                    out
+                )
+            }
+            FieldType::F64(_) => {
+                let out: Vec<(f64, DocAddress)> = order_and_search!(
+                    searcher,
+                    collector,
+                    field,
+                    &query,
+                    executor
+                )?;
+                process_search!(
+                    searcher,
+                    schema,
+                    out
+                )
+            }
+            FieldType::Date(_) => {
+                let out: Vec<(i64, DocAddress)> = order_and_search!(
+                    searcher,
+                    collector,
+                    field,
+                    &query,
+                    executor
+                )?;
+                process_search!(
+                    searcher,
+                    schema,
+                    out
+                )
+            }
+            _ => return Err(Error::msg("field is not a fast field"))
+        }
+    } else {
+        let out = searcher.search_with_executor(&query, &collector, executor)?;
+        process_search!(
+            searcher,
+            schema,
+            out
+        )
+    };
 
     let elapsed = start.elapsed();
     let time_taken = elapsed.as_secs_f64();
