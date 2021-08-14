@@ -1,9 +1,13 @@
 use anyhow::{Error, Result};
-use async_channel::{Receiver, Sender, TryRecvError};
 use parking_lot::RwLock;
 use slab::Slab;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+
+use crossbeam::queue::SegQueue;
+use crossbeam::channel;
+
+use tokio::sync::oneshot;
 
 use tantivy::schema::Schema;
 use tantivy::{Document, IndexWriter};
@@ -11,39 +15,73 @@ use tantivy::{Index, IndexBuilder};
 
 use crate::structures::{IndexStorageType, LoadedIndex};
 
+/// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
 enum WriterOp {
+    /// Commits the current changes and flushes to storage.
     Commit,
+
+    /// Removes any changes since the last commit.
     Rollback,
+
+    /// Adds a document to the index.
     AddDocument(Document),
+
+    /// Removes all documents from the index.
     DeleteAll,
+
+    /// Shutdown the handler.
     __Shutdown,
 }
 
+/// A background task that applies write operations to the index.
+///
+/// This system uses the actor model receiving a stream of messages
+/// and processes them in order of being sent.
+///
+/// Messages are ran in a new thread.
 pub struct IndexWriterWorker {
     index_name: String,
     writer: IndexWriter,
-    rx: Receiver<WriterOp>,
+    waiters: Arc<SegQueue<oneshot::Sender<()>>>,
+    rx: channel::Receiver<(WriterOp)>,
 }
 
 impl IndexWriterWorker {
-    async fn start(mut self) {
-        while let Ok(msg) = self.rx.recv().await {
-            match self.handle_msg(msg).await {
+    fn start(mut self) {
+        loop {
+            if self.process_messages() {
+                break;
+            };
+
+            // Wake up waiters once a message has been removed.
+            while let Some(waiter) = self.waiters.pop() {
+                let _ = waiter.send(());
+            }
+        }
+
+        // Unlock waiters so that they dont deadlock the system.
+        while let Some(waiter) = self.waiters.pop() {
+            let _ = waiter.send(());
+        }
+    }
+
+    fn process_messages(&mut self) -> bool {
+        while let Ok(msg) = self.rx.try_recv() {
+            match self.handle_msg(msg) {
                 Err(e) => error!(
                     "[ WRITER @ {} ] failed handling writer operation on index due to error: {:?}",
                     &self.index_name, e,
                 ),
-                Ok(shutdown) => {
-                    if shutdown {
-                        break;
-                    }
-                }
+                Ok(true) => return true,
+                _ => {}
             }
-        }
+        };
+
+        false
     }
 
-    async fn handle_msg(&mut self, op: WriterOp) -> Result<bool> {
+    fn handle_msg(&mut self, op: WriterOp) -> Result<bool> {
         let (transaction_id, type_) = match op {
             WriterOp::__Shutdown => return Ok(true),
             WriterOp::Commit => (self.writer.commit()?, "COMMIT"),
@@ -61,17 +99,60 @@ impl IndexWriterWorker {
     }
 }
 
+
+pub struct IndexWriterHandler {
+    writer_thread: std::thread::JoinHandle<()>,
+    writer_waiters: Arc<SegQueue<oneshot::Sender<()>>>,
+    writer_sender: crossbeam::channel::Sender<WriterOp>,
+}
+
+impl IndexWriterHandler {
+    fn create(index_name: String, writer: IndexWriter) -> Self {
+        let waiters = Arc::new(SegQueue::new());
+        let (tx, rx) = channel::bounded(20);
+        let worker = IndexWriterWorker {
+            index_name,
+            writer,
+            waiters: waiters.clone(),
+            rx,
+        };
+
+        let handle = std::thread::spawn(move || { worker.start() });
+
+        Self {
+            writer_thread: handle,
+            writer_sender: tx,
+            writer_waiters: waiters,
+        }
+    }
+
+    async fn send_op(&self, op: WriterOp) -> anyhow::Result<()> {
+        let mut op = op;
+        loop {
+            op = match self.writer_sender.try_send(op) {
+                Ok(()) =>
+                    return Ok(()),
+                Err(channel::TrySendError::Disconnected(v)) =>
+                    return Err(Error::msg("writer worker has shutdown")),
+                Err(channel::TrySendError::Full(v)) => v,
+            };
+
+            let (resolve, waiter) = oneshot::channel();
+            self.writer_waiters.push(resolve);
+            let _ = waiter.await;
+        }
+    }
+}
+
 pub struct IndexHandler {
     name: String,
     index: Index,
     schema: Schema,
-    writer_sender: Sender<WriterOp>,
+    writer: IndexWriterHandler,
 }
 
 impl IndexHandler {
     pub async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
-        let (tx, rx) = async_channel::bounded(10);
-
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
@@ -80,21 +161,21 @@ impl IndexHandler {
             IndexStorageType::FileSystem(path) => index.create_in_dir(path)?,
         };
 
-        let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
+        let writer = index.writer_with_num_threads(
+            loader.writer_threads,
+            loader.writer_buffer,
+        )?;
 
-        let worker = IndexWriterWorker {
+        let worker_handler = IndexWriterHandler::create(
+            loader.name.clone(),
             writer,
-            rx,
-            index_name: loader.name.clone(),
-        };
-
-        tokio::spawn(worker.start());
+        );
 
         Ok(Self {
             name: loader.name,
             index,
             schema: loader.schema,
-            writer_sender: tx,
+            writer: worker_handler,
         })
     }
 }
