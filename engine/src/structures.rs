@@ -3,6 +3,7 @@ use tantivy::schema::{
     SchemaBuilder as InternalSchemaBuilder, TextFieldIndexing, TextOptions, STORED, STRING, TEXT,
 };
 use tantivy::{DateTime, IndexWriter};
+use tantivy::collector::{TopDocs, HistogramCollector};
 
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,8 @@ pub struct IndexDeclaration<'a> {
     writer_buffer: usize,
     writer_threads: Option<usize>,
     max_concurrency: u32,
+    reader_threads: Option<u32>,
+    search_fields: Vec<String>,
     storage_type: IndexStorageType,
     fields: HashMap<&'a str, FieldDeclaration>,
 }
@@ -104,6 +107,8 @@ impl<'a> IndexDeclaration<'a> {
             writer_buffer: self.writer_buffer,
             writer_threads: self.writer_threads.unwrap_or_else(|| num_cpus::get()),
             max_concurrency: self.max_concurrency,
+            reader_threads: self.reader_threads.unwrap_or(1),
+            search_fields: self.search_fields,
             storage_type: self.storage_type,
             schema: schema.build(),
         }
@@ -127,9 +132,64 @@ pub struct LoadedIndex {
     /// The maximum searches that can be done at any one time.
     pub(crate) max_concurrency: u32,
 
+    /// The number of reader threads to use.
+    ///
+    /// The current implementation is rather naive : multithreading is by splitting search
+    /// into as many task as there are segments.
+    /// It is powerless at making search faster if your index consists in one large segment.
+    /// Also, keep in my multithreading a single query on several threads will not improve
+    /// your throughput. It can actually hurt it.
+    /// It will however, decrease the average response time.
+    pub(crate) reader_threads: u32,
+
+    /// The fields what are actually searched via tantivy.
+    ///
+    /// These values need to either be a fast field (ints) or TEXT.
+    pub(crate) search_fields: Vec<String>,
+
     /// The storage type for the index backend.
     pub(crate) storage_type: IndexStorageType,
 
     /// The defined tantivy schema.
     pub(crate) schema: InternalSchema,
+}
+
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Collector {
+    TopDocs,
+    Histogram,
+}
+
+
+#[derive(Deserialize)]
+pub struct QueryPayload {
+    query: String,
+
+    #[serde(default = "default_query::default_fuzzy")]
+    fuzzy: bool,
+
+    #[serde(default = "default_query::default_limit")]
+    limit: usize,
+
+    #[serde(default = "default_query::default_limit")]
+    collector: Collector
+}
+
+
+mod default_query {
+    use super::Collector;
+
+    pub fn default_fuzzy() -> bool {
+        false
+    }
+
+    pub fn default_limit() -> usize {
+        20
+    }
+
+    pub fn default_collector() -> Collector {
+        Collector::TopDocs
+    }
 }

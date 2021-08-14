@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use parking_lot::RwLock;
-use slab::Slab;
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
@@ -11,11 +10,11 @@ use tokio::sync::Semaphore;
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
-use tantivy::schema::Schema;
+use tantivy::schema::{Schema, Field};
 use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy};
-use tantivy::{Index, IndexBuilder};
+use tantivy::{Index, IndexBuilder, Executor};
 
-use crate::structures::{IndexStorageType, LoadedIndex};
+use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload};
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -189,9 +188,26 @@ impl IndexWriterHandler {
 
 
 /// A async manager around the tantivy index reader.
+///
+/// This system executes the read operations in a given thread pool
+/// managed by rayon which will allow a concurrency upto the set
+/// `max_concurrency`.
+///
+/// If the system is at it's maximum concurrency already and search
+/// is called again, it will temporarily suspend operations until
+/// a reader has been freed.
 struct IndexReaderHandler {
     /// The internal tantivy index reader.
     reader: IndexReader,
+
+    /// The fields actually used for searching.
+    reader_fields: Vec<Field>,
+
+    /// The reader thread pool executor.
+    ///
+    /// If the number of reader threads is > 1 this is a MultiThreaded executor
+    /// otherwise it's SingleThreaded.
+    executor: Executor,
 
     /// A concurrency semaphore.
     limiter: Semaphore,
@@ -209,6 +225,8 @@ impl IndexReaderHandler {
         index_name: String,
         max_concurrency: usize,
         reader: IndexReader,
+        reader_threads: usize,
+        reader_fields: Vec<Field>,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
@@ -219,22 +237,42 @@ impl IndexReaderHandler {
                 .build()?
         };
 
+        let executor = if reader_threads > 1 {
+            Executor::multi_thread(reader_threads, &format!("index-{}-reader", index_name))?
+        } else {
+            Executor::single_thread()
+        };
+
         Ok(Self {
             reader,
+            reader_fields,
+            executor,
             limiter,
             thread_pool,
         })
     }
 
-    async fn search(&self, query: &str, fuzzy: bool) -> Result<()> {
+    /// Searches the index with a given query.
+    ///
+    /// The index will use fuzzy matching based on levenshtein distance
+    /// if set to true.
+    async fn search(&self, payload: QueryPayload) -> Result<()> {
         let _permit = self.limiter.acquire().await?;
 
-        todo!()
+        let (resolve, waiter) = oneshot::channel();
+        let searcher = self.reader.searcher();
+        self.thread_pool.spawn(move || {
+            searcher.search_with_executor()
 
+
+            let _ = resolve.send(());
+        });
+
+        let _ = waiter.await;
+
+        todo!()
     }
 }
-
-
 
 
 /// A search engine index.
@@ -299,7 +337,6 @@ impl IndexHandler {
             reader,
         )?;
 
-
         Ok(Self {
             name: loader.name,
             index,
@@ -361,8 +398,8 @@ impl IndexHandler {
     }
 
     /// Searches the index with the given query.
-    pub async fn search(&self, query: &str, fuzzy: bool) -> Result<()> {
-        self.reader.search(query, fuzzy).await
+    pub async fn search(&self, payload: QueryPayload) -> Result<()> {
+        self.reader.search(payload).await
     }
 
 }
