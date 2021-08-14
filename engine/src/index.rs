@@ -11,8 +11,8 @@ use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::TopDocs;
-use tantivy::query::{MoreLikeThisQuery, BoostQuery};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
+use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
     DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term,
@@ -389,23 +389,16 @@ impl IndexReaderHandler {
                 ));
 
                 if *boost > 0.0f32 {
-                    parts.push((
-                        Occur::Should,
-                        Box::new(BoostQuery::new(query, *boost)),
-                    ));
+                    parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
                     continue;
                 }
 
-                parts.push((
-                    Occur::Should,
-                    query,
-                ))
+                parts.push((Occur::Should, query))
             }
         }
 
         Box::new(BooleanQuery::from(parts))
     }
-
 
     /// Generates a MoreLikeThisQuery which matches similar documents
     /// as the given reference document.
