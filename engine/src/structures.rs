@@ -164,10 +164,10 @@ pub struct LoadedIndex {
 /// This can change how the system parses and handles the query.
 #[derive(Debug, Copy, Clone, Deserialize)]
 pub enum QueryMode {
-    /// The default mode, this uses the tantivy query parser.
+    /// This uses the tantivy query parser.
     Normal,
 
-    /// Processes the query via the FuzzyQuery system.
+    /// Processes the query via the FuzzyQuery system. (Default)
     Fuzzy,
 
     /// Gets documents similar to the reference document.
@@ -176,7 +176,7 @@ pub enum QueryMode {
 
 impl Default for QueryMode {
     fn default() -> Self {
-        Self::Normal
+        Self::Fuzzy
     }
 }
 

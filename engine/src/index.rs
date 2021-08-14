@@ -230,7 +230,7 @@ struct IndexReaderHandler {
     parser: QueryParser,
 
     /// The set of indexed fields to search in a given query.
-    search_fields: Vec<Field>,
+    search_fields: Vec<(Field, Score)>,
 
     /// A cheaply cloneable schema reference.
     quick_schema: Arc<Schema>,
@@ -247,7 +247,7 @@ impl IndexReaderHandler {
         reader: IndexReader,
         reader_threads: usize,
         parser: QueryParser,
-        search_fields: Vec<Field>,
+        search_fields: Vec<(Field, Score)>,
         quick_schema: Arc<Schema>,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
@@ -365,6 +365,9 @@ impl IndexReaderHandler {
         return out;
     }
 
+    /// Creates a fuzzy matching query, this allows for an element
+    /// of fault tolerance with spelling. This is the default
+    /// config as it its the most plug and play setup.
     fn parse_fuzzy_query(&self, query: &str) -> Box<dyn Query> {
         let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
@@ -373,7 +376,7 @@ impl IndexReaderHandler {
                 continue;
             }
 
-            for field in self.search_fields.iter() {
+            for (field, boost) in self.search_fields.iter() {
                 parts.push((
                     Occur::Should,
                     Box::new(FuzzyTermQuery::new_prefix(
@@ -388,6 +391,9 @@ impl IndexReaderHandler {
         Box::new(BooleanQuery::from(parts))
     }
 
+
+    /// Generates a MoreLikeThisQuery which matches similar documents
+    /// as the given reference document.
     fn parse_more_like_this(&self, ref_document: &RefAddress) -> Box<dyn Query> {
         let query = MoreLikeThisQuery::builder()
             .with_min_doc_frequency(1)
@@ -561,27 +567,18 @@ impl IndexHandler {
 
         // We need to extract out the fields from name to id.
         let mut search_fields = vec![];
-        for field in loader.search_fields {
-            if let Some(field) = loader.schema.get_field(&field) {
-                search_fields.push(field);
+        for ref_field in loader.search_fields {
+            if let Some(field) = loader.schema.get_field(&ref_field) {
+                if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                    search_fields.push((field, *boost));
+                } else {
+                    search_fields.push((field, 0.0f32));
+                }
             } else {
                 return Err(Error::msg(format!(
                     "no field exists for index {} with the current schema,\
                      did you forget to define it in the schema?",
                     &field
-                )));
-            };
-        }
-
-        let mut parser = QueryParser::for_index(&index, search_fields.clone());
-        for (name, factor) in loader.boost_fields {
-            if let Some(field) = loader.schema.get_field(&name) {
-                parser.set_field_boost(field, factor);
-            } else {
-                return Err(Error::msg(format!(
-                    "no field exists for index {} with the current schema,\
-                     did you forget to define it in the schema?",
-                    &name
                 )));
             };
         }
