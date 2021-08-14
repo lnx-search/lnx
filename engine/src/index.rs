@@ -8,12 +8,13 @@ use tokio::sync::Semaphore;
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
-use tantivy::schema::Schema;
-use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy};
+use tantivy::schema::{Schema, Field, NamedFieldDocument};
+use tantivy::query::{QueryParser, Query, Occur, FuzzyTermQuery, BooleanQuery};
+use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy, LeasedItem, Searcher, DocAddress, Score};
 use tantivy::{Index, IndexBuilder, Executor};
+use tantivy::collector::TopDocs;
 
 use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload};
-use tantivy::query::QueryParser;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -212,6 +213,10 @@ struct IndexReaderHandler {
     thread_pool: rayon::ThreadPool,
 
     parser: QueryParser,
+
+    search_fields: Vec<Field>,
+
+    quick_schema: Arc<Schema>
 }
 
 impl IndexReaderHandler {
@@ -225,6 +230,8 @@ impl IndexReaderHandler {
         reader: IndexReader,
         reader_threads: usize,
         parser: QueryParser,
+        search_fields: Vec<Field>,
+        quick_schema: Arc<Schema>,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
@@ -244,10 +251,12 @@ impl IndexReaderHandler {
 
         Ok(Self {
             reader,
-            parser,
             executor,
             limiter,
             thread_pool,
+            parser,
+            search_fields,
+            quick_schema,
         })
     }
 
@@ -259,16 +268,92 @@ impl IndexReaderHandler {
         let _permit = self.limiter.acquire().await?;
 
         let (resolve, waiter) = oneshot::channel();
-        let query = self.parser.parse_query(&payload.query)?;
+
+        let schema = self.quick_schema.clone();
+        let limit = payload.limit;
+        let query = self.parse_query(&payload.query, payload.fuzzy)?;
         let searcher = self.reader.searcher();
         self.thread_pool.spawn(move || {
-            let _ = resolve.send(());
+            let res = search(query, searcher, limit, schema);
+            let _ = resolve.send(res);
         });
 
         let _ = waiter.await;
 
         todo!()
     }
+
+    #[timed(duration(printer = "debug!"))]
+    fn parse_query(&self, query: &str, fuzzy: bool) -> Result<Box<dyn Query>> {
+        debug!("constructing query {} with fuzzy={}", query, fuzzy);
+
+        if !fuzzy {
+            return Ok(self.parser.parse_query(query)?)
+        }
+
+        let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+        for search_term in query.to_lowercase().split(" ") {
+            if search_term.is_empty() {
+                continue;
+            }
+
+            for field in self.search_fields.iter() {
+                parts.push((
+                    Occur::Should,
+                    Box::new(FuzzyTermQuery::new_prefix(
+                        Term::from_field_text(*field, search_term),
+                        1,
+                        true,
+                    )),
+                ))
+            }
+        };
+
+        Ok(Box::new(BooleanQuery::from(parts)))
+    }
+}
+
+#[derive(Serialize)]
+pub struct QueryHit {
+    score: Score,
+    doc: NamedFieldDocument,
+}
+
+#[derive(Serialize)]
+pub struct QueryResults {
+    hits: Vec<QueryHit>,
+    count: usize,
+    time_taken: f64,
+}
+
+fn search(
+    query: Box<dyn Query>,
+    searcher: LeasedItem<Searcher>,
+    limit: usize,
+    schema: Arc<Schema>,
+) -> Result<QueryResults> {
+    let start = std::time::Instant::now();
+    let top_docs: Vec<(Score, DocAddress)> = searcher.search(&query, &TopDocs::with_limit(limit))?;
+
+    let count = top_docs.len();
+    let mut hits = Vec::with_capacity(count);
+    for (score, address) in top_docs {
+        let retrieved_doc = searcher.doc(address)?;
+        let doc = schema.to_named_doc(&retrieved_doc);
+        hits.push(QueryHit{ score, doc });
+    }
+
+    let elapsed = start.elapsed();
+    let time_taken = elapsed.as_secs_f64();
+
+    debug!("search took {:?} with limit: {}", elapsed, limit);
+
+    Ok(QueryResults{
+        time_taken,
+        hits,
+        count,
+    })
 }
 
 
@@ -333,8 +418,7 @@ impl IndexHandler {
             };
         }
 
-
-        let mut parser = QueryParser::for_index(&index, search_fields);
+        let mut parser = QueryParser::for_index(&index, search_fields.clone());
         for (name, factor) in loader.boost_fields {
             if let Some(field) = loader.schema.get_field(&name) {
                 parser.set_field_boost(field, factor);
@@ -359,7 +443,8 @@ impl IndexHandler {
             loader.max_concurrency as usize,
             reader,
             loader.reader_threads as usize,
-            parser
+            parser,
+            search_fields,
         )?;
 
         Ok(Self {

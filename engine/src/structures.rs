@@ -159,14 +159,6 @@ pub struct LoadedIndex {
 
 
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Collector {
-    TopDocs,
-    Histogram,
-}
-
-
-#[derive(Deserialize)]
 pub struct QueryPayload {
     pub(crate) query: String,
 
@@ -175,24 +167,15 @@ pub struct QueryPayload {
 
     #[serde(default = "default_query::default_limit")]
     pub(crate) limit: usize,
-
-    #[serde(default = "default_query::default_collector")]
-    pub(crate) collector: Collector
 }
 
 
 mod default_query {
-    use super::Collector;
-
     pub fn default_fuzzy() -> bool {
-        false
+        true
     }
 
     pub fn default_limit() -> usize {
         20
-    }
-
-    pub fn default_collector() -> Collector {
-        Collector::TopDocs
     }
 }
