@@ -5,7 +5,7 @@ use tantivy::schema::{
 
 use hashbrown::HashMap;
 use serde::__private::TryFrom;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use tantivy::DocAddress;
 
 /// A declared schema field type.

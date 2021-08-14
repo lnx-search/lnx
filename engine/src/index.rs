@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
@@ -260,11 +260,13 @@ impl IndexReaderHandler {
                 .build()?
         };
 
-        let mut executors = ArrayQueue::new(max_concurrency);
+        let executors = ArrayQueue::new(max_concurrency);
         for _ in 0..max_concurrency {
             let executor = if reader_threads > 1 {
+                info!("index {} reader executor startup, mode: multi-threaded, threads: {}", &index_name, reader_threads);
                 Executor::multi_thread(reader_threads, "index-reader-")?
             } else {
+                info!("index {} reader executor startup, mode: single-threaded (no-op)", &index_name);
                 Executor::single_thread()
             };
 
@@ -590,7 +592,7 @@ impl IndexHandler {
                 raw_search_fields.push(field);
 
                 if let Some(boost) = loader.boost_fields.get(&ref_field) {
-                    debug!("boosting field for query parser {} {}", field, boost);
+                    debug!("boosting field for query parser {} {}", &ref_field, boost);
                     search_fields.push((field, *boost));
                 } else {
                     search_fields.push((field, 0.0f32));
@@ -612,11 +614,14 @@ impl IndexHandler {
         }
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
+        info!("index writer has been allocated with {} threads and {} byte allocation", loader.writer_threads, loader.writer_buffer);
+
         let reader = index
             .reader_builder()
             .num_searchers(loader.max_concurrency as usize)
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()?;
+        info!("index reader has been allocated with {} searchers", loader.max_concurrency);
 
         let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);
 
