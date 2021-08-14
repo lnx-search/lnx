@@ -186,10 +186,19 @@ impl IndexWriterHandler {
 ///
 /// The amount of threads `n` is determined by the the `max_concurrency` parameter.
 pub struct IndexHandler {
+    /// The name of the index.
     name: String,
+
+    /// The internal tantivy index.
     index: Index,
+
+    /// The internal tantivy schema.
     schema: Schema,
+
+    /// The execution thread pool.
     thread_pool: rayon::ThreadPool,
+
+    /// A writer actor to handle the index writer.
     writer: IndexWriterHandler,
 }
 
@@ -198,6 +207,11 @@ impl IndexHandler {
     ///
     /// This constructs both the Tantivy index, thread pool and worker thread.
     ///
+    /// Important note about performance:
+    /// - The concurrency limit should be set according to the machine
+    /// this system is being deployed on hence being a required field.
+    /// The amount of threads spawned is equal the the max  concurrency + 1
+    /// as well as the tokio runtime threads.
     pub fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
