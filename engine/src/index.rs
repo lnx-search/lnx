@@ -314,15 +314,28 @@ impl IndexReaderHandler {
     }
 }
 
+
+/// Represents a single query result.
 #[derive(Serialize)]
 pub struct QueryHit {
+    /// The score that was calculated matching the given query.
     score: Score,
+
+    /// The address of the given document, this can be used for
+    /// 'more like this' queries.
+    ref_address: DocAddress,
+
+    /// The content of the document itself.
     doc: NamedFieldDocument,
 }
 
+/// Represents the overall query result(s)
 #[derive(Serialize)]
 pub struct QueryResults {
+    /// The retrieved documents.
     hits: Vec<QueryHit>,
+
+    /// The total amount of documents
     count: usize,
     time_taken: f64,
 }
