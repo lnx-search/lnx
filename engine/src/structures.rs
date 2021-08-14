@@ -1,12 +1,12 @@
 use tantivy::schema::{
-    BytesOptions, IntOptions, Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
+    BytesOptions, IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder,
+    STORED, STRING, TEXT,
 };
 
 use hashbrown::HashMap;
-use serde::{Deserialize, Serialize, Deserializer};
-use tantivy::DocAddress;
 use serde::__private::TryFrom;
+use serde::{Deserialize, Deserializer, Serialize};
+use tantivy::DocAddress;
 
 /// A declared schema field type.
 ///
@@ -159,7 +159,6 @@ pub struct LoadedIndex {
     pub(crate) boost_fields: HashMap<String, tantivy::Score>,
 }
 
-
 /// The mode of the query.
 ///
 /// This can change how the system parses and handles the query.
@@ -181,7 +180,6 @@ impl Default for QueryMode {
     }
 }
 
-
 /// A reference address for a given document.
 #[derive(Debug)]
 pub struct RefAddress {
@@ -193,7 +191,7 @@ impl RefAddress {
     pub(crate) fn as_doc_address(&self) -> DocAddress {
         DocAddress {
             segment_ord: self.segment_id,
-            doc_id: self.doc_id
+            doc_id: self.doc_id,
         }
     }
 }
@@ -219,24 +217,23 @@ impl TryFrom<String> for RefAddress {
     fn try_from(v: String) -> Result<Self, Self::Error> {
         let mut split = v.splitn(1, "-");
 
-        let segment_id = split.next()
+        let segment_id = split
+            .next()
             .map(|v| Ok(v))
             .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
-            .parse::<u32>().map_err(Self::Error::msg)?;
+            .parse::<u32>()
+            .map_err(Self::Error::msg)?;
 
-        let doc_id = split.next()
+        let doc_id = split
+            .next()
             .map(|v| Ok(v))
             .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
-            .parse::<u32>().map_err(Self::Error::msg)?;
+            .parse::<u32>()
+            .map_err(Self::Error::msg)?;
 
-        Ok(RefAddress {
-            segment_id,
-            doc_id,
-        })
+        Ok(RefAddress { segment_id, doc_id })
     }
 }
-
-
 
 #[derive(Deserialize)]
 pub struct QueryPayload {
@@ -263,7 +260,6 @@ pub struct QueryPayload {
     /// not `None`.
     pub(crate) order_by: Option<String>,
 }
-
 
 mod default_query_data {
     pub fn default_limit() -> usize {

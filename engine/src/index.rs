@@ -1,23 +1,25 @@
-use std::sync::Arc;
 use std::convert::TryFrom;
+use std::sync::Arc;
 
-use serde::{Serialize, Deserialize};
 use anyhow::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
 
 use crossbeam::channel;
-use crossbeam::queue::{SegQueue, ArrayQueue};
+use crossbeam::queue::{ArrayQueue, SegQueue};
 
-use tantivy::schema::{Schema, Field, NamedFieldDocument, FieldType};
-use tantivy::query::{QueryParser, Query, Occur, FuzzyTermQuery, BooleanQuery};
-use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy, LeasedItem, Searcher, DocAddress, Score};
-use tantivy::{Index, IndexBuilder, Executor};
 use tantivy::collector::TopDocs;
 use tantivy::query::MoreLikeThisQuery;
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
+use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
+use tantivy::{
+    DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term,
+};
+use tantivy::{Executor, Index, IndexBuilder};
 
-use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload, QueryMode, RefAddress};
+use crate::structures::{IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress};
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -104,7 +106,6 @@ impl IndexWriterWorker {
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
         };
 
-
         info!(
             "[ WRITER @ {} ][ {} ] completed operation {}",
             &self.index_name, transaction_id, type_
@@ -145,13 +146,14 @@ impl IndexWriterHandler {
         let handle = std::thread::Builder::new()
             .name(format!("index-worker-{}", &index_name))
             .spawn(move || {
-            let id = std::thread::current().id();
-            info!(
-                "[ WRITER @ {} ] writer thread started with id {:?}",
-                name, id
-            );
-            worker.start()
-        }).expect("spawn worker thread");
+                let id = std::thread::current().id();
+                info!(
+                    "[ WRITER @ {} ] writer thread started with id {:?}",
+                    name, id
+                );
+                worker.start()
+            })
+            .expect("spawn worker thread");
 
         Self {
             index_name,
@@ -188,8 +190,6 @@ impl IndexWriterHandler {
     }
 }
 
-
-
 /// A async manager around the tantivy index reader.
 ///
 /// This system executes the read operations in a given thread pool
@@ -222,7 +222,7 @@ struct IndexReaderHandler {
 
     search_fields: Vec<Field>,
 
-    quick_schema: Arc<Schema>
+    quick_schema: Arc<Schema>,
 }
 
 impl IndexReaderHandler {
@@ -300,26 +300,14 @@ impl IndexReaderHandler {
         let schema = self.quick_schema.clone();
         let limit = payload.limit;
         let offset = payload.offset;
-        let query = self.parse_query(
-            payload.query,
-            doc,
-            payload.mode,
-        )?;
+        let query = self.parse_query(payload.query, doc, payload.mode)?;
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
 
         self.thread_pool.spawn(move || {
             let executor = executors.pop().expect("get executor");
 
-            let res = search(
-                query,
-                searcher,
-                &executor,
-                limit,
-                offset,
-                schema,
-                order_by,
-            );
+            let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
             executors.push(executor);
 
@@ -339,23 +327,28 @@ impl IndexReaderHandler {
     ) -> Result<Box<dyn Query>> {
         let start = std::time::Instant::now();
         let out = match (mode, &query, &ref_document) {
-            (QueryMode::Normal, None, _) =>
-                Err(Error::msg("query mode was `Normal` but query string is `None`")),
-            (QueryMode::Normal, Some(query), _) =>
-                Ok(self.parser.parse_query(query)?),
-            (QueryMode::Fuzzy, None, _) =>
-                Err(Error::msg("query mode was `Fuzzy` but query string is `None`")),
-            (QueryMode::Fuzzy, Some(query), _) =>
-                Ok(self.parse_fuzzy_query(query)),
-            (QueryMode::MoreLikeThis, _, None) =>
-                Err(Error::msg("query mode was `MoreLikeThis` but reference document is `None`")),
-            (QueryMode::MoreLikeThis, _, Some(ref_document)) =>
-                Ok(self.parse_more_like_this(ref_document)),
+            (QueryMode::Normal, None, _) => Err(Error::msg(
+                "query mode was `Normal` but query string is `None`",
+            )),
+            (QueryMode::Normal, Some(query), _) => Ok(self.parser.parse_query(query)?),
+            (QueryMode::Fuzzy, None, _) => Err(Error::msg(
+                "query mode was `Fuzzy` but query string is `None`",
+            )),
+            (QueryMode::Fuzzy, Some(query), _) => Ok(self.parse_fuzzy_query(query)),
+            (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
+                "query mode was `MoreLikeThis` but reference document is `None`",
+            )),
+            (QueryMode::MoreLikeThis, _, Some(ref_document)) => {
+                Ok(self.parse_more_like_this(ref_document))
+            }
         };
 
         debug!(
             "constructing query {:?} or ref_doc {:?} with mode={:?} took {:?}",
-            query, ref_document, &mode, start.elapsed(),
+            query,
+            ref_document,
+            &mode,
+            start.elapsed(),
         );
 
         return out;
@@ -379,7 +372,7 @@ impl IndexReaderHandler {
                     )),
                 ))
             }
-        };
+        }
 
         Box::new(BooleanQuery::from(parts))
     }
@@ -398,7 +391,6 @@ impl IndexReaderHandler {
         Box::new(query)
     }
 }
-
 
 /// Represents a single query result.
 #[derive(Serialize)]
@@ -428,9 +420,8 @@ macro_rules! order_and_search {
     ( $search:expr, $collector:expr, $field:expr, $query:expr, $executor:expr) => {{
         let collector = $collector.order_by_fast_field($field);
         $search.search_with_executor($query, &collector, $executor)
-    }}
+    }};
 }
-
 
 macro_rules! process_search {
     ( $search:expr, $schema:expr, $top_docs:expr ) => {{
@@ -440,13 +431,15 @@ macro_rules! process_search {
         for (_, ref_address) in $top_docs {
             let retrieved_doc = $search.doc(ref_address)?;
             let doc = $schema.to_named_doc(&retrieved_doc);
-            hits.push(QueryHit{ ref_address: RefAddress::from(ref_address).into(), doc });
+            hits.push(QueryHit {
+                ref_address: RefAddress::from(ref_address).into(),
+                doc,
+            });
         }
 
         (count, hits)
-    }}
+    }};
 }
-
 
 /// Executes a search for a given query with a given searcher, limit and schema.
 ///
@@ -463,76 +456,35 @@ fn search(
 ) -> Result<QueryResults> {
     let start = std::time::Instant::now();
 
-    let collector = TopDocs::with_limit(limit)
-        .and_offset(offset);
+    let collector = TopDocs::with_limit(limit).and_offset(offset);
 
-    let (count, hits) =  if let Some(field) = order_by {
+    let (count, hits) = if let Some(field) = order_by {
         match schema.get_field_entry(field).field_type() {
             FieldType::I64(_) => {
-                let out: Vec<(i64, DocAddress)> = order_and_search!(
-                    searcher,
-                    collector,
-                    field,
-                    &query,
-                    executor
-                )?;
-                process_search!(
-                    searcher,
-                    schema,
-                    out
-                )
+                let out: Vec<(i64, DocAddress)> =
+                    order_and_search!(searcher, collector, field, &query, executor)?;
+                process_search!(searcher, schema, out)
             }
             FieldType::U64(_) => {
-                let out: Vec<(u64, DocAddress)> = order_and_search!(
-                    searcher,
-                    collector,
-                    field,
-                    &query,
-                    executor
-                )?;
-                process_search!(
-                    searcher,
-                    schema,
-                    out
-                )
+                let out: Vec<(u64, DocAddress)> =
+                    order_and_search!(searcher, collector, field, &query, executor)?;
+                process_search!(searcher, schema, out)
             }
             FieldType::F64(_) => {
-                let out: Vec<(f64, DocAddress)> = order_and_search!(
-                    searcher,
-                    collector,
-                    field,
-                    &query,
-                    executor
-                )?;
-                process_search!(
-                    searcher,
-                    schema,
-                    out
-                )
+                let out: Vec<(f64, DocAddress)> =
+                    order_and_search!(searcher, collector, field, &query, executor)?;
+                process_search!(searcher, schema, out)
             }
             FieldType::Date(_) => {
-                let out: Vec<(i64, DocAddress)> = order_and_search!(
-                    searcher,
-                    collector,
-                    field,
-                    &query,
-                    executor
-                )?;
-                process_search!(
-                    searcher,
-                    schema,
-                    out
-                )
+                let out: Vec<(i64, DocAddress)> =
+                    order_and_search!(searcher, collector, field, &query, executor)?;
+                process_search!(searcher, schema, out)
             }
-            _ => return Err(Error::msg("field is not a fast field"))
+            _ => return Err(Error::msg("field is not a fast field")),
         }
     } else {
         let out = searcher.search_with_executor(&query, &collector, executor)?;
-        process_search!(
-            searcher,
-            schema,
-            out
-        )
+        process_search!(searcher, schema, out)
     };
 
     let elapsed = start.elapsed();
@@ -540,13 +492,12 @@ fn search(
 
     debug!("search took {:?} with limit: {}", elapsed, limit);
 
-    Ok(QueryResults{
+    Ok(QueryResults {
         time_taken,
         hits,
         count,
     })
 }
-
 
 /// A search engine index.
 ///
@@ -605,8 +556,9 @@ impl IndexHandler {
             } else {
                 return Err(Error::msg(format!(
                     "no field exists for index {} with the current schema,\
-                     did you forget to define it in the schema?", &field
-                )))
+                     did you forget to define it in the schema?",
+                    &field
+                )));
             };
         }
 
@@ -617,13 +569,15 @@ impl IndexHandler {
             } else {
                 return Err(Error::msg(format!(
                     "no field exists for index {} with the current schema,\
-                     did you forget to define it in the schema?", &name
-                )))
+                     did you forget to define it in the schema?",
+                    &name
+                )));
             };
         }
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
-        let reader = index.reader_builder()
+        let reader = index
+            .reader_builder()
             .num_searchers(loader.max_concurrency as usize)
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()?;
@@ -704,5 +658,4 @@ impl IndexHandler {
     pub async fn search(&self, payload: QueryPayload) -> Result<()> {
         self.reader.search(payload).await
     }
-
 }
