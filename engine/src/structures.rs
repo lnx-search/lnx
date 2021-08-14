@@ -190,7 +190,7 @@ pub struct RefAddress {
 }
 
 impl RefAddress {
-    pub(crate) fn into_doc_address(self) -> DocAddress {
+    pub(crate) fn as_doc_address(&self) -> DocAddress {
         DocAddress {
             segment_ord: self.segment_id,
             doc_id: self.doc_id
@@ -246,16 +246,31 @@ pub struct QueryPayload {
     /// A reference document for `QueryMode::MoreLikeThis`.
     pub(crate) ref_document: Option<String>,
 
+    /// The query mode which determines which query system will be
+    /// used.
     #[serde(default)]
     pub(crate) mode: QueryMode,
 
+    /// The amount of results to limit by, the default is 20.
     #[serde(default = "default_query_data::default_limit")]
     pub(crate) limit: usize,
+
+    /// The amount of results to limit by, the default is 20.
+    #[serde(default = "default_query_data::default_offset")]
+    pub(crate) offset: usize,
+
+    /// The field to order content by, this has to be a fast field if
+    /// not `None`.
+    pub(crate) order_by: Option<String>,
 }
 
 
 mod default_query_data {
     pub fn default_limit() -> usize {
         20
+    }
+
+    pub fn default_offset() -> usize {
+        0
     }
 }

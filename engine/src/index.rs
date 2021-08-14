@@ -207,7 +207,7 @@ struct IndexReaderHandler {
     ///
     /// If the number of reader threads is > 1 this is a MultiThreaded executor
     /// otherwise it's SingleThreaded.
-    executor: Executor,
+    executor: Arc<Executor>,
 
     /// A concurrency semaphore.
     limiter: Semaphore,
@@ -252,6 +252,8 @@ impl IndexReaderHandler {
             Executor::single_thread()
         };
 
+        let executor =  Arc::new(executor);
+
         Ok(Self {
             reader,
             executor,
@@ -278,16 +280,36 @@ impl IndexReaderHandler {
             None
         };
 
+        let order_by = if let Some(field) = payload.order_by {
+            // We choose to ignore the order by if the field doesnt exist.
+            // While this may be surprising to be at first as long as it's
+            // document this should be fine.
+            self.quick_schema.get_field(&field)
+        } else {
+            None
+        };
+
         let schema = self.quick_schema.clone();
         let limit = payload.limit;
+        let offset = payload.offset;
         let query = self.parse_query(
             payload.query,
             doc,
             payload.mode,
         )?;
         let searcher = self.reader.searcher();
+        let executor = self.executor.clone();
+
         self.thread_pool.spawn(move || {
-            let res = search(query, searcher, limit, schema);
+            let res = search(
+                query,
+                searcher,
+                executor,
+                limit,
+                offset,
+                schema,
+                order_by,
+            );
             let _ = resolve.send(res);
         });
 
@@ -296,31 +318,34 @@ impl IndexReaderHandler {
         todo!()
     }
 
-    #[timed::timed(duration(printer = "debug!"))]
     fn parse_query(
         &self,
         query: Option<String>,
         ref_document: Option<RefAddress>,
         mode: QueryMode,
     ) -> Result<Box<dyn Query>> {
-        debug!("constructing query {:?} or ref_doc {:?} with mode={:?}", query, ref_document, &mode);
-
-        return match (mode, query, ref_document) {
+        let start = std::time::Instant::now();
+        let out = match (mode, &query, &ref_document) {
             (QueryMode::Normal, None, _) =>
                 Err(Error::msg("query mode was `Normal` but query string is `None`")),
             (QueryMode::Normal, Some(query), _) =>
-                Ok(self.parser.parse_query(&query)?),
+                Ok(self.parser.parse_query(query)?),
             (QueryMode::Fuzzy, None, _) =>
                 Err(Error::msg("query mode was `Fuzzy` but query string is `None`")),
             (QueryMode::Fuzzy, Some(query), _) =>
-                Ok(self.parse_fuzzy_query(&query)),
+                Ok(self.parse_fuzzy_query(query)),
             (QueryMode::MoreLikeThis, _, None) =>
                 Err(Error::msg("query mode was `MoreLikeThis` but reference document is `None`")),
             (QueryMode::MoreLikeThis, _, Some(ref_document)) =>
                 Ok(self.parse_more_like_this(ref_document)),
-        }
+        };
 
+        debug!(
+            "constructing query {:?} or ref_doc {:?} with mode={:?} took {:?}",
+            query, ref_document, &mode, start.elapsed(),
+        );
 
+        return out;
     }
 
     fn parse_fuzzy_query(&self, query: &str) -> Box<dyn Query> {
@@ -346,7 +371,7 @@ impl IndexReaderHandler {
         Box::new(BooleanQuery::from(parts))
     }
 
-    fn parse_more_like_this(&self, ref_document: RefAddress) -> Box<dyn Query> {
+    fn parse_more_like_this(&self, ref_document: &RefAddress) -> Box<dyn Query> {
         let query = MoreLikeThisQuery::builder()
             .with_min_doc_frequency(1)
             .with_max_doc_frequency(10)
@@ -355,7 +380,7 @@ impl IndexReaderHandler {
             .with_max_word_length(5)
             .with_boost_factor(1.0)
             .with_stop_words(vec!["for".to_string()])
-            .with_document(ref_document.into_doc_address());
+            .with_document(ref_document.as_doc_address());
 
         Box::new(query)
     }
@@ -365,9 +390,6 @@ impl IndexReaderHandler {
 /// Represents a single query result.
 #[derive(Serialize)]
 pub struct QueryHit {
-    /// The score that was calculated matching the given query.
-    score: Score,
-
     /// The address of the given document, this can be used for
     /// 'more like this' queries.
     ref_address: String,
@@ -389,6 +411,23 @@ pub struct QueryResults {
     time_taken: f64,
 }
 
+
+macro_rules! search {
+    ( $search:expr, $schema:expr, $top_docs:expr ) => {{
+        let count = $top_docs.len();
+
+        let mut hits = Vec::with_capacity(count);
+        for (_, ref_address) in $top_docs {
+            let retrieved_doc = $search.doc(ref_address)?;
+            let doc = $schema.to_named_doc(&retrieved_doc);
+            hits.push(QueryHit{ ref_address: RefAddress::from(ref_address).into(), doc });
+        }
+
+        (count, hits)
+    }}
+}
+
+
 /// Executes a search for a given query with a given searcher, limit and schema.
 ///
 /// This will process and time the execution time to build into the exportable
@@ -396,19 +435,19 @@ pub struct QueryResults {
 fn search(
     query: Box<dyn Query>,
     searcher: LeasedItem<Searcher>,
+    executor: Arc<Executor>,
     limit: usize,
+    offset: usize,
     schema: Arc<Schema>,
+    order_by: Option<Field>,
 ) -> Result<QueryResults> {
     let start = std::time::Instant::now();
-    let top_docs: Vec<(Score, DocAddress)> = searcher.search(&query, &TopDocs::with_limit(limit))?;
 
-    let count = top_docs.len();
-    let mut hits = Vec::with_capacity(count);
-    for (score, ref_address) in top_docs {
-        let retrieved_doc = searcher.doc(ref_address)?;
-        let doc = schema.to_named_doc(&retrieved_doc);
-        hits.push(QueryHit{ score, ref_address: RefAddress::from(ref_address).into(), doc });
-    }
+    let collector = TopDocs::with_limit(limit)
+        .and_offset(offset);
+
+    let out = searcher.search_with_executor(&query, &collector, &executor)?;
+    let (count, hits) = search!(searcher, schema, out);
 
     let elapsed = start.elapsed();
     let time_taken = elapsed.as_secs_f64();
