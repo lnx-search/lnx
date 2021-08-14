@@ -1,8 +1,6 @@
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use parking_lot::RwLock;
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
@@ -10,11 +8,12 @@ use tokio::sync::Semaphore;
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
-use tantivy::schema::{Schema, Field};
+use tantivy::schema::Schema;
 use tantivy::{Document, IndexWriter, Term, IndexReader, ReloadPolicy};
 use tantivy::{Index, IndexBuilder, Executor};
 
 use crate::structures::{IndexStorageType, LoadedIndex, QueryPayload};
+use tantivy::query::QueryParser;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -48,7 +47,7 @@ pub struct IndexWriterWorker {
     index_name: String,
     writer: IndexWriter,
     waiters: Arc<SegQueue<oneshot::Sender<()>>>,
-    rx: channel::Receiver<(WriterOp)>,
+    rx: channel::Receiver<WriterOp>,
 }
 
 impl IndexWriterWorker {
@@ -200,9 +199,6 @@ struct IndexReaderHandler {
     /// The internal tantivy index reader.
     reader: IndexReader,
 
-    /// The fields actually used for searching.
-    reader_fields: Vec<Field>,
-
     /// The reader thread pool executor.
     ///
     /// If the number of reader threads is > 1 this is a MultiThreaded executor
@@ -214,6 +210,8 @@ struct IndexReaderHandler {
 
     /// The execution thread pool.
     thread_pool: rayon::ThreadPool,
+
+    parser: QueryParser,
 }
 
 impl IndexReaderHandler {
@@ -226,26 +224,27 @@ impl IndexReaderHandler {
         max_concurrency: usize,
         reader: IndexReader,
         reader_threads: usize,
-        reader_fields: Vec<Field>,
+        parser: QueryParser,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
+        let name = index_name.clone();
         let thread_pool = {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(max_concurrency)
-                .thread_name(move |n| format!("index-{}-worker-{}", index_name.clone(), n))
+                .thread_name(move |n| format!("index-{}-worker-{}", name.clone(), n))
                 .build()?
         };
 
         let executor = if reader_threads > 1 {
-            Executor::multi_thread(reader_threads, &format!("index-{}-reader", index_name))?
+            Executor::multi_thread(reader_threads, "index-reader-")?
         } else {
             Executor::single_thread()
         };
 
         Ok(Self {
             reader,
-            reader_fields,
+            parser,
             executor,
             limiter,
             thread_pool,
@@ -260,11 +259,9 @@ impl IndexReaderHandler {
         let _permit = self.limiter.acquire().await?;
 
         let (resolve, waiter) = oneshot::channel();
+        let query = self.parser.parse_query(&payload.query)?;
         let searcher = self.reader.searcher();
         self.thread_pool.spawn(move || {
-            searcher.search_with_executor()
-
-
             let _ = resolve.send(());
         });
 
@@ -323,6 +320,32 @@ impl IndexHandler {
             IndexStorageType::FileSystem(path) => index.create_in_dir(path)?,
         };
 
+        // We need to extract out the fields from name to id.
+        let mut search_fields = vec![];
+        for field in loader.search_fields {
+            if let Some(field) = loader.schema.get_field(&field) {
+                search_fields.push(field);
+            } else {
+                return Err(Error::msg(format!(
+                    "no field exists for index {} with the current schema,\
+                     did you forget to define it in the schema?", &field
+                )))
+            };
+        }
+
+
+        let mut parser = QueryParser::for_index(&index, search_fields);
+        for (name, factor) in loader.boost_fields {
+            if let Some(field) = loader.schema.get_field(&name) {
+                parser.set_field_boost(field, factor);
+            } else {
+                return Err(Error::msg(format!(
+                    "no field exists for index {} with the current schema,\
+                     did you forget to define it in the schema?", &name
+                )))
+            };
+        }
+
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
         let reader = index.reader_builder()
             .num_searchers(loader.max_concurrency as usize)
@@ -335,6 +358,8 @@ impl IndexHandler {
             loader.name.clone(),
             loader.max_concurrency as usize,
             reader,
+            loader.reader_threads as usize,
+            parser
         )?;
 
         Ok(Self {

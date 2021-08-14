@@ -1,11 +1,9 @@
 use tantivy::schema::{
-    BytesOptions, Cardinality, IntOptions, Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder, TextFieldIndexing, TextOptions, STORED, STRING, TEXT,
+    BytesOptions, IntOptions, Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
 };
-use tantivy::{DateTime, IndexWriter};
-use tantivy::collector::{TopDocs, HistogramCollector};
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// A declared schema field type.
@@ -66,6 +64,7 @@ pub struct IndexDeclaration<'a> {
     max_concurrency: u32,
     reader_threads: Option<u32>,
     search_fields: Vec<String>,
+    boost_fields: HashMap<String, tantivy::Score>,
     storage_type: IndexStorageType,
     fields: HashMap<&'a str, FieldDeclaration>,
 }
@@ -111,6 +110,7 @@ impl<'a> IndexDeclaration<'a> {
             search_fields: self.search_fields,
             storage_type: self.storage_type,
             schema: schema.build(),
+            boost_fields: self.boost_fields,
         }
     }
 }
@@ -152,6 +152,9 @@ pub struct LoadedIndex {
 
     /// The defined tantivy schema.
     pub(crate) schema: InternalSchema,
+
+    /// A set of fields to boost by a given factor.
+    pub(crate) boost_fields: HashMap<String, tantivy::Score>,
 }
 
 
@@ -165,16 +168,16 @@ pub enum Collector {
 
 #[derive(Deserialize)]
 pub struct QueryPayload {
-    query: String,
+    pub(crate) query: String,
 
     #[serde(default = "default_query::default_fuzzy")]
-    fuzzy: bool,
+    pub(crate) fuzzy: bool,
 
     #[serde(default = "default_query::default_limit")]
-    limit: usize,
+    pub(crate) limit: usize,
 
-    #[serde(default = "default_query::default_limit")]
-    collector: Collector
+    #[serde(default = "default_query::default_collector")]
+    pub(crate) collector: Collector
 }
 
 
