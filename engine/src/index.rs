@@ -199,6 +199,14 @@ impl IndexWriterHandler {
 /// If the system is at it's maximum concurrency already and search
 /// is called again, it will temporarily suspend operations until
 /// a reader has been freed.
+///
+/// This system will also spawn `n` executors with `y` reader threads
+/// where `n` is the max concurrency set and `y` is the reader threads.
+///
+/// #### WARNING: HIGH THREAD USAGE
+/// This system has the potential to spawn and incredibly large amount of
+/// threads, when setting the `max_concurrency` and `reader_threads` the total
+/// will result in `max_concurrency` * `reader_threads` threads spawned.
 struct IndexReaderHandler {
     /// The internal tantivy index reader.
     reader: IndexReader,
@@ -218,10 +226,13 @@ struct IndexReaderHandler {
     /// The execution thread pool.
     thread_pool: rayon::ThreadPool,
 
+    /// The configured query parser pre-weighted.
     parser: QueryParser,
 
+    /// The set of indexed fields to search in a given query.
     search_fields: Vec<Field>,
 
+    /// A cheaply cloneable schema reference.
     quick_schema: Arc<Schema>,
 }
 
