@@ -1,5 +1,5 @@
-use anyhow::Result;
-use parking_lot::RwLock;
+use anyhow::{Result, Error};
+use tokio::sync::RwLock;
 use hashbrown::HashMap;
 
 use crate::storage::StorageManager;
@@ -41,11 +41,33 @@ impl SearchEngine {
     /// Adds a declared index to the search engine.
     ///
     /// This will set it in the index storage and then build the index handlers.
-    pub async fn add_index(&self, index: &IndexDeclaration) -> Result<()> {
-        self.storage.store_index_meta(index).await?;
+    pub async fn add_index(&self, index: IndexDeclaration<'_>) -> Result<()> {
+        self.storage.store_index_meta(&index).await?;
 
         let loaded = index.into_schema();
+        let name = loaded.name.clone();
         let index = IndexHandler::build_loaded(loaded)?;
+
+        {
+            let mut lock = self.indexes.write().await;
+            lock.insert(name, index);
+        }
+
+        Ok(())
+    }
+
+    pub async fn remove_index(&self, index_name: &str) -> Result<()> {
+        let value = {
+            self.indexes.write().await.remove(index_name)
+        };
+
+        if value.is_none() {
+            return Err(Error::msg("this index does not exit"))
+        }
+
+        let value = value.unwrap();
+
+        Ok(())
     }
 }
 

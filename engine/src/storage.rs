@@ -65,6 +65,29 @@ impl StorageManager {
 
         Ok(())
     }
+
+    /// Removes a given index from the directory storage.
+    ///
+    /// If the name doesnt exist in this path this will not error.
+    pub(crate) async fn remove_index_meta(&self, name: &str) -> Result<()> {
+        let path = format!("{}/{}", &self.dir, name);
+        if let Err(e) = fs::remove_file(&path).await {
+            match e.kind() {
+                // if it doesnt exist, just ignore it.
+                tokio::io::ErrorKind::NotFound => Ok(()),
+                _ => Err(e)
+            }?;
+        };
+
+        Ok(())
+    }
+
+    /// Removes all persistent index definitions.
+    pub(crate) async fn clear_all(&self) -> Result<()> {
+        fs::remove_dir_all(&self.dir).await?;
+
+        Ok(())
+    }
 }
 
 
