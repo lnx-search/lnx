@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
@@ -14,10 +14,15 @@ use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term, DateTime};
+use tantivy::{
+    DateTime, DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score,
+    Searcher, Term,
+};
 use tantivy::{Executor, Index, IndexBuilder};
 
-use crate::structures::{IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, TermValue};
+use crate::structures::{
+    IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, TermValue,
+};
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -261,10 +266,16 @@ impl IndexReaderHandler {
         let executors = ArrayQueue::new(max_concurrency);
         for _ in 0..max_concurrency {
             let executor = if reader_threads > 1 {
-                info!("index {} reader executor startup, mode: multi-threaded, threads: {}", &index_name, reader_threads);
+                info!(
+                    "index {} reader executor startup, mode: multi-threaded, threads: {}",
+                    &index_name, reader_threads
+                );
                 Executor::multi_thread(reader_threads, "index-reader-")?
             } else {
-                info!("index {} reader executor startup, mode: single-threaded (no-op)", &index_name);
+                info!(
+                    "index {} reader executor startup, mode: single-threaded (no-op)",
+                    &index_name
+                );
                 Executor::single_thread()
             };
 
@@ -522,8 +533,6 @@ fn search(
     })
 }
 
-
-
 /// A search engine index.
 ///
 /// Each index maintains a rayon thread pool which searches are executed
@@ -569,17 +578,20 @@ impl IndexHandler {
 
         let index = match loader.storage_type {
             IndexStorageType::TempFile => {
-                info!("creating index in a temporary directory for index {}", &loader.name);
+                info!(
+                    "creating index in a temporary directory for index {}",
+                    &loader.name
+                );
                 index.create_from_tempdir()?
-            },
+            }
             IndexStorageType::Memory => {
                 info!("creating index in memory for index {}", &loader.name);
                 index.create_in_ram()?
-            },
+            }
             IndexStorageType::FileSystem(path) => {
                 info!("creating index in directory for index {}", &loader.name);
                 index.create_in_dir(path)?
-            },
+            }
         };
 
         // We need to extract out the fields from name to id.
@@ -612,14 +624,20 @@ impl IndexHandler {
         }
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
-        info!("index writer has been allocated with {} threads and {} byte allocation", loader.writer_threads, loader.writer_buffer);
+        info!(
+            "index writer has been allocated with {} threads and {} byte allocation",
+            loader.writer_threads, loader.writer_buffer
+        );
 
         let reader = index
             .reader_builder()
             .num_searchers(loader.max_concurrency as usize)
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()?;
-        info!("index reader has been allocated with {} searchers", loader.max_concurrency);
+        info!(
+            "index reader has been allocated with {} searchers",
+            loader.max_concurrency
+        );
 
         let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);
 
@@ -658,7 +676,6 @@ impl IndexHandler {
 
         Some(v)
     }
-
 
     /// Submits a document to be processed by the index writer.
     pub async fn add_document(&self, document: Document) -> Result<()> {

@@ -6,7 +6,7 @@ use tantivy::schema::{
 use hashbrown::HashMap;
 use serde::__private::TryFrom;
 use serde::{Deserialize, Serialize};
-use tantivy::{DocAddress, DateTime};
+use tantivy::{DateTime, DocAddress};
 
 /// A declared schema field type.
 ///
@@ -271,7 +271,6 @@ mod default_query_data {
     }
 }
 
-
 /// A set of values that can be used to extract a `Term`.
 ///
 /// This system is designed to handle JSON based deserialization
@@ -302,14 +301,12 @@ pub enum TermValue {
 }
 
 mod deserialize_datetime {
-    use serde::{Deserializer, Deserialize};
     use serde::de::Error;
-    use tantivy::DateTime;
+    use serde::{Deserialize, Deserializer};
     use tantivy::fastfield::FastValue;
+    use tantivy::DateTime;
 
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<DateTime, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -319,12 +316,10 @@ mod deserialize_datetime {
 }
 
 mod deserialize_base64 {
-    use serde::{Deserializer, Deserialize};
     use serde::de::Error;
+    use serde::{Deserialize, Deserializer};
 
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<Vec<u8>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where
         D: Deserializer<'de>,
     {
