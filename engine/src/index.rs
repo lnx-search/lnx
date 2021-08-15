@@ -10,15 +10,14 @@ use tokio::sync::Semaphore;
 use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
 
-use tantivy::collector::TopDocs;
+use tantivy::collector::{TopDocs, Count};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
     DateTime, DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score,
-    Searcher, Term,
+    Searcher, Term, Executor, Index, IndexBuilder
 };
-use tantivy::{Executor, Index, IndexBuilder};
 
 use crate::structures::{
     IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, TermValue,
@@ -443,7 +442,7 @@ pub struct QueryResults {
     /// The retrieved documents.
     hits: Vec<QueryHit>,
 
-    /// The total amount of documents
+    /// The total amount of documents matching the search
     count: usize,
 
     /// The amount of time taken to search in seconds.
@@ -453,15 +452,13 @@ pub struct QueryResults {
 macro_rules! order_and_search {
     ( $search:expr, $collector:expr, $field:expr, $query:expr, $executor:expr) => {{
         let collector = $collector.order_by_fast_field($field);
-        $search.search_with_executor($query, &collector, $executor)
+        $search.search_with_executor($query, &(collector, Count), $executor)
     }};
 }
 
 macro_rules! process_search {
     ( $search:expr, $schema:expr, $top_docs:expr ) => {{
-        let count = $top_docs.len();
-
-        let mut hits = Vec::with_capacity(count);
+        let mut hits = Vec::with_capacity($top_docs.len());
         for (_, ref_address) in $top_docs {
             let retrieved_doc = $search.doc(ref_address)?;
             let doc = $schema.to_named_doc(&retrieved_doc);
@@ -471,7 +468,7 @@ macro_rules! process_search {
             });
         }
 
-        (count, hits)
+        hits
     }};
 }
 
@@ -492,33 +489,33 @@ fn search(
 
     let collector = TopDocs::with_limit(limit).and_offset(offset);
 
-    let (count, hits) = if let Some(field) = order_by {
+    let (hits, count) = if let Some(field) = order_by {
         match schema.get_field_entry(field).field_type() {
             FieldType::I64(_) => {
-                let out: Vec<(i64, DocAddress)> =
+                let out: (Vec<(i64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
-                process_search!(searcher, schema, out)
+                (process_search!(searcher, schema, out.0), out.1)
             }
             FieldType::U64(_) => {
-                let out: Vec<(u64, DocAddress)> =
+                let out: (Vec<(u64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
-                process_search!(searcher, schema, out)
+                (process_search!(searcher, schema, out.0), out.1)
             }
             FieldType::F64(_) => {
-                let out: Vec<(f64, DocAddress)> =
+                let out: (Vec<(f64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
-                process_search!(searcher, schema, out)
+                (process_search!(searcher, schema, out.0), out.1)
             }
             FieldType::Date(_) => {
-                let out: Vec<(i64, DocAddress)> =
+                let out: (Vec<(i64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
-                process_search!(searcher, schema, out)
+                (process_search!(searcher, schema, out.0), out.1)
             }
             _ => return Err(Error::msg("field is not a fast field")),
         }
     } else {
-        let out = searcher.search_with_executor(&query, &collector, executor)?;
-        process_search!(searcher, schema, out)
+        let (out, count) = searcher.search_with_executor(&query, &(collector, Count), executor)?;
+        (process_search!(searcher, schema, out), count)
     };
 
     let elapsed = start.elapsed();
