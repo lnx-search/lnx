@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
@@ -14,9 +14,7 @@ use tantivy::collector::TopDocs;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{
-    DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term,
-};
+use tantivy::{DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term, DateTime};
 use tantivy::{Executor, Index, IndexBuilder};
 
 use crate::structures::{IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress};
@@ -292,7 +290,7 @@ impl IndexReaderHandler {
     ///
     /// The index will use fuzzy matching based on levenshtein distance
     /// if set to true.
-    async fn search(&self, payload: QueryPayload) -> Result<()> {
+    async fn search(&self, payload: QueryPayload) -> Result<QueryResults> {
         let _permit = self.limiter.acquire().await?;
 
         let (resolve, waiter) = oneshot::channel();
@@ -332,9 +330,7 @@ impl IndexReaderHandler {
             let _ = resolve.send(res);
         });
 
-        let _ = waiter.await;
-
-        todo!()
+        waiter.await?
     }
 
     fn parse_query(
@@ -526,6 +522,69 @@ fn search(
     })
 }
 
+/// A set of values that can be used to extract a `Term`.
+///
+/// This system is designed to handle JSON based deserialization
+/// so Bytes and datetime are handled as base64 encoded strings and u64 timestamps
+/// respectively.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum TermValue {
+    /// A signed 64 bit integer.
+    I64(i64),
+
+    /// A 64 bit floating point number.
+    F64(f64),
+
+    /// A unsigned 64 bit integer.
+    U64(u64),
+
+    /// A datetime field, deserialized as a u64 int.
+    #[serde(with = "deserialize_datetime")]
+    Datetime(DateTime),
+
+    /// A text field.
+    Text(String),
+
+    /// A bytes field, deserialized as a base64 encoded string.
+    #[serde(with = "deserialize_base64")]
+    Bytes(Vec<u8>),
+}
+
+mod deserialize_datetime {
+    use serde::{Deserializer, Deserialize};
+    use serde::de::Error;
+    use tantivy::DateTime;
+    use tantivy::fastfield::FastValue;
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<DateTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = u64::deserialize(deserializer)?;
+        Ok(DateTime::from_u64(s))
+    }
+}
+
+mod deserialize_base64 {
+    use serde::{Deserializer, Deserialize};
+    use serde::de::Error;
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        base64::decode(s).map_err(D::Error::custom)
+    }
+}
+
+
+
 /// A search engine index.
 ///
 /// Each index maintains a rayon thread pool which searches are executed
@@ -563,7 +622,7 @@ impl IndexHandler {
     /// ### Important note about performance:
     /// The concurrency limit should be set according to the machine
     /// this system is being deployed on hence being a required field.
-    /// The amount of threads spawned is equal the the max  concurrency + 1
+    /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
     /// as well as the tokio runtime threads.
     pub fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let quick_schema = Arc::new(loader.schema.clone());
@@ -644,6 +703,24 @@ impl IndexHandler {
         })
     }
 
+    /// Builds a `Term` from a given field and value.
+    ///
+    /// This assumes that the value type matches up with the field type.
+    pub fn get_term(&self, field: &str, value: TermValue) -> Option<Term> {
+        let field = self.schema.get_field(field)?;
+        let v = match value {
+            TermValue::I64(v) => Term::from_field_i64(field, v),
+            TermValue::F64(v) => Term::from_field_f64(field, v),
+            TermValue::U64(v) => Term::from_field_u64(field, v),
+            TermValue::Datetime(v) => Term::from_field_date(field, &v),
+            TermValue::Text(v) => Term::from_field_text(field, &v),
+            TermValue::Bytes(v) => Term::from_field_bytes(field, v.as_ref()),
+        };
+
+        Some(v)
+    }
+
+
     /// Submits a document to be processed by the index writer.
     pub async fn add_document(&self, document: Document) -> Result<()> {
         self.writer.send_op(WriterOp::AddDocument(document)).await
@@ -672,7 +749,7 @@ impl IndexHandler {
     ///
     /// This will delete all documents matching the term which were
     /// added since the last commit.
-    pub async fn delete_term(&self, term: Term) -> Result<()> {
+    pub async fn delete_documents_with_term(&self, term: Term) -> Result<()> {
         self.writer.send_op(WriterOp::DeleteTerm(term)).await
     }
 
@@ -696,7 +773,7 @@ impl IndexHandler {
     }
 
     /// Searches the index with the given query.
-    pub async fn search(&self, payload: QueryPayload) -> Result<()> {
+    pub async fn search(&self, payload: QueryPayload) -> Result<QueryResults> {
         self.reader.search(payload).await
     }
 }
