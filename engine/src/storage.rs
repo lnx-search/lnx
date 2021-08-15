@@ -11,6 +11,7 @@ pub(crate) struct StorageManager {
 }
 
 impl StorageManager {
+    /// Creates a new storage manage.
     pub(crate) fn new(dir: String) -> Self {
         Self {
             dir,
