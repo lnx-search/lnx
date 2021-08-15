@@ -4,11 +4,19 @@ use tokio::fs;
 use crate::structures::{IndexDeclaration, LoadedIndex};
 
 
+/// Manages a given directory which acts as the storage location
+/// for indexes for a given engine.
 pub(crate) struct StorageManager {
     dir: String,
 }
 
 impl StorageManager {
+    pub(crate) fn new(dir: String) -> Self {
+        Self {
+            dir,
+        }
+    }
+
     /// Loads all indexes from the given directory.
     ///
     /// This will error if the files inside the directory are not all
