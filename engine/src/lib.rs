@@ -3,6 +3,8 @@ extern crate log;
 
 mod index;
 mod structures;
+mod engine;
+mod storage;
 
 #[cfg(test)]
 mod tests {

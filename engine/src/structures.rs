@@ -60,7 +60,7 @@ pub enum IndexStorageType {
 
 #[derive(Serialize, Deserialize)]
 pub struct IndexDeclaration<'a> {
-    name: &'a str,
+    pub(crate) name: &'a str,
     writer_buffer: usize,
     writer_threads: Option<usize>,
     max_concurrency: u32,
