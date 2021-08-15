@@ -569,7 +569,7 @@ impl IndexHandler {
     /// this system is being deployed on hence being a required field.
     /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
     /// as well as the tokio runtime threads.
-    pub fn build_loaded(loader: LoadedIndex) -> Result<Self> {
+    pub(crate) fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let quick_schema = Arc::new(loader.schema.clone());
         let index = IndexBuilder::default().schema(loader.schema.clone());
 

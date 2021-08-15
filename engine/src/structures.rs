@@ -72,7 +72,7 @@ pub struct IndexDeclaration<'a> {
 }
 
 impl<'a> IndexDeclaration<'a> {
-    pub fn into_schema(self) -> LoadedIndex {
+    pub(crate) fn into_schema(self) -> LoadedIndex {
         let mut schema = InternalSchemaBuilder::new();
 
         for (name, field) in self.fields {

@@ -2,14 +2,9 @@
 extern crate log;
 
 mod index;
-mod structures;
+pub mod structures;
 mod engine;
 mod storage;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+
+pub use engine::SearchEngine;
