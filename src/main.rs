@@ -7,17 +7,20 @@ use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::net::TcpListener;
+use tokio::sync::mpsc::Receiver;
 
 use tokio_rustls::rustls::{ServerConfig, NoClientAuth};
 use tokio_rustls::rustls::internal::pemfile::{pkcs8_private_keys, certs};
 use tokio_rustls::TlsAcceptor;
 
+use axum::prelude::*;
 use anyhow::{Result, Error};
 use structopt::StructOpt;
 use log::LevelFilter;
 use fern::colors::{Color, ColoredLevelConfig};
 use hyper::server::conn::Http;
-use tokio::sync::mpsc::Receiver;
+
+use engine::SearchEngine;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -140,25 +143,22 @@ fn setup() -> Result<Settings> {
 
 /// Starts the server in an async context.
 async fn start(settings: Settings) -> Result<()> {
-    let tls = match (&settings.tls_key_file, &settings.tls_cert_file) {
-        (Some(fp1), Some(fp2)) => {
-            Some(tls_server_config(fp1, fp2)?)
-        },
-        (None, None) => None,
-        _ => return Err(Error::msg(
-            "missing a required TLS field, both key and cert must be provided."
-        ))
-    };
+    let tls = check_tls_files(&settings)?;
+
+    let engine = Arc::new(SearchEngine::create("/lnx/meta").await?);
+
 
     let addr = format!("{}:{}", &settings.host, settings.port);
-
-    let handle =match tls {
+    let handle = match tls {
         Some(tls) => tokio::spawn(start_serving_tls(
             (),
-            tls.unwrap(),
+            tls,
             addr,
         )),
-        None =>  tokio::spawn(),
+        None =>  tokio::spawn(start_serving(
+            (),
+            addr,
+        )),
     };
 
     tokio::signal::ctrl_c().await?;
@@ -166,6 +166,20 @@ async fn start(settings: Settings) -> Result<()> {
 
     handle.abort();
     Ok(())
+}
+
+/// Validates that both a key and cert file has been provided or none have
+/// been provided.
+fn check_tls_files(settings: &Settings) -> Result<Option<Arc<ServerConfig>>> {
+    match (&settings.tls_key_file, &settings.tls_cert_file) {
+        (Some(fp1), Some(fp2)) => {
+            Ok(Some(tls_server_config(fp1, fp2)?))
+        },
+        (None, None) => Ok(None),
+        _ => return Err(Error::msg(
+            "missing a required TLS field, both key and cert must be provided."
+        ))
+    }
 }
 
 /// Parses and handles a given key and cert for TLS.
@@ -188,6 +202,7 @@ fn tls_server_config(key: &str, cert: &str) -> Result<Arc<ServerConfig>> {
 
     Ok(Arc::new(config))
 }
+
 
 /// Starts a standard HTTP server.
 async fn start_serving(
