@@ -25,7 +25,6 @@ mod utils;
 
 use axum::http::header;
 use engine::SearchEngine;
-use hyper::http::header::SERVER;
 use hyper::http::HeaderValue;
 use tower::ServiceBuilder;
 use tower_http::auth::RequireAuthorizationLayer;
@@ -172,6 +171,10 @@ async fn start(settings: Settings) -> Result<()> {
             header::SERVER,
             HeaderValue::from_static("lnx"),
         ))
+        .layer(SetResponseHeaderLayer::<utils::RequestTagger, hyper::Body>::overriding(
+            header::HeaderName::from_static("request-id"),
+            utils::RequestTagger::new(),
+        ))
         .into_inner();
 
     let app = route("/indexes/:index_name/search", get(routes::search_index))
@@ -190,7 +193,7 @@ async fn start(settings: Settings) -> Result<()> {
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {
         Some(tls) => tokio::spawn(async move {
-            info!("starting https server @ {}", addr);
+            info!("starting https server @ https://{}", addr);
 
             let acceptor = TlsAcceptor::from(tls);
             let listener = TcpListener::bind(&addr).await?;
@@ -211,7 +214,7 @@ async fn start(settings: Settings) -> Result<()> {
             }
         }),
         None => tokio::spawn(async move {
-            info!("starting http server @ {}", addr);
+            info!("starting http server @ http://{}", addr);
             axum::Server::bind(&addr.parse()?)
                 .serve(app.into_make_service())
                 .await?;
