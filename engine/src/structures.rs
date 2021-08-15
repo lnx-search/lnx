@@ -6,7 +6,7 @@ use tantivy::schema::{
 use hashbrown::HashMap;
 use serde::__private::TryFrom;
 use serde::{Deserialize, Serialize};
-use tantivy::DocAddress;
+use tantivy::{DocAddress, DateTime};
 
 /// A declared schema field type.
 ///
@@ -268,5 +268,67 @@ mod default_query_data {
 
     pub fn default_offset() -> usize {
         0
+    }
+}
+
+
+/// A set of values that can be used to extract a `Term`.
+///
+/// This system is designed to handle JSON based deserialization
+/// so Bytes and datetime are handled as base64 encoded strings and u64 timestamps
+/// respectively.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum TermValue {
+    /// A signed 64 bit integer.
+    I64(i64),
+
+    /// A 64 bit floating point number.
+    F64(f64),
+
+    /// A unsigned 64 bit integer.
+    U64(u64),
+
+    /// A datetime field, deserialized as a u64 int.
+    #[serde(with = "deserialize_datetime")]
+    Datetime(DateTime),
+
+    /// A text field.
+    Text(String),
+
+    /// A bytes field, deserialized as a base64 encoded string.
+    #[serde(with = "deserialize_base64")]
+    Bytes(Vec<u8>),
+}
+
+mod deserialize_datetime {
+    use serde::{Deserializer, Deserialize};
+    use serde::de::Error;
+    use tantivy::DateTime;
+    use tantivy::fastfield::FastValue;
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<DateTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = u64::deserialize(deserializer)?;
+        Ok(DateTime::from_u64(s))
+    }
+}
+
+mod deserialize_base64 {
+    use serde::{Deserializer, Deserialize};
+    use serde::de::Error;
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        base64::decode(s).map_err(D::Error::custom)
     }
 }
