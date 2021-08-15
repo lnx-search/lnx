@@ -20,6 +20,8 @@ use log::LevelFilter;
 use fern::colors::{Color, ColoredLevelConfig};
 use hyper::server::conn::Http;
 
+mod routes;
+
 use engine::SearchEngine;
 
 #[derive(Debug, StructOpt)]
@@ -147,18 +149,58 @@ async fn start(settings: Settings) -> Result<()> {
 
     let engine = Arc::new(SearchEngine::create("/lnx/meta").await?);
 
+    let app = route(
+        "/indexes/:index_name/search",
+        get(routes::search_index)
+    ).route(
+        "/indexes/:index_name",
+        delete(routes::delete_index)
+    ).route(
+        "/indexes",
+        post(routes::create_index)
+    ).route(
+        "/indexes/:index_name/documents/:document_id",
+        delete(routes::delete_document).get(routes::get_document)
+    ).route(
+        "/indexes/:index_name/documents",
+        post(routes::add_document).delete(routes::delete_all_documents)
+    ).route(
+        "/docs",
+        get(routes::serve_docs)
+    );
+
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {
-        Some(tls) => tokio::spawn(start_serving_tls(
-            (),
-            tls,
-            addr,
-        )),
-        None =>  tokio::spawn(start_serving(
-            (),
-            addr,
-        )),
+        Some(tls) => tokio::spawn(async move {
+            info!("starting https server @ {}", addr);
+
+            let acceptor = TlsAcceptor::from(tls);
+            let listener = TcpListener::bind(&addr).await?;
+
+            loop {
+                let (stream, _addr) = listener.accept().await?;
+                let acceptor = acceptor.clone();
+
+                let app = app.clone();
+
+                tokio::spawn(async move {
+                    if let Ok(stream) = acceptor.accept(stream).await {
+                        if let Err(e) = Http::new().serve_connection(stream, app).await {
+                            warn!("failed to serve connection: {:?}", e);
+                        };
+                    }
+                });
+            }
+        }),
+        None =>  tokio::spawn(async move {
+            info!("starting http server @ {}", addr);
+            axum::Server::bind(&addr.parse()?)
+                .serve(app.into_make_service())
+                .await?;
+
+            Ok::<(), Error>(())
+        }),
     };
 
     tokio::signal::ctrl_c().await?;
@@ -203,44 +245,3 @@ fn tls_server_config(key: &str, cert: &str) -> Result<Arc<ServerConfig>> {
     Ok(Arc::new(config))
 }
 
-
-/// Starts a standard HTTP server.
-async fn start_serving(
-    app: (),
-    addr: String,
-) -> Result<()> {
-
-    info!("starting http server @ {}", addr);
-    axum::Server::bind(&addr.parse()?)
-        .serve(app.into_make_service())
-        .await?;
-
-    Ok(())
-}
-
-/// Starts a HTTPS server with a given TLS config.
-async fn start_serving_tls(
-    app: (),
-    tls: Arc<ServerConfig>,
-    addr: String,
-) -> Result<()> {
-    info!("starting https server @ {}", addr);
-
-    let acceptor = TlsAcceptor::from(tls);
-    let listener = TcpListener::bind(&addr).await?;
-
-    loop {
-        let (stream, _addr) = listener.accept().await?;
-        let acceptor = acceptor.clone();
-
-        let app = app.clone();
-
-        tokio::spawn(async move {
-            if let Ok(stream) = acceptor.accept(stream).await {
-                if let Err(e) = Http::new().serve_connection(stream, app).await {
-                    warn!("failed to serve connection: {:?}", e);
-                };
-            }
-        });
-    }
-}
