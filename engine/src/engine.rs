@@ -1,10 +1,14 @@
 use anyhow::{Result, Error};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 use hashbrown::HashMap;
+use std::sync::Arc;
 
 use crate::storage::StorageManager;
-use crate::index::IndexHandler;
-use crate::structures::IndexDeclaration;
+use crate::index::{IndexHandler, QueryResults};
+use crate::structures::{IndexDeclaration, QueryPayload};
+
+
+pub type LeasedIndex = Arc<IndexHandler>;
 
 
 /// A manager for a collection of indexes.
@@ -13,7 +17,7 @@ use crate::structures::IndexDeclaration;
 /// load any existing indexes at creation time.
 pub struct SearchEngine {
     storage: StorageManager,
-    indexes: RwLock<HashMap<String, IndexHandler>>,
+    indexes: RwLock<HashMap<String, Arc<IndexHandler>>>,
 }
 
 impl SearchEngine {
@@ -29,7 +33,7 @@ impl SearchEngine {
             let name = loader.name.clone();
             let index = IndexHandler::build_loaded(loader)?;
 
-            indexes.insert(name, index);
+            indexes.insert(name, Arc::new(index));
         }
 
         Ok(Self {
@@ -46,7 +50,7 @@ impl SearchEngine {
 
         let loaded = index.into_schema();
         let name = loaded.name.clone();
-        let index = IndexHandler::build_loaded(loaded)?;
+        let index = Arc::new(IndexHandler::build_loaded(loaded)?);
 
         {
             let mut lock = self.indexes.write().await;
@@ -72,11 +76,17 @@ impl SearchEngine {
         let value = value.unwrap();
 
         self.storage.remove_index_meta(&value.name).await?;
+
+        // This just shuts down the system, we still require the ref
+        // count to actually fully drop the index.
         value.shutdown().await?;
 
         Ok(())
     }
 
-
+    /// Gets an index from the search engine.
+    pub async fn get_index(&self, index_name: &str) -> Option<LeasedIndex> {
+        let lock = self.indexes.read().await;
+        Some(lock.get(index_name)?.clone())
+    }
 }
-

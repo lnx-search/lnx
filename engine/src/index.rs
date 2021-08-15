@@ -304,9 +304,7 @@ impl IndexReaderHandler {
     /// shutting the index down.
     ///
     /// Thread pools are shutdown asynchronously via Rayon's handling.
-    async fn shutdown(self) -> Result<()> {
-        drop(self.thread_pool);
-
+    async fn shutdown(&self) -> Result<()> {
         // Wait till all searches have been completed.
         let _ = self.limiter.acquire_many(self.max_concurrency as u32).await?;
         self.limiter.close();
@@ -760,7 +758,7 @@ impl IndexHandler {
     }
 
     /// Shuts down the index system cleaning up all pools.
-    pub async fn shutdown(self) -> Result<()> {
+    pub async fn shutdown(&self) -> Result<()> {
         self.writer.send_op(WriterOp::__Shutdown).await?;
         self.reader.shutdown().await?;
         Ok(())
