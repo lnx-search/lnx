@@ -3,7 +3,6 @@ use tokio::fs;
 
 use crate::structures::{IndexDeclaration, LoadedIndex};
 
-
 /// Manages a given directory which acts as the storage location
 /// for indexes for a given engine.
 pub(crate) struct StorageManager {
@@ -15,9 +14,7 @@ impl StorageManager {
     pub(crate) async fn with_directory(dir: String) -> Result<Self> {
         fs::create_dir_all(&dir).await?;
 
-        Ok(Self {
-            dir,
-        })
+        Ok(Self { dir })
     }
 
     /// Loads all indexes from the given directory.
@@ -29,7 +26,11 @@ impl StorageManager {
         let mut read_dir = fs::read_dir(&self.dir).await?;
 
         while let Some(file) = read_dir.next_entry().await? {
-            info!("loading index from directory {} with path {:?}", &self.dir, file.path());
+            info!(
+                "loading index from directory {} with path {:?}",
+                &self.dir,
+                file.path()
+            );
             let data = fs::read(file.path()).await?;
 
             let loader = serde_json::from_slice::<IndexDeclaration>(&data)?;
@@ -75,7 +76,7 @@ impl StorageManager {
             match e.kind() {
                 // if it doesnt exist, just ignore it.
                 tokio::io::ErrorKind::NotFound => Ok(()),
-                _ => Err(e)
+                _ => Err(e),
             }?;
         };
 
@@ -89,5 +90,3 @@ impl StorageManager {
         Ok(())
     }
 }
-
-

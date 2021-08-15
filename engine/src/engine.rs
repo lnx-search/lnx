@@ -1,15 +1,13 @@
-use anyhow::{Result, Error};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use anyhow::{Error, Result};
 use hashbrown::HashMap;
 use std::sync::Arc;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
-use crate::storage::StorageManager;
 use crate::index::{IndexHandler, QueryResults};
+use crate::storage::StorageManager;
 use crate::structures::{IndexDeclaration, QueryPayload};
 
-
 pub type LeasedIndex = Arc<IndexHandler>;
-
 
 /// A manager for a collection of indexes.
 ///
@@ -65,12 +63,10 @@ impl SearchEngine {
     /// This will wait until all searches are complete before shutting
     /// down the index.
     pub async fn remove_index(&self, index_name: &str) -> Result<()> {
-        let value = {
-            self.indexes.write().await.remove(index_name)
-        };
+        let value = { self.indexes.write().await.remove(index_name) };
 
         if value.is_none() {
-            return Err(Error::msg("this index does not exit"))
+            return Err(Error::msg("this index does not exit"));
         }
 
         let value = value.unwrap();

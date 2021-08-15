@@ -10,13 +10,13 @@ use tokio::sync::Semaphore;
 use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
 
-use tantivy::collector::{TopDocs, Count};
+use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
-    DateTime, DocAddress, Document, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score,
-    Searcher, Term, Executor, Index, IndexBuilder
+    DateTime, DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter,
+    LeasedItem, ReloadPolicy, Score, Searcher, Term,
 };
 
 use crate::structures::{
@@ -306,7 +306,10 @@ impl IndexReaderHandler {
     /// Thread pools are shutdown asynchronously via Rayon's handling.
     async fn shutdown(&self) -> Result<()> {
         // Wait till all searches have been completed.
-        let _ = self.limiter.acquire_many(self.max_concurrency as u32).await?;
+        let _ = self
+            .limiter
+            .acquire_many(self.max_concurrency as u32)
+            .await?;
         self.limiter.close();
 
         while let Some(executor) = self.executors.pop() {

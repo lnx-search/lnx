@@ -1,10 +1,9 @@
 #[macro_use]
 extern crate log;
 
-mod index;
-pub mod structures;
 mod engine;
+mod index;
 mod storage;
-
+pub mod structures;
 
 pub use engine::SearchEngine;
