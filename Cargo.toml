@@ -10,11 +10,11 @@ edition = "2018"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14", featyres = ["server", "http1", "http2"] }
+fern = { version = "0.6", features = ["colored"] }
 axum = "0.1.3"
 structopt = "0.3"
 tokio-rustls = "0.22"
 log = "0.4"
-fern = { version = "0.6", features = ["colored"] }
 anyhow = "1"
 chrono = "0.4"
 num_cpus = "1.13"

@@ -1,10 +1,23 @@
 #[macro_use]
 extern crate log;
 
+use std::fs::File;
+use std::sync::Arc;
+use std::io::BufReader;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tokio::net::TcpListener;
+
+use tokio_rustls::rustls::{ServerConfig, NoClientAuth};
+use tokio_rustls::rustls::internal::pemfile::{pkcs8_private_keys, certs};
+use tokio_rustls::TlsAcceptor;
+
 use anyhow::{Result, Error};
 use structopt::StructOpt;
 use log::LevelFilter;
 use fern::colors::{Color, ColoredLevelConfig};
+use hyper::server::conn::Http;
+use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -89,7 +102,7 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
 
 
 fn main()  {
-    let s = match setup() {
+    let settings = match setup() {
         Ok(s) => s,
         Err(e) => {
             eprintln!("error during server setup: {:?}", e);
@@ -97,7 +110,7 @@ fn main()  {
         }
     };
 
-    let threads = s.runtime_threads.unwrap_or_else(|| num_cpus::get());
+    let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
     info!("starting runtime with {} threads", threads);
     let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(threads)
@@ -105,7 +118,7 @@ fn main()  {
         .build();
 
     let result = match maybe_runtime {
-        Ok(runtime) => runtime.block_on(start()),
+        Ok(runtime) => runtime.block_on(start(settings)),
         Err(e) => {
             error!("error during runtime creation: {:?}", e);
             return;
@@ -126,6 +139,93 @@ fn setup() -> Result<Settings> {
 
 
 /// Starts the server in an async context.
-async fn start() -> Result<()> {
-    Err(Error::msg("hello"))
+async fn start(settings: Settings) -> Result<()> {
+    let tls = match (&settings.tls_key_file, &settings.tls_cert_file) {
+        (Some(fp1), Some(fp2)) => {
+            Some(tls_server_config(fp1, fp2)?)
+        },
+        (None, None) => None,
+        _ => return Err(Error::msg(
+            "missing a required TLS field, both key and cert must be provided."
+        ))
+    };
+
+    let addr = format!("{}:{}", &settings.host, settings.port);
+
+    let handle =match tls {
+        Some(tls) => tokio::spawn(start_serving_tls(
+            (),
+            tls.unwrap(),
+            addr,
+        )),
+        None =>  tokio::spawn(),
+    };
+
+    tokio::signal::ctrl_c().await?;
+    info!("shutting down server...");
+
+    handle.abort();
+    Ok(())
+}
+
+/// Parses and handles a given key and cert for TLS.
+fn tls_server_config(key: &str, cert: &str) -> Result<Arc<ServerConfig>> {
+    let mut config = ServerConfig::new(NoClientAuth::new());
+
+    let mut key_reader = BufReader::new(File::open(key)?);
+    let mut cert_reader = BufReader::new(File::open(cert)?);
+
+    let key = pkcs8_private_keys(&mut key_reader)
+        .map_err(|_| Error::msg("failed to extract private keys"))?
+        .remove(0);
+
+    let certs = certs(&mut cert_reader)
+        .map_err(|_| Error::msg("failed to extract certificates"))?;
+
+    config.set_single_cert(certs, key)?;
+
+    config.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
+
+    Ok(Arc::new(config))
+}
+
+/// Starts a standard HTTP server.
+async fn start_serving(
+    app: (),
+    addr: String,
+) -> Result<()> {
+
+    info!("starting http server @ {}", addr);
+    axum::Server::bind(&addr.parse()?)
+        .serve(app.into_make_service())
+        .await?;
+
+    Ok(())
+}
+
+/// Starts a HTTPS server with a given TLS config.
+async fn start_serving_tls(
+    app: (),
+    tls: Arc<ServerConfig>,
+    addr: String,
+) -> Result<()> {
+    info!("starting https server @ {}", addr);
+
+    let acceptor = TlsAcceptor::from(tls);
+    let listener = TcpListener::bind(&addr).await?;
+
+    loop {
+        let (stream, _addr) = listener.accept().await?;
+        let acceptor = acceptor.clone();
+
+        let app = app.clone();
+
+        tokio::spawn(async move {
+            if let Ok(stream) = acceptor.accept(stream).await {
+                if let Err(e) = Http::new().serve_connection(stream, app).await {
+                    warn!("failed to serve connection: {:?}", e);
+                };
+            }
+        });
+    }
 }
