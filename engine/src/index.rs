@@ -225,6 +225,9 @@ struct IndexReaderHandler {
     /// A concurrency semaphore.
     limiter: Semaphore,
 
+    /// The maximum concurrency of searches at one time.
+    max_concurrency: usize,
+
     /// The execution thread pool.
     thread_pool: rayon::ThreadPool,
 
@@ -289,6 +292,7 @@ impl IndexReaderHandler {
             reader,
             executors,
             limiter,
+            max_concurrency,
             thread_pool,
             parser,
             search_fields,
@@ -296,6 +300,23 @@ impl IndexReaderHandler {
         })
     }
 
+    /// Shuts down the thread pools and acquires all permits
+    /// shutting the index down.
+    ///
+    /// Thread pools are shutdown asynchronously via Rayon's handling.
+    async fn shutdown(self) -> Result<()> {
+        drop(self.thread_pool);
+
+        // Wait till all searches have been completed.
+        let _ = self.limiter.acquire_many(self.max_concurrency as u32).await?;
+        self.limiter.close();
+
+        while let Some(executor) = self.executors.pop() {
+            drop(executor);
+        }
+
+        Ok(())
+    }
     /// Searches the index with a given query.
     ///
     /// The index will use fuzzy matching based on levenshtein distance
@@ -544,7 +565,7 @@ fn search(
 /// are guaranteed to be applied within some time in the near future.
 pub struct IndexHandler {
     /// The name of the index.
-    name: String,
+    pub(crate) name: String,
 
     /// The internal tantivy index.
     index: Index,
@@ -694,7 +715,7 @@ impl IndexHandler {
     ///
     /// This will delete all documents in the index which were
     /// added since the last commit.
-    pub async fn delete_documents(&self) -> Result<()> {
+    pub async fn clear_documents(&self) -> Result<()> {
         self.writer.send_op(WriterOp::DeleteAll).await
     }
 
@@ -728,5 +749,20 @@ impl IndexHandler {
     /// Searches the index with the given query.
     pub async fn search(&self, payload: QueryPayload) -> Result<QueryResults> {
         self.reader.search(payload).await
+    }
+
+    /// Clears all documents from the index and commits.
+    pub async fn clear_and_commit(&self) -> Result<()> {
+        self.clear_documents().await?;
+        self.writer.send_op(WriterOp::Commit).await?;
+
+        Ok(())
+    }
+
+    /// Shuts down the index system cleaning up all pools.
+    pub async fn shutdown(self) -> Result<()> {
+        self.writer.send_op(WriterOp::__Shutdown).await?;
+        self.reader.shutdown().await?;
+        Ok(())
     }
 }

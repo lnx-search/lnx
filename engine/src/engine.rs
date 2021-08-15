@@ -56,6 +56,10 @@ impl SearchEngine {
         Ok(())
     }
 
+    /// Removes an index from the engine.
+    ///
+    /// This will wait until all searches are complete before shutting
+    /// down the index.
     pub async fn remove_index(&self, index_name: &str) -> Result<()> {
         let value = {
             self.indexes.write().await.remove(index_name)
@@ -67,7 +71,12 @@ impl SearchEngine {
 
         let value = value.unwrap();
 
+        self.storage.remove_index_meta(&value.name).await?;
+        value.shutdown().await?;
+
         Ok(())
     }
+
+
 }
 
