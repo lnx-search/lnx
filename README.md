@@ -5,4 +5,4 @@
 
 
 <h1 align="center">LNX</h1>
-An ultra-fast, composable deployment of the tantivy search engine via REST.
+<p align="center">An ultra-fast, composable deployment of the tantivy search engine via REST.</p>
