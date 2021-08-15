@@ -9,30 +9,45 @@ use fern::colors::{Color, ColoredLevelConfig};
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
 struct Settings {
+    /// The log level filter, any logs that are above this level wont
+    /// be displayed.
     #[structopt(long, default_value = "info", env)]
     log_level: LevelFilter,
 
+    /// An optional bool to use ASNI colours for log levels.
+    /// You probably want to disable this if using file based logging.
     #[structopt(long, env)]
     pretty_logs: Option<bool>,
 
+    /// The host to bind to (normally: '127.0.0.1' or '0.0.0.0'.)
     #[structopt(long, short, default_value = "127.0.0.1", env)]
     host: String,
 
+    /// The port to bind the server to.
     #[structopt(long, short, default_value = "8000", env)]
     port: u16,
 
+    /// If specified this will be used in the TLS config for HTTPS.
     #[structopt(long, env)]
     tls_key_file: Option<String>,
 
+    /// If specified this will be used in the TLS config for HTTPS.
     #[structopt(long, env)]
     tls_cert_file: Option<String>,
 
+    /// If specified this will require an authentication key on each request.
+    ///
+    /// Generally it's recommend to have this in a production environment.
     #[structopt(long, short = "auth", env, hide_env_values = true)]
     authentication_key: Option<String>,
 
+    /// The amount of threads to use for the tokio runtime.
+    ///
+    /// If this is not set, the number of logical cores on the machine is used.
     #[structopt(long, short = "threads", env)]
     runtime_threads: Option<usize>,
 
+    /// A optional file to send persistent logs.
     #[structopt(long, env)]
     log_file: Option<String>,
 }
@@ -104,7 +119,7 @@ fn main()  {
 
 /// Parses the config and sets up logging
 fn setup() -> Result<Settings> {
-    let config: Settings = Settings::from_args_safe()?;
+    let config: Settings = Settings::from_args();
     setup_logger(config.log_level, &config.log_file, config.pretty_logs.unwrap_or(true))?;
     Ok(config)
 }
