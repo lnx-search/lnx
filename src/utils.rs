@@ -2,6 +2,7 @@ use axum::http::header;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
 use hyper::Body;
 use tower_http::auth::AuthorizeRequest;
+use axum::body::BoxBody;
 
 #[derive(Debug, Clone)]
 pub struct AuthIfEnabled {
@@ -25,7 +26,7 @@ impl AuthIfEnabled {
 
 impl AuthorizeRequest for AuthIfEnabled {
     type Output = ();
-    type ResponseBody = Body;
+    type ResponseBody = axum::body::BoxBody;
 
     fn authorize<B>(&mut self, request: &Request<B>) -> Option<Self::Output> {
         if !self.enabled {
@@ -40,8 +41,8 @@ impl AuthorizeRequest for AuthIfEnabled {
     }
 
     fn unauthorized_response<B>(&mut self, _request: &Request<B>) -> Response<Self::ResponseBody> {
-        let body = self.reject_msg.clone();
-        let mut res = Response::new(Body::from(body));
+        let body = axum::body::box_body(hyper::Body::from(self.reject_msg.clone()));
+        let mut res = Response::new(body);
         *res.status_mut() = StatusCode::UNAUTHORIZED;
         res
     }

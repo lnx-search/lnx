@@ -156,17 +156,7 @@ async fn start(settings: Settings) -> Result<()> {
 
     let engine = Arc::new(SearchEngine::create("/lnx/meta").await?);
 
-    let app = route("/indexes/:index_name/search", get(routes::search_index))
-        .route("/indexes/:index_name", delete(routes::delete_index))
-        .route("/indexes", post(routes::create_index))
-        .route(
-            "/indexes/:index_name/documents/:document_id",
-            delete(routes::delete_document).get(routes::get_document),
-        )
-        .route(
-            "/indexes/:index_name/documents",
-            post(routes::add_document).delete(routes::delete_all_documents),
-        )
+    let service_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(
             utils::AuthIfEnabled::bearer(
                 settings
@@ -178,10 +168,24 @@ async fn start(settings: Settings) -> Result<()> {
                 "Missing token bearer authorization header.",
             ),
         ))
-        .layer(SetResponseHeaderLayer::overriding(
+        .layer(SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
             header::SERVER,
             HeaderValue::from_static("lnx"),
-        ));
+        ))
+        .into_inner();
+
+    let app = route("/indexes/:index_name/search", get(routes::search_index))
+        .route("/indexes/:index_name", delete(routes::delete_index))
+        .route("/indexes", post(routes::create_index))
+        .route(
+            "/indexes/:index_name/documents/:document_id",
+            delete(routes::delete_document).get(routes::get_document),
+        )
+        .route(
+            "/indexes/:index_name/documents",
+            post(routes::add_document).delete(routes::delete_all_documents),
+        )
+        .layer(service_middleware);
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {
