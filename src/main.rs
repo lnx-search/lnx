@@ -11,23 +11,25 @@ use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
 use tokio_rustls::TlsAcceptor;
 
+use axum::http::header;
 use axum::prelude::*;
+
+use tower::ServiceBuilder;
+use tower_http::auth::RequireAuthorizationLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
+
+use hyper::http::HeaderValue;
+use hyper::server::conn::Http;
 
 use anyhow::{Error, Result};
 use fern::colors::{Color, ColoredLevelConfig};
-use hyper::server::conn::Http;
 use log::LevelFilter;
 use structopt::StructOpt;
 
 mod routes;
 mod utils;
 
-use axum::http::header;
 use engine::SearchEngine;
-use hyper::http::HeaderValue;
-use tower::ServiceBuilder;
-use tower_http::auth::RequireAuthorizationLayer;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
