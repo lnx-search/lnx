@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;

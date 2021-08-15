@@ -12,10 +12,12 @@ pub(crate) struct StorageManager {
 
 impl StorageManager {
     /// Creates a new storage manage.
-    pub(crate) fn new(dir: String) -> Self {
-        Self {
+    pub(crate) async fn with_directory(dir: String) -> Result<Self> {
+        fs::create_dir_all(&dir).await?;
+
+        Ok(Self {
             dir,
-        }
+        })
     }
 
     /// Loads all indexes from the given directory.
