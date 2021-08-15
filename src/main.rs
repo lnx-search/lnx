@@ -2,27 +2,33 @@
 extern crate log;
 
 use std::fs::File;
-use std::sync::Arc;
 use std::io::BufReader;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio::sync::mpsc::Receiver;
 
-use tokio_rustls::rustls::{ServerConfig, NoClientAuth};
-use tokio_rustls::rustls::internal::pemfile::{pkcs8_private_keys, certs};
+use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
+use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
 use tokio_rustls::TlsAcceptor;
 
 use axum::prelude::*;
-use anyhow::{Result, Error};
-use structopt::StructOpt;
-use log::LevelFilter;
+use tower_http::set_header::SetResponseHeaderLayer;
+
+use anyhow::{Error, Result};
 use fern::colors::{Color, ColoredLevelConfig};
 use hyper::server::conn::Http;
+use log::LevelFilter;
+use structopt::StructOpt;
 
 mod routes;
+mod utils;
 
+use axum::http::header;
 use engine::SearchEngine;
+use hyper::http::header::SERVER;
+use hyper::http::HeaderValue;
+use tower::ServiceBuilder;
+use tower_http::auth::RequireAuthorizationLayer;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -70,7 +76,6 @@ struct Settings {
     log_file: Option<String>,
 }
 
-
 fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> Result<()> {
     let mut colours = ColoredLevelConfig::new();
 
@@ -105,8 +110,7 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
     Ok(())
 }
 
-
-fn main()  {
+fn main() {
     let settings = match setup() {
         Ok(s) => s,
         Err(e) => {
@@ -127,7 +131,7 @@ fn main()  {
         Err(e) => {
             error!("error during runtime creation: {:?}", e);
             return;
-        },
+        }
     };
 
     if let Err(e) = result {
@@ -138,10 +142,13 @@ fn main()  {
 /// Parses the config and sets up logging
 fn setup() -> Result<Settings> {
     let config: Settings = Settings::from_args();
-    setup_logger(config.log_level, &config.log_file, config.pretty_logs.unwrap_or(true))?;
+    setup_logger(
+        config.log_level,
+        &config.log_file,
+        config.pretty_logs.unwrap_or(true),
+    )?;
     Ok(config)
 }
-
 
 /// Starts the server in an async context.
 async fn start(settings: Settings) -> Result<()> {
@@ -149,26 +156,32 @@ async fn start(settings: Settings) -> Result<()> {
 
     let engine = Arc::new(SearchEngine::create("/lnx/meta").await?);
 
-    let app = route(
-        "/indexes/:index_name/search",
-        get(routes::search_index)
-    ).route(
-        "/indexes/:index_name",
-        delete(routes::delete_index)
-    ).route(
-        "/indexes",
-        post(routes::create_index)
-    ).route(
-        "/indexes/:index_name/documents/:document_id",
-        delete(routes::delete_document).get(routes::get_document)
-    ).route(
-        "/indexes/:index_name/documents",
-        post(routes::add_document).delete(routes::delete_all_documents)
-    ).route(
-        "/docs",
-        get(routes::serve_docs)
-    );
-
+    let app = route("/indexes/:index_name/search", get(routes::search_index))
+        .route("/indexes/:index_name", delete(routes::delete_index))
+        .route("/indexes", post(routes::create_index))
+        .route(
+            "/indexes/:index_name/documents/:document_id",
+            delete(routes::delete_document).get(routes::get_document),
+        )
+        .route(
+            "/indexes/:index_name/documents",
+            post(routes::add_document).delete(routes::delete_all_documents),
+        )
+        .layer(RequireAuthorizationLayer::custom(
+            utils::AuthIfEnabled::bearer(
+                settings
+                    .authentication_key
+                    .as_ref()
+                    .map(|v| v.as_str())
+                    .unwrap_or_else(|| ""),
+                settings.authentication_key.is_some(),
+                "Missing token bearer authorization header.",
+            ),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::SERVER,
+            HeaderValue::from_static("lnx"),
+        ));
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {
@@ -182,18 +195,18 @@ async fn start(settings: Settings) -> Result<()> {
                 let (stream, _addr) = listener.accept().await?;
                 let acceptor = acceptor.clone();
 
-                let app = app.clone();
+                let ap = app.clone();
 
                 tokio::spawn(async move {
                     if let Ok(stream) = acceptor.accept(stream).await {
-                        if let Err(e) = Http::new().serve_connection(stream, app).await {
+                        if let Err(e) = Http::new().serve_connection(stream, ap).await {
                             warn!("failed to serve connection: {:?}", e);
                         };
                     }
                 });
             }
         }),
-        None =>  tokio::spawn(async move {
+        None => tokio::spawn(async move {
             info!("starting http server @ {}", addr);
             axum::Server::bind(&addr.parse()?)
                 .serve(app.into_make_service())
@@ -214,13 +227,13 @@ async fn start(settings: Settings) -> Result<()> {
 /// been provided.
 fn check_tls_files(settings: &Settings) -> Result<Option<Arc<ServerConfig>>> {
     match (&settings.tls_key_file, &settings.tls_cert_file) {
-        (Some(fp1), Some(fp2)) => {
-            Ok(Some(tls_server_config(fp1, fp2)?))
-        },
+        (Some(fp1), Some(fp2)) => Ok(Some(tls_server_config(fp1, fp2)?)),
         (None, None) => Ok(None),
-        _ => return Err(Error::msg(
-            "missing a required TLS field, both key and cert must be provided."
-        ))
+        _ => {
+            return Err(Error::msg(
+                "missing a required TLS field, both key and cert must be provided.",
+            ))
+        }
     }
 }
 
@@ -235,8 +248,8 @@ fn tls_server_config(key: &str, cert: &str) -> Result<Arc<ServerConfig>> {
         .map_err(|_| Error::msg("failed to extract private keys"))?
         .remove(0);
 
-    let certs = certs(&mut cert_reader)
-        .map_err(|_| Error::msg("failed to extract certificates"))?;
+    let certs =
+        certs(&mut cert_reader).map_err(|_| Error::msg("failed to extract certificates"))?;
 
     config.set_single_cert(certs, key)?;
 
@@ -244,4 +257,3 @@ fn tls_server_config(key: &str, cert: &str) -> Result<Arc<ServerConfig>> {
 
     Ok(Arc::new(config))
 }
-
