@@ -3,5 +3,6 @@
 </p>
 
 
-# lnx
-An ultra-fast, composable deployment of the tantivy search engine via REST.
+
+<h1 align="center">LNX</h1>
+<p align="center">An ultra-fast, composable deployment of the tantivy search engine via REST.</p>
