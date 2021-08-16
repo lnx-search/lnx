@@ -16,6 +16,10 @@ Deletes any documents matching the set of given terms. (Requires a JSON body.)
 DELETE /indexes/:index_name/documents
 ```
 
+Deleting all documents (This requires no payload): 
+```
+DELETE /indexes/:index_name/documents/clear
+```
 
 ## Adding a document
 Adding a document is relatively simple, you can either add a single
@@ -90,4 +94,25 @@ Not waiting can quickly add a lot of load on the server which may be un-desirabl
         },
     },
 ]
+```
+
+
+## Deleting Documents
+Docs can only be deleted via terms, it's up to you to make sure a given term is
+unique otherwise multiple docs can be deleted via this method.
+
+```
+DELETE /indexes/:index_name/documents
+```
+
+### JSON Payload
+```json5 
+{
+    // Delete any document with the value 123454 for the `id` field.
+    // Make sure the type of the field aligns with the specified value type. 
+    "id": {"type": "u64", "value": 123454},
+
+    // Delete any document with the value 'bob' for the `name` field. 
+    "name": {"type": "text", "value": "bob"},
+}
 ```
