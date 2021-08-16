@@ -3,6 +3,12 @@ use axum::http::{Response, StatusCode};
 use headers::{ContentType, HeaderMapExt};
 use serde::Serialize;
 
+/// Produces a standard Response<BoxBody> from a given status code and value.
+///
+/// The value is expected to implement `Serialize`, this function will
+/// panic if the value is unable to be serialized.
+///
+/// The response is automatically tagged with the `application/json` datatype.
 pub fn json_response<T: Serialize + ?Sized>(status: StatusCode, value: &T) -> Response<BoxBody> {
     let val = &json!({
         "status": status.as_u16(),
