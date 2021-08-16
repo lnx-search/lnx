@@ -186,6 +186,8 @@ async fn start(settings: Settings) -> Result<()> {
         .into_inner();
 
     let app = route("/indexes/:index_name/search", get(routes::search_index))
+        .route("/indexes/:index_name/commit", post(routes::commit_index_changes))
+        .route("/indexes/:index_name/rollback", post(routes::rollback_index_changes))
         .route("/indexes/:index_name", delete(routes::delete_index))
         .route("/indexes", post(routes::create_index))
         .route(

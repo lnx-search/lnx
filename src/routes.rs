@@ -311,6 +311,35 @@ pub async fn delete_all_documents(
     json_response(StatusCode::OK, &())
 }
 
+
+/// Commits any recent changes since the last commit.
+///
+/// This will finalise any changes and flush to disk.
+pub async fn commit_index_changes(
+    index_name: Result<Path<String>, PathParamsRejection>,
+    Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+
+    check_error!(index.commit().await, "commit changes");
+
+    json_response(StatusCode::OK, "changes committed")
+}
+
+/// Removes any recent changes since the last commit.
+pub async fn rollback_index_changes(
+    index_name: Result<Path<String>, PathParamsRejection>,
+    Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+
+    check_error!(index.rollback().await, "rollback changes");
+
+    json_response(StatusCode::OK, "changes rolled back since last commit")
+}
+
 /// Converts an arbitary Response<Body> into Response<BoxBody>
 fn to_box_body(resp: Response<Body>) -> Response<BoxBody> {
     let (parts, body) = resp.into_parts();
