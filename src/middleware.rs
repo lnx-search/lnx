@@ -13,7 +13,10 @@ pub struct AuthIfEnabled {
 
 impl AuthIfEnabled {
     pub fn bearer<T: Serialize>(token: &str, enabled: bool, reject_msg: &T) -> Result<Self> {
-        let msg = serde_json::to_vec(&reject_msg)?;
+        let msg = serde_json::to_vec(&json!({
+            "status": StatusCode::UNAUTHORIZED.as_u16(),
+            "data": reject_msg
+        }))?;
         let reject_msg = bytes::Bytes::copy_from_slice(&msg);
         let auth = HeaderValue::from_str(token).unwrap();
 

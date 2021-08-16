@@ -1,6 +1,7 @@
-use axum::body::BoxBody;
+use std::sync::Arc;
+
+use axum::body::{BoxBody, box_body, Body};
 use axum::http::{Response, StatusCode};
-use axum::response::IntoResponse;
 use axum::extract::{Extension, Path, Query};
 
 use engine::SearchEngine;
@@ -8,14 +9,16 @@ use engine::structures::QueryPayload;
 
 use crate::responders::json_response;
 
+type SharedEngine = Arc<SearchEngine>;
+
 /// Extracts a leased index or returns a json response
 /// with a 400 status code.
 macro_rules! get_index_or_reject {
     ($engine:expr, $name:expr) => {{
-        match $engine.get_index(&$name).await {
+        match $engine.get_index($name).await {
             None => return json_response(
                 StatusCode::BAD_REQUEST,
-                format!("no index exists with name {}", &$name),
+                &format!("no index exists with name {}", $name),
             ),
             Some(index) => index,
         }
@@ -48,57 +51,74 @@ macro_rules! check_error {
 }
 
 pub async fn search_index(
-    query: Query<QueryPayload>,
-    Path(index_name): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
-    let results = check_error!(index.search(*query).await, "search index");
+    // query: Query<QueryPayload>,
+    // Path(index_name): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+    // let results = check_error!(index.search(query.0).await, "search index");
 
-    json_response(StatusCode::OK, &results)
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn create_index(
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn delete_index(
-    Path(index_name): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
+    // Path(index_name): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn add_document(
-    Path(index_name): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
+    // Path(index_name): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn get_document(
-    Path(index_name): Path<String>,
-    Path(document_id): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
+    // Path(index_name): Path<String>,
+    // Path(document_id): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn delete_document(
-    Path(index_name): Path<String>,
-    Path(document_id): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
+    // Path(index_name): Path<String>,
+    // Path(document_id): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+
+    json_response(StatusCode::OK, &())
 }
 
 pub async fn delete_all_documents(
-    Path(index_name): Path<String>,
-    Extension(engine): Extension<SearchEngine>,
-) -> impl IntoResponse {
-    let index = get_index_or_reject!(engine, index_name);
+    // Path(index_name): Path<String>,
+    // Extension(engine): Extension<SharedEngine>,
+) -> Response<Body> {
+    // let index = get_index_or_reject!(engine, &index_name);
+
+    json_response(StatusCode::OK, &())
+}
+
+fn to_box_body(resp: Response<Body>) -> Response<BoxBody> {
+    let (parts, body) = resp.into_parts();
+    let body = box_body(body);
+
+    Response::from_parts(parts, body)
 }
 
 /// Modifies select responses.
@@ -108,14 +128,20 @@ pub async fn delete_all_documents(
 pub fn map_status(resp: Response<BoxBody>) -> Response<BoxBody> {
     let status = resp.status();
     if status == StatusCode::NOT_FOUND {
-        return json_response(StatusCode::NOT_FOUND, "route not found");
+        return to_box_body(json_response(
+            StatusCode::NOT_FOUND,
+            "route not found",
+        ));
     } else if status == StatusCode::METHOD_NOT_ALLOWED {
-        return json_response(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
+        return to_box_body(json_response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "method not allowed",
+        ));
     } else if status == StatusCode::INTERNAL_SERVER_ERROR {
-        return json_response(
+        return to_box_body(json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal server error while handling request",
-        );
+        ));
     }
 
     resp

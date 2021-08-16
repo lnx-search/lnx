@@ -1,4 +1,4 @@
-use axum::body::{box_body, BoxBody};
+use axum::body::Body;
 use axum::http::{Response, StatusCode};
 use headers::{ContentType, HeaderMapExt};
 use serde::Serialize;
@@ -9,7 +9,7 @@ use serde::Serialize;
 /// panic if the value is unable to be serialized.
 ///
 /// The response is automatically tagged with the `application/json` datatype.
-pub fn json_response<T: Serialize + ?Sized>(status: StatusCode, value: &T) -> Response<BoxBody> {
+pub fn json_response<T: Serialize + ?Sized>(status: StatusCode, value: &T) -> Response<Body> {
     let val = &json!({
         "status": status.as_u16(),
         "data": value,
@@ -19,7 +19,7 @@ pub fn json_response<T: Serialize + ?Sized>(status: StatusCode, value: &T) -> Re
 
     let mut resp = Response::builder()
         .status(status)
-        .body(box_body(hyper::Body::from(buff)))
+        .body(axum::body::Body::from(buff))
         .unwrap();
 
     resp.headers_mut().typed_insert(ContentType::json());

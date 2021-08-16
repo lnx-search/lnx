@@ -173,10 +173,8 @@ async fn start(settings: Settings) -> Result<()> {
                     .map(|v| v.as_str())
                     .unwrap_or_else(|| ""),
                 settings.authentication_key.is_some(),
-                &json! ({
-                "detail": "Missing token bearer authorization header."
-                }),
-            )?,
+                &"Missing token bearer authorization header."
+            )?
         ))
         .layer(
             SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(

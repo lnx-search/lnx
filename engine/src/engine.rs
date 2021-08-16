@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::index::{IndexHandler, QueryResults};
+use crate::index::IndexHandler;
 use crate::storage::StorageManager;
 use crate::structures::IndexDeclaration;
 
