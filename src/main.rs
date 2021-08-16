@@ -29,13 +29,13 @@ use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
 
-mod routes;
 mod middleware;
 mod responders;
+mod routes;
 
 use engine::SearchEngine;
-use tower_http::add_extension::AddExtensionLayer;
 use tower::util::MapResponseLayer;
+use tower_http::add_extension::AddExtensionLayer;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -173,14 +173,16 @@ async fn start(settings: Settings) -> Result<()> {
                     .unwrap_or_else(|| ""),
                 settings.authentication_key.is_some(),
                 &json! ({
-                    "detail": "Missing token bearer authorization header."
-                    }),
+                "detail": "Missing token bearer authorization header."
+                }),
             )?,
         ))
-        .layer(SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
-            header::SERVER,
-            HeaderValue::from_static("lnx"),
-        ))
+        .layer(
+            SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
+                header::SERVER,
+                HeaderValue::from_static("lnx"),
+            ),
+        )
         .layer(AddExtensionLayer::new(engine))
         .into_inner();
 

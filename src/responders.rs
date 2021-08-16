@@ -1,7 +1,7 @@
-use axum::http::{StatusCode, Response};
-use axum::body::{BoxBody, box_body};
+use axum::body::{box_body, BoxBody};
+use axum::http::{Response, StatusCode};
+use headers::{ContentType, HeaderMapExt};
 use serde::Serialize;
-use headers::{HeaderMapExt, ContentType};
 
 pub fn json_response<T: Serialize + ?Sized>(status: StatusCode, value: &T) -> Response<BoxBody> {
     let val = &json!({
