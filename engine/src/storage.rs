@@ -57,7 +57,7 @@ impl StorageManager {
     /// Indexes are stored via their name and should be unique, if two indexes
     /// are defined the most recently updated / defined on will be used
     /// due to overriding data.
-    pub(crate) async fn store_index_meta(&self, index: &IndexDeclaration<'_>) -> Result<()> {
+    pub(crate) async fn store_index_meta(&self, index: &IndexDeclaration) -> Result<()> {
         let buff = serde_json::to_vec(index)?;
         let path = format!("{}/{}", &self.dir, index.name);
 

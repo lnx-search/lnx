@@ -43,16 +43,27 @@ impl SearchEngine {
     /// Adds a declared index to the search engine.
     ///
     /// This will set it in the index storage and then build the index handlers.
-    pub async fn add_index(&self, index: IndexDeclaration<'_>) -> Result<()> {
+    pub async fn add_index(&self, index: IndexDeclaration, override_if_exists: bool) -> Result<()> {
         self.storage.store_index_meta(&index).await?;
 
         let loaded = index.into_schema();
         let name = loaded.name.clone();
         let index = Arc::new(IndexHandler::build_loaded(loaded)?);
 
-        {
+        let old = {
             let mut lock = self.indexes.write().await;
-            lock.insert(name, index);
+
+            if !override_if_exists {
+                if lock.contains_key(&name) {
+                    return Ok(())
+                }
+            }
+
+            lock.insert(name, index)
+        };
+
+        if let Some(v) = old {
+            v.shutdown().await?;
         }
 
         Ok(())

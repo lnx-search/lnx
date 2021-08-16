@@ -3,6 +3,7 @@ use axum::http::header;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
 use serde::Serialize;
 use tower_http::auth::AuthorizeRequest;
+use headers::HeaderMapExt;
 
 #[derive(Debug, Clone)]
 pub struct AuthIfEnabled {
@@ -47,6 +48,7 @@ impl AuthorizeRequest for AuthIfEnabled {
     fn unauthorized_response<B>(&mut self, _request: &Request<B>) -> Response<Self::ResponseBody> {
         let body = axum::body::box_body(hyper::Body::from(self.reject_msg.clone()));
         let mut res = Response::new(body);
+        res.headers_mut().typed_insert(headers::ContentType::json());
         *res.status_mut() = StatusCode::UNAUTHORIZED;
         res
     }

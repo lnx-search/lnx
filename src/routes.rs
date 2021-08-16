@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use serde::Deserialize;
 
 use axum::body::{box_body, Body, BoxBody};
 use axum::extract::{Extension, Path, Query};
 use axum::http::{Response, StatusCode};
+use axum::extract;
 
-use engine::structures::QueryPayload;
+use engine::structures::{QueryPayload, IndexDeclaration};
 use engine::SearchEngine;
 
 use crate::responders::json_response;
@@ -17,9 +19,10 @@ macro_rules! get_index_or_reject {
     ($engine:expr, $name:expr) => {{
         match $engine.get_index($name).await {
             None => {
+                warn!("rejected request due to unknown index {:?}", $name);
                 return json_response(
                     StatusCode::BAD_REQUEST,
-                    &format!("no index exists with name {}", $name),
+                    &format!("no index exists with name {:?}", $name),
                 )
             }
             Some(index) => index,
@@ -52,6 +55,7 @@ macro_rules! check_error {
     }}
 }
 
+/// Searches an index with a given query.
 pub async fn search_index(
     query: Query<QueryPayload>,
     Path(index_name): Path<String>,
@@ -63,17 +67,35 @@ pub async fn search_index(
     json_response(StatusCode::OK, &results)
 }
 
-pub async fn create_index(Extension(_engine): Extension<SharedEngine>) -> Response<Body> {
-    json_response(StatusCode::OK, &())
+#[derive(Deserialize)]
+pub struct CreateIndexQueryParams {
+    override_if_exists: Option<bool>
+}
+
+pub async fn create_index(
+    query: Query<CreateIndexQueryParams>,
+    payload: extract::Json<IndexDeclaration>,
+    Extension(engine): Extension<SharedEngine>
+) -> Response<Body> {
+
+    let ignore = query.0;
+    check_error!(engine.add_index(
+            payload.0,
+            ignore.override_if_exists.unwrap_or(false)
+        ).await,
+        "create index"
+    );
+
+    json_response(StatusCode::OK, "index created")
 }
 
 pub async fn delete_index(
     Path(index_name): Path<String>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let _index = get_index_or_reject!(engine, &index_name);
+    check_error!(engine.remove_index(&index_name).await, "delete index");
 
-    json_response(StatusCode::OK, &())
+    json_response(StatusCode::OK, "index deleted")
 }
 
 pub async fn add_document(
