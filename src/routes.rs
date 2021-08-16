@@ -69,17 +69,20 @@ pub async fn search_index(
     json_response(StatusCode::OK, &results)
 }
 
+/// The given set of query parameters available to the create
+/// index function.
 #[derive(Deserialize)]
 pub struct CreateIndexQueryParams {
+    /// If true this will delete the old index if it existed. (defaults to false)
     override_if_exists: Option<bool>
 }
 
+/// Creates a index / overrides an index with the given payload.
 pub async fn create_index(
     query: Query<CreateIndexQueryParams>,
     payload: extract::Json<IndexDeclaration>,
     Extension(engine): Extension<SharedEngine>
 ) -> Response<Body> {
-
     let ignore = query.0;
     check_error!(engine.add_index(
             payload.0,
@@ -91,6 +94,7 @@ pub async fn create_index(
     json_response(StatusCode::OK, "index created")
 }
 
+/// Deletes the given index if it exists.
 pub async fn delete_index(
     Path(index_name): Path<String>,
     Extension(engine): Extension<SharedEngine>,
@@ -100,18 +104,33 @@ pub async fn delete_index(
     json_response(StatusCode::OK, "index deleted")
 }
 
+/// The set of query operations that can be given when writing
+/// to an index.
 #[derive(Deserialize)]
 pub struct PendingQueries {
+    /// If false this will return immediately without waiting for
+    /// all operations to be submitted. (defaults to true).
+    ///
+    /// It's recommend to wait for the operation to be submitted for
+    /// the purposes of backpressure.
     wait: Option<bool>
 }
 
+/// The possible formats for uploading documents.
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum DocumentOptions {
+    /// A singular document payload.
     Single(DocumentPayload),
+
+    /// An array of documents acting as a bulk insertion.
     Many(Vec<DocumentPayload>),
 }
 
+/// Adds one or more documents to the given index.
+///
+/// This can either return immediately or wait for all operations to be
+/// submitted depending on the `wait` query parameter.
 pub async fn add_document(
     query: Query<PendingQueries>,
     Path(index_name): Path<String>,
