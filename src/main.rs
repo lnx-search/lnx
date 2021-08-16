@@ -27,7 +27,7 @@ use log::LevelFilter;
 use structopt::StructOpt;
 
 mod routes;
-mod utils;
+mod middleware;
 
 use engine::SearchEngine;
 
@@ -77,6 +77,35 @@ struct Settings {
     log_file: Option<String>,
 }
 
+fn main() {
+    let settings = match setup() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error during server setup: {:?}", e);
+            return;
+        }
+    };
+
+    let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
+    info!("starting runtime with {} threads", threads);
+    let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(threads)
+        .enable_all()
+        .build();
+
+    let result = match maybe_runtime {
+        Ok(runtime) => runtime.block_on(start(settings)),
+        Err(e) => {
+            error!("error during runtime creation: {:?}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = result {
+        error!("error during server runtime: {:?}", e);
+    }
+}
+
 fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> Result<()> {
     let mut colours = ColoredLevelConfig::new();
 
@@ -111,35 +140,6 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
     Ok(())
 }
 
-fn main() {
-    let settings = match setup() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error during server setup: {:?}", e);
-            return;
-        }
-    };
-
-    let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
-    info!("starting runtime with {} threads", threads);
-    let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(threads)
-        .enable_all()
-        .build();
-
-    let result = match maybe_runtime {
-        Ok(runtime) => runtime.block_on(start(settings)),
-        Err(e) => {
-            error!("error during runtime creation: {:?}", e);
-            return;
-        }
-    };
-
-    if let Err(e) = result {
-        error!("error during server runtime: {:?}", e);
-    }
-}
-
 /// Parses the config and sets up logging
 fn setup() -> Result<Settings> {
     let config: Settings = Settings::from_args();
@@ -159,7 +159,7 @@ async fn start(settings: Settings) -> Result<()> {
 
     let service_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(
-            utils::AuthIfEnabled::bearer(
+            middleware::AuthIfEnabled::bearer(
                 settings
                     .authentication_key
                     .as_ref()
@@ -172,10 +172,6 @@ async fn start(settings: Settings) -> Result<()> {
         .layer(SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
             header::SERVER,
             HeaderValue::from_static("lnx"),
-        ))
-        .layer(SetResponseHeaderLayer::<utils::RequestTagger, hyper::Body>::overriding(
-            header::HeaderName::from_static("request-id"),
-            utils::RequestTagger::new(),
         ))
         .into_inner();
 

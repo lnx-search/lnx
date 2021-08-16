@@ -3,9 +3,8 @@ use axum::http::header;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
 
 use tower_http::auth::AuthorizeRequest;
-use tower_http::set_header::MakeHeaderValue;
 
-use uuid::Uuid;
+use tokio::time::Duration;
 
 
 #[derive(Debug, Clone)]
@@ -49,20 +48,5 @@ impl AuthorizeRequest for AuthIfEnabled {
         let mut res = Response::new(body);
         *res.status_mut() = StatusCode::UNAUTHORIZED;
         res
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct RequestTagger;
-
-impl RequestTagger {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl<T> MakeHeaderValue<T> for RequestTagger {
-    fn make_header_value(&mut self, _message: &T) -> Option<HeaderValue> {
-         Some(HeaderValue::from_str(&Uuid::new_v4().to_string()).unwrap())
     }
 }
