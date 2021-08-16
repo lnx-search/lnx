@@ -264,17 +264,17 @@ impl IndexReaderHandler {
         };
 
         let executors = ArrayQueue::new(max_concurrency);
-        for _ in 0..max_concurrency {
+        for i in 0..max_concurrency {
             let executor = if reader_threads > 1 {
                 info!(
-                    "index {} reader executor startup, mode: multi-threaded, threads: {}",
-                    &index_name, reader_threads
+                    "[ READER {} @ {} ] executor startup, mode: multi-threaded, threads: {}",
+                    i, &index_name, reader_threads
                 );
                 Executor::multi_thread(reader_threads, "index-reader-")?
             } else {
                 info!(
-                    "index {} reader executor startup, mode: single-threaded (no-op)",
-                    &index_name
+                    "[ READER {} @ {} ] executor startup, mode: single-threaded (no-op)",
+                    i, &index_name,
                 );
                 Executor::single_thread()
             };
@@ -596,17 +596,17 @@ impl IndexHandler {
         let index = match loader.storage_type {
             IndexStorageType::TempFile => {
                 info!(
-                    "creating index in a temporary directory for index {}",
+                    "[ SETUP @ {} ] creating index in a temporary directory",
                     &loader.name
                 );
                 index.create_from_tempdir()?
             }
             IndexStorageType::Memory => {
-                info!("creating index in memory for index {}", &loader.name);
+                info!("[ SETUP @ {} ] creating index in memory", &loader.name);
                 index.create_in_ram()?
             }
             IndexStorageType::FileSystem(path) => {
-                info!("creating index in directory for index {}", &loader.name);
+                info!("[ SETUP @ {} ] creating index in directory", &loader.name);
                 index.create_in_dir(path)?
             }
         };
@@ -642,8 +642,8 @@ impl IndexHandler {
 
         let writer = index.writer_with_num_threads(loader.writer_threads, loader.writer_buffer)?;
         info!(
-            "index writer has been allocated with {} threads and {} byte allocation",
-            loader.writer_threads, loader.writer_buffer
+            "[ WRITER @ {} ] index writer has been allocated with {} threads and {} byte allocation",
+            &loader.name ,loader.writer_threads, loader.writer_buffer
         );
 
         let reader = index
@@ -652,8 +652,8 @@ impl IndexHandler {
             .reload_policy(ReloadPolicy::OnCommit)
             .try_into()?;
         info!(
-            "index reader has been allocated with {} searchers",
-            loader.max_concurrency
+            "[ READER @ {} ] index reader has been allocated with {} searchers",
+            &loader.name, loader.max_concurrency
         );
 
         let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);

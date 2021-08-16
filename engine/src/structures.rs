@@ -66,6 +66,7 @@ pub struct IndexDeclaration {
     max_concurrency: u32,
     reader_threads: Option<u32>,
     search_fields: Vec<String>,
+    #[serde(default)]
     boost_fields: HashMap<String, tantivy::Score>,
     storage_type: IndexStorageType,
     fields: HashMap<String, FieldDeclaration>,

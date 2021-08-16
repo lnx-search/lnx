@@ -27,7 +27,7 @@ impl StorageManager {
 
         while let Some(file) = read_dir.next_entry().await? {
             info!(
-                "loading index from directory {} with path {:?}",
+                "[ STORAGE ] loading index from directory {} with path {:?}",
                 &self.dir,
                 file.path()
             );

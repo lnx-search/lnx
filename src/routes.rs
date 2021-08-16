@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::sync::Arc;
+use hashbrown::HashMap;
 
 use axum::body::{box_body, Body, BoxBody};
 use axum::extract::{self, Extension, Path, Query};
@@ -12,7 +13,6 @@ use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
-use std::collections::HashMap;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -67,11 +67,11 @@ macro_rules! check_path {
         match $result {
             Ok(payload) => payload,
             Err(PathParamsRejection::InvalidPathParam(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {}", e)),
             Err(PathParamsRejection::MissingRouteParams(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {}", e)),
             Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {}", e)),
         }
     }}
 }
@@ -84,14 +84,10 @@ macro_rules! check_query {
     ($result:expr) => {{
         match $result {
             Ok(payload) => payload,
-            Err(QueryRejection::QueryStringMissing(_)) =>
-                return json_response(StatusCode::BAD_REQUEST, "missing required query string"),
             Err(QueryRejection::FailedToDeserializeQueryString(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {:?}", e)),
-            Err(QueryRejection::UriAlreadyExtracted(_)) =>
-                return json_response(StatusCode::BAD_REQUEST, "uri already extracted"),
+                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {}", e)),
             Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {}", e)),
         }
     }}
 }
@@ -107,11 +103,11 @@ macro_rules! check_json {
             Err(JsonRejection::MissingJsonContentType(_)) =>
                 return json_response(StatusCode::BAD_REQUEST, "request missing application/json content type"),
             Err(JsonRejection::InvalidJsonBody(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {}", e)),
             Err(JsonRejection::BodyAlreadyExtracted(_)) =>
                 return json_response(StatusCode::BAD_REQUEST, "body already extracted"),
             Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {:?}", e)),
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {}", e)),
         }
     }}
 }
