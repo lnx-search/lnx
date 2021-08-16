@@ -47,9 +47,10 @@ pub enum FieldDeclaration {
 /// The storage backend to store index documents in.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[serde(tag = "mode", content = "path")]
 pub enum IndexStorageType {
     /// Creates a temporary file.
-    TempFile,
+    TempDir,
 
     /// Creates the index in memory (generally only for debugging)
     Memory,

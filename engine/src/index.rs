@@ -624,7 +624,7 @@ impl IndexHandler {
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
-            IndexStorageType::TempFile => {
+            IndexStorageType::TempDir => {
                 info!(
                     "[ SETUP @ {} ] creating index in a temporary directory",
                     &loader.name
