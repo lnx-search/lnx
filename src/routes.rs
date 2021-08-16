@@ -67,12 +67,18 @@ macro_rules! check_path {
     ($result:expr) => {{
         match $result {
             Ok(payload) => payload,
-            Err(PathParamsRejection::InvalidPathParam(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {}", e)),
-            Err(PathParamsRejection::MissingRouteParams(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {}", e)),
-            Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {}", e)),
+            Err(PathParamsRejection::InvalidPathParam(e)) => {
+                warn!("rejecting request due to {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {}", e))
+            },
+            Err(PathParamsRejection::MissingRouteParams(e)) => {
+                warn!("rejecting request due to {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {}", e))
+            },
+            Err(e) => {
+                warn!("rejecting request due to {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {}", e))
+            },
         }
     }}
 }
@@ -85,10 +91,14 @@ macro_rules! check_query {
     ($result:expr) => {{
         match $result {
             Ok(payload) => payload,
-            Err(QueryRejection::FailedToDeserializeQueryString(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {}", e)),
-            Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {}", e)),
+            Err(QueryRejection::FailedToDeserializeQueryString(e)) => {
+                warn!("rejecting request due to {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {}", e))
+            },
+            Err(e) => {
+                warn!("rejecting request due to {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {}", e))
+            },
         }
     }}
 }
@@ -101,14 +111,22 @@ macro_rules! check_json {
     ($result:expr) => {{
         match $result {
             Ok(payload) => payload,
-            Err(JsonRejection::MissingJsonContentType(_)) =>
-                return json_response(StatusCode::BAD_REQUEST, "request missing application/json content type"),
-            Err(JsonRejection::InvalidJsonBody(e)) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {}", e)),
-            Err(JsonRejection::BodyAlreadyExtracted(_)) =>
-                return json_response(StatusCode::BAD_REQUEST, "body already extracted"),
-            Err(e) =>
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {}", e)),
+            Err(JsonRejection::MissingJsonContentType(_)) => {
+                warn!("rejecting request due to missing json content-type");
+                return json_response(StatusCode::BAD_REQUEST, "request missing application/json content type")
+            },
+            Err(JsonRejection::InvalidJsonBody(e)) => {
+                warn!("rejecting request due to invalid body: {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {}", e))
+            },
+            Err(JsonRejection::BodyAlreadyExtracted(_)) => {
+                warn!("rejecting request due to duplicate body extracting");
+                return json_response(StatusCode::BAD_REQUEST, "body already extracted")
+            },
+            Err(e) =>{
+                warn!("rejecting request due to unknown error: {:?}", e);
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {}", e))
+            },
         }
     }}
 }

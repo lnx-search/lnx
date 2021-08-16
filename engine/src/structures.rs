@@ -278,6 +278,7 @@ mod default_query_data {
 /// so Bytes and datetime are handled as base64 encoded strings and u64 timestamps
 /// respectively.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 #[serde(tag = "type", content = "value")]
 pub enum FieldValue {
     /// A signed 64 bit integer.
