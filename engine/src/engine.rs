@@ -1,11 +1,11 @@
 use anyhow::{Error, Result};
 use hashbrown::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::RwLock;
 
 use crate::index::{IndexHandler, QueryResults};
 use crate::storage::StorageManager;
-use crate::structures::{IndexDeclaration, QueryPayload};
+use crate::structures::IndexDeclaration;
 
 pub type LeasedIndex = Arc<IndexHandler>;
 

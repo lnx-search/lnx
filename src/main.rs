@@ -37,6 +37,7 @@ use engine::SearchEngine;
 use tower::util::MapResponseLayer;
 use tower_http::add_extension::AddExtensionLayer;
 
+
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
 struct Settings {
@@ -184,6 +185,7 @@ async fn start(settings: Settings) -> Result<()> {
             ),
         )
         .layer(AddExtensionLayer::new(engine))
+        .layer(MapResponseLayer::new(routes::map_status))
         .into_inner();
 
     let app = route("/indexes/:index_name/search", get(routes::search_index))
@@ -197,8 +199,7 @@ async fn start(settings: Settings) -> Result<()> {
             "/indexes/:index_name/documents",
             post(routes::add_document).delete(routes::delete_all_documents),
         )
-        .layer(service_middleware)
-        .layer(MapResponseLayer::new(routes::map_status));
+        .layer(service_middleware);
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {

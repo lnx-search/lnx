@@ -15,7 +15,7 @@ use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
-    DateTime, DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter,
+    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter,
     LeasedItem, ReloadPolicy, Score, Searcher, Term,
 };
 
@@ -123,7 +123,6 @@ impl IndexWriterWorker {
 /// in a new thread.
 struct IndexWriterHandler {
     index_name: String,
-    writer_thread: std::thread::JoinHandle<()>,
     writer_waiters: Arc<SegQueue<oneshot::Sender<()>>>,
     writer_sender: crossbeam::channel::Sender<WriterOp>,
 }
@@ -145,7 +144,7 @@ impl IndexWriterHandler {
             rx,
         };
 
-        let handle = std::thread::Builder::new()
+        std::thread::Builder::new()
             .name(format!("index-worker-{}", &index_name))
             .spawn(move || {
                 let id = std::thread::current().id();
@@ -159,7 +158,6 @@ impl IndexWriterHandler {
 
         Self {
             index_name,
-            writer_thread: handle,
             writer_sender: tx,
             writer_waiters: waiters,
         }

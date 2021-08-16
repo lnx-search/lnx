@@ -235,7 +235,7 @@ impl TryFrom<String> for RefAddress {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct QueryPayload {
     /// A query string for `QueryMode::Fuzzy` and `QueryMode::Normal` queries.
     pub(crate) query: Option<String>,
@@ -301,7 +301,6 @@ pub enum TermValue {
 }
 
 mod deserialize_datetime {
-    use serde::de::Error;
     use serde::{Deserialize, Deserializer};
     use tantivy::fastfield::FastValue;
     use tantivy::DateTime;
