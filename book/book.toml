@@ -3,4 +3,5 @@ authors = ["Harrison Burt"]
 language = "en"
 multilingual = false
 src = "src"
-title = "Using LNX"
+title = "Getting started with lnx"
+description = "An introduction to lnx covering setup, usage and optimisation."
