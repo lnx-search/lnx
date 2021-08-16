@@ -3,4 +3,4 @@
 </p>
 
 #
-<p align="center">An ultra-fast, composable deployment of the tantivy search engine via REST.</p>
+<p align="center">An ultra-fast, adaptable deployment of the tantivy search engine via REST.</p>
