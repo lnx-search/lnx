@@ -302,6 +302,26 @@ impl IndexReaderHandler {
         })
     }
 
+    /// Gets a document with a given address.
+    ///
+    /// This counts as a concurrent action.
+    async fn get_doc(&self, doc_address: DocAddress) -> Result<NamedFieldDocument> {
+        let _permit = self.limiter.acquire().await?;
+
+        let (resolve, waiter) = oneshot::channel();
+        let searcher = self.reader.searcher();
+
+        self.thread_pool.spawn(move || {
+            let doc = searcher.doc(doc_address);
+            let _ = resolve.send(doc);
+        });
+
+        let result = waiter.await??;
+        let doc = self.schema.to_named_doc(&result);
+
+        Ok(doc)
+    }
+
     /// Shuts down the thread pools and acquires all permits
     /// shutting the index down.
     ///
@@ -320,6 +340,7 @@ impl IndexReaderHandler {
 
         Ok(())
     }
+
     /// Searches the index with a given query.
     ///
     /// The index will use fuzzy matching based on levenshtein distance
@@ -706,6 +727,13 @@ impl IndexHandler {
         };
 
         Some(v)
+    }
+
+    /// Gets a document with a given document address.
+    ///
+    /// This uses a concurrency permit while completing the operation.
+    pub async fn get_doc(&self, doc_address: DocAddress) -> Result<NamedFieldDocument> {
+        self.reader.get_doc(doc_address).await
     }
 
     /// Submits a document to be processed by the index writer.

@@ -189,7 +189,7 @@ pub struct RefAddress {
 }
 
 impl RefAddress {
-    pub(crate) fn as_doc_address(&self) -> DocAddress {
+    pub fn as_doc_address(&self) -> DocAddress {
         DocAddress {
             segment_ord: self.segment_id,
             doc_id: self.doc_id,

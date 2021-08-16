@@ -7,12 +7,13 @@ use axum::extract::{self, Extension, Path, Query};
 use axum::extract::rejection::{QueryRejection, JsonRejection, PathParamsRejection};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{IndexDeclaration, QueryPayload, FieldValue};
+use engine::structures::{IndexDeclaration, QueryPayload, FieldValue, RefAddress};
 use engine::tantivy::Document;
 use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
+use std::convert::TryFrom;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -267,11 +268,13 @@ pub async fn get_document(
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = Path(check_path!(index_name));
-    let _document_id = Path(check_path!(document_id));
+    let document_id = check_path!(document_id);
+    let document_id = check_error!(RefAddress::try_from(document_id.0), "parse document id");
 
-    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let doc = check_error!(index.get_doc(document_id.as_doc_address()).await, "retrieve doc");
 
-    json_response(StatusCode::OK, &())
+    json_response(StatusCode::OK, &doc)
 }
 
 
