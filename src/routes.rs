@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::sync::Arc;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 use axum::body::{box_body, Body, BoxBody};
 use axum::extract::{self, Extension, Path, Query};
@@ -211,8 +211,12 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
+            let allowed_fields: HashSet<String> = schema.fields()
+                .map(|v| v.1.name().to_string())
+                .collect();
+
             let document = check_error!(
-                Document::from_value_map(doc, &schema),
+                Document::from_value_map(doc, &schema, &allowed_fields),
                 "load document from raw"
             );
             if wait {
@@ -226,8 +230,12 @@ pub async fn add_document(
             }
         }
         DocumentOptions::Many(docs) => {
+            let allowed_fields: HashSet<String> = schema.fields()
+                .map(|v| v.1.name().to_string())
+                .collect();
+
             let documents = check_error!(
-                Document::from_many_value_map(docs, &schema),
+                Document::from_many_value_map(docs, &schema, &allowed_fields),
                 "load many documents from raw"
             );
             if wait {
