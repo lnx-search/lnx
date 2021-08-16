@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate serde_json;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -28,8 +31,11 @@ use structopt::StructOpt;
 
 mod routes;
 mod middleware;
+mod responders;
 
 use engine::SearchEngine;
+use tower_http::add_extension::AddExtensionLayer;
+use tower::util::MapResponseLayer;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -166,13 +172,16 @@ async fn start(settings: Settings) -> Result<()> {
                     .map(|v| v.as_str())
                     .unwrap_or_else(|| ""),
                 settings.authentication_key.is_some(),
-                "Missing token bearer authorization header.",
-            ),
+                &json! ({
+                    "detail": "Missing token bearer authorization header."
+                    }),
+            )?,
         ))
         .layer(SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
             header::SERVER,
             HeaderValue::from_static("lnx"),
         ))
+        .layer(AddExtensionLayer::new(engine))
         .into_inner();
 
     let app = route("/indexes/:index_name/search", get(routes::search_index))
@@ -186,7 +195,8 @@ async fn start(settings: Settings) -> Result<()> {
             "/indexes/:index_name/documents",
             post(routes::add_document).delete(routes::delete_all_documents),
         )
-        .layer(service_middleware);
+        .layer(service_middleware)
+        .layer(MapResponseLayer::new(routes::map_status));
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {

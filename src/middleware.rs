@@ -1,10 +1,8 @@
 use axum::http::header;
-
+use anyhow::Result;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
-
 use tower_http::auth::AuthorizeRequest;
-
-use tokio::time::Duration;
+use serde::Serialize;
 
 
 #[derive(Debug, Clone)]
@@ -15,15 +13,16 @@ pub struct AuthIfEnabled {
 }
 
 impl AuthIfEnabled {
-    pub fn bearer(token: &str, enabled: bool, reject_msg: &str) -> Self {
-        let reject_msg = bytes::Bytes::copy_from_slice(reject_msg.as_bytes());
+    pub fn bearer<T: Serialize>(token: &str, enabled: bool, reject_msg: &T) -> Result<Self> {
+        let msg = serde_json::to_vec(&reject_msg)?;
+        let reject_msg = bytes::Bytes::copy_from_slice(&msg);
         let auth = HeaderValue::from_str(token).unwrap();
 
-        Self {
+        Ok(Self {
             enabled,
             auth,
             reject_msg,
-        }
+        })
     }
 }
 
