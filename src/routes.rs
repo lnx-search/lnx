@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use axum::body::{BoxBody, box_body, Body};
-use axum::http::{Response, StatusCode};
+use axum::body::{box_body, Body, BoxBody};
 use axum::extract::{Extension, Path, Query};
+use axum::http::{Response, StatusCode};
 
-use engine::SearchEngine;
 use engine::structures::QueryPayload;
+use engine::SearchEngine;
 
 use crate::responders::json_response;
 
@@ -16,13 +16,15 @@ type SharedEngine = Arc<SearchEngine>;
 macro_rules! get_index_or_reject {
     ($engine:expr, $name:expr) => {{
         match $engine.get_index($name).await {
-            None => return json_response(
-                StatusCode::BAD_REQUEST,
-                &format!("no index exists with name {}", $name),
-            ),
+            None => {
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("no index exists with name {}", $name),
+                )
+            }
             Some(index) => index,
         }
-    }}
+    }};
 }
 
 /// Checks for any errors in the given operation.
@@ -61,9 +63,7 @@ pub async fn search_index(
     json_response(StatusCode::OK, &results)
 }
 
-pub async fn create_index(
-    Extension(_engine): Extension<SharedEngine>,
-) -> Response<Body> {
+pub async fn create_index(Extension(_engine): Extension<SharedEngine>) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
@@ -129,10 +129,7 @@ fn to_box_body(resp: Response<Body>) -> Response<BoxBody> {
 pub fn map_status(resp: Response<BoxBody>) -> Response<BoxBody> {
     let status = resp.status();
     if status == StatusCode::NOT_FOUND {
-        return to_box_body(json_response(
-            StatusCode::NOT_FOUND,
-            "route not found",
-        ));
+        return to_box_body(json_response(StatusCode::NOT_FOUND, "route not found"));
     } else if status == StatusCode::METHOD_NOT_ALLOWED {
         return to_box_body(json_response(
             StatusCode::METHOD_NOT_ALLOWED,

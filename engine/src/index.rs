@@ -15,8 +15,8 @@ use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
 use tantivy::{
-    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter,
-    LeasedItem, ReloadPolicy, Score, Searcher, Term,
+    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
+    ReloadPolicy, Score, Searcher, Term,
 };
 
 use crate::structures::{

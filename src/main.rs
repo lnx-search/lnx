@@ -37,7 +37,6 @@ use engine::SearchEngine;
 use tower::util::MapResponseLayer;
 use tower_http::add_extension::AddExtensionLayer;
 
-
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
 struct Settings {
@@ -173,8 +172,8 @@ async fn start(settings: Settings) -> Result<()> {
                     .map(|v| v.as_str())
                     .unwrap_or_else(|| ""),
                 settings.authentication_key.is_some(),
-                &"Missing token bearer authorization header."
-            )?
+                &"Missing token bearer authorization header.",
+            )?,
         ))
         .layer(
             SetResponseHeaderLayer::<HeaderValue, hyper::Body>::overriding(
