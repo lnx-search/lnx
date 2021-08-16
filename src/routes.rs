@@ -1,15 +1,15 @@
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
+use axum::extract;
 use axum::extract::{Extension, Path, Query};
 use axum::http::{Response, StatusCode};
-use axum::extract;
 
-use engine::structures::{QueryPayload, IndexDeclaration};
-use engine::{SearchEngine, LeasedIndex};
+use engine::structures::{IndexDeclaration, QueryPayload};
 use engine::tantivy::Document;
-use engine::{FromValue, DocumentPayload};
+use engine::{DocumentPayload, FromValue};
+use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
 
@@ -25,7 +25,7 @@ macro_rules! get_index_or_reject {
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("no index exists with name {:?}", $name),
-                )
+                );
             }
             Some(index) => index,
         }
@@ -74,20 +74,20 @@ pub async fn search_index(
 #[derive(Deserialize)]
 pub struct CreateIndexQueryParams {
     /// If true this will delete the old index if it existed. (defaults to false)
-    override_if_exists: Option<bool>
+    override_if_exists: Option<bool>,
 }
 
 /// Creates a index / overrides an index with the given payload.
 pub async fn create_index(
     query: Query<CreateIndexQueryParams>,
     payload: extract::Json<IndexDeclaration>,
-    Extension(engine): Extension<SharedEngine>
+    Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let ignore = query.0;
-    check_error!(engine.add_index(
-            payload.0,
-            ignore.override_if_exists.unwrap_or(false)
-        ).await,
+    check_error!(
+        engine
+            .add_index(payload.0, ignore.override_if_exists.unwrap_or(false))
+            .await,
         "create index"
     );
 
@@ -113,7 +113,7 @@ pub struct PendingQueries {
     ///
     /// It's recommend to wait for the operation to be submitted for
     /// the purposes of backpressure.
-    wait: Option<bool>
+    wait: Option<bool>,
 }
 
 /// The possible formats for uploading documents.
@@ -144,7 +144,10 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            let document = check_error!(Document::from_value_map(doc, &schema), "load document from raw");
+            let document = check_error!(
+                Document::from_value_map(doc, &schema),
+                "load document from raw"
+            );
             if wait {
                 check_error!(index.add_document(document).await, "add document");
             } else {
@@ -154,9 +157,12 @@ pub async fn add_document(
                     }
                 });
             }
-        },
+        }
         DocumentOptions::Many(docs) => {
-            let documents = check_error!(Document::from_many_value_map(docs, &schema), "load many documents from raw");
+            let documents = check_error!(
+                Document::from_many_value_map(docs, &schema),
+                "load many documents from raw"
+            );
             if wait {
                 check_error!(index.add_many_documents(documents).await, "add documents");
             } else {
@@ -169,7 +175,14 @@ pub async fn add_document(
         }
     }
 
-    json_response(StatusCode::OK, if wait { "added documents" } else {"submitted documents"})
+    json_response(
+        StatusCode::OK,
+        if wait {
+            "added documents"
+        } else {
+            "submitted documents"
+        },
+    )
 }
 
 pub async fn get_document(

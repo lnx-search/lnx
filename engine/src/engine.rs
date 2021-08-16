@@ -55,7 +55,7 @@ impl SearchEngine {
 
             if !override_if_exists {
                 if lock.contains_key(&name) {
-                    return Ok(())
+                    return Ok(());
                 }
             }
 

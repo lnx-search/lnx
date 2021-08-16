@@ -1,9 +1,9 @@
 use anyhow::Result;
 use axum::http::header;
+use headers::HeaderMapExt;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
 use serde::Serialize;
 use tower_http::auth::AuthorizeRequest;
-use headers::HeaderMapExt;
 
 #[derive(Debug, Clone)]
 pub struct AuthIfEnabled {

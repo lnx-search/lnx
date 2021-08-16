@@ -20,7 +20,7 @@ use tantivy::{
 };
 
 use crate::structures::{
-    IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, FieldValue,
+    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
 
 /// A writing operation to be sent to the `IndexWriterWorker`.

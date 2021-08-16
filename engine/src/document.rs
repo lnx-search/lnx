@@ -1,4 +1,4 @@
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use hashbrown::HashMap;
 
 use tantivy::schema::Schema;
@@ -11,18 +11,19 @@ pub type DocumentPayload = HashMap<String, FieldValue>;
 pub trait FromValue {
     fn from_value_map(payload: DocumentPayload, schema: &Schema) -> Result<Document>;
 
-    fn from_many_value_map(payload: Vec<DocumentPayload>, schema: &Schema) -> Result<Vec<Document>>;
+    fn from_many_value_map(payload: Vec<DocumentPayload>, schema: &Schema)
+        -> Result<Vec<Document>>;
 }
 
 impl FromValue for Document {
-    fn from_value_map(mut payload: DocumentPayload, schema: &Schema) -> Result<Document>  {
+    fn from_value_map(mut payload: DocumentPayload, schema: &Schema) -> Result<Document> {
         let mut document = Document::new();
 
         for (key, value) in payload.drain() {
             let field = schema.get_field(&key);
 
             if field.is_none() {
-                return Err(Error::msg("unknown field given in payload"))
+                return Err(Error::msg("unknown field given in payload"));
             }
 
             match value {
@@ -38,7 +39,10 @@ impl FromValue for Document {
         Ok(document)
     }
 
-    fn from_many_value_map(payload: Vec<DocumentPayload>, schema: &Schema) -> Result<Vec<Document>> {
+    fn from_many_value_map(
+        payload: Vec<DocumentPayload>,
+        schema: &Schema,
+    ) -> Result<Vec<Document>> {
         let mut out = vec![];
         for doc in payload {
             let doc = Self::from_value_map(doc, schema)?;
