@@ -64,7 +64,7 @@ If more than one value is associated to a fast field, only the last one is kept.
 - `stored`: bool - Set the field as stored.
 Only the fields that are set as *stored* are persisted into the store.
 
-### Creating The Payload
+### The Request Payload
 The `/indexes` endpoint expects a POST request with a `application/json` body, and example 
 payload looks like:
 
@@ -127,4 +127,11 @@ payload looks like:
 }
 ```
 
+### Success!
+Providing the given payload data is valid you have successfully made an index.
 
+This can error if you assign more threads than your system can reasonably assign.
+
+#### Performance Note
+More threads != faster, you should test and benchmark different ratios of reader threads
+and concurrency as that will have the biggest affect on performance.
