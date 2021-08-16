@@ -340,7 +340,7 @@ pub async fn rollback_index_changes(
     json_response(StatusCode::OK, "changes rolled back since last commit")
 }
 
-/// Converts an arbitary Response<Body> into Response<BoxBody>
+/// Converts an arbitrary Response<Body> into Response<BoxBody>
 fn to_box_body(resp: Response<Body>) -> Response<BoxBody> {
     let (parts, body) = resp.into_parts();
     let body = box_body(body);
