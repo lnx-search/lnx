@@ -40,13 +40,13 @@ use tower_http::add_extension::AddExtensionLayer;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
 struct Settings {
-    /// The log level filter, any logs that are above this level wont
+    /// The log level filter, any logs that are above this level won't
     /// be displayed.
     #[structopt(long, default_value = "info", env)]
     log_level: LevelFilter,
 
     /// An optional bool to use ASNI colours for log levels.
-    /// You probably want to disable this if using file based logging.
+    /// You probably want to disable this if using file-based logging.
     #[structopt(long, env)]
     pretty_logs: Option<bool>,
 
@@ -68,11 +68,11 @@ struct Settings {
 
     /// If specified this will require an authentication key on each request.
     ///
-    /// Generally it's recommend to have this in a production environment.
+    /// Generally, it's recommended to have this in a production environment.
     #[structopt(long, short = "auth", env, hide_env_values = true)]
     authentication_key: Option<String>,
 
-    /// The amount of threads to use for the tokio runtime.
+    /// The number of threads to use for the tokio runtime.
     ///
     /// If this is not set, the number of logical cores on the machine is used.
     #[structopt(long, short = "threads", env)]
