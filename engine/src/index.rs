@@ -109,7 +109,7 @@ impl IndexWriterWorker {
         };
 
         info!(
-            "[ WRITER @ {} ][ {} ] completed operation {}",
+            "[ WRITER @ {} ][ TRANSACTION {} ] completed operation {}",
             &self.index_name, transaction_id, type_
         );
 
@@ -208,6 +208,9 @@ impl IndexWriterHandler {
 /// threads, when setting the `max_concurrency` and `reader_threads` the total
 /// will result in `max_concurrency` * `reader_threads` threads spawned.
 struct IndexReaderHandler {
+    /// The name of the index the handler belongs to.
+    name: String,
+
     /// The internal tantivy index reader.
     reader: IndexReader,
 
@@ -287,6 +290,7 @@ impl IndexReaderHandler {
         let executors = Arc::new(executors);
 
         Ok(Self {
+            name: index_name,
             reader,
             executors,
             limiter,
@@ -347,6 +351,7 @@ impl IndexReaderHandler {
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
 
+        let start = std::time::Instant::now();
         self.thread_pool.spawn(move || {
             let executor = executors.pop().expect("get executor");
 
@@ -360,7 +365,11 @@ impl IndexReaderHandler {
             let _ = resolve.send(res);
         });
 
-        waiter.await?
+        let res = waiter.await??;
+        info!("[ SEARCH @ {} ] took {:?} with limit: {} and {} results total", &self.name, start.elapsed(), limit, res.count);
+
+        Ok(res)
+
     }
 
     fn parse_query(
@@ -541,7 +550,7 @@ fn search(
     let elapsed = start.elapsed();
     let time_taken = elapsed.as_secs_f64();
 
-    debug!("search took {:?} with limit: {}", elapsed, limit);
+    debug!("thread runtime took {:?} with limit: {} and {} results total", elapsed, limit, count);
 
     Ok(QueryResults {
         time_taken,

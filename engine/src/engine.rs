@@ -101,7 +101,7 @@ impl SearchEngine {
         let mut lock = self.indexes.write().await;
 
         for (name, v) in lock.drain() {
-            info!("clearing {}", &name);
+            info!("[ CONTROLLER ] clearing {}", &name);
             v.shutdown().await?;
         }
 
