@@ -105,26 +105,49 @@ pub struct PendingQueries {
     wait: Option<bool>
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum DocumentOptions {
+    Single(DocumentPayload),
+    Many(Vec<DocumentPayload>),
+}
+
 pub async fn add_document(
     query: Query<PendingQueries>,
     Path(index_name): Path<String>,
-    payload: extract::Json<DocumentPayload>,
+    payload: extract::Json<DocumentOptions>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     let schema = index.schema();
-    let document = check_error!(Document::from_value_map(payload.0, schema), "load document from raw");
-
     let wait = query.0.wait.unwrap_or(true);
-    if wait {
-        check_error!(index.add_document(document).await, "add document");
-    } else {
-        tokio::spawn(async move {
-            if let Err(e) = index.add_document(document).await {
-                error!("failed to add document {:?}", e);
+
+    match payload.0 {
+        DocumentOptions::Single(doc) => {
+            let document = check_error!(Document::from_value_map(doc, &schema), "load document from raw");
+            if wait {
+                check_error!(index.add_document(document).await, "add document");
+            } else {
+                tokio::spawn(async move {
+                    if let Err(e) = index.add_document(document).await {
+                        error!("failed to add document {:?}", e);
+                    }
+                });
             }
-        });
+        },
+        DocumentOptions::Many(docs) => {
+            let documents = check_error!(Document::from_many_value_map(docs, &schema), "load many documents from raw");
+            if wait {
+                check_error!(index.add_many_documents(documents).await, "add documents");
+            } else {
+                tokio::spawn(async move {
+                    if let Err(e) = index.add_many_documents(documents).await {
+                        error!("failed to add documents {:?}", e);
+                    }
+                });
+            }
+        }
     }
 
     json_response(StatusCode::OK, if wait { "added documents" } else {"submitted documents"})
