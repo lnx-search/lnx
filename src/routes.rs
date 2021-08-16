@@ -6,12 +6,13 @@ use axum::extract::{self, Extension, Path, Query};
 use axum::extract::rejection::{QueryRejection, JsonRejection, PathParamsRejection};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{IndexDeclaration, QueryPayload};
+use engine::structures::{IndexDeclaration, QueryPayload, FieldValue};
 use engine::tantivy::Document;
 use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
+use std::collections::HashMap;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -255,6 +256,7 @@ pub async fn add_document(
     )
 }
 
+/// Gets a specific document from the system.
 pub async fn get_document(
     index_name: Result<Path<String>, PathParamsRejection>,
     document_id: Result<Path<String>, PathParamsRejection>,
@@ -268,26 +270,36 @@ pub async fn get_document(
     json_response(StatusCode::OK, &())
 }
 
-pub async fn delete_document(
+
+/// Deletes any documents matching the set of given terms.
+pub async fn delete_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
-    document_id: Result<Path<String>, PathParamsRejection>,
+    terms: Result<extract::Json<HashMap<String, FieldValue>>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = Path(check_path!(index_name));
-    let _document_id = Path(check_path!(document_id));
+    let mut terms = check_json!(terms);
 
-    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+
+    for (field, term) in terms.0.drain() {
+        if let Some(term) = index.get_term(&field, term) {
+            check_error!(index.delete_documents_with_term(term).await, "delete documents with term");
+        }
+    }
 
     json_response(StatusCode::OK, &())
 }
 
+/// Deletes all documents.
 pub async fn delete_all_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = Path(check_path!(index_name));
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
-    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    check_error!(index.clear_documents().await, "clear documents");
 
     json_response(StatusCode::OK, &())
 }

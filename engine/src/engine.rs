@@ -96,4 +96,17 @@ impl SearchEngine {
         let lock = self.indexes.read().await;
         Some(lock.get(index_name)?.clone())
     }
+
+    pub async fn reset(&self) -> Result<()> {
+        let mut lock = self.indexes.write().await;
+
+        for (name, v) in lock.drain() {
+            info!("clearing {}", &name);
+            v.shutdown().await?;
+        }
+
+        self.storage.clear_all().await?;
+
+        Ok(())
+    }
 }

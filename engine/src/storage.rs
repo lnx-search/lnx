@@ -42,16 +42,6 @@ impl StorageManager {
         Ok(indexes)
     }
 
-    /// Gets a loaded index from the given path.
-    pub(crate) async fn get_index_meta(&self, name: &str) -> Result<LoadedIndex> {
-        let path = format!("{}/{}", &self.dir, name);
-        let data = fs::read(path).await?;
-
-        info!("loading index metadata for index {}", &name);
-        let loader = serde_json::from_slice::<IndexDeclaration>(&data)?;
-        Ok(loader.into_schema())
-    }
-
     /// Stores a given index declaration in the set directory.
     ///
     /// Indexes are stored via their name and should be unique, if two indexes

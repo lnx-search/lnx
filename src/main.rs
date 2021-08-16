@@ -190,11 +190,11 @@ async fn start(settings: Settings) -> Result<()> {
         .route("/indexes", post(routes::create_index))
         .route(
             "/indexes/:index_name/documents/:document_id",
-            delete(routes::delete_document).get(routes::get_document),
+            get(routes::get_document),
         )
         .route(
             "/indexes/:index_name/documents",
-            post(routes::add_document).delete(routes::delete_all_documents),
+            post(routes::add_document).delete(routes::delete_all_documents).delete(routes::delete_documents),
         )
         .layer(service_middleware);
 
