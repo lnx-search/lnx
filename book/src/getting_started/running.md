@@ -8,7 +8,7 @@ lnx <flags>
 This will start the sever in a default configuration.
 
 *NOTE: It is generally recommend to customise the running on lnx for production and optimum systems,
-see [**optimising lnx**](optimising.md) for information on why it matters for performance sake.* 
+see [**optimising lnx**](/optimising) for information on why it matters for performance sake.* 
 
 #### Help
 ```

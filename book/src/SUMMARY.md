@@ -9,3 +9,5 @@
     - [Searching An index](getting_started/searching.md)
     - [Misc Endpoints](getting_started/misc_operations.md)
     - [Next Steps](getting_started/next_steps.md)
+ 
+- [Optimising](optimising.md)
