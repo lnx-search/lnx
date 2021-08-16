@@ -20,7 +20,7 @@ use tantivy::{
 };
 
 use crate::structures::{
-    IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, TermValue,
+    IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress, FieldValue,
 };
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
@@ -236,7 +236,7 @@ struct IndexReaderHandler {
     search_fields: Vec<(Field, Score)>,
 
     /// A cheaply cloneable schema reference.
-    quick_schema: Arc<Schema>,
+    schema: Schema,
 }
 
 impl IndexReaderHandler {
@@ -251,7 +251,7 @@ impl IndexReaderHandler {
         reader_threads: usize,
         parser: QueryParser,
         search_fields: Vec<(Field, Score)>,
-        quick_schema: Arc<Schema>,
+        schema_copy: Schema,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
@@ -294,7 +294,7 @@ impl IndexReaderHandler {
             thread_pool,
             parser,
             search_fields,
-            quick_schema,
+            schema: schema_copy,
         })
     }
 
@@ -335,12 +335,12 @@ impl IndexReaderHandler {
             // We choose to ignore the order by if the field doesnt exist.
             // While this may be surprising to be at first as long as it's
             // document this should be fine.
-            self.quick_schema.get_field(&field)
+            self.schema.get_field(&field)
         } else {
             None
         };
 
-        let schema = self.quick_schema.clone();
+        let schema = self.schema.clone();
         let limit = payload.limit;
         let offset = payload.offset;
         let query = self.parse_query(payload.query, doc, payload.mode)?;
@@ -502,7 +502,7 @@ fn search(
     executor: &Executor,
     limit: usize,
     offset: usize,
-    schema: Arc<Schema>,
+    schema: Schema,
     order_by: Option<Field>,
 ) -> Result<QueryResults> {
     let start = std::time::Instant::now();
@@ -567,7 +567,7 @@ pub struct IndexHandler {
     pub(crate) name: String,
 
     /// The internal tantivy index.
-    index: Index,
+    _index: Index,
 
     /// The internal tantivy schema.
     schema: Schema,
@@ -590,7 +590,7 @@ impl IndexHandler {
     /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
     /// as well as the tokio runtime threads.
     pub(crate) fn build_loaded(loader: LoadedIndex) -> Result<Self> {
-        let quick_schema = Arc::new(loader.schema.clone());
+        let schema_copy = loader.schema.clone();
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
@@ -665,30 +665,35 @@ impl IndexHandler {
             loader.reader_threads as usize,
             parser,
             search_fields,
-            quick_schema,
+            schema_copy,
         )?;
 
         Ok(Self {
             name: loader.name,
-            index,
+            _index: index,
             schema: loader.schema,
             writer: worker_handler,
             reader: reader_handler,
         })
     }
 
+    #[inline]
+    pub fn schema(&self) -> Schema {
+        self.schema.clone()
+    }
+
     /// Builds a `Term` from a given field and value.
     ///
     /// This assumes that the value type matches up with the field type.
-    pub fn get_term(&self, field: &str, value: TermValue) -> Option<Term> {
+    pub fn get_term(&self, field: &str, value: FieldValue) -> Option<Term> {
         let field = self.schema.get_field(field)?;
         let v = match value {
-            TermValue::I64(v) => Term::from_field_i64(field, v),
-            TermValue::F64(v) => Term::from_field_f64(field, v),
-            TermValue::U64(v) => Term::from_field_u64(field, v),
-            TermValue::Datetime(v) => Term::from_field_date(field, &v),
-            TermValue::Text(v) => Term::from_field_text(field, &v),
-            TermValue::Bytes(v) => Term::from_field_bytes(field, v.as_ref()),
+            FieldValue::I64(v) => Term::from_field_i64(field, v),
+            FieldValue::F64(v) => Term::from_field_f64(field, v),
+            FieldValue::U64(v) => Term::from_field_u64(field, v),
+            FieldValue::Datetime(v) => Term::from_field_date(field, &v),
+            FieldValue::Text(v) => Term::from_field_text(field, &v),
+            FieldValue::Bytes(v) => Term::from_field_bytes(field, v.as_ref()),
         };
 
         Some(v)

@@ -278,7 +278,7 @@ mod default_query_data {
 /// respectively.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", content = "value")]
-pub enum TermValue {
+pub enum FieldValue {
     /// A signed 64 bit integer.
     I64(i64),
 

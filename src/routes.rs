@@ -7,7 +7,9 @@ use axum::http::{Response, StatusCode};
 use axum::extract;
 
 use engine::structures::{QueryPayload, IndexDeclaration};
-use engine::SearchEngine;
+use engine::{SearchEngine, LeasedIndex};
+use engine::tantivy::Document;
+use engine::{FromValue, DocumentPayload};
 
 use crate::responders::json_response;
 
@@ -61,7 +63,7 @@ pub async fn search_index(
     Path(index_name): Path<String>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
     let results = check_error!(index.search(query.0).await, "search index");
 
     json_response(StatusCode::OK, &results)
@@ -98,13 +100,34 @@ pub async fn delete_index(
     json_response(StatusCode::OK, "index deleted")
 }
 
+#[derive(Deserialize)]
+pub struct PendingQueries {
+    wait: Option<bool>
+}
+
 pub async fn add_document(
+    query: Query<PendingQueries>,
     Path(index_name): Path<String>,
+    payload: extract::Json<DocumentPayload>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let _index = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
-    json_response(StatusCode::OK, &())
+    let schema = index.schema();
+    let document = check_error!(Document::from_value_map(payload.0, schema), "load document from raw");
+
+    let wait = query.0.wait.unwrap_or(true);
+    if wait {
+        check_error!(index.add_document(document).await, "add document");
+    } else {
+        tokio::spawn(async move {
+            if let Err(e) = index.add_document(document).await {
+                error!("failed to add document {:?}", e);
+            }
+        });
+    }
+
+    json_response(StatusCode::OK, if wait { "added documents" } else {"submitted documents"})
 }
 
 pub async fn get_document(
@@ -112,7 +135,7 @@ pub async fn get_document(
     Path(_document_id): Path<String>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let _index = get_index_or_reject!(engine, &index_name);
+    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
 }
@@ -122,7 +145,7 @@ pub async fn delete_document(
     Path(_document_id): Path<String>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let _index = get_index_or_reject!(engine, &index_name);
+    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
 }
@@ -131,7 +154,7 @@ pub async fn delete_all_documents(
     Path(index_name): Path<String>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let _index = get_index_or_reject!(engine, &index_name);
+    let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
 }
