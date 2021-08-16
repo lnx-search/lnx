@@ -2,8 +2,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
-use axum::extract;
-use axum::extract::{Extension, Path, Query};
+use axum::extract::{self, Extension, Path, Query};
+use axum::extract::rejection::{QueryRejection, JsonRejection, PathParamsRejection};
 use axum::http::{Response, StatusCode};
 
 use engine::structures::{IndexDeclaration, QueryPayload};
@@ -57,12 +57,73 @@ macro_rules! check_error {
     }}
 }
 
+/// Checks for any errors in parsing and extracting the path.
+///
+/// This is used to return a custom error message in a JSON format
+/// verses axum's default text/plain response.
+macro_rules! check_path {
+    ($result:expr) => {{
+        match $result {
+            Ok(payload) => payload,
+            Err(PathParamsRejection::InvalidPathParam(e)) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {:?}", e)),
+            Err(PathParamsRejection::MissingRouteParams(e)) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {:?}", e)),
+            Err(e) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {:?}", e)),
+        }
+    }}
+}
+
+/// Checks for any errors in parsing and extracting the query.
+///
+/// This is used to return a custom error message in a JSON format
+/// verses axum's default text/plain response.
+macro_rules! check_query {
+    ($result:expr) => {{
+        match $result {
+            Ok(payload) => payload,
+            Err(QueryRejection::QueryStringMissing(_)) =>
+                return json_response(StatusCode::BAD_REQUEST, "missing required query string"),
+            Err(QueryRejection::FailedToDeserializeQueryString(e)) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {:?}", e)),
+            Err(QueryRejection::UriAlreadyExtracted(_)) =>
+                return json_response(StatusCode::BAD_REQUEST, "uri already extracted"),
+            Err(e) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {:?}", e)),
+        }
+    }}
+}
+
+/// Checks for any errors in parsing and extracting the json payload.
+///
+/// This is used to return a custom error message in a JSON format
+/// verses axum's default text/plain response.
+macro_rules! check_json {
+    ($result:expr) => {{
+        match $result {
+            Ok(payload) => payload,
+            Err(JsonRejection::MissingJsonContentType(_)) =>
+                return json_response(StatusCode::BAD_REQUEST, "request missing application/json content type"),
+            Err(JsonRejection::InvalidJsonBody(e)) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {:?}", e)),
+            Err(JsonRejection::BodyAlreadyExtracted(_)) =>
+                return json_response(StatusCode::BAD_REQUEST, "body already extracted"),
+            Err(e) =>
+                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {:?}", e)),
+        }
+    }}
+}
+
 /// Searches an index with a given query.
 pub async fn search_index(
-    query: Query<QueryPayload>,
-    Path(index_name): Path<String>,
+    query: Result<Query<QueryPayload>, QueryRejection>,
+    index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let query = check_query!(query);
+    let index_name = Path(check_path!(index_name));
+
     let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
     let results = check_error!(index.search(query.0).await, "search index");
 
@@ -79,10 +140,13 @@ pub struct CreateIndexQueryParams {
 
 /// Creates a index / overrides an index with the given payload.
 pub async fn create_index(
-    query: Query<CreateIndexQueryParams>,
-    payload: extract::Json<IndexDeclaration>,
+    query: Result<Query<CreateIndexQueryParams>, QueryRejection>,
+    payload: Result<extract::Json<IndexDeclaration>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let query = check_query!(query);
+    let payload = check_json!(payload);
+
     let ignore = query.0;
     check_error!(
         engine
@@ -96,9 +160,11 @@ pub async fn create_index(
 
 /// Deletes the given index if it exists.
 pub async fn delete_index(
-    Path(index_name): Path<String>,
+    index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+
     check_error!(engine.remove_index(&index_name).await, "delete index");
 
     json_response(StatusCode::OK, "index deleted")
@@ -132,11 +198,15 @@ pub enum DocumentOptions {
 /// This can either return immediately or wait for all operations to be
 /// submitted depending on the `wait` query parameter.
 pub async fn add_document(
-    query: Query<PendingQueries>,
-    Path(index_name): Path<String>,
-    payload: extract::Json<DocumentOptions>,
+    query: Result<Query<PendingQueries>, QueryRejection>,
+    index_name: Result<Path<String>, PathParamsRejection>,
+    payload: Result<extract::Json<DocumentOptions>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+    let query = check_query!(query);
+    let payload = check_json!(payload);
+
     let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     let schema = index.schema();
@@ -186,29 +256,37 @@ pub async fn add_document(
 }
 
 pub async fn get_document(
-    Path(index_name): Path<String>,
-    Path(_document_id): Path<String>,
+    index_name: Result<Path<String>, PathParamsRejection>,
+    document_id: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+    let _document_id = Path(check_path!(document_id));
+
     let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
 }
 
 pub async fn delete_document(
-    Path(index_name): Path<String>,
-    Path(_document_id): Path<String>,
+    index_name: Result<Path<String>, PathParamsRejection>,
+    document_id: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+    let _document_id = Path(check_path!(document_id));
+
     let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
 }
 
 pub async fn delete_all_documents(
-    Path(index_name): Path<String>,
+    index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
+    let index_name = Path(check_path!(index_name));
+
     let _index: LeasedIndex = get_index_or_reject!(engine, &index_name);
 
     json_response(StatusCode::OK, &())
