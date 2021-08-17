@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::sync::Arc;
+use std::convert::TryFrom;
 use hashbrown::{HashMap, HashSet};
 
 use axum::body::{box_body, Body, BoxBody};
@@ -13,7 +14,6 @@ use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
-use std::convert::TryFrom;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -26,7 +26,7 @@ macro_rules! get_index_or_reject {
                 warn!("rejected request due to unknown index {:?}", $name);
                 return json_response(
                     StatusCode::BAD_REQUEST,
-                    &format!("no index exists with name {:?}", $name),
+                    &format!("no index exists with name '{}'", $name),
                 );
             }
             Some(index) => index,
@@ -138,9 +138,9 @@ pub async fn search_index(
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let query = check_query!(query);
-    let index_name = Path(check_path!(index_name));
+    let index_name = check_path!(index_name);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
     let results = check_error!(index.search(query.0).await, "search index");
 
     json_response(StatusCode::OK, &results)
@@ -179,9 +179,9 @@ pub async fn delete_index(
     index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
+    let index_name = check_path!(index_name);
 
-    check_error!(engine.remove_index(&index_name).await, "delete index");
+    check_error!(engine.remove_index(index_name.as_str()).await, "delete index");
 
     json_response(StatusCode::OK, "index deleted")
 }
@@ -219,11 +219,11 @@ pub async fn add_document(
     payload: Result<extract::Json<DocumentOptions>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
+    let index_name = check_path!(index_name);
     let query = check_query!(query);
     let payload = check_json!(payload);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     let schema = index.schema();
     let wait = query.0.wait.unwrap_or(true);
@@ -285,11 +285,11 @@ pub async fn get_document(
     document_id: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
+    let index_name = check_path!(index_name);
     let document_id = check_path!(document_id);
     let document_id = check_error!(RefAddress::try_from(document_id.0), "parse document id");
 
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
     let doc = check_error!(index.get_doc(document_id.as_doc_address()).await, "retrieve doc");
 
     json_response(StatusCode::OK, &doc)
@@ -302,10 +302,10 @@ pub async fn delete_documents(
     terms: Result<extract::Json<HashMap<String, FieldValue>>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
+    let index_name = check_path!(index_name);
     let mut terms = check_json!(terms);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     for (field, term) in terms.0.drain() {
         if let Some(term) = index.get_term(&field, term) {
@@ -321,8 +321,8 @@ pub async fn delete_all_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index_name = check_path!(index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.clear_documents().await, "clear documents");
 
@@ -337,8 +337,8 @@ pub async fn commit_index_changes(
     index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = Path(check_path!(index_name));
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index_name = check_path!(index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.commit().await, "commit changes");
 
@@ -351,7 +351,7 @@ pub async fn rollback_index_changes(
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = Path(check_path!(index_name));
-    let index: LeasedIndex = get_index_or_reject!(engine, &index_name);
+    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.rollback().await, "rollback changes");
 
