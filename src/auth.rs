@@ -21,7 +21,7 @@ impl AuthFlags {
     pub const ALL: u32 = Self::SEARCH | Self::MODIFY_DOCUMENTS | Self::MODIFY_INDEXES;
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub enum Op {
     Set,
     Unset,
@@ -120,6 +120,15 @@ impl AuthManager {
             (*lock).refresh();
         }
 
+        let search = (permissions & AuthFlags::SEARCH) != 0;
+        let index = (permissions & AuthFlags::MODIFY_INDEXES) != 0;
+        let documents = (permissions & AuthFlags::MODIFY_DOCUMENTS) != 0;
+
+        info!(
+            "[ AUTHORIZATION ] created access token with permissions SEARCH={}, MODIFY_INDEXES={}, MODIFY_DOCUMENTS={}",
+            search, index, documents,
+        );
+
         Ok(token)
     }
 
@@ -138,6 +147,8 @@ impl AuthManager {
             (*lock).clear(token.clone());
             (*lock).refresh();
         }
+
+        info!("[ AUTHORIZATION ] revoked access token");
 
         Ok(())
     }
@@ -177,6 +188,15 @@ impl AuthManager {
                 .execute(&mut *lock)
                 .await?;
         }
+
+        let search = (permissions & AuthFlags::SEARCH) != 0;
+        let index = (permissions & AuthFlags::MODIFY_INDEXES) != 0;
+        let documents = (permissions & AuthFlags::MODIFY_DOCUMENTS) != 0;
+
+        info!(
+            "[ AUTHORIZATION ] updated access token permissions to SEARCH={}, MODIFY_INDEXES={}, MODIFY_DOCUMENTS={}",
+            search, index, documents,
+        );
 
         Ok(())
     }
