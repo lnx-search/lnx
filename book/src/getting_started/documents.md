@@ -1,4 +1,4 @@
-# Adding / Removing Documents
+# Documents
 
 Documents can only be added or removed, not updated.
 This is preferred to be done explicitly hence no update endpoint.
