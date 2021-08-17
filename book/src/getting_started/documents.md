@@ -116,3 +116,18 @@ DELETE /indexes/:index_name/documents
     "name": {"type": "text", "value": "bob"},
 }
 ```
+
+## Deleting All Documents
+All docs can be cleared from the index via
+```
+DELETE /indexes/:index_name/documents/clear
+```
+
+## Getting A Specific Document
+Getting a specific document is generally not advised as it requires making sure
+the data segment is correct, so dont rely on a doc's reference address being the
+same over time. 
+
+```
+GET /indexes/:index_name/documents/:document_id
+```
