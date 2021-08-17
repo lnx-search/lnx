@@ -4,7 +4,7 @@ use tantivy::schema::{
 };
 
 use hashbrown::HashMap;
-use serde::__private::TryFrom;
+use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
 use tantivy::{DateTime, DocAddress};
 
