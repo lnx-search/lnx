@@ -51,7 +51,7 @@ impl StorageManager {
         let buff = serde_json::to_vec(index)?;
         let path = format!("{}/{}", &self.dir, index.name);
 
-        info!("storing index metadata in {}", &path);
+        info!("[ STORAGE ] storing index metadata in {}", &path);
         fs::write(path, buff).await?;
 
         Ok(())
