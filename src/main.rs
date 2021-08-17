@@ -188,11 +188,11 @@ async fn start(settings: Settings) -> Result<()> {
         .layer(MapResponseLayer::new(routes::map_status))
         .into_inner();
 
-    // let super_user_app = route("/tokens/revoke", post(auth::revoke_token))
-    //     .route("/tokens/permissions", post(auth::modify_permissions))
-    //     .route("/tokens/create", post(auth::create_token))
-    //     .route("/tokens/clear", post(auth::revoke_all))
-    //     .layer(super_user_middleware);
+    let super_user_app = route("/tokens/revoke", post(auth::revoke_token))
+        .route("/tokens/permissions", post(auth::modify_permissions))
+        .route("/tokens/create", post(auth::create_token))
+        .route("/tokens/clear", post(auth::revoke_all))
+        .layer(super_user_middleware);
 
     let search_auth = auth::UserAuthIfEnabled::bearer(
         tokens.clone(),
@@ -228,8 +228,7 @@ async fn start(settings: Settings) -> Result<()> {
 
     let app = route(
         "/:index_name/search",
-        get(routes::search_index
-            // .layer(RequireAuthorizationLayer::custom(search_auth))
+        get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))
         ),
     )
     .route(
@@ -281,8 +280,8 @@ async fn start(settings: Settings) -> Result<()> {
                     //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
             ),
     )
-    .layer(index_middleware);
-    // .nest("/admin", super_user_app);
+    .layer(index_middleware)
+    .nest("/admin", super_user_app);
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {

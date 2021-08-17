@@ -1,17 +1,21 @@
 use anyhow::{Result, Error};
+
 use axum::http::header;
+use axum::body::Body;
+use axum::extract::Extension;
+
 use headers::HeaderMapExt;
+use tower_http::auth::AuthorizeRequest;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
+
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use sqlx::{Connection, Row, SqliteConnection};
 use std::sync::Arc;
 use tokio::fs;
-use tower_http::auth::AuthorizeRequest;
+
 use crate::responders::json_response;
-use axum::body::Body;
-use axum::extract::Extension;
 
 pub struct AuthFlags;
 impl AuthFlags {
@@ -280,7 +284,7 @@ impl AuthorizeRequest for UserAuthIfEnabled {
             username, path
         );
 
-        None
+        Some(())
     }
 
     fn unauthorized_response<B>(&mut self, _request: &Request<B>) -> Response<Self::ResponseBody> {
@@ -345,25 +349,25 @@ impl AuthorizeRequest for SuperUserAuthIfEnabled {
 }
 
 pub async fn create_token(
-    Extension(_auth_manager): Extension<AuthManager>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>
 ) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
 pub async fn revoke_token(
-    Extension(_auth_manager): Extension<AuthManager>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>
 ) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
 pub async fn revoke_all(
-    Extension(_auth_manager): Extension<AuthManager>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>
 ) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
 pub async fn modify_permissions(
-    Extension(_auth_manager): Extension<AuthManager>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
