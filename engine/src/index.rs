@@ -649,20 +649,24 @@ pub struct IndexHandler {
 }
 
 impl IndexHandler {
-    /// Creates a new index handler from a given loaded index.
-    ///
-    /// This constructs both the Tantivy index, thread pool and worker thread.
-    ///
-    /// ### Important note about performance:
-    /// The concurrency limit should be set according to the machine
-    /// this system is being deployed on hence being a required field.
-    /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
-    /// as well as the tokio runtime threads.
-    pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
-        let schema_copy = loader.schema.clone();
-        let index = IndexBuilder::default().schema(loader.schema.clone());
+    /// Gets a tantivy Index either from an existing directory or
+    /// makes a new system.
+    async fn get_index_from_loader(loader: &LoadedIndex) -> Result<(Index, Option<String>)> {
+        if let IndexStorageType::FileSystem(path) = &loader.storage_type {
+            if std::path::Path::new(&path).exists() {
+                info!(
+                    "[ SETUP @ {} ] using existing schema metadata",
+                    &loader.name
+                );
+                return Ok((Index::open_in_dir(&path)?, Some(path.clone())))
+            }
+        }
 
-        let (index, dir) = match loader.storage_type {
+
+        let index = IndexBuilder::default()
+            .schema(loader.schema.clone());
+
+        let out = match &loader.storage_type {
             IndexStorageType::TempDir => {
                 info!(
                     "[ SETUP @ {} ] creating index in a temporary directory",
@@ -678,12 +682,27 @@ impl IndexHandler {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
                 fs::create_dir_all(&path).await?;
 
-                // Apparently this is bad
-                let _ = fs::remove_file(&format!("{}/meta.json", &path)).await;
                 let dir = MmapDirectory::open(&path)?;
-                (index.open_or_create(dir)?, Some(path))
+                (index.open_or_create(dir)?, Some(path.clone()))
             }
         };
+
+        Ok(out)
+    }
+
+    /// Creates a new index handler from a given loaded index.
+    ///
+    /// This constructs both the Tantivy index, thread pool and worker thread.
+    ///
+    /// ### Important note about performance:
+    /// The concurrency limit should be set according to the machine
+    /// this system is being deployed on hence being a required field.
+    /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
+    /// as well as the tokio runtime threads.
+    pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
+        let schema_copy = loader.schema.clone();
+
+        let (index, dir) = Self::get_index_from_loader(&loader).await?;
 
         // We need to extract out the fields from name to id.
         let mut raw_search_fields = vec![];
