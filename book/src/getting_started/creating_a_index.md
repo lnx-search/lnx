@@ -132,6 +132,12 @@ Providing the given payload data is valid you have successfully made an index.
 
 This can error if you assign more threads than your system can reasonably assign.
 
-#### Performance Note
+### Performance Note
 More threads != faster, you should test and benchmark different ratios of reader threads
 and concurrency as that will have the biggest affect on performance.
+
+### Deleting An Index
+An index can be deleted via sending a request to the following endpoint:
+```
+DELETE /indexes/:index_name
+```
