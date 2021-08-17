@@ -14,6 +14,7 @@ use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
+use crate::auth::AuthManager;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -385,6 +386,69 @@ pub async fn rollback_index_changes(
     check_error!(index.rollback().await, "rollback changes");
 
     json_response(StatusCode::OK, "changes rolled back since last commit")
+}
+
+/// Creates a unique authentication access token with a
+/// given set of permissions.
+pub async fn create_token(
+    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
+
+/// The query parameters for the revoke token endpoint.
+#[derive(Deserialize)]
+pub struct RevokeQuery {
+    token: String,
+}
+
+/// Revokes a authentication token.
+///
+/// After a token is revoked any access attempted with the token
+/// will be denied.
+pub async fn revoke_token(
+    query: Result<Query<RevokeQuery>, QueryRejection>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+) -> Response<Body> {
+    let query = check_query!(query);
+
+    json_response(StatusCode::OK, &())
+}
+
+/// Invalidated all authentication tokens currently active.
+///
+/// After a token is revoked any access attempted with the token
+/// will be denied.
+pub async fn revoke_all(
+    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
+
+/// The query parameters for changing the permissions
+/// of an access token.
+///
+/// Either `set`, `unset` or both must not be null.
+#[derive(Deserialize)]
+pub struct ModifyPermissionsQuery {
+    /// The access token itself.
+    token: String,
+
+    /// Set permissions to the existing flags.
+    set: Option<u32>,
+
+    /// Unsets permissions from the existing flags.
+    unset: Option<u32>,
+}
+
+/// Alters the permissions for a given access token.
+pub async fn modify_permissions(
+    query: Result<Query<ModifyPermissionsQuery>, QueryRejection>,
+    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+) -> Response<Body> {
+    let query = check_query!(query);
+
+    json_response(StatusCode::OK, &())
 }
 
 /// Converts an arbitrary Response<Body> into Response<BoxBody>

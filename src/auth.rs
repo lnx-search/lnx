@@ -313,7 +313,7 @@ impl SuperUserAuthIfEnabled {
             "data": reject_msg
         }))?;
         let reject_msg = bytes::Bytes::copy_from_slice(&msg);
-        let auth = HeaderValue::from_str(token).unwrap();
+        let auth = HeaderValue::from_str(&format!("Bearer {}", token)).unwrap();
 
         Ok(Self {
             enabled,
@@ -348,20 +348,3 @@ impl AuthorizeRequest for SuperUserAuthIfEnabled {
     }
 }
 
-pub async fn create_token(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
-    json_response(StatusCode::OK, &())
-}
-
-pub async fn revoke_token(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
-    json_response(StatusCode::OK, &())
-}
-
-pub async fn revoke_all(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
-    json_response(StatusCode::OK, &())
-}
-
-pub async fn modify_permissions(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>,
-) -> Response<Body> {
-    json_response(StatusCode::OK, &())
-}
