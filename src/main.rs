@@ -194,7 +194,7 @@ async fn start(settings: Settings) -> Result<()> {
     let super_user_app = route("/tokens/revoke", post(routes::revoke_token))
         .route("/tokens/permissions", post(routes::modify_permissions))
         .route("/tokens/create", post(routes::create_token))
-        .route("/tokens/clear", post(routes::revoke_all))
+        .route("/tokens/clear", delete(routes::revoke_all))
         .layer(super_user_middleware);
 
     let search_auth = auth::UserAuthIfEnabled::bearer(

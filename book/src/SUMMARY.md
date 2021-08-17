@@ -6,7 +6,7 @@
     - [Indexes](getting_started/indexes.md)
     - [Index Transactions](getting_started/index_transactions.md)
     - [Documents](getting_started/documents.md)
-    - [Searching An index](getting_started/searching.md)
+    - [Searching An Index](getting_started/searching.md)
     - [Securing Your System](getting_started/auth.md)
     - [Next Steps](getting_started/next_steps.md)
  
