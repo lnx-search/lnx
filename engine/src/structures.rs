@@ -165,6 +165,7 @@ pub struct LoadedIndex {
 ///
 /// This can change how the system parses and handles the query.
 #[derive(Debug, Copy, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum QueryMode {
     /// This uses the tantivy query parser.
     Normal,
