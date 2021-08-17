@@ -1,12 +1,12 @@
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 
-use axum::http::header;
 use axum::body::Body;
 use axum::extract::Extension;
+use axum::http::header;
 
 use headers::HeaderMapExt;
-use tower_http::auth::AuthorizeRequest;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
+use tower_http::auth::AuthorizeRequest;
 
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
@@ -348,21 +348,15 @@ impl AuthorizeRequest for SuperUserAuthIfEnabled {
     }
 }
 
-pub async fn create_token(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>
-) -> Response<Body> {
+pub async fn create_token(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
-pub async fn revoke_token(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>
-) -> Response<Body> {
+pub async fn revoke_token(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 
-pub async fn revoke_all(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>
-) -> Response<Body> {
+pub async fn revoke_all(Extension(_auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
     json_response(StatusCode::OK, &())
 }
 

@@ -228,57 +228,52 @@ async fn start(settings: Settings) -> Result<()> {
 
     let app = route(
         "/:index_name/search",
-        get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))
-        ),
+        get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
     )
     .route(
         "/indexes/:index_name/commit",
         post(
-            routes::commit_index_changes
-                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()),
+            routes::commit_index_changes, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()),
         ),
     )
     .route(
         "/indexes/:index_name/rollback",
         post(
-            routes::rollback_index_changes
-                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            routes::rollback_index_changes, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
         ),
     )
     .route(
         "/indexes/:index_name",
-        delete(routes::delete_index
-            // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
+        delete(
+            routes::delete_index, // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
         ),
     )
     .route(
         "/indexes",
-        post(routes::create_index
-            // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
+        post(
+            routes::create_index, // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
         ),
     )
     .route(
         "/indexes/:index_name/documents/:document_id",
-        get(routes::get_document
-            //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
+        get(
+            routes::get_document, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
         ),
     )
     .route(
         "/indexes/:index_name/documents/clear",
         delete(
-            routes::delete_all_documents
-                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            routes::delete_all_documents, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
         ),
     )
     .route(
         "/indexes/:index_name/documents",
-        post(routes::add_document
-            //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
+        post(
+            routes::add_document, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
         )
-            .delete(
-                routes::delete_documents
-                    //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
-            ),
+        .delete(
+            routes::delete_documents, //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+        ),
     )
     .layer(index_middleware)
     .nest("/admin", super_user_app);
