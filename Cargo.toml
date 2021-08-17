@@ -32,9 +32,6 @@ rand = "0.8.4"
 
 engine = { path = "./engine" }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-jemallocator = { version="^0.3.2", features = ["disable_initial_exec_tls", "background_threads"] }
-
 [profile.release]
 lto = "fat"
 codegen-units = 1
