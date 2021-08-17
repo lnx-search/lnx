@@ -387,10 +387,15 @@ impl IndexReaderHandler {
         });
 
         let res = waiter.await??;
-        info!("[ SEARCH @ {} ] took {:?} with limit: {} and {} results total", &self.name, start.elapsed(), limit, res.count);
+        info!(
+            "[ SEARCH @ {} ] took {:?} with limit: {} and {} results total",
+            &self.name,
+            start.elapsed(),
+            limit,
+            res.count
+        );
 
         Ok(res)
-
     }
 
     fn parse_query(
@@ -571,7 +576,10 @@ fn search(
     let elapsed = start.elapsed();
     let time_taken = elapsed.as_secs_f64();
 
-    debug!("thread runtime took {:?} with limit: {} and {} results total", elapsed, limit, count);
+    debug!(
+        "thread runtime took {:?} with limit: {} and {} results total",
+        elapsed, limit, count
+    );
 
     Ok(QueryResults {
         time_taken,

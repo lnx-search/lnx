@@ -4,8 +4,8 @@ use tantivy::schema::{
 };
 
 use hashbrown::HashMap;
-use std::convert::TryFrom;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use tantivy::{DateTime, DocAddress};
 
 /// A declared schema field type.

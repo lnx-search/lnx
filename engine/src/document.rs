@@ -23,7 +23,11 @@ pub trait FromValue {
 }
 
 impl FromValue for Document {
-    fn from_value_map(mut payload: DocumentPayload, schema: &Schema, allowed_fields: &HashSet<String>) -> Result<Document> {
+    fn from_value_map(
+        mut payload: DocumentPayload,
+        schema: &Schema,
+        allowed_fields: &HashSet<String>,
+    ) -> Result<Document> {
         if payload.len() != allowed_fields.len() {
             let mut missing: Vec<&str> = vec![];
             for field in allowed_fields.iter() {
@@ -33,7 +37,10 @@ impl FromValue for Document {
             }
 
             let render: String = missing.join("\n");
-            return Err(Error::msg(format!("missing required fields according to schema. Missing fields: [{}]", render)))
+            return Err(Error::msg(format!(
+                "missing required fields according to schema. Missing fields: [{}]",
+                render
+            )));
         }
 
         let mut document = Document::new();

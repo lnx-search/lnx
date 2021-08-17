@@ -1,14 +1,14 @@
-use serde::Deserialize;
-use std::sync::Arc;
-use std::convert::TryFrom;
 use hashbrown::{HashMap, HashSet};
+use serde::Deserialize;
+use std::convert::TryFrom;
+use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
+use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejection};
 use axum::extract::{self, Extension, Path, Query};
-use axum::extract::rejection::{QueryRejection, JsonRejection, PathParamsRejection};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{IndexDeclaration, QueryPayload, FieldValue, RefAddress};
+use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, RefAddress};
 use engine::tantivy::Document;
 use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
@@ -26,7 +26,7 @@ macro_rules! get_index_or_reject {
                 warn!("rejected request due to unknown index {:?}", $name);
                 return json_response(
                     StatusCode::BAD_REQUEST,
-                    &format!("no index exists with name '{}'", $name),
+                    &format!("no index exists with name '{}", $name),
                 );
             }
             Some(index) => index,
@@ -69,18 +69,27 @@ macro_rules! check_path {
             Ok(payload) => payload,
             Err(PathParamsRejection::InvalidPathParam(e)) => {
                 warn!("rejecting request due to {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid path parameter {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid path parameter {}", e),
+                );
+            }
             Err(PathParamsRejection::MissingRouteParams(e)) => {
                 warn!("rejecting request due to {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("missing required route parameters: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("missing required route parameters: {}", e),
+                );
+            }
             Err(e) => {
                 warn!("rejecting request due to {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with path handling: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("error with path handling: {}", e),
+                );
+            }
         }
-    }}
+    }};
 }
 
 /// Checks for any errors in parsing and extracting the query.
@@ -93,14 +102,20 @@ macro_rules! check_query {
             Ok(payload) => payload,
             Err(QueryRejection::FailedToDeserializeQueryString(e)) => {
                 warn!("rejecting request due to {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("failed to deserialize query string: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("failed to deserialize query string: {}", e),
+                );
+            }
             Err(e) => {
                 warn!("rejecting request due to {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with query string handling: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("error with query string handling: {}", e),
+                );
+            }
         }
-    }}
+    }};
 }
 
 /// Checks for any errors in parsing and extracting the json payload.
@@ -113,22 +128,31 @@ macro_rules! check_json {
             Ok(payload) => payload,
             Err(JsonRejection::MissingJsonContentType(_)) => {
                 warn!("rejecting request due to missing json content-type");
-                return json_response(StatusCode::BAD_REQUEST, "request missing application/json content type")
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    "request missing application/json content type",
+                );
+            }
             Err(JsonRejection::InvalidJsonBody(e)) => {
                 warn!("rejecting request due to invalid body: {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("invalid JSON body: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("invalid JSON body: {}", e),
+                );
+            }
             Err(JsonRejection::BodyAlreadyExtracted(_)) => {
                 warn!("rejecting request due to duplicate body extracting");
-                return json_response(StatusCode::BAD_REQUEST, "body already extracted")
-            },
-            Err(e) =>{
+                return json_response(StatusCode::BAD_REQUEST, "body already extracted");
+            }
+            Err(e) => {
                 warn!("rejecting request due to unknown error: {:?}", e);
-                return json_response(StatusCode::BAD_REQUEST, &format!("error with json payload: {}", e))
-            },
+                return json_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!("error with json payload: {}", e),
+                );
+            }
         }
-    }}
+    }};
 }
 
 /// Searches an index with a given query.
@@ -181,7 +205,10 @@ pub async fn delete_index(
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
 
-    check_error!(engine.remove_index(index_name.as_str()).await, "delete index");
+    check_error!(
+        engine.remove_index(index_name.as_str()).await,
+        "delete index"
+    );
 
     json_response(StatusCode::OK, "index deleted")
 }
@@ -230,9 +257,8 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            let allowed_fields: HashSet<String> = schema.fields()
-                .map(|v| v.1.name().to_string())
-                .collect();
+            let allowed_fields: HashSet<String> =
+                schema.fields().map(|v| v.1.name().to_string()).collect();
 
             let document = check_error!(
                 Document::from_value_map(doc, &schema, &allowed_fields),
@@ -249,9 +275,8 @@ pub async fn add_document(
             }
         }
         DocumentOptions::Many(docs) => {
-            let allowed_fields: HashSet<String> = schema.fields()
-                .map(|v| v.1.name().to_string())
-                .collect();
+            let allowed_fields: HashSet<String> =
+                schema.fields().map(|v| v.1.name().to_string()).collect();
 
             let documents = check_error!(
                 Document::from_many_value_map(docs, &schema, &allowed_fields),
@@ -290,11 +315,13 @@ pub async fn get_document(
     let document_id = check_error!(RefAddress::try_from(document_id.0), "parse document id");
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-    let doc = check_error!(index.get_doc(document_id.as_doc_address()).await, "retrieve doc");
+    let doc = check_error!(
+        index.get_doc(document_id.as_doc_address()).await,
+        "retrieve doc"
+    );
 
     json_response(StatusCode::OK, &doc)
 }
-
 
 /// Deletes any documents matching the set of given terms.
 pub async fn delete_documents(
@@ -309,7 +336,10 @@ pub async fn delete_documents(
 
     for (field, term) in terms.0.drain() {
         if let Some(term) = index.get_term(&field, term) {
-            check_error!(index.delete_documents_with_term(term).await, "delete documents with term");
+            check_error!(
+                index.delete_documents_with_term(term).await,
+                "delete documents with term"
+            );
         }
     }
 
@@ -328,7 +358,6 @@ pub async fn delete_all_documents(
 
     json_response(StatusCode::OK, &())
 }
-
 
 /// Commits any recent changes since the last commit.
 ///

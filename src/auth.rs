@@ -1,17 +1,21 @@
 use anyhow::Result;
-use bitflags::bitflags;
+use axum::http::header;
+use headers::HeaderMapExt;
+use hyper::http::{HeaderValue, Request, Response, StatusCode};
 use parking_lot::Mutex;
-use sqlx::{SqliteConnection, Connection, Row};
-use tokio::fs;
 use rand::{distributions::Alphanumeric, Rng};
+use serde::Serialize;
+use sqlx::{Connection, Row, SqliteConnection};
+use std::sync::Arc;
+use tokio::fs;
+use tower_http::auth::AuthorizeRequest;
 
-bitflags! {
-    struct AuthFlags: u32 {
-        const SEARCH = 1 << 0;
-        const MODIFY_DOCUMENTS = 1 << 1;
-        const MODIFY_INDEXES = 1 << 2;
-        const ALL = Self::SEARCH.bits | Self::MODIFY_DOCUMENTS.bits | Self::MODIFY_INDEXES.bits;
-    }
+pub struct AuthFlags;
+impl AuthFlags {
+    pub const SEARCH: u32 = 1 << 0;
+    pub const MODIFY_DOCUMENTS: u32 = 1 << 1;
+    pub const MODIFY_INDEXES: u32 = 1 << 2;
+    pub const ALL: u32 = Self::SEARCH | Self::MODIFY_DOCUMENTS | Self::MODIFY_INDEXES;
 }
 
 pub type TokenInfo = (String, u32);
@@ -30,16 +34,13 @@ pub struct AuthManager {
 
 impl AuthManager {
     /// Connects to the SQLite database and loads any existing credentials.
-    pub async fn connect(&self, dir: &str) -> Result<(Self, evmap::ReadHandle<String, TokenInfo>)> {
+    pub async fn connect(dir: &str) -> Result<(Self, evmap::ReadHandle<String, TokenInfo>)> {
         fs::create_dir_all(dir).await?;
 
         let fp = format!("{}/data.db", dir);
 
         {
-            fs::OpenOptions::new()
-                .create(true)
-                .open(&fp)
-                .await?;
+            fs::OpenOptions::new().create(true).open(&fp).await?;
         }
 
         let (reader, writer) = evmap::new();
@@ -63,9 +64,9 @@ impl AuthManager {
     async fn load_all(&self) -> Result<()> {
         let rows = {
             let mut lock = self.storage.lock().await;
-            sqlx::query(
-                "SELECT token, username, permissions FROM access_tokens",
-            ).fetch_all(&mut *lock).await?
+            sqlx::query("SELECT token, username, permissions FROM access_tokens")
+                .fetch_all(&mut *lock)
+                .await?
         };
 
         let mut lock = self.cached_values.lock();
@@ -94,11 +95,14 @@ impl AuthManager {
 
         {
             let mut lock = self.storage.lock().await;
-            sqlx::query("INSERT INTO access_tokens (token, username, permissions) VALUES (?, ?, ?)")
-                .bind(token.clone())
-                .bind(user.clone())
-                .bind(permissions)
-                .execute(&mut *lock).await?;
+            sqlx::query(
+                "INSERT INTO access_tokens (token, username, permissions) VALUES (?, ?, ?)",
+            )
+            .bind(token.clone())
+            .bind(user.clone())
+            .bind(permissions)
+            .execute(&mut *lock)
+            .await?;
         }
 
         {
@@ -116,7 +120,8 @@ impl AuthManager {
             let mut lock = self.storage.lock().await;
             sqlx::query("DELETE FROM access_tokens WHERE token = ?")
                 .bind(token.clone())
-                .execute(&mut *lock).await?;
+                .execute(&mut *lock)
+                .await?;
         }
 
         {
@@ -127,5 +132,148 @@ impl AuthManager {
 
         Ok(())
     }
-
 }
+
+pub type TokenReader = Arc<evmap::ReadHandle<String, TokenInfo>>;
+
+/// A authorization layer which watches a map for token keys.
+///
+/// If enabled this will reject any requests that dont have the auth
+/// or dont have the right permissions flags assigned to them.
+#[derive(Debug, Clone)]
+pub struct UserAuthIfEnabled {
+    enabled: bool,
+    tokens: TokenReader,
+    reject_msg: bytes::Bytes,
+    required_permissions: u32,
+}
+
+impl UserAuthIfEnabled {
+    pub fn bearer<T: Serialize>(
+        tokens: TokenReader,
+        required_permissions: u32,
+        enabled: bool,
+        reject_msg: &T,
+    ) -> Result<Self> {
+        let msg = serde_json::to_vec(&json!({
+            "status": StatusCode::UNAUTHORIZED.as_u16(),
+            "data": reject_msg
+        }))?;
+        let reject_msg = bytes::Bytes::copy_from_slice(&msg);
+
+        Ok(Self {
+            enabled,
+            tokens,
+            reject_msg,
+            required_permissions,
+        })
+    }
+}
+
+impl AuthorizeRequest for UserAuthIfEnabled {
+    type Output = ();
+    type ResponseBody = axum::body::BoxBody;
+
+    fn authorize<B>(&mut self, request: &Request<B>) -> Option<Self::Output> {
+        if !self.enabled {
+            return Some(());
+        };
+
+        let header = match request.headers().get(header::AUTHORIZATION) {
+            None => return None,
+            Some(header) => header,
+        };
+
+        // We turn 'Bearer <token>' into ('Bearer', '<token>')
+        let buffer = header.as_bytes();
+        let token = String::from_utf8_lossy(&buffer[7..]);
+
+        let retrieved = match self.tokens.get_one(token.as_ref()) {
+            None => return None,
+            Some(values) => values,
+        };
+
+        let (username, permissions) = retrieved.as_ref();
+
+        let path = request.uri().path();
+        if (*permissions & self.required_permissions) == 0 {
+            warn!("[ AUTHORIZATION ] user '{}' attempted an operation with incorrect permissions! Resource path: {:?}", username, path);
+            return None;
+        }
+
+        debug!(
+            "[ AUTHORIZATION ] user {} succeeded permissions check for resource: {:?}",
+            username, path
+        );
+
+        None
+    }
+
+    fn unauthorized_response<B>(&mut self, _request: &Request<B>) -> Response<Self::ResponseBody> {
+        let body = axum::body::box_body(hyper::Body::from(self.reject_msg.clone()));
+        let mut res = Response::new(body);
+        res.headers_mut().typed_insert(headers::ContentType::json());
+        *res.status_mut() = StatusCode::UNAUTHORIZED;
+        res
+    }
+}
+
+/// A authorization layer for the master API key.
+///
+/// This is used to create / delete authorization keys.
+#[derive(Debug, Clone)]
+pub struct SuperUserAuthIfEnabled {
+    enabled: bool,
+    auth: HeaderValue,
+    reject_msg: bytes::Bytes,
+}
+
+impl SuperUserAuthIfEnabled {
+    pub fn bearer<T: Serialize>(token: &str, enabled: bool, reject_msg: &T) -> Result<Self> {
+        let msg = serde_json::to_vec(&json!({
+            "status": StatusCode::UNAUTHORIZED.as_u16(),
+            "data": reject_msg
+        }))?;
+        let reject_msg = bytes::Bytes::copy_from_slice(&msg);
+        let auth = HeaderValue::from_str(token).unwrap();
+
+        Ok(Self {
+            enabled,
+            auth,
+            reject_msg,
+        })
+    }
+}
+
+impl AuthorizeRequest for SuperUserAuthIfEnabled {
+    type Output = ();
+    type ResponseBody = axum::body::BoxBody;
+
+    fn authorize<B>(&mut self, request: &Request<B>) -> Option<Self::Output> {
+        if !self.enabled {
+            return Some(());
+        };
+
+        if let Some(actual) = request.headers().get(header::AUTHORIZATION) {
+            (actual == self.auth).then(|| ())
+        } else {
+            None
+        }
+    }
+
+    fn unauthorized_response<B>(&mut self, _request: &Request<B>) -> Response<Self::ResponseBody> {
+        let body = axum::body::box_body(hyper::Body::from(self.reject_msg.clone()));
+        let mut res = Response::new(body);
+        res.headers_mut().typed_insert(headers::ContentType::json());
+        *res.status_mut() = StatusCode::UNAUTHORIZED;
+        res
+    }
+}
+
+pub async fn create_token() {}
+
+pub async fn revoke_token() {}
+
+pub async fn revoke_all() {}
+
+pub async fn modify_permissions() {}
