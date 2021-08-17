@@ -459,6 +459,7 @@ pub struct ModifyPermissionsQuery {
     token: String,
 
     /// Permissions from the existing flags.
+    #[serde(flatten)]
     permissions: HashMap<Permissions, bool>,
 }
 
