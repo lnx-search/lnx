@@ -237,7 +237,7 @@ async fn start(settings: Settings) -> Result<()> {
         .into_inner();
 
     let app = route(
-        "/:index_name/search",
+        "/indexes/:index_name/search",
         get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
     )
     .route(

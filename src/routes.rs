@@ -177,7 +177,8 @@ pub async fn search_index(
 #[derive(Deserialize)]
 pub struct CreateIndexQueryParams {
     /// If true this will delete the old index if it existed. (defaults to false)
-    override_if_exists: Option<bool>,
+    #[serde(default)]
+    override_if_exists: bool,
 }
 
 /// Creates a index / overrides an index with the given payload.
@@ -192,7 +193,7 @@ pub async fn create_index(
     let ignore = query.0;
     check_error!(
         engine
-            .add_index(payload.0, ignore.override_if_exists.unwrap_or(false))
+            .add_index(payload.0, ignore.override_if_exists)
             .await,
         "create index"
     );

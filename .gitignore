@@ -2,4 +2,4 @@
 **/Cargo.lock
 .idea
 /meta
-./lnx
+./lnx/**

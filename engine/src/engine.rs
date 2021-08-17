@@ -44,6 +44,31 @@ impl SearchEngine {
     ///
     /// This will set it in the index storage and then build the index handlers.
     pub async fn add_index(&self, index: IndexDeclaration, override_if_exists: bool) -> Result<()> {
+        let remove = {
+            let lock = self.indexes.read().await;
+            if lock.contains_key(&index.name) {
+                if !override_if_exists {
+                    debug!("[ ENGINE ] index already exists, ignoring override");
+                    return Err(Error::msg("index already exists"))
+                }
+                true
+            } else {
+                false
+            }
+        };
+
+        if remove {
+            debug!("[ ENGINE ] index already exists, purging and re-creating");
+            let mut lock = self.indexes.write().await;
+            debug!("[ ENGINE ] lock acquired");
+
+            if let Some(index) = lock.remove(&index.name) {
+                index.shutdown().await?;
+                self.storage.remove_index_meta(&index.name).await?;
+                debug!("[ ENGINE ] index correctly shutdown");
+            };
+        }
+
         let copy_index = index.clone();
         let loaded = copy_index.into_schema();
         let name = loaded.name.clone();
@@ -52,21 +77,12 @@ impl SearchEngine {
         // We must make sure to only save the metadata if the original making succeeded.
         self.storage.store_index_meta(&index).await?;
 
-        let old = {
+        {
             let mut lock = self.indexes.write().await;
-
-            if !override_if_exists {
-                if lock.contains_key(&name) {
-                    return Ok(());
-                }
-            }
-
-            lock.insert(name, index_handler)
+            lock.insert(name, index_handler);
+            debug!("[ ENGINE ] index re-create success");
         };
 
-        if let Some(v) = old {
-            v.shutdown().await?;
-        }
 
         Ok(())
     }

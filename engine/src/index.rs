@@ -15,15 +15,12 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{
-    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
-    ReloadPolicy, Score, Searcher, Term,
-};
+use tantivy::{DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term};
+use tantivy::directory::MmapDirectory;
 
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
-use tantivy::directory::MmapDirectory;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -58,6 +55,7 @@ pub struct IndexWriterWorker {
     writer: IndexWriter,
     waiters: Arc<SegQueue<oneshot::Sender<()>>>,
     rx: channel::Receiver<WriterOp>,
+    shutdown: async_channel::Sender<()>,
 }
 
 impl IndexWriterWorker {
@@ -82,11 +80,15 @@ impl IndexWriterWorker {
         while let Some(waiter) = self.waiters.pop() {
             let _ = waiter.send(());
         }
+
+        let _ = self.shutdown.try_send(());
+        info!("[ WRITER @ {} ] shutdown complete!", &self.index_name);
     }
 
     /// Purges all pending operations from the receiver.
     fn process_messages(&mut self) -> bool {
         while let Ok(msg) = self.rx.try_recv() {
+            debug!("[ WRITER @ {} ] handling operation {:?}", &self.index_name, msg);
             match self.handle_msg(msg) {
                 Err(e) => error!(
                     "[ WRITER @ {} ] failed handling writer operation on index due to error: {:?}",
@@ -135,7 +137,7 @@ impl IndexWriterHandler {
     ///
     /// This creates a bounded queue with a capacity of 20 and
     /// spawns a worker in a new thread.
-    fn create(index_name: String, writer: IndexWriter) -> Self {
+    fn create(index_name: String, writer: IndexWriter, shutdown: async_channel::Sender<()>) -> Self {
         let name = index_name.clone();
         let waiters = Arc::new(SegQueue::new());
         let (tx, rx) = channel::bounded(20);
@@ -144,6 +146,7 @@ impl IndexWriterHandler {
             writer,
             waiters: waiters.clone(),
             rx,
+            shutdown,
         };
 
         std::thread::Builder::new()
@@ -637,6 +640,12 @@ pub struct IndexHandler {
 
     /// The index reader handler
     reader: IndexReaderHandler,
+
+    /// An indicator if the system is still alive or not
+    alive: async_channel::Receiver<()>,
+
+    /// The optional storage directory of the index.
+    dir: Option<String>,
 }
 
 impl IndexHandler {
@@ -651,27 +660,28 @@ impl IndexHandler {
     /// as well as the tokio runtime threads.
     pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let schema_copy = loader.schema.clone();
-
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
-        let index = match loader.storage_type {
+        let (index, dir) = match loader.storage_type {
             IndexStorageType::TempDir => {
                 info!(
                     "[ SETUP @ {} ] creating index in a temporary directory",
                     &loader.name
                 );
-                index.create_from_tempdir()?
+                (index.create_from_tempdir()?, None)
             }
             IndexStorageType::Memory => {
                 info!("[ SETUP @ {} ] creating index in memory", &loader.name);
-                index.create_in_ram()?
+                (index.create_in_ram()?, None)
             }
             IndexStorageType::FileSystem(path) => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
                 fs::create_dir_all(&path).await?;
 
+                // Apparently this is bad
+                let _ = fs::remove_file(&format!("{}/meta.json", &path)).await;
                 let dir = MmapDirectory::open(&path)?;
-                index.open_or_create(dir)?
+                (index.open_or_create(dir)?, Some(path))
             }
         };
 
@@ -720,7 +730,8 @@ impl IndexHandler {
             &loader.name, loader.max_concurrency
         );
 
-        let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer);
+        let (sender, receiver) = async_channel::bounded(1);
+        let worker_handler = IndexWriterHandler::create(loader.name.clone(), writer, sender);
 
         let reader_handler = IndexReaderHandler::create(
             loader.name.clone(),
@@ -738,6 +749,8 @@ impl IndexHandler {
             schema: loader.schema,
             writer: worker_handler,
             reader: reader_handler,
+            alive: receiver,
+            dir,
         })
     }
 
@@ -842,7 +855,17 @@ impl IndexHandler {
     /// Shuts down the index system cleaning up all pools.
     pub async fn shutdown(&self) -> Result<()> {
         self.writer.send_op(WriterOp::__Shutdown).await?;
+
+        debug!("[ ENGINE ] waiting on reader shutdown...");
         self.reader.shutdown().await?;
+
+        debug!("[ ENGINE ] waiting on writer shutdown...");
+        self.alive.recv().await?;
+
+        debug!("[ ENGINE ] cleaning up directory");
+        if let Some(dir) = self.dir.as_ref() {
+            fs::remove_dir_all(dir).await?;
+        }
         Ok(())
     }
 }
