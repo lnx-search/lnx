@@ -138,7 +138,14 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
             ))
         })
         .level(level)
-        .level_for("sqlx", if level == LevelFilter::Info { LevelFilter::Warn } else { level })
+        .level_for(
+            "sqlx",
+            if level == LevelFilter::Info {
+                LevelFilter::Warn
+            } else {
+                level
+            },
+        )
         .chain(std::io::stdout());
 
     if let Some(file) = log_file {
@@ -235,11 +242,17 @@ async fn start(settings: Settings) -> Result<()> {
     )
     .route(
         "/indexes/:index_name/commit",
-        post(routes::commit_index_changes.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+        post(
+            routes::commit_index_changes
+                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+        ),
     )
     .route(
         "/indexes/:index_name/rollback",
-        post(routes::rollback_index_changes.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+        post(
+            routes::rollback_index_changes
+                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+        ),
     )
     .route(
         "/indexes/:index_name",
@@ -255,12 +268,18 @@ async fn start(settings: Settings) -> Result<()> {
     )
     .route(
         "/indexes/:index_name/documents/clear",
-        delete(routes::delete_all_documents.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+        delete(
+            routes::delete_all_documents
+                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+        ),
     )
     .route(
         "/indexes/:index_name/documents",
         post(routes::add_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone())))
-        .delete(routes::delete_documents.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+            .delete(
+                routes::delete_documents
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            ),
     )
     .layer(index_middleware)
     .nest("/admin", super_user_app);

@@ -6,12 +6,12 @@ use headers::HeaderMapExt;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
 use tower_http::auth::AuthorizeRequest;
 
+use hashbrown::HashMap;
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use sqlx::{Connection, Row, SqliteConnection};
 use tokio::fs;
-use hashbrown::HashMap;
 
 /// A set of flags determining permissions.
 pub struct AuthFlags;
@@ -31,10 +31,10 @@ impl AuthFlags {
 pub enum Permissions {
     Search,
 
-    #[serde(rename= "documents")]
+    #[serde(rename = "documents")]
     ModifyDocuments,
 
-    #[serde(rename= "indexes")]
+    #[serde(rename = "indexes")]
     ModifyIndexes,
 }
 
@@ -85,7 +85,8 @@ impl AuthManager {
             let file = fs::OpenOptions::new()
                 .create(true)
                 .write(true)
-                .open(&fp).await?;
+                .open(&fp)
+                .await?;
 
             file.set_len(0).await?;
         }
@@ -111,7 +112,7 @@ impl AuthManager {
 
     async fn ensure_table(&self) -> Result<()> {
         let mut lock = self.storage.lock().await;
-            sqlx::query("CREATE TABLE IF NOT EXISTS access_tokens (token TEXT, username TEXT, permissions INTEGER)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS access_tokens (token TEXT, username TEXT, permissions INTEGER)")
                 .execute(&mut *lock)
                 .await?;
 
@@ -236,7 +237,7 @@ impl AuthManager {
                     let (name, old) = user.as_ref();
                     (name.clone(), *old)
                 } else {
-                    return Err(Error::msg("that token is not registered"))
+                    return Err(Error::msg("that token is not registered"));
                 }
             };
 
@@ -407,4 +408,3 @@ impl AuthorizeRequest for SuperUserAuthIfEnabled {
         res
     }
 }
-

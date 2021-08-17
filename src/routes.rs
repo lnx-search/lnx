@@ -13,8 +13,8 @@ use engine::tantivy::Document;
 use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
-use crate::responders::json_response;
 use crate::auth::{AuthManager, Permissions};
+use crate::responders::json_response;
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -388,7 +388,6 @@ pub async fn rollback_index_changes(
     json_response(StatusCode::OK, "changes rolled back since last commit")
 }
 
-
 /// The query parameters for the revoke token endpoint.
 #[derive(Deserialize)]
 pub struct CreateTokenQuery {
@@ -396,7 +395,7 @@ pub struct CreateTokenQuery {
 
     /// The set permission flags
     #[serde(default)]
-    search: bool,  // serde didnt let us flatten a hashmap with them in so, yeah :)
+    search: bool, // serde didnt let us flatten a hashmap with them in so, yeah :)
 
     #[serde(default)]
     documents: bool,
@@ -420,14 +419,19 @@ pub async fn create_token(
     map.insert(Permissions::ModifyIndexes, query.indexes);
 
     let permissions = Permissions::get_flags_from_map(&map);
-    let token = check_error!(auth_manager.create_token(user, permissions).await, "revoke token");
+    let token = check_error!(
+        auth_manager.create_token(user, permissions).await,
+        "revoke token"
+    );
 
-
-    json_response(StatusCode::OK, &json!({
-        "access_token": token,
-        "username": query.username.as_str(),
-        "permissions": permissions,
-    }))
+    json_response(
+        StatusCode::OK,
+        &json!({
+            "access_token": token,
+            "username": query.username.as_str(),
+            "permissions": permissions,
+        }),
+    )
 }
 
 /// The query parameters for the revoke token endpoint.
@@ -445,7 +449,10 @@ pub async fn revoke_token(
     Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
     let query = check_query!(query);
-    check_error!(auth_manager.revoke_token(query.token.clone()).await, "revoke token");
+    check_error!(
+        auth_manager.revoke_token(query.token.clone()).await,
+        "revoke token"
+    );
 
     json_response(StatusCode::OK, "token revoked")
 }
@@ -454,9 +461,7 @@ pub async fn revoke_token(
 ///
 /// After a token is revoked any access attempted with the token
 /// will be denied.
-pub async fn revoke_all(
-    Extension(auth_manager): Extension<Arc<AuthManager>>,
-) -> Response<Body> {
+pub async fn revoke_all(Extension(auth_manager): Extension<Arc<AuthManager>>) -> Response<Body> {
     check_error!(auth_manager.revoke_all().await, "revoke all tokens");
 
     json_response(StatusCode::OK, "tokens revoked")
@@ -496,7 +501,10 @@ pub async fn modify_permissions(
     map.insert(Permissions::ModifyIndexes, query.indexes);
 
     let set = Permissions::get_flags_from_map(&map);
-    check_error!(auth_manager.modify_permissions(&token, set).await, "set access token permissions");
+    check_error!(
+        auth_manager.modify_permissions(&token, set).await,
+        "set access token permissions"
+    );
 
     json_response(StatusCode::OK, &())
 }
