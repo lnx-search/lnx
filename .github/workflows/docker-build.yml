@@ -29,34 +29,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
           
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(cat ./lnx/VERSION)
-          echo "::set-output name=old::$VERSION"
-        
-      - name: Bump version
-        id: bump_version
-        uses: christian-draeger/increment-semantic-version@1.0.2
-        with:
-          current-version: ${{ steps.version.outputs.old }}
-          version-fragment: 'feature'
-          
-      - name: Update version
-        run: |
-          rm ./lnx/VERSION
-          echo "${{ steps.bump_version.outputs.next-version }}" > ./lnx/VERSION
-          git config --local user.email "github-actions@github.com"
-          git config --local user.name "github-actions"
-          git add ./lnx/VERSION
-          git commit -m "[VERSION-BUMP] Verion bump to ${{ steps.bump_version.outputs.next-version }}" -a
-          git push -f
-          
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
           context: .
           push: true
-          tags: chillfish8/lnx:${{ steps.bump_version.outputs.next-version }},chillfish8/lnx:latest
+          tags: chillfish8/lnx:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
