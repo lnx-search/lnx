@@ -8,9 +8,10 @@ use tower_http::auth::AuthorizeRequest;
 
 use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use sqlx::{Connection, Row, SqliteConnection};
 use tokio::fs;
+use hashbrown::HashMap;
 
 /// A set of flags determining permissions.
 pub struct AuthFlags;
@@ -25,14 +26,33 @@ impl AuthFlags {
     pub const MODIFY_INDEXES: u32 = 1 << 2;
 }
 
-/// The operation mode for setting and unsetting permissions.
-#[derive(Debug)]
-pub enum Op {
-    /// Add the given permissions to the token.
-    Set,
+#[derive(Eq, PartialEq, Hash, Copy, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Permissions {
+    Search,
+    ModifyDocuments,
+    ModifyIndexes,
+}
 
-    /// Remove the given permissions from the token.
-    Unset,
+impl Permissions {
+    pub fn as_flag(&self) -> u32 {
+        match self {
+            Self::Search => AuthFlags::SEARCH,
+            Self::ModifyDocuments => AuthFlags::MODIFY_DOCUMENTS,
+            Self::ModifyIndexes => AuthFlags::MODIFY_INDEXES,
+        }
+    }
+
+    pub fn get_flags_from_map(map: &HashMap<Permissions, bool>) -> u32 {
+        let mut total = 0;
+        for (key, enabled) in map.iter() {
+            if *enabled {
+                total = total | key.as_flag();
+            }
+        }
+
+        total
+    }
 }
 
 pub type TokenInfo = (String, u32);
@@ -57,13 +77,21 @@ impl AuthManager {
         let fp = format!("{}/data.db", dir);
 
         {
-            fs::OpenOptions::new().create(true).open(&fp).await?;
+            debug!("[ AUTHORIZATION ] ensuring database file exists");
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(&fp).await?;
+
+            file.set_len(0).await?;
         }
 
         let (reader, writer) = evmap::new();
         let cached_values = Mutex::new(writer);
 
         let conn = sqlx::SqliteConnection::connect(&fp).await?;
+        debug!("[ AUTHORIZATION ] connected to database");
+
         let storage = tokio::sync::Mutex::new(conn);
 
         let inst = Self {
@@ -71,9 +99,19 @@ impl AuthManager {
             storage,
         };
 
+        inst.ensure_table().await?;
         inst.load_all().await?;
 
         Ok((inst, reader))
+    }
+
+    async fn ensure_table(&self) -> Result<()> {
+        let mut lock = self.storage.lock().await;
+            sqlx::query("CREATE TABLE IF NOT EXISTS access_tokens (token TEXT, username TEXT, permissions INTEGER)")
+                .execute(&mut *lock)
+                .await?;
+
+        Ok(())
     }
 
     /// Loads all previously saved data / changes.
@@ -185,53 +223,45 @@ impl AuthManager {
 
     /// Either sets or unsets permissions and updates them both in cache
     /// and on disk.
-    pub async fn modify_permissions(&self, token: &str, permissions: u32, op: Op) -> Result<()> {
-        let new_permissions = {
+    pub async fn modify_permissions(&self, token: &str, permissions: u32) -> Result<()> {
+        let old = {
             let mut lock = self.cached_values.lock();
 
-            let (username, new) = {
-                match (*lock).get_one(token) {
-                    None => return Err(Error::msg("this token is not registered")),
-                    Some(guard) => {
-                        let (username, existing) = guard.as_ref();
-
-                        let new;
-                        match op {
-                            Op::Set => {
-                                new = *existing & (!permissions);
-                            }
-                            Op::Unset => {
-                                new = *existing | permissions;
-                            }
-                        };
-
-                        (username.clone(), new)
-                    }
+            let (username, old) = {
+                if let Some(user) = (*lock).get_one(token) {
+                    let (name, old) = user.as_ref();
+                    (name.clone(), *old)
+                } else {
+                    return Err(Error::msg("that token is not registered"))
                 }
             };
 
-            (*lock).update(token.into(), (username.clone(), new));
+            (*lock).update(token.into(), (username.clone(), permissions));
             (*lock).refresh();
 
-            new
+            old
         };
 
         {
             let mut lock = self.storage.lock().await;
             sqlx::query("UPDATE access_tokens SET permissions = ?  WHERE token = ?")
-                .bind(new_permissions)
+                .bind(permissions)
                 .bind(token.clone())
                 .execute(&mut *lock)
                 .await?;
         }
+
+        let old_search = (old & AuthFlags::SEARCH) != 0;
+        let old_index = (old & AuthFlags::MODIFY_INDEXES) != 0;
+        let old_documents = (old & AuthFlags::MODIFY_DOCUMENTS) != 0;
 
         let search = (permissions & AuthFlags::SEARCH) != 0;
         let index = (permissions & AuthFlags::MODIFY_INDEXES) != 0;
         let documents = (permissions & AuthFlags::MODIFY_DOCUMENTS) != 0;
 
         info!(
-            "[ AUTHORIZATION ] updated access token permissions to SEARCH={}, MODIFY_INDEXES={}, MODIFY_DOCUMENTS={}",
-            search, index, documents,
+            "[ AUTHORIZATION ] updated access token permissions from to SEARCH={}, MODIFY_INDEXES={}, MODIFY_DOCUMENTS={} to SEARCH={}, MODIFY_INDEXES={}, MODIFY_DOCUMENTS={}",
+            old_search, old_index, old_documents, search, index, documents,
         );
 
         Ok(())

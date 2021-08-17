@@ -66,9 +66,12 @@ struct Settings {
     #[structopt(long, env)]
     tls_cert_file: Option<String>,
 
-    /// If specified this will require an authentication key on each request.
+    /// The super user key.
     ///
-    /// Generally, it's recommended to have this in a production environment.
+    /// If specified this will enable auth mode and require a token
+    /// bearer on every endpoint.
+    ///
+    /// The super user key is used to make tokens with given permissions.
     #[structopt(long, short = "auth", env, hide_env_values = true)]
     authentication_key: Option<String>,
 
@@ -135,6 +138,7 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
             ))
         })
         .level(level)
+        .level_for("sqlx", if level == LevelFilter::Info { LevelFilter::Warn } else { level })
         .chain(std::io::stdout());
 
     if let Some(file) = log_file {
@@ -161,9 +165,9 @@ fn setup() -> Result<Settings> {
 async fn start(settings: Settings) -> Result<()> {
     let tls = check_tls_files(&settings)?;
 
-    let (authorization_manager, tokens) = auth::AuthManager::connect("/lnx/data").await?;
+    let (authorization_manager, tokens) = auth::AuthManager::connect("./lnx/data").await?;
     let authorization_manager = Arc::new(authorization_manager);
-    let engine = Arc::new(SearchEngine::create("/lnx/meta").await?);
+    let engine = Arc::new(SearchEngine::create("./lnx/meta").await?);
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(

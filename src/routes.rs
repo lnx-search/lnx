@@ -14,7 +14,7 @@ use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
-use crate::auth::{self, AuthManager};
+use crate::auth::{AuthManager, Permissions};
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -393,7 +393,9 @@ pub async fn rollback_index_changes(
 #[derive(Deserialize)]
 pub struct CreateTokenQuery {
     username: String,
-    permissions: u32,
+
+    #[serde(flatten)]
+    permissions: HashMap<Permissions, bool>,
 }
 
 /// Creates a unique authentication access token with a
@@ -404,7 +406,7 @@ pub async fn create_token(
 ) -> Response<Body> {
     let query = check_query!(query);
     let user = query.username.clone();
-    let permissions = query.permissions;
+    let permissions = Permissions::get_flags_from_map(&query.permissions);
     let token = check_error!(auth_manager.create_token(user, permissions).await, "revoke token");
 
 
@@ -456,11 +458,8 @@ pub struct ModifyPermissionsQuery {
     /// The access token itself.
     token: String,
 
-    /// Set permissions to the existing flags.
-    set: Option<u32>,
-
-    /// Unsets permissions from the existing flags.
-    unset: Option<u32>,
+    /// Permissions from the existing flags.
+    permissions: HashMap<Permissions, bool>,
 }
 
 /// Alters the permissions for a given access token.
@@ -471,22 +470,8 @@ pub async fn modify_permissions(
     let query = check_query!(query);
 
     let token = query.token.clone();
-
-    if query.set.is_none() && query.unset.is_none() {
-        return json_response(
-            StatusCode::BAD_REQUEST,
-            "requires either 'set' or 'unset' field or both, got neither.",
-        )
-    }
-
-    if let Some(set) = query.set {
-        check_error!(auth_manager.modify_permissions(&token, set, auth::Op::Set).await, "setting access token permissions");
-    }
-
-    if let Some(unset) = query.unset {
-        check_error!(auth_manager.modify_permissions(&token, unset, auth::Op::Unset).await, "removing access token permissions");
-    }
-
+    let set = Permissions::get_flags_from_map(&query.permissions);
+    check_error!(auth_manager.modify_permissions(&token, set).await, "set access token permissions");
 
     json_response(StatusCode::OK, &())
 }
