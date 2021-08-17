@@ -14,13 +14,10 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{
-    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
-    ReloadPolicy, Score, Searcher, Term,
-};
+use tantivy::{DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term};
 
 use crate::structures::{
-    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
+    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress
 };
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
@@ -588,6 +585,24 @@ fn search(
     })
 }
 
+macro_rules! add_values_to_terms {
+    ($t:ident::$cb:ident, $field:expr, &$sv:expr) => {{
+        if $sv.len() == 0 {
+            Err(Error::msg("field must have one value"))
+        } else {
+            Ok($t::$cb($field, &$sv[0]))
+        }
+    }};
+
+    ($t:ident::$cb:ident, $field:expr, $sv:expr) => {{
+        if $sv.len() == 0 {
+            Err(Error::msg("field must have one value"))
+        } else {
+            Ok($t::$cb($field, $sv[0]))
+        }
+    }};
+}
+
 /// A search engine index.
 ///
 /// Each index maintains a rayon thread pool which searches are executed
@@ -723,18 +738,22 @@ impl IndexHandler {
     /// Builds a `Term` from a given field and value.
     ///
     /// This assumes that the value type matches up with the field type.
-    pub fn get_term(&self, field: &str, value: FieldValue) -> Option<Term> {
-        let field = self.schema.get_field(field)?;
+    pub fn get_term(&self, field: &str, value: FieldValue) -> Result<Term> {
+        let field = self.schema
+            .get_field(field)
+            .map(|v| Ok(v))
+            .unwrap_or_else(|| Err(Error::msg("unknown field")))?;
+
         let v = match value {
-            FieldValue::I64(v) => Term::from_field_i64(field, v),
-            FieldValue::F64(v) => Term::from_field_f64(field, v),
-            FieldValue::U64(v) => Term::from_field_u64(field, v),
-            FieldValue::Datetime(v) => Term::from_field_date(field, &v),
-            FieldValue::Text(v) => Term::from_field_text(field, &v),
-            FieldValue::Bytes(v) => Term::from_field_bytes(field, v.as_ref()),
+            FieldValue::I64(v) => add_values_to_terms!(Term::from_field_i64, field, v)?,
+            FieldValue::F64(v) => add_values_to_terms!(Term::from_field_f64, field, v)?,
+            FieldValue::U64(v) => add_values_to_terms!(Term::from_field_u64, field, v)?,
+            FieldValue::Datetime(v) => add_values_to_terms!(Term::from_field_date, field, &v)?,
+            FieldValue::Text(v) => add_values_to_terms!(Term::from_field_text, field, &v)?,
+            FieldValue::Bytes(v) => add_values_to_terms!(Term::from_field_bytes, field, &v)?,
         };
 
-        Some(v)
+        Ok(v)
     }
 
     /// Gets a document with a given document address.

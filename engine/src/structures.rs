@@ -274,13 +274,6 @@ mod default_query_data {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum SelectorValue<T: Deserialize + ?Sized> {
-    Single(T),
-    Multi(Vec<T>)
-}
-
 /// A set of values that can be used to extract a `Term`.
 ///
 /// This system is designed to handle JSON based deserialization
@@ -291,67 +284,59 @@ pub enum SelectorValue<T: Deserialize + ?Sized> {
 #[serde(tag = "type", content = "value")]
 pub enum FieldValue {
     /// A signed 64 bit integer.
-    I64(SelectorValue<i64>),
+    I64(Vec<i64>),
 
     /// A 64 bit floating point number.
-    F64(SelectorValue<f64>),
+    F64(Vec<f64>),
 
     /// A unsigned 64 bit integer.
-    U64(SelectorValue<u64>),
+    U64(Vec<u64>),
 
     /// A datetime field, deserialized as a u64 int.
     #[serde(with = "deserialize_datetime")]
-    Datetime(SelectorValue<DateTime>),
+    Datetime(Vec<DateTime>),
 
     /// A text field.
-    Text(SelectorValue<String>),
+    Text(Vec<String>),
 
     /// A bytes field, deserialized as a base64 encoded string.
     #[serde(with = "deserialize_base64")]
-    Bytes(SelectorValue<Vec<u8>>),
+    Bytes(Vec<Vec<u8>>),
 }
 
 mod deserialize_datetime {
-    use super::SelectorValue;
-
     use serde::{Deserialize, Deserializer};
     use tantivy::fastfield::FastValue;
     use tantivy::DateTime;
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SelectorValue<DateTime>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<DateTime>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        if let Ok(multi) = Vec::<u64>::deserialize(&deserializer) {
-            let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from(*v)).collect();
-            Ok(SelectorValue::Multi(values))
-        } else {
-            let s = u64::deserialize(deserializer)?;
-            Ok(SelectorValue::Single(DateTime::from_u64(s)))
-        }
+        let multi = Vec::<u64>::deserialize(deserializer)?;
+        let values: Vec<DateTime> = multi
+            .iter()
+            .map(|v| DateTime::from_u64(*v))
+            .collect();
+
+        Ok(values)
     }
 }
 
 mod deserialize_base64 {
-    use super::SelectorValue;
-
     use serde::de::Error;
     use serde::{Deserialize, Deserializer};
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SelectorValue<Vec<u8>>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Vec<u8>>, D::Error>
     where
         D: Deserializer<'de>,
     {
-         if let Ok(multi) = Vec::<String>::deserialize(&deserializer) {
-             let mut out = vec![];
-             for value in multi {
-                 out.push(base64::decode(value).map_err(D::Error::custom)?);
-             }
+         let multi = Vec::<String>::deserialize(deserializer)?;
+         let mut out = vec![];
+         for value in multi {
+             out.push(base64::decode(value).map_err(D::Error::custom)?);
+         }
 
-             Ok(SelectorValue::Multi(out))
-        } else {
-            let s = u64::deserialize(deserializer)?;
-            Ok(SelectorValue::Single(base64::decode(s).map_err(D::Error::custom)?))
-        }
+         Ok(out)
     }
 }

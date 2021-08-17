@@ -336,12 +336,11 @@ pub async fn delete_documents(
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
 
     for (field, term) in terms.0.drain() {
-        if let Some(term) = index.get_term(&field, term) {
-            check_error!(
-                index.delete_documents_with_term(term).await,
-                "delete documents with term"
-            );
-        }
+        let term = check_error!(index.get_term(&field, term), "get term");
+        check_error!(
+            index.delete_documents_with_term(term).await,
+            "delete documents with term"
+        );
     }
 
     json_response(StatusCode::OK, &())

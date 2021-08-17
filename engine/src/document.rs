@@ -8,6 +8,14 @@ use crate::structures::FieldValue;
 
 pub type DocumentPayload = HashMap<String, FieldValue>;
 
+macro_rules! add_values {
+    ($doc:ident.$cb:ident, $field:expr, $sv:expr) => {{
+        for value in $sv {
+            $doc.$cb($field, value);
+        }
+    }}
+}
+
 pub trait FromValue {
     fn from_value_map(
         payload: DocumentPayload,
@@ -58,12 +66,12 @@ impl FromValue for Document {
             }
 
             match value {
-                FieldValue::F64(v) => document.add_f64(field.unwrap(), v),
-                FieldValue::I64(v) => document.add_i64(field.unwrap(), v),
-                FieldValue::U64(v) => document.add_u64(field.unwrap(), v),
-                FieldValue::Datetime(v) => document.add_date(field.unwrap(), &v),
-                FieldValue::Bytes(v) => document.add_bytes(field.unwrap(), v),
-                FieldValue::Text(v) => document.add_text(field.unwrap(), v),
+                FieldValue::F64(v) => add_values!(document.add_f64, field.unwrap(), v),
+                FieldValue::I64(v) => add_values!(document.add_i64, field.unwrap(), v),
+                FieldValue::U64(v) => add_values!(document.add_u64, field.unwrap(), v),
+                FieldValue::Datetime(v) => add_values!(document.add_date, field.unwrap(), &v),
+                FieldValue::Bytes(v) => add_values!(document.add_bytes, field.unwrap(), v),
+                FieldValue::Text(v) => add_values!(document.add_text, field.unwrap(), v),
             }
         }
 
