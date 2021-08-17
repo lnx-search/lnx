@@ -1,3 +1,11 @@
+"""
+This is a really, really, really basic python script to load up
+all the documents from /datasets/movies into meilisearch and lnx
+so I can get a vague idea on where lnx needs to be tweaked.
+
+*You should not use this as a benchmark*
+"""
+
 import json
 import requests
 import time
