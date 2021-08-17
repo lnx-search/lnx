@@ -314,10 +314,7 @@ mod deserialize_datetime {
         D: Deserializer<'de>,
     {
         let multi = Vec::<u64>::deserialize(deserializer)?;
-        let values: Vec<DateTime> = multi
-            .iter()
-            .map(|v| DateTime::from_u64(*v))
-            .collect();
+        let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from_u64(*v)).collect();
 
         Ok(values)
     }
@@ -331,12 +328,12 @@ mod deserialize_base64 {
     where
         D: Deserializer<'de>,
     {
-         let multi = Vec::<String>::deserialize(deserializer)?;
-         let mut out = vec![];
-         for value in multi {
-             out.push(base64::decode(value).map_err(D::Error::custom)?);
-         }
+        let multi = Vec::<String>::deserialize(deserializer)?;
+        let mut out = vec![];
+        for value in multi {
+            out.push(base64::decode(value).map_err(D::Error::custom)?);
+        }
 
-         Ok(out)
+        Ok(out)
     }
 }

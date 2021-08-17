@@ -13,7 +13,7 @@ macro_rules! add_values {
         for value in $sv {
             $doc.$cb($field, value);
         }
-    }}
+    }};
 }
 
 pub trait FromValue {

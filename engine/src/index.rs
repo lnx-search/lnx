@@ -14,10 +14,13 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term};
+use tantivy::{
+    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
+    ReloadPolicy, Score, Searcher, Term,
+};
 
 use crate::structures::{
-    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress
+    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
@@ -739,7 +742,8 @@ impl IndexHandler {
     ///
     /// This assumes that the value type matches up with the field type.
     pub fn get_term(&self, field: &str, value: FieldValue) -> Result<Term> {
-        let field = self.schema
+        let field = self
+            .schema
             .get_field(field)
             .map(|v| Ok(v))
             .unwrap_or_else(|| Err(Error::msg("unknown field")))?;
