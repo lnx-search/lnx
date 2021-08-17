@@ -212,7 +212,7 @@ impl AuthManager {
     }
 }
 
-pub type TokenReader = Arc<evmap::ReadHandle<String, TokenInfo>>;
+pub type TokenReader = evmap::ReadHandle<String, TokenInfo>;
 
 /// A authorization layer which watches a map for token keys.
 ///
