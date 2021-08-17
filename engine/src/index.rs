@@ -23,6 +23,7 @@ use tantivy::{
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
+use tantivy::directory::MmapDirectory;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -650,6 +651,7 @@ impl IndexHandler {
     /// as well as the tokio runtime threads.
     pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let schema_copy = loader.schema.clone();
+
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let index = match loader.storage_type {
@@ -667,7 +669,9 @@ impl IndexHandler {
             IndexStorageType::FileSystem(path) => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
                 fs::create_dir_all(&path).await?;
-                index.create_in_dir(path)?
+
+                let dir = MmapDirectory::open(&path)?;
+                index.open_or_create(dir)?
             }
         };
 

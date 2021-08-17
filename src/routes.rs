@@ -1,4 +1,6 @@
-use hashbrown::{HashMap, HashSet};
+use anyhow::Error;
+
+use hashbrown::HashMap;
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -8,9 +10,8 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
+use engine::tantivy::schema::NamedFieldDocument;
 use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, RefAddress};
-use engine::tantivy::Document;
-use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::auth::{AuthManager, Permissions};
@@ -231,10 +232,10 @@ pub struct PendingQueries {
 #[serde(untagged)]
 pub enum DocumentOptions {
     /// A singular document payload.
-    Single(DocumentPayload),
+    Single(NamedFieldDocument),
 
     /// An array of documents acting as a bulk insertion.
-    Many(Vec<DocumentPayload>),
+    Many(Vec<NamedFieldDocument>),
 }
 
 /// Adds one or more documents to the given index.
@@ -258,13 +259,8 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            let allowed_fields: HashSet<String> =
-                schema.fields().map(|v| v.1.name().to_string()).collect();
+            let document =  check_error!(schema.convert_named_doc(doc).map_err(Error::from), "parse document from raw");
 
-            let document = check_error!(
-                Document::from_value_map(doc, &schema, &allowed_fields),
-                "load document from raw"
-            );
             if wait {
                 check_error!(index.add_document(document).await, "add document");
             } else {
@@ -276,13 +272,11 @@ pub async fn add_document(
             }
         }
         DocumentOptions::Many(docs) => {
-            let allowed_fields: HashSet<String> =
-                schema.fields().map(|v| v.1.name().to_string()).collect();
+            let mut documents = Vec::with_capacity(docs.len());
+            for doc in docs {
+                documents.push(check_error!(schema.convert_named_doc(doc).map_err(Error::from), "parse document from raw"))
+            }
 
-            let documents = check_error!(
-                Document::from_many_value_map(docs, &schema, &allowed_fields),
-                "load many documents from raw"
-            );
             if wait {
                 check_error!(index.add_many_documents(documents).await, "add documents");
             } else {
