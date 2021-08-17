@@ -14,7 +14,7 @@ use engine::{DocumentPayload, FromValue};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::responders::json_response;
-use crate::auth::AuthManager;
+use crate::auth::{self, AuthManager};
 
 type SharedEngine = Arc<SearchEngine>;
 
@@ -388,12 +388,31 @@ pub async fn rollback_index_changes(
     json_response(StatusCode::OK, "changes rolled back since last commit")
 }
 
+
+/// The query parameters for the revoke token endpoint.
+#[derive(Deserialize)]
+pub struct CreateTokenQuery {
+    username: String,
+    permissions: u32,
+}
+
 /// Creates a unique authentication access token with a
 /// given set of permissions.
 pub async fn create_token(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+    query: Result<Query<CreateTokenQuery>, QueryRejection>,
+    Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
-    json_response(StatusCode::OK, &())
+    let query = check_query!(query);
+    let user = query.username.clone();
+    let permissions = query.permissions;
+    let token = check_error!(auth_manager.create_token(user, permissions).await, "revoke token");
+
+
+    json_response(StatusCode::OK, &json!({
+        "access_token": token,
+        "username": query.username.as_str(),
+        "permissions": permissions,
+    }))
 }
 
 /// The query parameters for the revoke token endpoint.
@@ -408,11 +427,12 @@ pub struct RevokeQuery {
 /// will be denied.
 pub async fn revoke_token(
     query: Result<Query<RevokeQuery>, QueryRejection>,
-    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+    Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
     let query = check_query!(query);
+    check_error!(auth_manager.revoke_token(query.token.clone()).await, "revoke token");
 
-    json_response(StatusCode::OK, &())
+    json_response(StatusCode::OK, "token revoked")
 }
 
 /// Invalidated all authentication tokens currently active.
@@ -420,9 +440,11 @@ pub async fn revoke_token(
 /// After a token is revoked any access attempted with the token
 /// will be denied.
 pub async fn revoke_all(
-    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+    Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
-    json_response(StatusCode::OK, &())
+    check_error!(auth_manager.revoke_all().await, "revoke all tokens");
+
+    json_response(StatusCode::OK, "tokens revoked")
 }
 
 /// The query parameters for changing the permissions
@@ -444,9 +466,27 @@ pub struct ModifyPermissionsQuery {
 /// Alters the permissions for a given access token.
 pub async fn modify_permissions(
     query: Result<Query<ModifyPermissionsQuery>, QueryRejection>,
-    Extension(_auth_manager): Extension<Arc<AuthManager>>,
+    Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
     let query = check_query!(query);
+
+    let token = query.token.clone();
+
+    if query.set.is_none() && query.unset.is_none() {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            "requires either 'set' or 'unset' field or both, got neither.",
+        )
+    }
+
+    if let Some(set) = query.set {
+        check_error!(auth_manager.modify_permissions(&token, set, auth::Op::Set).await, "setting access token permissions");
+    }
+
+    if let Some(unset) = query.unset {
+        check_error!(auth_manager.modify_permissions(&token, unset, auth::Op::Unset).await, "removing access token permissions");
+    }
+
 
     json_response(StatusCode::OK, &())
 }

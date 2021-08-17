@@ -1,7 +1,5 @@
 use anyhow::{Error, Result};
 
-use axum::body::Body;
-use axum::extract::Extension;
 use axum::http::header;
 
 use headers::HeaderMapExt;
@@ -12,22 +10,28 @@ use parking_lot::Mutex;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::Serialize;
 use sqlx::{Connection, Row, SqliteConnection};
-use std::sync::Arc;
 use tokio::fs;
 
-use crate::responders::json_response;
-
+/// A set of flags determining permissions.
 pub struct AuthFlags;
 impl AuthFlags {
+    /// Allows the user to send search requests.
     pub const SEARCH: u32 = 1 << 0;
+
+    /// Allows the user to add / remove and get targeted docs.
     pub const MODIFY_DOCUMENTS: u32 = 1 << 1;
+
+    /// Allows the user to create and remove indexes.
     pub const MODIFY_INDEXES: u32 = 1 << 2;
-    pub const ALL: u32 = Self::SEARCH | Self::MODIFY_DOCUMENTS | Self::MODIFY_INDEXES;
 }
 
+/// The operation mode for setting and unsetting permissions.
 #[derive(Debug)]
 pub enum Op {
+    /// Add the given permissions to the token.
     Set,
+
+    /// Remove the given permissions from the token.
     Unset,
 }
 
@@ -66,6 +70,8 @@ impl AuthManager {
             cached_values,
             storage,
         };
+
+        inst.load_all().await?;
 
         Ok((inst, reader))
     }
@@ -134,6 +140,26 @@ impl AuthManager {
         );
 
         Ok(token)
+    }
+
+    /// Revokes a created access token.
+    pub async fn revoke_all(&self) -> Result<()> {
+        {
+            let mut lock = self.storage.lock().await;
+            sqlx::query("DELETE FROM access_tokens")
+                .execute(&mut *lock)
+                .await?;
+        }
+
+        {
+            let mut lock = self.cached_values.lock();
+            (*lock).purge();
+            (*lock).refresh();
+        }
+
+        info!("[ AUTHORIZATION ] revoked all access tokens");
+
+        Ok(())
     }
 
     /// Revokes a created access token.
