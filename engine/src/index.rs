@@ -22,6 +22,8 @@ use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
 
+static INDEX_DATA_PATH: &str = "./lnx/index-data";
+
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
 enum WriterOp {
@@ -652,7 +654,8 @@ impl IndexHandler {
     /// Gets a tantivy Index either from an existing directory or
     /// makes a new system.
     async fn get_index_from_loader(loader: &LoadedIndex) -> Result<(Index, Option<String>)> {
-        if let IndexStorageType::FileSystem(path) = &loader.storage_type {
+        if let IndexStorageType::FileSystem = &loader.storage_type {
+            let path = format!("{}/{}", INDEX_DATA_PATH, &loader.name);
             if std::path::Path::new(&path).exists() {
                 info!(
                     "[ SETUP @ {} ] using existing schema metadata",
@@ -678,8 +681,10 @@ impl IndexHandler {
                 info!("[ SETUP @ {} ] creating index in memory", &loader.name);
                 (index.create_in_ram()?, None)
             }
-            IndexStorageType::FileSystem(path) => {
+            IndexStorageType::FileSystem => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
+
+                let path = format!("{}/{}", INDEX_DATA_PATH, &loader.name);
                 fs::create_dir_all(&path).await?;
 
                 let dir = MmapDirectory::open(&path)?;
