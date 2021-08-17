@@ -395,8 +395,13 @@ pub struct CreateTokenQuery {
     username: String,
 
     /// The set permission flags
+    #[serde(default)]
     search: bool,  // serde didnt let us flatten a hashmap with them in so, yeah :)
+
+    #[serde(default)]
     documents: bool,
+
+    #[serde(default)]
     indexes: bool,
 }
 
