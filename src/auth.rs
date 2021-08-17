@@ -158,26 +158,32 @@ impl AuthManager {
     pub async fn modify_permissions(&self, token: &str, permissions: u32, op: Op) -> Result<()> {
         let new_permissions = {
             let mut lock = self.cached_values.lock();
-            if let Some(results) = (*lock).get_one(token) {
-                let (username, existing) = results.as_ref();
 
-                let mut new;
-                match op {
-                    Op::Set => {
-                        new = existing & (!permissions);
-                    },
-                    Op::Unset => {
-                        new = existing | permissions;
+            let (username, new) = {
+                match (*lock).get_one(token) {
+                    None => return Err(Error::msg("this token is not registered")),
+                    Some(guard) => {
+                        let (username, existing) = guard.as_ref();
+
+                        let new;
+                        match op {
+                            Op::Set => {
+                                new = *existing & (!permissions);
+                            }
+                            Op::Unset => {
+                                new = *existing | permissions;
+                            }
+                        };
+
+                        (username.clone(), new)
                     }
-                };
+                }
+            };
 
-                (*lock).update(token.into(), (username.clone(), new));
-                (*lock).refresh();
+            (*lock).update(token.into(), (username.clone(), new));
+            (*lock).refresh();
 
-                new
-            } else {
-                return Err(Error::msg("this token is not registered"))
-            }
+            new
         };
 
         {
