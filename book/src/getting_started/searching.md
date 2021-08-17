@@ -38,3 +38,19 @@ GET /indexes/movies/search?limit=10&query=hello, world
 ```
 
 Our response can look something like this:
+```js
+{
+    "data": {
+        // The total amount of documents matching the query
+        "count": 0,
+
+        // The results of the query, the data returned is in the format of the
+        // schema.
+        "hits": [],
+    
+        // The total time taken in seconds.
+        "time_taken": 0.0007666     
+    },
+    "status": 200
+}
+```
