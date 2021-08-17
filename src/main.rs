@@ -188,8 +188,8 @@ async fn start(settings: Settings) -> Result<()> {
         .layer(MapResponseLayer::new(routes::map_status))
         .into_inner();
 
-    let super_user_app = route("/:token/revoke", post(auth::revoke_token))
-        .route("/:token/permissions", post(auth::modify_permissions))
+    let super_user_app = route("/tokens/revoke", post(auth::revoke_token))
+        .route("/tokens/permissions", post(auth::modify_permissions))
         .route("/tokens/create", post(auth::create_token))
         .route("/tokens/clear", post(auth::revoke_all))
         .layer(super_user_middleware);
@@ -228,47 +228,57 @@ async fn start(settings: Settings) -> Result<()> {
 
     let app = route(
         "/:index_name/search",
-        get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
+        get(routes::search_index
+            // .layer(RequireAuthorizationLayer::custom(search_auth))
+        ),
     )
     .route(
         "/indexes/:index_name/commit",
         post(
             routes::commit_index_changes
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()),
         ),
     )
     .route(
         "/indexes/:index_name/rollback",
         post(
             routes::rollback_index_changes
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
         ),
     )
     .route(
         "/indexes/:index_name",
-        delete(routes::delete_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
+        delete(routes::delete_index
+            // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
+        ),
     )
     .route(
         "/indexes",
-        post(routes::create_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
+        post(routes::create_index
+            // .layer(RequireAuthorizationLayer::custom(index_auth.clone()))
+        ),
     )
     .route(
         "/indexes/:index_name/documents/:document_id",
-        get(routes::get_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+        get(routes::get_document
+            //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
+        ),
     )
     .route(
         "/indexes/:index_name/documents/clear",
         delete(
             routes::delete_all_documents
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+                //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
         ),
     )
     .route(
         "/indexes/:index_name/documents",
-        post(routes::add_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone())))
+        post(routes::add_document
+            //.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))
+        )
             .delete(
                 routes::delete_documents
-                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+                    //.layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
             ),
     )
     .layer(index_middleware);

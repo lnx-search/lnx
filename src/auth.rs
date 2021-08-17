@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, Error};
 use axum::http::header;
 use headers::HeaderMapExt;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
@@ -9,6 +9,9 @@ use sqlx::{Connection, Row, SqliteConnection};
 use std::sync::Arc;
 use tokio::fs;
 use tower_http::auth::AuthorizeRequest;
+use crate::responders::json_response;
+use axum::body::Body;
+use axum::extract::Extension;
 
 pub struct AuthFlags;
 impl AuthFlags {
@@ -16,6 +19,12 @@ impl AuthFlags {
     pub const MODIFY_DOCUMENTS: u32 = 1 << 1;
     pub const MODIFY_INDEXES: u32 = 1 << 2;
     pub const ALL: u32 = Self::SEARCH | Self::MODIFY_DOCUMENTS | Self::MODIFY_INDEXES;
+}
+
+#[derive(Debug, Deserialize)]
+pub enum Op {
+    Set,
+    Unset,
 }
 
 pub type TokenInfo = (String, u32);
@@ -128,6 +137,45 @@ impl AuthManager {
             let mut lock = self.cached_values.lock();
             (*lock).clear(token.clone());
             (*lock).refresh();
+        }
+
+        Ok(())
+    }
+
+    /// Either sets or unsets permissions and updates them both in cache
+    /// and on disk.
+    pub async fn modify_permissions(&self, token: &str, permissions: u32, op: Op) -> Result<()> {
+        let new_permissions = {
+            let mut lock = self.cached_values.lock();
+            if let Some(results) = (*lock).get_one(token) {
+                let (username, existing) = results.as_ref();
+
+                let mut new;
+                match op {
+                    Op::Set => {
+                        new = existing & (!permissions);
+                    },
+                    Op::Unset => {
+                        new = existing | permissions;
+                    }
+                };
+
+                (*lock).update(token.into(), (username.clone(), new));
+                (*lock).refresh();
+
+                new
+            } else {
+                return Err(Error::msg("this token is not registered"))
+            }
+        };
+
+        {
+            let mut lock = self.storage.lock().await;
+            sqlx::query("UPDATE access_tokens SET permissions = ?  WHERE token = ?")
+                .bind(new_permissions)
+                .bind(token.clone())
+                .execute(&mut *lock)
+                .await?;
         }
 
         Ok(())
@@ -270,10 +318,26 @@ impl AuthorizeRequest for SuperUserAuthIfEnabled {
     }
 }
 
-pub async fn create_token() {}
+pub async fn create_token(
+    Extension(_auth_manager): Extension<AuthManager>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
 
-pub async fn revoke_token() {}
+pub async fn revoke_token(
+    Extension(_auth_manager): Extension<AuthManager>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
 
-pub async fn revoke_all() {}
+pub async fn revoke_all(
+    Extension(_auth_manager): Extension<AuthManager>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
 
-pub async fn modify_permissions() {}
+pub async fn modify_permissions(
+    Extension(_auth_manager): Extension<AuthManager>,
+) -> Response<Body> {
+    json_response(StatusCode::OK, &())
+}
