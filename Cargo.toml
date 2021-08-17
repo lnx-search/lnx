@@ -15,6 +15,7 @@ tower-http = { version = "0.1", features = ["full"] }
 uuid = { version = "0.8", features = ["v4"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 axum = { git = "https://github.com/tokio-rs/axum.git", branch = "main" }
+sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-rustls"] }
 tower = "0.4"
 structopt = "0.3"
 tokio-rustls = "0.22"
@@ -25,5 +26,9 @@ num_cpus = "1.13"
 bytes = "1"
 serde_json = "1"
 headers = "0.3.4"
+bitflags = "1.3.2"
+evmap = "10"
+parking_lot = "0.11"
+rand = "0.8.4"
 
 engine = { path = "./engine" }

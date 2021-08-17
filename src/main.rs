@@ -32,6 +32,7 @@ use structopt::StructOpt;
 mod middleware;
 mod responders;
 mod routes;
+mod auth;
 
 use engine::SearchEngine;
 use tower::util::MapResponseLayer;
