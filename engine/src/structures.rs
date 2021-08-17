@@ -276,7 +276,7 @@ mod default_query_data {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum SelectorValue<T> {
+pub enum SelectorValue<T: Deserialize + ?Sized> {
     Single(T),
     Multi(Vec<T>)
 }
