@@ -27,10 +27,14 @@ impl AuthFlags {
 }
 
 #[derive(Eq, PartialEq, Hash, Copy, Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "lowercase")]
 pub enum Permissions {
     Search,
+
+    #[serde(rename= "documents")]
     ModifyDocuments,
+
+    #[serde(rename= "indexes")]
     ModifyIndexes,
 }
 

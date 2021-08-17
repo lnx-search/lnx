@@ -394,8 +394,10 @@ pub async fn rollback_index_changes(
 pub struct CreateTokenQuery {
     username: String,
 
-    #[serde(flatten)]
-    permissions: HashMap<Permissions, bool>,
+    /// The set permission flags
+    search: bool,  // serde didnt let us flatten a hashmap with them in so, yeah :)
+    documents: bool,
+    indexes: bool,
 }
 
 /// Creates a unique authentication access token with a
@@ -406,7 +408,13 @@ pub async fn create_token(
 ) -> Response<Body> {
     let query = check_query!(query);
     let user = query.username.clone();
-    let permissions = Permissions::get_flags_from_map(&query.permissions);
+
+    let mut map = HashMap::with_capacity(3);
+    map.insert(Permissions::Search, query.search);
+    map.insert(Permissions::ModifyDocuments, query.documents);
+    map.insert(Permissions::ModifyIndexes, query.indexes);
+
+    let permissions = Permissions::get_flags_from_map(&map);
     let token = check_error!(auth_manager.create_token(user, permissions).await, "revoke token");
 
 
@@ -459,8 +467,14 @@ pub struct ModifyPermissionsQuery {
     token: String,
 
     /// Permissions from the existing flags.
-    #[serde(flatten)]
-    permissions: HashMap<Permissions, bool>,
+    #[serde(default)]
+    search: bool,
+
+    #[serde(default)]
+    documents: bool,
+
+    #[serde(default)]
+    indexes: bool,
 }
 
 /// Alters the permissions for a given access token.
@@ -469,9 +483,14 @@ pub async fn modify_permissions(
     Extension(auth_manager): Extension<Arc<AuthManager>>,
 ) -> Response<Body> {
     let query = check_query!(query);
-
     let token = query.token.clone();
-    let set = Permissions::get_flags_from_map(&query.permissions);
+
+    let mut map = HashMap::with_capacity(3);
+    map.insert(Permissions::Search, query.search);
+    map.insert(Permissions::ModifyDocuments, query.documents);
+    map.insert(Permissions::ModifyIndexes, query.indexes);
+
+    let set = Permissions::get_flags_from_map(&map);
     check_error!(auth_manager.modify_permissions(&token, set).await, "set access token permissions");
 
     json_response(StatusCode::OK, &())
