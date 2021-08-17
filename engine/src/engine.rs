@@ -29,7 +29,7 @@ impl SearchEngine {
         let mut indexes = HashMap::with_capacity(loaded_indexes.len());
         for loader in loaded_indexes {
             let name = loader.name.clone();
-            let index = IndexHandler::build_loaded(loader)?;
+            let index = IndexHandler::build_loaded(loader).await?;
 
             indexes.insert(name, Arc::new(index));
         }
@@ -44,11 +44,13 @@ impl SearchEngine {
     ///
     /// This will set it in the index storage and then build the index handlers.
     pub async fn add_index(&self, index: IndexDeclaration, override_if_exists: bool) -> Result<()> {
-        self.storage.store_index_meta(&index).await?;
-
-        let loaded = index.into_schema();
+        let copy_index = index.clone();
+        let loaded = copy_index.into_schema();
         let name = loaded.name.clone();
-        let index = Arc::new(IndexHandler::build_loaded(loaded)?);
+        let index_handler = Arc::new(IndexHandler::build_loaded(loaded).await?);
+
+        // We must make sure to only save the metadata if the original making succeeded.
+        self.storage.store_index_meta(&index).await?;
 
         let old = {
             let mut lock = self.indexes.write().await;
@@ -59,7 +61,7 @@ impl SearchEngine {
                 }
             }
 
-            lock.insert(name, index)
+            lock.insert(name, index_handler)
         };
 
         if let Some(v) = old {

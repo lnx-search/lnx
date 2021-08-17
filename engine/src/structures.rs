@@ -12,7 +12,7 @@ use tantivy::{DateTime, DocAddress};
 ///
 /// Each field has a set of relevant options as specified
 /// by the tantivy docs.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
 pub enum FieldDeclaration {
@@ -45,7 +45,7 @@ pub enum FieldDeclaration {
 }
 
 /// The storage backend to store index documents in.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "mode", content = "path")]
 pub enum IndexStorageType {
@@ -59,7 +59,7 @@ pub enum IndexStorageType {
     FileSystem(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct IndexDeclaration {
     pub(crate) name: String,
     writer_buffer: usize,

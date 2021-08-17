@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
+use tokio::fs;
 
 use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
@@ -588,6 +589,8 @@ fn search(
     })
 }
 
+/// Converts an array of items into selecting one or rejecting
+/// it all together.
 macro_rules! add_values_to_terms {
     ($t:ident::$cb:ident, $field:expr, &$sv:expr) => {{
         if $sv.len() == 0 {
@@ -645,7 +648,7 @@ impl IndexHandler {
     /// this system is being deployed on hence being a required field.
     /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
     /// as well as the tokio runtime threads.
-    pub(crate) fn build_loaded(loader: LoadedIndex) -> Result<Self> {
+    pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
         let schema_copy = loader.schema.clone();
         let index = IndexBuilder::default().schema(loader.schema.clone());
 
@@ -663,6 +666,7 @@ impl IndexHandler {
             }
             IndexStorageType::FileSystem(path) => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
+                fs::create_dir_all(&path).await?;
                 index.create_in_dir(path)?
             }
         };
