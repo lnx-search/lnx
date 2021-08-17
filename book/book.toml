@@ -1,7 +1,0 @@
-[book]
-authors = ["Harrison Burt"]
-language = "en"
-multilingual = false
-src = "src"
-title = "Getting started with lnx"
-description = "An introduction to lnx covering setup, usage and optimisation."
