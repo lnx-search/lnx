@@ -28,5 +28,51 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 - *Fast* Searching.
 - Several Options for fine grain performance tuning.
 - Multiple storage backends available for testing and developing.
+- Permissions based authorization access tokens.
 
 
+### Performance
+lnx can provide the ability to fine tune the system to your perticular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
+
+This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader threads in exchange for lower max concurrency.
+
+This allows you to get some very nice results and tune your application to your needs:
+<img src="https://github.com/ChillFish8/lnx/blob/master/benchmarks/diagrams/150-conn-results.png"/>
+
+As a more detailed insight:
+
+#### MeiliSearch
+```
+ INFO  lnxcli > starting benchmark system
+ INFO  benchmark > starting runtime with 12 threads
+ INFO  benchmark::meilisearch > MeiliSearch took 18.188s to process submitted documents
+ INFO  benchmark              > Service ready! Beginning benchmark.
+ INFO  benchmark              >      Concurrency @ 150 clients
+ INFO  benchmark              >      Searching @ 50 sentences
+ INFO  benchmark              >      Mode @ Standard
+ INFO  benchmark::sampler     > General benchmark results:
+ INFO  benchmark::sampler     >      Total Requests Sent: 7500
+ INFO  benchmark::sampler     >      Average Requests/sec: 296.65
+ INFO  benchmark::sampler     >      Average Latency: 505.654336ms
+ INFO  benchmark::sampler     >      Max Latency: 725.2446ms
+ INFO  benchmark::sampler     >      Min Latency: 10.085ms
+ INFO  lnxcli                 > commands complete!
+```
+
+#### lnx
+```
+ INFO  lnxcli > starting benchmark system
+ INFO  benchmark > starting runtime with 12 threads
+ INFO  benchmark::lnx > lnx took 785.402ms to process submitted documents
+ INFO  benchmark      > Service ready! Beginning benchmark.
+ INFO  benchmark      >      Concurrency @ 150 clients
+ INFO  benchmark      >      Searching @ 50 sentences
+ INFO  benchmark      >      Mode @ Standard
+ INFO  benchmark::sampler > General benchmark results:
+ INFO  benchmark::sampler >      Total Requests Sent: 7500
+ INFO  benchmark::sampler >      Average Requests/sec: 914.84
+ INFO  benchmark::sampler >      Average Latency: 163.962587ms
+ INFO  benchmark::sampler >      Max Latency: 668.0729ms
+ INFO  benchmark::sampler >      Min Latency: 2.5241ms
+ INFO  lnxcli             > commands complete!
+```
