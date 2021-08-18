@@ -13,7 +13,7 @@ import random
 
 
 def load_movies() -> list:
-    with open("../../datasets/movies/movies.json", encoding="UTF-8") as file:
+    with open("../../datasets/reference/movies/movies.json", encoding="UTF-8") as file:
         return json.load(file)
 
 

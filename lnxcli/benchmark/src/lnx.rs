@@ -22,6 +22,10 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
         .json()
         .await?;
 
+    let _ = client.post(format!("{}/indexes/bench/commit", address))
+        .send()
+        .await?;
+
     let delta = start.elapsed();
     info!("lnx took {:?} to process submitted documents", delta);
 
