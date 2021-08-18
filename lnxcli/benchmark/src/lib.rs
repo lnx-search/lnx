@@ -1,4 +1,4 @@
-#![allow(unused)]
+// #![allow(unused)]
 
 #[macro_use] extern crate log;
 
@@ -8,6 +8,9 @@ mod lnx;
 
 use std::str::FromStr;
 use std::sync::Arc;
+
+use tokio::fs;
+use serde_json::Value;
 
 /// The two benchmarking targets.
 ///
@@ -86,6 +89,14 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
 
     let target = ctx.target;
     let mode = ctx.mode;
+
+    let json_data = fs::read_to_string(&ctx.data_file).await?;
+    let json_data: Value = serde_json::from_str(&json_data)?;
+    match target {
+        BenchTarget::MeiliSearch => meilisearch::prep(&ctx.address, json_data).await,
+        BenchTarget::Lnx => lnx::prep(&ctx.address, json_data).await,
+    }?;
+
     for _ in 0..ctx.concurrency {
         let temp_ctx = ctx.clone();
         let sample_handler = sample_system.get_handle();
@@ -97,19 +108,19 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
                 (BenchTarget::MeiliSearch, BenchMode::Typing) =>
                     meilisearch::bench_typing(temp_ctx, sample_handler).await,
                 (BenchTarget::Lnx, BenchMode::Standard) =>
-                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+                    lnx::bench_standard(temp_ctx, sample_handler).await,
                 (BenchTarget::Lnx, BenchMode::Typing) =>
-                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+                    lnx::bench_standard(temp_ctx, sample_handler).await,
             };
 
             if let Err(e) = res {
-                error!("failed to start benching on worker");
+                error!("failed to start benching on worker {:?}", e);
             }
-        })
+        });
     }
-
 
     sample_system.wait_and_sample().await?;
 
     Ok(())
 }
+
