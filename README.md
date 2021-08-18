@@ -28,6 +28,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 - *Fast* Searching.
 - Several Options for fine grain performance tuning.
 - Multiple storage backends available for testing and developing.
+- Permissions based authorization access tokens.
 
 
 ### Performance
