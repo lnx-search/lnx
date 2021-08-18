@@ -24,6 +24,8 @@ use tantivy::{
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
+use parking_lot::Mutex;
+use tokio::time::Duration;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 
@@ -646,7 +648,7 @@ pub struct IndexHandler {
     pub(crate) name: String,
 
     /// The internal tantivy index.
-    _index: Index,
+    _index: Mutex<Option<Index>>,
 
     /// The internal tantivy schema.
     schema: Schema,
@@ -781,7 +783,7 @@ impl IndexHandler {
 
         Ok(Self {
             name: loader.name,
-            _index: index,
+            _index: Mutex::new(Some(index)),
             schema: loader.schema,
             writer: worker_handler,
             reader: reader_handler,
@@ -897,9 +899,23 @@ impl IndexHandler {
         debug!("[ ENGINE ] waiting on writer shutdown...");
         self.alive.recv().await?;
 
+        let _ = self._index.lock().take();
+
         debug!("[ ENGINE ] cleaning up directory");
         if let Some(dir) = self.dir.as_ref() {
-            fs::remove_dir_all(dir).await?;
+            let mut attempt = 1;
+            loop {
+                match fs::remove_dir_all(dir).await {
+                    Err(ref e) if e.kind() == tokio::io::ErrorKind::PermissionDenied && attempt < 4 => {
+                        attempt += 1;
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue
+                    },
+                    Err(e) => Err(e),
+                    Ok(()) => Ok(()),
+                }?;
+            }
+
         }
         Ok(())
     }

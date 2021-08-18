@@ -16,8 +16,6 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
         .post(format!("{}/indexes/bench/documents", address))
         .json(&data)
         .send()
-        .await?
-        .json()
         .await?;
 
     let _ = client.post(format!("{}/indexes/bench/commit", address))
