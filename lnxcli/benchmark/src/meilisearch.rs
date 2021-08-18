@@ -8,6 +8,7 @@ use tokio::time::Duration;
 use chrono::{DateTime, Utc};
 use reqwest::StatusCode;
 
+
 use crate::sampler::SamplerHandle;
 
 #[derive(Debug, Deserialize)]
@@ -17,14 +18,8 @@ struct EnqueueResponseData {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Status {
-    Processed,
-    Enqueued,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(tag = "status")]
+#[serde(rename_all = "lowercase")]
 enum CheckData {
     Processed {
         #[serde(rename = "processedAt")]
@@ -39,7 +34,11 @@ enum CheckData {
     Enqueued {
         #[serde(flatten)]
         _other: HashMap<String, Value>,
-    }
+    },
+    Processing {
+        #[serde(flatten)]
+        _other: HashMap<String, Value>,
+    },
 }
 
 pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
@@ -77,7 +76,7 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    info!("MeiliSearch took {:?} to process submitted documents", delta);
+    info!("MeiliSearch took {}.{}s to process submitted documents", delta.num_seconds(), delta.num_milliseconds() / 100i64);
 
     Ok(())
 }
@@ -85,7 +84,7 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
 pub(crate) async fn bench_standard(
     address: Arc<String>,
     mut sample: SamplerHandle,
-    terms: Arc<Vec<String>>,
+    terms: Vec<String>,
 ) -> anyhow::Result<()> {
     let search_addr = format!("{}/indexes/bench/search", address);
     let client = reqwest::Client::new();
@@ -105,7 +104,7 @@ pub(crate) async fn bench_standard(
 pub(crate) async fn bench_typing(
     address: Arc<String>,
     mut sample: SamplerHandle,
-    terms: Arc<Vec<String>>,
+    terms: Vec<String>,
 ) -> anyhow::Result<()> {
     let search_addr = format!("{}/indexes/bench/search", address);
     let client = reqwest::Client::new();

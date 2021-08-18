@@ -21,7 +21,7 @@ def get_random_words(data: list, k=5000) -> list:
 
 if __name__ == '__main__':
     movies = load_movies()
-    random_searches = get_random_words(movies)
+    random_searches = get_random_words(movies, k=50)
 
     with open("../../datasets/search_samples/samples.json", "w+", encoding="UTF-8") as file:
         json.dump(random_searches, file)

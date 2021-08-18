@@ -108,7 +108,7 @@ impl Sampler {
 
         info!("General benchmark results:");
         info!("     Total Requests Sent: {}", all_results.len());
-        info!("     Total Requests Sent: {:.2}", requests_a_sec);
+        info!("     Average Requests/sec: {:.2}", requests_a_sec);
         info!("     Average Latency: {:?}", average);
         info!("     Max Latency: {:?}", max);
         info!("     Min Latency: {:?}", min);

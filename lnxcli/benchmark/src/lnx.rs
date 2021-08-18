@@ -36,7 +36,7 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
 pub(crate) async fn bench_standard(
     address: Arc<String>,
     mut sample: SamplerHandle,
-    terms: Arc<Vec<String>>,
+    terms: Vec<String>,
 ) -> anyhow::Result<()> {
     let search_addr = format!("{}/indexes/bench/search", address);
     let client = reqwest::Client::new();
@@ -57,7 +57,7 @@ pub(crate) async fn bench_standard(
 pub(crate) async fn bench_typing(
     address: Arc<String>,
     mut sample: SamplerHandle,
-    terms: Arc<Vec<String>>,
+    terms: Vec<String>,
 ) -> anyhow::Result<()> {
     let search_addr = format!("{}/indexes/bench/search", address);
     let client = reqwest::Client::new();

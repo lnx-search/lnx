@@ -10,6 +10,7 @@ use anyhow::Result;
 
 use std::str::FromStr;
 use std::sync::Arc;
+use rand::seq::SliceRandom;
 
 use tokio::fs;
 use serde_json::Value;
@@ -95,14 +96,17 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let mode = ctx.mode;
 
     prep_systems(target, &ctx.address, &ctx.data_file).await?;
-    let terms = Arc::new(get_terms(&ctx.search_terms).await?);
+    let terms = get_terms(&ctx.search_terms).await?;
 
     let address = Arc::new(ctx.address.clone());
 
     let mut handles = vec![];
     for _ in 0..ctx.concurrency {
         let addr = address.clone();
-        let temp_terms = terms.clone();
+        let mut temp_terms = terms.clone();
+        let mut rng = rand::thread_rng();
+        temp_terms.shuffle(&mut rng);
+
         let sample_handler = sample_system.get_handle();
 
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {

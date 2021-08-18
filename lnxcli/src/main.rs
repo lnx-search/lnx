@@ -9,7 +9,7 @@ use benchmark::{self, BenchTarget, BenchMode};
 pub enum Commands {
     Bench {
         /// The address of the server to benchmark.
-        #[structopt(long, short = "addr")]
+        #[structopt(long, short = "a")]
         address: String,
 
         /// The target platform to bench mark, either 'lnx' or 'meilisearch'.
@@ -17,29 +17,29 @@ pub enum Commands {
         target: BenchTarget,
 
         /// The target platform to bench mark, either 'lnx' or 'meilisearch'.
-        #[structopt(long)]
+        #[structopt(long, short = "m")]
         mode: BenchMode,
 
         /// The path to the target JSON file to load data for the benchmark.
-        #[structopt(long)]
+        #[structopt(long, short = "data")]
         data_file: String,
 
         /// The amount of concurrent searches to run at any one time.
-        #[structopt(long, short)]
+        #[structopt(long, short = "c")]
         concurrency: usize,
 
         /// The number of threads to run the test with.
         ///
         /// If not set the number of logical CPU cores is used.
-        #[structopt(long, short)]
+        #[structopt(long, short = "t")]
         threads: Option<usize>,
 
         /// The directory to output the image results.
-        #[structopt(long)]
+        #[structopt(long, short = "out")]
         output_dir: String,
 
         /// The path to get the query string data.
-        #[structopt(long)]
+        #[structopt(long, short = "terms")]
         search_terms: String,
     },
 }
