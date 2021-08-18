@@ -1,3 +1,9 @@
+#[macro_use] extern crate log;
+
+mod sampler;
+mod meilisearch;
+mod lnx;
+
 use std::str::FromStr;
 
 /// The two benchmarking targets.
@@ -60,5 +66,27 @@ pub struct Context {
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
-    Ok(())
+    info!("starting runtime with {} threads", ctx.threads);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(ctx.threads)
+        .build()?;
+
+    runtime.block_on(start(ctx))
+}
+
+
+async fn start(ctx: Context) -> anyhow::Result<()> {
+    let sample_system = sampler::Sampler::new();
+
+    match (&ctx.target, &ctx.mode) {
+        (BenchTarget::MeiliSearch, BenchMode::Standard) =>
+            meilisearch::bench_standard(ctx).await,
+        (BenchTarget::MeiliSearch, BenchMode::Typing) =>
+            meilisearch::bench_typing(ctx).await,
+        (BenchTarget::Lnx, BenchMode::Standard) =>
+            meilisearch::bench_standard(ctx).await,
+        (BenchTarget::Lnx, BenchMode::Typing) =>
+            meilisearch::bench_standard(ctx).await,
+    }
 }

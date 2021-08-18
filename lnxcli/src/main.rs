@@ -1,3 +1,5 @@
+#[macro_use] extern crate log;
+
 use structopt::StructOpt;
 use benchmark::{self, BenchTarget, BenchMode};
 
@@ -35,6 +37,9 @@ pub enum Commands {
 }
 
 fn main() -> anyhow::Result<()> {
+    let _ = std::env::set_var("RUST_LOG", "info");
+    pretty_env_logger::init();
+
     let cmd: Commands = Commands::from_args();
 
     match cmd {
@@ -48,9 +53,11 @@ fn main() -> anyhow::Result<()> {
                 threads: threads.unwrap_or_else(|| num_cpus::get())
             };
 
+            info!("starting benchmark system");
             benchmark::run(ctx)
         }
     }?;
 
+    info!("commands complete!");
     Ok(())
 }
