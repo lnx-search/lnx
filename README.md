@@ -13,7 +13,7 @@
 <p align="center">An ultra-fast, adaptable deployment of the tantivy search engine via REST.</p>
 
 ### 🌟 Standing On The Shoulders of Giants
-lnx is built to no re-invent the wheel, it stands ontop of the [**tokio-rs**](https://tokio.rs) work-stealing runtime, [**axum**](https://github.com/tokio-rs/axum) a lightweight abstraction over [**hyper-rs**](https://github.com/hyperium/hyper) combined with the raw compute power of the [**tantivy search engine**](https://github.com/tantivy-search/tantivy).
+lnx is built to not re-invent the wheel, it stands ontop of the [**tokio-rs**](https://tokio.rs) work-stealing runtime, [**axum**](https://github.com/tokio-rs/axum) a lightweight abstraction over [**hyper-rs**](https://github.com/hyperium/hyper) combined with the raw compute power of the [**tantivy search engine**](https://github.com/tantivy-search/tantivy).
 
 Together this allows lnx to offer millisecond indexing on tens of thousands of document inserts at once (No more waiting around for things to get indexed!), Per index transactions and the ability to process searches like it's just another lookup on the hashtable 😲
 
