@@ -1,0 +1,14 @@
+[package]
+name = "lnxcli"
+version = "0.1.0"
+authors = ["Harrison Burt <57491488+ChillFish8@users.noreply.github.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num_cpus = "1.13"
+anyhow = "1"
+structopt = "0.3"
+
+benchmark = { path = "./benchmark" }
