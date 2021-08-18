@@ -97,8 +97,11 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
 
     prep_systems(target, &ctx.address, &ctx.data_file).await?;
     let terms = get_terms(&ctx.search_terms).await?;
-
     let address = Arc::new(ctx.address.clone());
+
+    info!("Service ready! Beginning benchmark.");
+    info!("Benchmark @ {} concurrent clients", ctx.concurrency);
+    info!("Benchmark @ {} search sentences", terms.len());
 
     let mut handles = vec![];
     for _ in 0..ctx.concurrency {
