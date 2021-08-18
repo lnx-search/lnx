@@ -2,11 +2,12 @@ use tantivy::schema::{
     IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING,
     TEXT,
 };
+use tantivy::{DateTime, DocAddress};
 
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use tantivy::{DateTime, DocAddress};
+use regex::Regex;
 
 /// A declared schema field type.
 ///
@@ -213,19 +214,23 @@ impl TryFrom<String> for RefAddress {
     type Error = anyhow::Error;
 
     fn try_from(v: String) -> Result<Self, Self::Error> {
-        let mut split = v.splitn(1, "-");
+        lazy_static! {
+            static ref RE: Regex = Regex::new("([0-9]+)-([0-9]+)").unwrap();
+        }
 
-        let segment_id = split
+        let caps = RE.captures_iter(&v)
             .next()
-            .map(|v| Ok(v))
-            .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
+            .ok_or_else(|| Self::Error::msg("invalid id"))?;
+
+        let segment_id = caps.get(1)
+            .ok_or_else(|| Self::Error::msg("invalid id"))?
+            .as_str()
             .parse::<u32>()
             .map_err(Self::Error::msg)?;
 
-        let doc_id = split
-            .next()
-            .map(|v| Ok(v))
-            .unwrap_or_else(|| Err(Self::Error::msg("invalid id")))?
+        let doc_id = caps.get(2)
+            .ok_or_else(|| Self::Error::msg("invalid id"))?
+            .as_str()
             .parse::<u32>()
             .map_err(Self::Error::msg)?;
 

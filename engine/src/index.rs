@@ -328,6 +328,10 @@ impl IndexReaderHandler {
         let (resolve, waiter) = oneshot::channel();
         let searcher = self.reader.searcher();
 
+        if doc_address.segment_ord < searcher.segment_readers().len() as u32 {
+            return Err(Error::msg("this document id is invalid"));
+        }
+
         self.thread_pool.spawn(move || {
             let doc = searcher.doc(doc_address);
             let _ = resolve.send(doc);
