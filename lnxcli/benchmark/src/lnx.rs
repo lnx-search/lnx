@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 use serde_json::Value;
-use reqwest::StatusCode;
-
 use crate::sampler::SamplerHandle;
 
 pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
@@ -72,9 +70,14 @@ pub(crate) async fn bench_typing(
             let query: String = search_term.iter().collect();
 
             let start = Instant::now();
-            search(&client, &search_addr, query).await?;
+            let status = search(&client, &search_addr, query).await?;
             let stop = start.elapsed();
-            sample.add_latency(stop);
+
+            if status != 200 {
+                sample.register_error(status);
+            } else {
+                sample.add_latency(stop);
+            }
         }
     }
 
@@ -82,7 +85,7 @@ pub(crate) async fn bench_typing(
     Ok(())
 }
 
-async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<()> {
+async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<u16> {
     let mut uri = reqwest::Url::parse(uri)
         .expect("get uri");
 
@@ -92,7 +95,5 @@ async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::R
         .send()
         .await?;
 
-    assert_eq!(r.status(), StatusCode::OK);
-
-    Ok(())
+    Ok(r.status().as_u16())
 }

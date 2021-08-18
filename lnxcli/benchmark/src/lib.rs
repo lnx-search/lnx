@@ -100,8 +100,9 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let address = Arc::new(ctx.address.clone());
 
     info!("Service ready! Beginning benchmark.");
-    info!("Benchmark @ {} concurrent clients", ctx.concurrency);
-    info!("Benchmark @ {} search sentences", terms.len());
+    info!("     Concurrency @ {} clients", ctx.concurrency);
+    info!("     Searching @ {} sentences", terms.len());
+    info!("     Mode @ {:?}", mode);
 
     let mut handles = vec![];
     for _ in 0..ctx.concurrency {

@@ -1,6 +1,7 @@
 use anyhow::Error;
 use itertools::Itertools;
 use plotters::prelude::*;
+use std::collections::HashMap;
 
 use tokio::sync::oneshot;
 use tokio::time::{Duration, Instant};
@@ -16,6 +17,8 @@ pub(crate) struct SampleData {
 
     /// How long the system took to run though.
     ran_for: Duration,
+
+    errors: HashMap<u16, usize>
 }
 
 
@@ -35,6 +38,7 @@ impl SamplerHandle {
         let sample = SampleData {
             latencies: vec![],
             ran_for: Duration::default(),
+            errors: HashMap::new(),
         };
 
         let (tx, rx) = oneshot::channel();
@@ -54,6 +58,16 @@ impl SamplerHandle {
 
     pub(crate) fn start_timing(&mut self) {
         self.start = Instant::now();
+    }
+
+    pub(crate) fn register_error(&mut self, status: u16) {
+        let exists = self.sample.errors.get(&status);
+        let v = if let Some(v) = exists {
+            *v + 1
+        } else {
+            1
+        };
+        self.sample.errors.insert(status, v);
     }
 }
 
@@ -82,11 +96,23 @@ impl Sampler {
     pub(crate) async fn wait_and_sample(self) -> anyhow::Result<()> {
         let mut duration_times = vec![];
         let mut all_results: Vec<Duration> = vec![];
+        let mut errors = HashMap::new();
         for sample in self.sample_handles {
             let mut res = sample.await?;
 
             duration_times.push(res.ran_for);
             all_results.append(&mut res.latencies);
+
+            for (status, count) in res.errors {
+                let v = errors.get(&status);
+                let v = if let Some(v) = v {
+                    *v + count
+                } else {
+                    count
+                };
+
+                errors.insert(status, v);
+            }
         }
 
         let total_latency: Duration = all_results
@@ -113,6 +139,9 @@ impl Sampler {
         info!("     Max Latency: {:?}", max);
         info!("     Min Latency: {:?}", min);
 
+        for (code, amount) in
+        info!("     Min Latency: {:?}", min);
+
         let path = format!("{}/out.png", &self.output);
         let root = BitMapBackend::new(&path, (640, 480)).into_drawing_area();
         root.fill(&WHITE)?;
@@ -121,7 +150,7 @@ impl Sampler {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0..100f32, 0..2000f32)?;
+            .build_cartesian_2d(0f32..100f32, 0f32..2000f32)?;
 
         chart.configure_mesh().draw()?;
 

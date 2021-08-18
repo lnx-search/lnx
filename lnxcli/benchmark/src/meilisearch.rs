@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::Duration;
 use chrono::{DateTime, Utc};
-use reqwest::StatusCode;
 
 
 use crate::sampler::SamplerHandle;
@@ -119,9 +118,14 @@ pub(crate) async fn bench_typing(
             let query: String = search_term.iter().collect();
 
             let start = Instant::now();
-            search(&client, &search_addr, query).await?;
+            let status = search(&client, &search_addr, query).await?;
             let stop = start.elapsed();
-            sample.add_latency(stop);
+
+            if status != 200 {
+                sample.register_error(status);
+            } else {
+                sample.add_latency(stop);
+            }
         }
     }
 
@@ -135,14 +139,12 @@ struct QueryPayload {
     q: String
 }
 
-async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<()> {
+async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<u16> {
     let r = client.post(uri)
         .json(&QueryPayload { q: query })
         .send()
         .await?;
 
-    assert_eq!(r.status(), StatusCode::OK);
-
-    Ok(())
+    Ok(r.status().as_u16())
 }
 
