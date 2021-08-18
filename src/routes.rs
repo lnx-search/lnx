@@ -306,13 +306,11 @@ pub async fn add_document(
 
 /// Gets a specific document from the system.
 pub async fn get_document(
-    index_name: Result<Path<String>, PathParamsRejection>,
-    document_id: Result<Path<String>, PathParamsRejection>,
+    params: Result<Path<(String, String)>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
-    let index_name = check_path!(index_name);
-    let document_id = check_path!(document_id);
-    let document_id = check_error!(RefAddress::try_from(document_id.0), "parse document id");
+    let (index_name, document_id) = check_path!(params).0;
+    let document_id = check_error!(RefAddress::try_from(document_id), "parse document id");
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
     let doc = check_error!(

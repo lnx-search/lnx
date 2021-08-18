@@ -265,6 +265,14 @@ async fn start(settings: Settings) -> Result<()> {
         post(routes::create_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
     )
     .route(
+        "/indexes/:index_name/documents",
+        post(routes::add_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone())))
+            .delete(
+                routes::delete_documents
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            ),
+    )
+    .route(
         "/indexes/:index_name/documents/:document_id",
         get(routes::get_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
     )
@@ -275,14 +283,7 @@ async fn start(settings: Settings) -> Result<()> {
                 .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
         ),
     )
-    .route(
-        "/indexes/:index_name/documents",
-        post(routes::add_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone())))
-            .delete(
-                routes::delete_documents
-                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
-            ),
-    )
+
     .layer(index_middleware)
     .nest("/admin", super_user_app);
 
