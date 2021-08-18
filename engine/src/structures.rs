@@ -1,6 +1,6 @@
 use tantivy::schema::{
-    BytesOptions, IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder,
-    STORED, STRING, TEXT,
+    IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING,
+    TEXT,
 };
 
 use hashbrown::HashMap;
@@ -39,9 +39,6 @@ pub enum FieldDeclaration {
     ///
     /// This wont be tokenized.
     String { stored: bool },
-
-    /// A arbitrary bytes field with given options.
-    Bytes(BytesOptions),
 }
 
 /// The storage backend to store index documents in.
@@ -100,7 +97,6 @@ impl IndexDeclaration {
 
                     schema.add_text_field(&name, opts)
                 }
-                FieldDeclaration::Bytes(opts) => schema.add_bytes_field(&name, opts),
             };
         }
 
@@ -297,10 +293,6 @@ pub enum FieldValue {
 
     /// A text field.
     Text(Vec<String>),
-
-    /// A bytes field, deserialized as a base64 encoded string.
-    #[serde(with = "deserialize_base64")]
-    Bytes(Vec<Vec<u8>>),
 }
 
 mod deserialize_datetime {
@@ -316,23 +308,5 @@ mod deserialize_datetime {
         let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from_u64(*v)).collect();
 
         Ok(values)
-    }
-}
-
-mod deserialize_base64 {
-    use serde::de::Error;
-    use serde::{Deserialize, Deserializer};
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Vec<u8>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let multi = Vec::<String>::deserialize(deserializer)?;
-        let mut out = vec![];
-        for value in multi {
-            out.push(base64::decode(value).map_err(D::Error::custom)?);
-        }
-
-        Ok(out)
     }
 }

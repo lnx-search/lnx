@@ -10,8 +10,8 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
-use engine::tantivy::schema::NamedFieldDocument;
 use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, RefAddress};
+use engine::tantivy::schema::NamedFieldDocument;
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::auth::{AuthManager, Permissions};
@@ -192,9 +192,7 @@ pub async fn create_index(
 
     let ignore = query.0;
     check_error!(
-        engine
-            .add_index(payload.0, ignore.override_if_exists)
-            .await,
+        engine.add_index(payload.0, ignore.override_if_exists).await,
         "create index"
     );
 
@@ -260,7 +258,10 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            let document =  check_error!(schema.convert_named_doc(doc).map_err(Error::from), "parse document from raw");
+            let document = check_error!(
+                schema.convert_named_doc(doc).map_err(Error::from),
+                "parse document from raw"
+            );
 
             if wait {
                 check_error!(index.add_document(document).await, "add document");
@@ -275,7 +276,10 @@ pub async fn add_document(
         DocumentOptions::Many(docs) => {
             let mut documents = Vec::with_capacity(docs.len());
             for doc in docs {
-                documents.push(check_error!(schema.convert_named_doc(doc).map_err(Error::from), "parse document from raw"))
+                documents.push(check_error!(
+                    schema.convert_named_doc(doc).map_err(Error::from),
+                    "parse document from raw"
+                ))
             }
 
             if wait {

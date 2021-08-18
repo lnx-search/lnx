@@ -49,7 +49,7 @@ impl SearchEngine {
             if lock.contains_key(&index.name) {
                 if !override_if_exists {
                     debug!("[ ENGINE ] index already exists, ignoring override");
-                    return Err(Error::msg("index already exists"))
+                    return Err(Error::msg("index already exists"));
                 }
                 true
             } else {
@@ -82,7 +82,6 @@ impl SearchEngine {
             lock.insert(name, index_handler);
             debug!("[ ENGINE ] index re-create success");
         };
-
 
         Ok(())
     }

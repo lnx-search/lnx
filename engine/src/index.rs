@@ -4,19 +4,22 @@ use std::sync::Arc;
 use anyhow::{Error, Result};
 use serde::Serialize;
 
+use tokio::fs;
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
-use tokio::fs;
 
 use crossbeam::channel;
 use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::{Count, TopDocs};
+use tantivy::directory::MmapDirectory;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
-use tantivy::{DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem, ReloadPolicy, Score, Searcher, Term};
-use tantivy::directory::MmapDirectory;
+use tantivy::{
+    DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
+    ReloadPolicy, Score, Searcher, Term,
+};
 
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
@@ -90,7 +93,10 @@ impl IndexWriterWorker {
     /// Purges all pending operations from the receiver.
     fn process_messages(&mut self) -> bool {
         while let Ok(msg) = self.rx.try_recv() {
-            debug!("[ WRITER @ {} ] handling operation {:?}", &self.index_name, msg);
+            debug!(
+                "[ WRITER @ {} ] handling operation {:?}",
+                &self.index_name, msg
+            );
             match self.handle_msg(msg) {
                 Err(e) => error!(
                     "[ WRITER @ {} ] failed handling writer operation on index due to error: {:?}",
@@ -139,7 +145,11 @@ impl IndexWriterHandler {
     ///
     /// This creates a bounded queue with a capacity of 20 and
     /// spawns a worker in a new thread.
-    fn create(index_name: String, writer: IndexWriter, shutdown: async_channel::Sender<()>) -> Self {
+    fn create(
+        index_name: String,
+        writer: IndexWriter,
+        shutdown: async_channel::Sender<()>,
+    ) -> Self {
         let name = index_name.clone();
         let waiters = Arc::new(SegQueue::new());
         let (tx, rx) = channel::bounded(20);
@@ -661,13 +671,11 @@ impl IndexHandler {
                     "[ SETUP @ {} ] using existing schema metadata",
                     &loader.name
                 );
-                return Ok((Index::open_in_dir(&path)?, Some(path.clone())))
+                return Ok((Index::open_in_dir(&path)?, Some(path.clone())));
             }
         }
 
-
-        let index = IndexBuilder::default()
-            .schema(loader.schema.clone());
+        let index = IndexBuilder::default().schema(loader.schema.clone());
 
         let out = match &loader.storage_type {
             IndexStorageType::TempDir => {
@@ -799,7 +807,6 @@ impl IndexHandler {
             FieldValue::U64(v) => add_values_to_terms!(Term::from_field_u64, field, v)?,
             FieldValue::Datetime(v) => add_values_to_terms!(Term::from_field_date, field, &v)?,
             FieldValue::Text(v) => add_values_to_terms!(Term::from_field_text, field, &v)?,
-            FieldValue::Bytes(v) => add_values_to_terms!(Term::from_field_bytes, field, &v)?,
         };
 
         Ok(v)

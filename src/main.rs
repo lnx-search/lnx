@@ -14,8 +14,8 @@ use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
 use tokio_rustls::TlsAcceptor;
 
+use axum::handler::{delete, get, post, Handler};
 use axum::http::header;
-use axum::handler::{get, delete, Handler, post};
 use axum::route;
 use axum::routing::RoutingDsl;
 
