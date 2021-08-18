@@ -139,7 +139,8 @@ impl Sampler {
         info!("     Min Latency: {:?}", min);
 
         for (code, amount) in errors {
-            error!("     Got status {}: {}", code, amount);
+            println!("oof?");
+            warn!("     Got status {}: {}", code, amount);
         }
 
         let path = format!("{}/out.png", &self.output);

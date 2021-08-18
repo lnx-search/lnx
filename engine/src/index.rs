@@ -25,7 +25,6 @@ use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
 };
 use parking_lot::Mutex;
-use tokio::time::Duration;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 
