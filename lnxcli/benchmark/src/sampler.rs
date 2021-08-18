@@ -1,4 +1,4 @@
-use anyhow::{Result, Error};
+use anyhow::Error;
 use itertools::Itertools;
 use plotters::prelude::*;
 
@@ -6,7 +6,7 @@ use tokio::sync::oneshot;
 use tokio::time::{Duration, Instant};
 
 
-pub(crate) type ChannelMessage = Result<SampleData>;
+pub(crate) type ChannelMessage = SampleData;
 
 
 /// The data sampled from the benchmark
@@ -28,11 +28,7 @@ pub(crate) struct SamplerHandle {
 impl SamplerHandle {
     pub(crate) fn finish(mut self) {
         self.sample.ran_for = self.start.elapsed();
-        let _ = self.submit.send(Ok(self.sample));
-    }
-
-    pub(crate) fn abort(self, error: Error) {
-        let _ = self.submit.send(Err(error));
+        let _ = self.submit.send(self.sample);
     }
 
     pub(crate) fn new() -> (Self, oneshot::Receiver<ChannelMessage>) {
@@ -83,11 +79,11 @@ impl Sampler {
         handler
     }
 
-    pub(crate) async fn wait_and_sample(mut self) -> anyhow::Result<()> {
+    pub(crate) async fn wait_and_sample(self) -> anyhow::Result<()> {
         let mut duration_times = vec![];
         let mut all_results: Vec<Duration> = vec![];
         for sample in self.sample_handles {
-            let mut res = sample.await??;
+            let mut res = sample.await?;
 
             duration_times.push(res.ran_for);
             all_results.append(&mut res.latencies);

@@ -37,6 +37,10 @@ pub enum Commands {
         /// The directory to output the image results.
         #[structopt(long)]
         output_dir: String,
+
+        /// The path to get the query string data.
+        #[structopt(long)]
+        search_terms: String,
     },
 }
 
@@ -47,13 +51,23 @@ fn main() -> anyhow::Result<()> {
     let cmd: Commands = Commands::from_args();
 
     match cmd {
-        Commands::Bench { address, target, mode, data_file, concurrency, threads, output_dir } => {
+        Commands::Bench {
+            address,
+            target,
+            mode,
+            data_file,
+            concurrency,
+            threads,
+            output_dir,
+            search_terms,
+        } => {
             let ctx = benchmark::Context {
                 address,
                 data_file,
                 concurrency,
                 target,
                 mode,
+                search_terms,
                 threads: threads.unwrap_or_else(|| num_cpus::get()),
                 output: output_dir,
             };

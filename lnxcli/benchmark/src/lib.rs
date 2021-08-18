@@ -6,11 +6,14 @@ mod sampler;
 mod meilisearch;
 mod lnx;
 
+use anyhow::Result;
+
 use std::str::FromStr;
 use std::sync::Arc;
 
 use tokio::fs;
 use serde_json::Value;
+use tokio::task::JoinHandle;
 
 /// The two benchmarking targets.
 ///
@@ -70,6 +73,7 @@ pub struct Context {
     pub mode: BenchMode,
     pub threads: usize,
     pub output: String,
+    pub search_terms: String,
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
@@ -90,33 +94,35 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let target = ctx.target;
     let mode = ctx.mode;
 
-    let json_data = fs::read_to_string(&ctx.data_file).await?;
-    let json_data: Value = serde_json::from_str(&json_data)?;
-    match target {
-        BenchTarget::MeiliSearch => meilisearch::prep(&ctx.address, json_data).await,
-        BenchTarget::Lnx => lnx::prep(&ctx.address, json_data).await,
-    }?;
+    prep_systems(target, &ctx.address, &ctx.data_file).await?;
+    let terms = Arc::new(get_terms(&ctx.search_terms).await?);
 
+    let address = Arc::new(ctx.address.clone());
+
+    let mut handles = vec![];
     for _ in 0..ctx.concurrency {
-        let temp_ctx = ctx.clone();
+        let addr = address.clone();
+        let temp_terms = terms.clone();
         let sample_handler = sample_system.get_handle();
 
-        tokio::spawn(async move {
-            let res = match (target, mode) {
+        let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+            match (target, mode) {
                 (BenchTarget::MeiliSearch, BenchMode::Standard) =>
-                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+                    meilisearch::bench_standard(addr, sample_handler, temp_terms).await,
                 (BenchTarget::MeiliSearch, BenchMode::Typing) =>
-                    meilisearch::bench_typing(temp_ctx, sample_handler).await,
+                    meilisearch::bench_typing(addr, sample_handler, temp_terms).await,
                 (BenchTarget::Lnx, BenchMode::Standard) =>
-                    lnx::bench_standard(temp_ctx, sample_handler).await,
+                    lnx::bench_standard(addr, sample_handler, temp_terms).await,
                 (BenchTarget::Lnx, BenchMode::Typing) =>
-                    lnx::bench_standard(temp_ctx, sample_handler).await,
-            };
-
-            if let Err(e) = res {
-                error!("failed to start benching on worker {:?}", e);
+                    lnx::bench_typing(addr, sample_handler, temp_terms).await,
             }
         });
+
+        handles.push(handle)
+    }
+
+    for handle in handles {
+        let _ = handle.await??;
     }
 
     sample_system.wait_and_sample().await?;
@@ -124,3 +130,16 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn prep_systems(target: BenchTarget, address: &str, path: &str) -> Result<()> {
+    let json_data = fs::read_to_string(path).await?;
+    let json_data: Value = serde_json::from_str(&json_data)?;
+    match target {
+        BenchTarget::MeiliSearch => meilisearch::prep(address, json_data).await,
+        BenchTarget::Lnx => lnx::prep(address, json_data).await,
+    }
+}
+
+async fn get_terms(path: &str) -> Result<Vec<String>> {
+    let json_data = fs::read_to_string(path).await?;
+    Ok(serde_json::from_str(&json_data)?)
+}
