@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 #[macro_use] extern crate log;
 
 mod sampler;
@@ -63,6 +65,7 @@ pub struct Context {
     pub target: BenchTarget,
     pub mode: BenchMode,
     pub threads: usize,
+    pub output: String,
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
@@ -77,16 +80,20 @@ pub fn run(ctx: Context) -> anyhow::Result<()> {
 
 
 async fn start(ctx: Context) -> anyhow::Result<()> {
-    let sample_system = sampler::Sampler::new();
+    let mut sample_system = sampler::Sampler::new(ctx.output.clone());
 
     match (&ctx.target, &ctx.mode) {
         (BenchTarget::MeiliSearch, BenchMode::Standard) =>
-            meilisearch::bench_standard(ctx).await,
+            meilisearch::bench_standard(ctx, &mut sample_system).await,
         (BenchTarget::MeiliSearch, BenchMode::Typing) =>
-            meilisearch::bench_typing(ctx).await,
+            meilisearch::bench_typing(ctx, &mut sample_system).await,
         (BenchTarget::Lnx, BenchMode::Standard) =>
-            meilisearch::bench_standard(ctx).await,
+            meilisearch::bench_standard(ctx, &mut sample_system).await,
         (BenchTarget::Lnx, BenchMode::Typing) =>
-            meilisearch::bench_standard(ctx).await,
-    }
+            meilisearch::bench_standard(ctx, &mut sample_system).await,
+    }?;
+
+    sample_system.wait_and_sample().await?;
+
+    Ok(())
 }

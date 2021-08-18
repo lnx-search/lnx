@@ -1,9 +1,11 @@
 use crate::Context;
+use crate::sampler::Sampler;
 
-pub async fn bench_standard(ctx: Context) -> anyhow::Result<()> {
-
+pub(crate) async fn bench_standard(ctx: Context, sample: &mut Sampler) -> anyhow::Result<()> {
+    Ok(())
 }
 
-pub async fn bench_typing(ctx: Context) -> anyhow::Result<()> {
+pub(crate) async fn bench_typing(ctx: Context, sample: &mut Sampler) -> anyhow::Result<()> {
+    Ok(())
 
 }

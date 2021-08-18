@@ -33,6 +33,10 @@ pub enum Commands {
         /// If not set the number of logical CPU cores is used.
         #[structopt(long, short)]
         threads: Option<usize>,
+
+        /// The directory to output the image results.
+        #[structopt(long)]
+        output_dir: String,
     },
 }
 
@@ -43,14 +47,15 @@ fn main() -> anyhow::Result<()> {
     let cmd: Commands = Commands::from_args();
 
     match cmd {
-        Commands::Bench { address, target, mode, data_file, concurrency, threads } => {
+        Commands::Bench { address, target, mode, data_file, concurrency, threads, output_dir } => {
             let ctx = benchmark::Context {
                 address,
                 data_file,
                 concurrency,
                 target,
                 mode,
-                threads: threads.unwrap_or_else(|| num_cpus::get())
+                threads: threads.unwrap_or_else(|| num_cpus::get()),
+                output: output_dir,
             };
 
             info!("starting benchmark system");
