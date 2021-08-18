@@ -76,3 +76,11 @@ As a more detailed insight:
  INFO  benchmark::sampler >      Min Latency: 2.5241ms
  INFO  lnxcli             > commands complete!
 ```
+
+### 💔 Limitations
+As much as lnx provides a wide range of features, it can not do it all being such a young system. Naturally, it has some limitations:
+
+- lnx is not distributed (yet) so this really does just scale vertically.
+- Simple but not too simple, lnx can't offer the same level of ease of use compared to MeiliSearch due to its schema-full nature and wide range of tuning options. With more tuning comes more settings, unfortunately.
+- Synonym support (yet)
+- Metrics (soon)
