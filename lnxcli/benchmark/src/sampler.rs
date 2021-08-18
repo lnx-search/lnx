@@ -139,8 +139,9 @@ impl Sampler {
         info!("     Max Latency: {:?}", max);
         info!("     Min Latency: {:?}", min);
 
-        for (code, amount) in
-        info!("     Min Latency: {:?}", min);
+        for (code, amount) in errors {
+            error!("     Got status {}: {}", code, amount);
+        }
 
         let path = format!("{}/out.png", &self.output);
         let root = BitMapBackend::new(&path, (640, 480)).into_drawing_area();
@@ -150,11 +151,11 @@ impl Sampler {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0f32..100f32, 0f32..2000f32)?;
+            .build_cartesian_2d(0f32..all_results.len() as f32, 0f32..2000f32)?;
 
         chart.configure_mesh().draw()?;
 
-        let chunk_size = all_results.len() / 100;
+        let chunk_size = all_results.len();
         let mut chunks = vec![];
         for chunk in &all_results.drain(..).into_iter().chunks(chunk_size) {
             chunks.push(chunk.collect::<Vec<Duration>>())
