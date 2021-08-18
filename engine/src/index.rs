@@ -904,19 +904,7 @@ impl IndexHandler {
 
         debug!("[ ENGINE ] cleaning up directory");
         if let Some(dir) = self.dir.as_ref() {
-            let mut attempt = 1;
-            loop {
-                match fs::remove_dir_all(dir).await {
-                    Err(ref e) if e.kind() == tokio::io::ErrorKind::PermissionDenied && attempt < 4 => {
-                        attempt += 1;
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue
-                    },
-                    Err(e) => Err(e),
-                    Ok(()) => Ok(()),
-                }?;
-            }
-
+            fs::remove_dir_all(dir).await?;
         }
         Ok(())
     }
