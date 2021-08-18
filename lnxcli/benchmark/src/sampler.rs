@@ -151,7 +151,7 @@ impl Sampler {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0f32..all_results.len() as f32, 0f32..2000f32)?;
+            .build_cartesian_2d(0f32..all_results.len() as f32, min.as_millis() as f32..max.as_millis() as f32)?;
 
         chart.configure_mesh().draw()?;
 
