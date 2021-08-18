@@ -1,5 +1,4 @@
 use anyhow::Error;
-use itertools::Itertools;
 use plotters::prelude::*;
 use std::collections::HashMap;
 
@@ -151,24 +150,18 @@ impl Sampler {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0f32..all_results.len() as f32, min.as_millis() as f32..max.as_millis() as f32)?;
+            .build_cartesian_2d(0f32..all_results.len() as f32 as f32, min.as_secs_f32()..max.as_secs_f32())?;
 
         chart.configure_mesh().draw()?;
 
-        let chunk_size = all_results.len();
-        let mut chunks = vec![];
-        for chunk in &all_results.drain(..).into_iter().chunks(chunk_size) {
-            chunks.push(chunk.collect::<Vec<Duration>>())
-        };
-
         chart
             .draw_series(LineSeries::new(
-                chunks.iter()
+                all_results.iter()
                     .enumerate()
-                    .map(|(x, y)| (x as f32, (y.iter().sum::<Duration>() / y.len() as u32).as_secs_f32() * 1000f32)),
+                    .map(|(x, y)| (x as f32, y.as_secs_f32())),
                 &RED,
             ))?
-            .label("latency in ms")
+            .label("latency in seconds")
             .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
 
         chart
