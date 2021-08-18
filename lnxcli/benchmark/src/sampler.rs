@@ -139,7 +139,6 @@ impl Sampler {
         info!("     Min Latency: {:?}", min);
 
         for (code, amount) in errors {
-            println!("oof?");
             warn!("     Got status {}: {}", code, amount);
         }
 

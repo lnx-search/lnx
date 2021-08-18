@@ -91,9 +91,14 @@ pub(crate) async fn bench_standard(
 
     for term in terms.iter() {
         let start = Instant::now();
-        search(&client, &search_addr, term.clone()).await?;
+        let status = search(&client, &search_addr, term.clone()).await?;
         let stop = start.elapsed();
-        sample.add_latency(stop);
+
+        if status != 200 {
+            sample.register_error(status);
+        } else {
+            sample.add_latency(stop);
+        }
     }
 
     sample.finish();
