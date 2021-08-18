@@ -7,11 +7,12 @@ mod meilisearch;
 mod lnx;
 
 use std::str::FromStr;
+use std::sync::Arc;
 
 /// The two benchmarking targets.
 ///
 /// This was designed to compare MeiliSearch and lnx.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum BenchTarget {
     MeiliSearch,
     Lnx,
@@ -34,7 +35,7 @@ impl FromStr for BenchTarget {
 
 /// The benchmark type to run, this allows us to have several
 /// modes and areas to test.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum BenchMode {
     /// Simulates typing our a sentence / word a character at a time.
     Typing,
@@ -81,17 +82,32 @@ pub fn run(ctx: Context) -> anyhow::Result<()> {
 
 async fn start(ctx: Context) -> anyhow::Result<()> {
     let mut sample_system = sampler::Sampler::new(ctx.output.clone());
+    let ctx = Arc::new(ctx);
 
-    match (&ctx.target, &ctx.mode) {
-        (BenchTarget::MeiliSearch, BenchMode::Standard) =>
-            meilisearch::bench_standard(ctx, &mut sample_system).await,
-        (BenchTarget::MeiliSearch, BenchMode::Typing) =>
-            meilisearch::bench_typing(ctx, &mut sample_system).await,
-        (BenchTarget::Lnx, BenchMode::Standard) =>
-            meilisearch::bench_standard(ctx, &mut sample_system).await,
-        (BenchTarget::Lnx, BenchMode::Typing) =>
-            meilisearch::bench_standard(ctx, &mut sample_system).await,
-    }?;
+    let target = ctx.target;
+    let mode = ctx.mode;
+    for _ in 0..ctx.concurrency {
+        let temp_ctx = ctx.clone();
+        let sample_handler = sample_system.get_handle();
+
+        tokio::spawn(async move {
+            let res = match (target, mode) {
+                (BenchTarget::MeiliSearch, BenchMode::Standard) =>
+                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+                (BenchTarget::MeiliSearch, BenchMode::Typing) =>
+                    meilisearch::bench_typing(temp_ctx, sample_handler).await,
+                (BenchTarget::Lnx, BenchMode::Standard) =>
+                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+                (BenchTarget::Lnx, BenchMode::Typing) =>
+                    meilisearch::bench_standard(temp_ctx, sample_handler).await,
+            };
+
+            if let Err(e) = res {
+                error!("failed to start benching on worker");
+            }
+        })
+    }
+
 
     sample_system.wait_and_sample().await?;
 

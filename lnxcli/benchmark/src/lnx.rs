@@ -1,10 +1,10 @@
 use crate::Context;
-use crate::sampler::Sampler;
+use crate::sampler::SamplerHandle;
 
-pub(crate) async fn bench_standard(ctx: Context, sample: &mut Sampler) -> anyhow::Result<()> {
+pub(crate) async fn bench_standard(ctx: Context, sample: SamplerHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) async fn bench_typing(ctx: Context, sample: &mut Sampler) -> anyhow::Result<()> {
+pub(crate) async fn bench_typing(ctx: Context, sample: SamplerHandle) -> anyhow::Result<()> {
     Ok(())
 }
