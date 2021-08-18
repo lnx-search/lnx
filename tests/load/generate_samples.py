@@ -17,3 +17,11 @@ def get_random_words(data: list, k=5000) -> list:
         searches.append(" ".join(random.choices(titles, k=random.randint(1, 10))))
 
     return searches
+
+
+if __name__ == '__main__':
+    movies = load_movies()
+    random_searches = get_random_words(movies)
+
+    with open("../../datasets/search_samples/samples.json", "w+", encoding="UTF-8") as file:
+        json.dump(random_searches, file)
