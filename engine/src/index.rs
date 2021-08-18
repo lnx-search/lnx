@@ -899,7 +899,8 @@ impl IndexHandler {
         debug!("[ ENGINE ] waiting on writer shutdown...");
         self.alive.recv().await?;
 
-        let _ = self._index.lock().take();
+        let item = self._index.lock().take();
+        drop(item);  // lets see if this closes the dir?
 
         debug!("[ ENGINE ] cleaning up directory");
         if let Some(dir) = self.dir.as_ref() {
