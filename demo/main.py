@@ -61,6 +61,15 @@ class DataPayload(BaseModel):
     url: str
 
 
+@app.post("/check")
+async def check(payload: DataPayload) -> dict:
+    try:
+        async with app.session.get(payload.url, params={"query": payload.query}) as resp:
+            return {"status": resp.status}
+    except Exception:
+        return {"status": -1}
+
+
 @app.post("/search", response_model=SearchResults)
 async def search(payload: DataPayload) -> SearchResults:
     async with app.session.get(payload.url, params={"query": payload.query}) as resp:
