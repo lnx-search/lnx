@@ -1,6 +1,6 @@
 use once_cell::sync::OnceCell;
 use std::fs;
-use symspell::{SymSpell, AsciiStringStrategy};
+use symspell::{SymSpell, SymSpellBuilder, AsciiStringStrategy};
 use anyhow::Error;
 
 
@@ -9,7 +9,10 @@ static SYMSPELL: OnceCell<SymSpell<AsciiStringStrategy>> = OnceCell::new();
 
 
 pub(crate) fn load_dictionaries() -> anyhow::Result<()> {
-    let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
+    let mut symspell: SymSpell<AsciiStringStrategy> = SymSpellBuilder::default()
+        .max_dictionary_edit_distance(3)
+        .build()
+        .unwrap();
 
     for entry in fs::read_dir(DATA_DIR)? {
         let entry = entry?;
@@ -35,7 +38,7 @@ pub(crate) fn get_suggested_sentence(query: &str) -> anyhow::Result<String> {
     let sym = SYMSPELL.get()
         .ok_or_else(|| Error::msg("symspell is not initialised"))?;
 
-    let mut results = sym.lookup_compound(query, 2);
+    let mut results = sym.lookup_compound(query, 3);
     if results.len() == 0 {
         return Ok(query.into())
     }
