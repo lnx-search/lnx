@@ -30,6 +30,10 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 - Multiple storage backends available for testing and developing.
 - Permissions based authorization access tokens.
 
+<p align="center">
+  <img src="https://i.imgur.com/5IyfDLU.gif" alt="Demo video"/>
+</p>
+
 
 ### Performance
 lnx can provide the ability to fine tune the system to your perticular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
