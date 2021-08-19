@@ -16,8 +16,7 @@ use tokio_rustls::TlsAcceptor;
 
 use axum::handler::{delete, get, post, Handler};
 use axum::http::header;
-use axum::routing::RoutingDsl;
-use axum::{route, Router};
+use axum::Router;
 
 use tower::ServiceBuilder;
 use tower_http::auth::RequireAuthorizationLayer;
