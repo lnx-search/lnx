@@ -2,7 +2,7 @@ import json
 
 
 def load_movies() -> list:
-    with open("../../datasets/reference/movies/movies.json", encoding="UTF-8") as file:
+    with open("../../benchmarks/datasets/reference/movies/movies.json", encoding="UTF-8") as file:
         return json.load(file)
 
 
@@ -25,5 +25,5 @@ if __name__ == '__main__':
     movies = load_movies()
     movies = convert_for_lnx(movies)
 
-    with open("../../datasets/converted/lnx_movies.json", "w+", encoding="UTF-8") as file:
+    with open("../../benchmarks/datasets/converted/lnx_movies.json", "w+", encoding="UTF-8") as file:
         json.dump(movies, file)
