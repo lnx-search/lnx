@@ -42,7 +42,11 @@
             <div v-if="results.length === 0" class="flex items-center h-full pt-32">
                 <div v-if="urlValid">
                     <h1 class="text-6xl font-bold text-red-300">Time to test!</h1>
-                    <p></p>
+                    <p class="text-3xl font-semibold text-gray-300">
+                        Just start typing away and see the result appear in <span class="text-red-300 italic">real time</span>.<br/>
+                        In the top you'll notice the number of results found <br/>
+                        that match the query and how long it took to search.
+                    </p>
                 </div>
                 <div v-else>
                     <h1 class="text-6xl font-bold text-red-300 mb-2">Let's get started</h1>
@@ -57,9 +61,9 @@
                 </div>
             </div>
         </div>
-        <div v-if="errorMsg != null" class="absolute w-full bottom-0 flex justify-center">
-            <div class="text-lg font-semibold text-center h-12 w-1/2 bg-red-400 border-red-500 border-2 rounded-lg mx-auto mb-4">
-                {{ errorMsg }}
+        <div v-if="errorMsg != null" class="absolute w-full bottom-0 flex justify-center items-center">
+            <div class="w-1/2 bg-red-400 border-red-500 border-2 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <p class="text-lg font-semibold text-center">{{ errorMsg }}</p>
             </div>
         </div>
     </div>
@@ -78,6 +82,11 @@
             },
             methods: {
                 checkUrl: async function() {
+                    if (!/((([A-Za-z]{3,9}:(?:\/\/)?)(?:[\-;:&=\+\$,\w]+@)?[A-Za-z0-9\.\-]+|(?:www\.|[\-;:&=\+\$,\w]+@)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_]*)#?(?:[\.\!\/\\\w]*))?)/.test(this.serverUrl)) {
+                        this.errorMsg = "The url you entered is invalid.";
+                        return
+                    }
+
                     try {
                         const r = await axios.post('/check', {
                             query: "test",
@@ -86,9 +95,11 @@
                         this.urlValid = r.data.status === 200;
 
                         if (r.data.status === -1) {
-                            this.errorMsg = `the server url provided is invalid`;
-                        } else {
-                            this.errorMsg = `server responded with a non-200 code: ${r.data.status}`;
+                            this.errorMsg = `The server url provided is invalid`;
+                        } else if (r.data.status === 200) {
+                            this.errorMsg = null;
+                        } else  {
+                            this.errorMsg = `Server responded with a non-200 code: ${r.data.status}`;
                         }
                     } catch {
                         this.urlValid = false;
