@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 use crate::index::IndexHandler;
 use crate::storage::StorageManager;
 use crate::structures::IndexDeclaration;
+use crate::correction::load_dictionaries;
 
 pub type LeasedIndex = Arc<IndexHandler>;
 
@@ -22,6 +23,8 @@ impl SearchEngine {
     /// Creates a new search engine loading the existing index metadata
     /// from the given directory.
     pub async fn create(dir: &str) -> Result<Self> {
+        tokio::task::spawn_blocking(move || load_dictionaries()).await??;
+
         let storage = StorageManager::with_directory(dir.to_string()).await?;
         let loaded_indexes = storage.load_all().await?;
 

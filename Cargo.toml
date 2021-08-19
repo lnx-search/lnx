@@ -29,7 +29,6 @@ headers = "0.3.4"
 evmap = "10"
 parking_lot = "0.11"
 rand = "0.8.4"
-symspell = "0.4.1"
 
 engine = { path = "./engine" }
 
