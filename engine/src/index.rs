@@ -899,7 +899,7 @@ impl IndexHandler {
         self.alive.recv().await?;
 
         let item = self._index.lock().take();
-        drop(item);  // lets see if this closes the dir?
+        drop(item); // lets see if this closes the dir?
 
         debug!("[ ENGINE ] cleaning up directory");
         if let Some(dir) = self.dir.as_ref() {
