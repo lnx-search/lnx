@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI, responses
@@ -41,7 +41,7 @@ def serve_html() -> responses.HTMLResponse:
 
 class Hit(BaseModel):
     doc: dict
-    ratio: float
+    ratio: Optional[float]
     ref_address: str
 
 
