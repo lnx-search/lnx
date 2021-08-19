@@ -1,19 +1,20 @@
 // #![allow(unused)]
 
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
-mod sampler;
-mod meilisearch;
 mod lnx;
+mod meilisearch;
+mod sampler;
 
 use anyhow::Result;
 
+use rand::seq::SliceRandom;
 use std::str::FromStr;
 use std::sync::Arc;
-use rand::seq::SliceRandom;
 
-use tokio::fs;
 use serde_json::Value;
+use tokio::fs;
 use tokio::task::JoinHandle;
 
 /// The two benchmarking targets.
@@ -35,7 +36,7 @@ impl FromStr for BenchTarget {
             other => Err(format!(
                 "unknown target type got {:?}, expected either 'meilisearch' or 'lnx'",
                 other,
-            ))
+            )),
         }
     }
 }
@@ -61,7 +62,7 @@ impl FromStr for BenchMode {
             other => Err(format!(
                 "unknown benchmark type got {:?}, expected either 'typing' or 'standard'",
                 other,
-            ))
+            )),
         }
     }
 }
@@ -86,7 +87,6 @@ pub fn run(ctx: Context) -> anyhow::Result<()> {
 
     runtime.block_on(start(ctx))
 }
-
 
 async fn start(ctx: Context) -> anyhow::Result<()> {
     let mut sample_system = sampler::Sampler::new(ctx.output.clone());
@@ -115,14 +115,18 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
 
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             match (target, mode) {
-                (BenchTarget::MeiliSearch, BenchMode::Standard) =>
-                    meilisearch::bench_standard(addr, sample_handler, temp_terms).await,
-                (BenchTarget::MeiliSearch, BenchMode::Typing) =>
-                    meilisearch::bench_typing(addr, sample_handler, temp_terms).await,
-                (BenchTarget::Lnx, BenchMode::Standard) =>
-                    lnx::bench_standard(addr, sample_handler, temp_terms).await,
-                (BenchTarget::Lnx, BenchMode::Typing) =>
-                    lnx::bench_typing(addr, sample_handler, temp_terms).await,
+                (BenchTarget::MeiliSearch, BenchMode::Standard) => {
+                    meilisearch::bench_standard(addr, sample_handler, temp_terms).await
+                }
+                (BenchTarget::MeiliSearch, BenchMode::Typing) => {
+                    meilisearch::bench_typing(addr, sample_handler, temp_terms).await
+                }
+                (BenchTarget::Lnx, BenchMode::Standard) => {
+                    lnx::bench_standard(addr, sample_handler, temp_terms).await
+                }
+                (BenchTarget::Lnx, BenchMode::Typing) => {
+                    lnx::bench_typing(addr, sample_handler, temp_terms).await
+                }
             }
         });
 

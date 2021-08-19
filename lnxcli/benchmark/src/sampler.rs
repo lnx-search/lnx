@@ -5,9 +5,7 @@ use std::collections::HashMap;
 use tokio::sync::oneshot;
 use tokio::time::{Duration, Instant};
 
-
 pub(crate) type ChannelMessage = SampleData;
-
 
 /// The data sampled from the benchmark
 pub(crate) struct SampleData {
@@ -17,14 +15,13 @@ pub(crate) struct SampleData {
     /// How long the system took to run though.
     ran_for: Duration,
 
-    errors: HashMap<u16, usize>
+    errors: HashMap<u16, usize>,
 }
-
 
 pub(crate) struct SamplerHandle {
     sample: SampleData,
     start: Instant,
-    submit: oneshot::Sender<ChannelMessage>
+    submit: oneshot::Sender<ChannelMessage>,
 }
 
 impl SamplerHandle {
@@ -61,15 +58,10 @@ impl SamplerHandle {
 
     pub(crate) fn register_error(&mut self, status: u16) {
         let exists = self.sample.errors.get(&status);
-        let v = if let Some(v) = exists {
-            *v + 1
-        } else {
-            1
-        };
+        let v = if let Some(v) = exists { *v + 1 } else { 1 };
         self.sample.errors.insert(status, v);
     }
 }
-
 
 pub(crate) struct Sampler {
     output: String,
@@ -104,19 +96,13 @@ impl Sampler {
 
             for (status, count) in res.errors {
                 let v = errors.get(&status);
-                let v = if let Some(v) = v {
-                    *v + count
-                } else {
-                    count
-                };
+                let v = if let Some(v) = v { *v + count } else { count };
 
                 errors.insert(status, v);
             }
         }
 
-        let total_latency: Duration = all_results
-            .iter()
-            .sum();
+        let total_latency: Duration = all_results.iter().sum();
 
         let average = total_latency / all_results.len() as u32;
         let max = all_results
@@ -128,7 +114,8 @@ impl Sampler {
             .min()
             .ok_or(Error::msg("no results to collect"))?;
 
-        let avg_dur: Duration = duration_times.iter().sum::<Duration>() / duration_times.len() as u32;
+        let avg_dur: Duration =
+            duration_times.iter().sum::<Duration>() / duration_times.len() as u32;
         let requests_a_sec = all_results.len() as f64 / avg_dur.as_secs_f64();
 
         info!("General benchmark results:");
@@ -150,13 +137,17 @@ impl Sampler {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(0f32..all_results.len() as f32 as f32, min.as_secs_f32()..max.as_secs_f32())?;
+            .build_cartesian_2d(
+                0f32..all_results.len() as f32 as f32,
+                min.as_secs_f32()..max.as_secs_f32(),
+            )?;
 
         chart.configure_mesh().draw()?;
 
         chart
             .draw_series(LineSeries::new(
-                all_results.iter()
+                all_results
+                    .iter()
                     .enumerate()
                     .map(|(x, y)| (x as f32, y.as_secs_f32())),
                 &RED,

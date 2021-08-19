@@ -1,19 +1,18 @@
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::time::Duration;
-use chrono::{DateTime, Utc};
-
 
 use crate::sampler::SamplerHandle;
 
 #[derive(Debug, Deserialize)]
 struct EnqueueResponseData {
     #[serde(rename = "updateId")]
-    update_id: usize
+    update_id: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,7 +43,8 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
 
     // Clear the existing docs
-    let _ = client.delete(format!("{}/indexes/bench/documents", address))
+    let _ = client
+        .delete(format!("{}/indexes/bench/documents", address))
         .send()
         .await?;
 
@@ -67,15 +67,24 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
             .json()
             .await?;
 
-        if let CheckData::Processed { processed_at, enqueued_at, .. } = data {
+        if let CheckData::Processed {
+            processed_at,
+            enqueued_at,
+            ..
+        } = data
+        {
             delta = processed_at - enqueued_at;
-            break
+            break;
         }
 
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 
-    info!("MeiliSearch took {}.{}s to process submitted documents", delta.num_seconds(), delta.num_milliseconds() / 100i64);
+    info!(
+        "MeiliSearch took {}.{}s to process submitted documents",
+        delta.num_seconds(),
+        delta.num_milliseconds() / 100i64
+    );
 
     Ok(())
 }
@@ -138,18 +147,17 @@ pub(crate) async fn bench_typing(
     Ok(())
 }
 
-
 #[derive(Serialize)]
 struct QueryPayload {
-    q: String
+    q: String,
 }
 
 async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<u16> {
-    let r = client.post(uri)
+    let r = client
+        .post(uri)
         .json(&QueryPayload { q: query })
         .send()
         .await?;
 
     Ok(r.status().as_u16())
 }
-

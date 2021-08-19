@@ -1,13 +1,14 @@
+use crate::sampler::SamplerHandle;
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
-use serde_json::Value;
-use crate::sampler::SamplerHandle;
 
 pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
-        let client = reqwest::Client::new();
+    let client = reqwest::Client::new();
 
     // Clear the existing docs
-    let _ = client.delete(format!("{}/indexes/bench/documents/clear", address))
+    let _ = client
+        .delete(format!("{}/indexes/bench/documents/clear", address))
         .send()
         .await?;
 
@@ -18,7 +19,8 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
         .send()
         .await?;
 
-    let _ = client.post(format!("{}/indexes/bench/commit", address))
+    let _ = client
+        .post(format!("{}/indexes/bench/commit", address))
         .send()
         .await?;
 
@@ -27,7 +29,6 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 pub(crate) async fn bench_standard(
     address: Arc<String>,
@@ -53,7 +54,6 @@ pub(crate) async fn bench_standard(
     sample.finish();
     Ok(())
 }
-
 
 pub(crate) async fn bench_typing(
     address: Arc<String>,
@@ -89,14 +89,11 @@ pub(crate) async fn bench_typing(
 }
 
 async fn search(client: &reqwest::Client, uri: &str, query: String) -> anyhow::Result<u16> {
-    let mut uri = reqwest::Url::parse(uri)
-        .expect("get uri");
+    let mut uri = reqwest::Url::parse(uri).expect("get uri");
 
     uri.set_query(Some(&format!("query={}", query)));
 
-    let r = client.get(uri)
-        .send()
-        .await?;
+    let r = client.get(uri).send().await?;
 
     Ok(r.status().as_u16())
 }

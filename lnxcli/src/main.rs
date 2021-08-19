@@ -1,8 +1,8 @@
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
+use benchmark::{self, BenchMode, BenchTarget};
 use structopt::StructOpt;
-use benchmark::{self, BenchTarget, BenchMode};
-
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnxcli", about = "A utility cli for benchmarking and testing")]
