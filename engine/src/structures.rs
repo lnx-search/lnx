@@ -5,9 +5,9 @@ use tantivy::schema::{
 use tantivy::{DateTime, DocAddress};
 
 use hashbrown::HashMap;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use regex::Regex;
 
 /// A declared schema field type.
 ///
@@ -218,17 +218,20 @@ impl TryFrom<String> for RefAddress {
             static ref RE: Regex = Regex::new("([0-9]+)-([0-9]+)").unwrap();
         }
 
-        let caps = RE.captures_iter(&v)
+        let caps = RE
+            .captures_iter(&v)
             .next()
             .ok_or_else(|| Self::Error::msg("invalid id"))?;
 
-        let segment_id = caps.get(1)
+        let segment_id = caps
+            .get(1)
             .ok_or_else(|| Self::Error::msg("invalid id"))?
             .as_str()
             .parse::<u32>()
             .map_err(Self::Error::msg)?;
 
-        let doc_id = caps.get(2)
+        let doc_id = caps
+            .get(2)
             .ok_or_else(|| Self::Error::msg("invalid id"))?
             .as_str()
             .parse::<u32>()

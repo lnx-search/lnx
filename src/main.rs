@@ -16,8 +16,7 @@ use tokio_rustls::TlsAcceptor;
 
 use axum::handler::{delete, get, post, Handler};
 use axum::http::header;
-use axum::route;
-use axum::routing::RoutingDsl;
+use axum::Router;
 
 use tower::ServiceBuilder;
 use tower_http::auth::RequireAuthorizationLayer;
@@ -200,7 +199,8 @@ async fn start(settings: Settings) -> Result<()> {
         .layer(MapResponseLayer::new(routes::map_status))
         .into_inner();
 
-    let super_user_app = route("/tokens/revoke", post(routes::revoke_token))
+    let super_user_app = Router::new()
+        .route("/tokens/revoke", post(routes::revoke_token))
         .route("/tokens/permissions", post(routes::modify_permissions))
         .route("/tokens/create", post(routes::create_token))
         .route("/tokens/clear", delete(routes::revoke_all))
@@ -238,54 +238,60 @@ async fn start(settings: Settings) -> Result<()> {
         .layer(MapResponseLayer::new(routes::map_status))
         .into_inner();
 
-    let app = route(
-        "/indexes/:index_name/search",
-        get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
-    )
-    .route(
-        "/indexes/:index_name/commit",
-        post(
-            routes::commit_index_changes
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
-        ),
-    )
-    .route(
-        "/indexes/:index_name/rollback",
-        post(
-            routes::rollback_index_changes
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
-        ),
-    )
-    .route(
-        "/indexes/:index_name",
-        delete(routes::delete_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
-    )
-    .route(
-        "/indexes",
-        post(routes::create_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
-    )
-    .route(
-        "/indexes/:index_name/documents",
-        post(routes::add_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone())))
+    let app = Router::new()
+        .route(
+            "/indexes/:index_name/search",
+            get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
+        )
+        .route(
+            "/indexes/:index_name/commit",
+            post(
+                routes::commit_index_changes
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            ),
+        )
+        .route(
+            "/indexes/:index_name/rollback",
+            post(
+                routes::rollback_index_changes
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            ),
+        )
+        .route(
+            "/indexes/:index_name",
+            delete(
+                routes::delete_index.layer(RequireAuthorizationLayer::custom(index_auth.clone())),
+            ),
+        )
+        .route(
+            "/indexes",
+            post(routes::create_index.layer(RequireAuthorizationLayer::custom(index_auth.clone()))),
+        )
+        .route(
+            "/indexes/:index_name/documents",
+            post(
+                routes::add_document
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            )
             .delete(
                 routes::delete_documents
                     .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
             ),
-    )
-    .route(
-        "/indexes/:index_name/documents/:document_id",
-        get(routes::get_document.layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
-    )
-    .route(
-        "/indexes/:index_name/documents/clear",
-        delete(
-            routes::delete_all_documents
-                .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
-        ),
-    )
-
-    .layer(index_middleware)
-    .nest("/admin", super_user_app);
+        )
+        .route(
+            "/indexes/:index_name/documents/:document_id",
+            get(routes::get_document
+                .layer(RequireAuthorizationLayer::custom(documents_auth.clone()))),
+        )
+        .route(
+            "/indexes/:index_name/documents/clear",
+            delete(
+                routes::delete_all_documents
+                    .layer(RequireAuthorizationLayer::custom(documents_auth.clone())),
+            ),
+        )
+        .layer(index_middleware)
+        .nest("/admin", super_user_app);
 
     let addr = format!("{}:{}", &settings.host, settings.port);
     let handle = match tls {

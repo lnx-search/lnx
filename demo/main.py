@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import uvicorn
 from fastapi import FastAPI, responses
@@ -41,7 +41,7 @@ def serve_html() -> responses.HTMLResponse:
 
 class Hit(BaseModel):
     doc: dict
-    ratio: float
+    ratio: Optional[float]
     ref_address: str
 
 
@@ -59,6 +59,15 @@ class SearchResults(BaseModel):
 class DataPayload(BaseModel):
     query: str
     url: str
+
+
+@app.post("/check")
+async def check(payload: DataPayload) -> dict:
+    try:
+        async with app.session.get(payload.url, params={"query": payload.query}) as resp:
+            return {"status": resp.status}
+    except Exception:
+        return {"status": -1}
 
 
 @app.post("/search", response_model=SearchResults)
