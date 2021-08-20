@@ -15,7 +15,7 @@ use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption, Value};
 use tantivy::{
