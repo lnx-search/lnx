@@ -42,7 +42,7 @@ def serve_html() -> responses.HTMLResponse:
 class Hit(BaseModel):
     doc: dict
     ratio: Optional[float]
-    ref_address: str
+    document_id: str
 
 
 class SearchData(BaseModel):
