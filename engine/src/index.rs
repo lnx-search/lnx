@@ -891,8 +891,21 @@ impl IndexHandler {
     /// Gets a document with a given document address.
     ///
     /// This uses a concurrency permit while completing the operation.
-    pub async fn get_doc(&self, doc_address: u64) -> Result<NamedFieldDocument> {
-        self.reader.get_doc(doc_address).await
+    pub async fn get_doc(&self, doc_address: u64) -> Result<QueryHit> {
+        let mut doc = self.reader.get_doc(doc_address).await?;
+
+        let id = doc.0
+            .remove("_id")
+            .ok_or_else(|| Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))?;
+
+        if let Value::U64(v) = id[0] {
+            Ok(QueryHit {
+                ref_address: format!("{}", v),
+                doc,
+            })
+        } else {
+            Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))
+        }
     }
 
     /// Submits a document to be processed by the index writer.
