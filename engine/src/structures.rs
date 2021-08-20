@@ -79,7 +79,8 @@ impl IndexDeclaration {
 
         let opts = IntOptions::default()
             .set_fast(Cardinality::SingleValue)
-            .set_stored();
+            .set_stored()
+            .set_indexed();
 
         schema.add_u64_field("_id", opts);
 
