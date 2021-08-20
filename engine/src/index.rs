@@ -24,8 +24,9 @@ use tantivy::{
 };
 
 use crate::structures::{
-    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
+    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload,
 };
+use crate::correction::get_suggested_sentence;
 
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
@@ -490,7 +491,7 @@ fn parse_query(
             "query mode was `Fuzzy` but query string is `None`",
         )),
         (QueryMode::Fuzzy, Some(query), _) =>
-            Ok(parse_fuzzy_query(query, search_fields)),
+            Ok(parse_fuzzy_query(query, search_fields)?),
         (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
             "query mode was `MoreLikeThis` but reference document is `None`",
         )),
@@ -513,19 +514,19 @@ fn parse_query(
 /// Creates a fuzzy matching query, this allows for an element
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
-fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Box<dyn Query> {
-    let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Result<Box<dyn Query>> {
+    let qry = get_suggested_sentence(query)?;
 
-    for search_term in query.to_lowercase().split(" ") {
+    let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+    for search_term in qry.to_lowercase().split(" ") {
         if search_term.is_empty() {
             continue;
         }
 
         for (field, boost) in search_fields.iter() {
-            let query = Box::new(FuzzyTermQuery::new_prefix(
+            let query = Box::new(TermQuery::new(
                 Term::from_field_text(*field, search_term),
-                1,
-                true,
+                IndexRecordOption::WithFreqs
             ));
 
             if *boost > 0.0f32 {
@@ -537,7 +538,7 @@ fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Bo
         }
     }
 
-    Box::new(BooleanQuery::from(parts))
+    Ok(Box::new(BooleanQuery::from(parts)))
 }
 
 /// Generates a MoreLikeThisQuery which matches similar documents
@@ -565,6 +566,9 @@ pub struct QueryHit {
 
     /// The content of the document itself.
     doc: NamedFieldDocument,
+
+    /// The ratio calculated for the search term and doc.
+    ratio: serde_json::Value,
 }
 
 /// Represents the overall query result(s)
@@ -898,7 +902,7 @@ impl IndexHandler {
             Ok(QueryHit {
                 document_id: format!("{}", v),
                 doc,
-                ratio: 100f32
+                ratio: serde_json::json!(100.0),
             })
         } else {
             Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))
