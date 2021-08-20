@@ -13,19 +13,18 @@ use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser};
+use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
-use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema};
+use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption};
 use tantivy::{
     DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
     ReloadPolicy, Score, Searcher, Term,
 };
 
 use crate::structures::{
-    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload, RefAddress,
+    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload,
 };
 use parking_lot::Mutex;
-
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
@@ -251,10 +250,10 @@ struct IndexReaderHandler {
     thread_pool: rayon::ThreadPool,
 
     /// The configured query parser pre-weighted.
-    parser: QueryParser,
+    parser: Arc<QueryParser>,
 
     /// The set of indexed fields to search in a given query.
-    search_fields: Vec<(Field, Score)>,
+    search_fields: Arc<Vec<(Field, Score)>>,
 
     /// A cheaply cloneable schema reference.
     schema: Schema,
@@ -314,8 +313,8 @@ impl IndexReaderHandler {
             limiter,
             max_concurrency,
             thread_pool,
-            parser,
-            search_fields,
+            parser: Arc::new(parser),
+            search_fields: Arc::new(search_fields),
             schema: schema_copy,
         })
     }
@@ -372,11 +371,13 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
 
-        let doc = if let Some(doc) = payload.ref_document {
-            Some(RefAddress::try_from(doc)?)
-        } else {
-            None
-        };
+         let doc_id = match (self.schema.get_field("_id"), payload.ref_document) {
+            (None, _) => Err(Error::msg("missing a required private field, this is a bug.")),
+            (_, None) => Ok(None),
+            (Some(field), Some(doc_id)) => {
+                Ok(Some(Term::from_field_u64(field, doc_id)))
+            },
+        }?;
 
         let order_by = if let Some(field) = payload.order_by {
             // We choose to ignore the order by if the field doesnt exist.
@@ -388,9 +389,10 @@ impl IndexReaderHandler {
         };
 
         let schema = self.schema.clone();
+        let parser = self.parser.clone();
         let limit = payload.limit;
         let offset = payload.offset;
-        let query = self.parse_query(payload.query, doc, payload.mode)?;
+        let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
 
@@ -398,6 +400,30 @@ impl IndexReaderHandler {
         self.thread_pool.spawn(move || {
             let executor = executors.pop().expect("get executor");
 
+            let ref_doc = match doc_id {
+                None => None,
+                Ok(doc) => {
+                    let res: Vec<(f32, DocAddress)> = searcher.search(
+                        &TermQuery::new(doc, IndexRecordOption::Basic),
+                        &TopDocs::with_limit(1),
+                    )?;
+
+                    if res.len() == 0 {
+                        let _ = resolve.send(Err(Error::msg("no document exists with this id")));
+                        return
+                    }
+
+                    Some(res[0].1)
+                }
+            };
+
+            let query = parse_query(
+                parser,
+                search_fields,
+                payload.query,
+                ref_doc,
+                payload.mode,
+            )?;
             let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
             // This can never happen right?
@@ -419,88 +445,96 @@ impl IndexReaderHandler {
 
         Ok(res)
     }
+}
 
-    fn parse_query(
-        &self,
-        query: Option<String>,
-        ref_document: Option<RefAddress>,
-        mode: QueryMode,
-    ) -> Result<Box<dyn Query>> {
-        let start = std::time::Instant::now();
-        let out = match (mode, &query, &ref_document) {
-            (QueryMode::Normal, None, _) => Err(Error::msg(
-                "query mode was `Normal` but query string is `None`",
-            )),
-            (QueryMode::Normal, Some(query), _) => Ok(self.parser.parse_query(query)?),
-            (QueryMode::Fuzzy, None, _) => Err(Error::msg(
-                "query mode was `Fuzzy` but query string is `None`",
-            )),
-            (QueryMode::Fuzzy, Some(query), _) => Ok(self.parse_fuzzy_query(query)),
-            (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
-                "query mode was `MoreLikeThis` but reference document is `None`",
-            )),
-            (QueryMode::MoreLikeThis, _, Some(ref_document)) => {
-                Ok(self.parse_more_like_this(ref_document))
-            }
-        };
 
-        debug!(
-            "constructing query {:?} or ref_doc {:?} with mode={:?} took {:?}",
-            query,
-            ref_document,
-            &mode,
-            start.elapsed(),
-        );
+/// Generates a query from any of the 3 possible systems to
+/// query documents.
+fn parse_query(
+    parser: Arc<QueryParser>,
+    search_fields: Arc<Vec<(Field, Score)>>,
+    query: Option<String>,
+    ref_document: Option<DocAddress>,
+    mode: QueryMode,
+) -> Result<Box<dyn Query>> {
+    let start = std::time::Instant::now();
+    let out = match (mode, &query, ref_document) {
+        (QueryMode::Normal, None, _) => Err(Error::msg(
+            "query mode was `Normal` but query string is `None`",
+        )),
+        (QueryMode::Normal, Some(query), _) =>
+            Ok(parser.parse_query(query)?),
+        (QueryMode::Fuzzy, None, _) => Err(Error::msg(
+            "query mode was `Fuzzy` but query string is `None`",
+        )),
+        (QueryMode::Fuzzy, Some(query), _) =>
+            Ok(parse_fuzzy_query(query, search_fields)),
+        (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
+            "query mode was `MoreLikeThis` but reference document is `None`",
+        )),
+        (QueryMode::MoreLikeThis, _, Some(ref_document)) => {
+            Ok(parse_more_like_this(ref_document))
+        }
+    };
 
-        return out;
-    }
+    debug!(
+        "constructing query {:?} or ref_doc {:?} with mode={:?} took {:?}",
+        query,
+        ref_document,
+        &mode,
+        start.elapsed(),
+    );
 
-    /// Creates a fuzzy matching query, this allows for an element
-    /// of fault tolerance with spelling. This is the default
-    /// config as it its the most plug and play setup.
-    fn parse_fuzzy_query(&self, query: &str) -> Box<dyn Query> {
-        let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+    return out;
+}
 
-        for search_term in query.to_lowercase().split(" ") {
-            if search_term.is_empty() {
+/// Creates a fuzzy matching query, this allows for an element
+/// of fault tolerance with spelling. This is the default
+/// config as it its the most plug and play setup.
+fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Box<dyn Query> {
+    let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+    for search_term in query.to_lowercase().split(" ") {
+        if search_term.is_empty() {
+            continue;
+        }
+
+        for (field, boost) in search_fields.iter() {
+            let query = Box::new(FuzzyTermQuery::new_prefix(
+                Term::from_field_text(*field, search_term),
+                1,
+                true,
+            ));
+
+            if *boost > 0.0f32 {
+                parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
                 continue;
             }
 
-            for (field, boost) in self.search_fields.iter() {
-                let query = Box::new(FuzzyTermQuery::new_prefix(
-                    Term::from_field_text(*field, search_term),
-                    1,
-                    true,
-                ));
-
-                if *boost > 0.0f32 {
-                    parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
-                    continue;
-                }
-
-                parts.push((Occur::Should, query))
-            }
+            parts.push((Occur::Should, query))
         }
-
-        Box::new(BooleanQuery::from(parts))
     }
 
-    /// Generates a MoreLikeThisQuery which matches similar documents
-    /// as the given reference document.
-    fn parse_more_like_this(&self, ref_document: &RefAddress) -> Box<dyn Query> {
-        let query = MoreLikeThisQuery::builder()
-            .with_min_doc_frequency(1)
-            .with_max_doc_frequency(10)
-            .with_min_term_frequency(1)
-            .with_min_word_length(2)
-            .with_max_word_length(5)
-            .with_boost_factor(1.0)
-            .with_stop_words(vec!["for".to_string()])
-            .with_document(ref_document.as_doc_address());
-
-        Box::new(query)
-    }
+    Box::new(BooleanQuery::from(parts))
 }
+
+
+/// Generates a MoreLikeThisQuery which matches similar documents
+/// as the given reference document.
+fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
+    let query = MoreLikeThisQuery::builder()
+        .with_min_doc_frequency(1)
+        .with_max_doc_frequency(10)
+        .with_min_term_frequency(1)
+        .with_min_word_length(2)
+        .with_max_word_length(5)
+        .with_boost_factor(1.0)
+        .with_stop_words(vec!["for".to_string()])
+        .with_document(ref_document);
+
+    Box::new(query)
+}
+
 
 /// Represents a single query result.
 #[derive(Serialize)]
@@ -533,14 +567,19 @@ macro_rules! order_and_search {
     }};
 }
 
+
 macro_rules! process_search {
     ( $search:expr, $schema:expr, $top_docs:expr ) => {{
         let mut hits = Vec::with_capacity($top_docs.len());
         for (_, ref_address) in $top_docs {
             let retrieved_doc = $search.doc(ref_address)?;
-            let doc = $schema.to_named_doc(&retrieved_doc);
+            let mut doc = $schema.to_named_doc(&retrieved_doc);
+            let id = doc.0
+                .remove("_id")
+                .ok_or_else(|| Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))?;
+
             hits.push(QueryHit {
-                ref_address: RefAddress::from(ref_address).into(),
+                ref_address: id,
                 doc,
             });
         }
