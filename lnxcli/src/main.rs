@@ -3,6 +3,7 @@ extern crate log;
 
 use benchmark::{self, BenchMode, BenchTarget};
 use structopt::StructOpt;
+use std::net::SocketAddr;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnxcli", about = "A utility cli for benchmarking and testing")]
@@ -41,6 +42,20 @@ pub enum Commands {
         /// The path to get the query string data.
         #[structopt(long, short = "terms")]
         search_terms: String,
+    },
+
+    Demo {
+        /// The address to bind the webserver to.
+        #[structopt(long, short = "b")]
+        bind: SocketAddr,
+
+        /// The target server address, e.g. http://127.0.0.1:8000
+        ///
+        /// This expects that the url isn't changed from the defaults.
+        #[structopt(long = "target")]
+        target_server: String,
+
+
     },
 }
 

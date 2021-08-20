@@ -31,11 +31,10 @@
         </div>
         <div class="w-full flex flex-wrap mt-8">
             <div v-for="result in results" class="flex bg-white rounded-lg p-4 m-4">
-                <img class="w-32 h-48" :src="result.doc.poster[0]" alt="">
-                <div class="flex flex-col ml-4 w-48">
-                    <h3 class="text-lg font-bold mb-2">{{ result.doc.title[0] }}</h3>
-                    <div class="flex flex-wrap">
-                        <span v-for="genre in result.doc.genres" class="text-gray-600 font-semibold bg-gray-300 rounded-full py-1 px-2 my-2 mx-1">{{ genre }}</span>
+                <div class="flex flex-col" style="height: 20rem;max-height: 20rem;width: 16rem;max-width: 16rem">
+                    <div v-for="pairs in Object.entries(result)" class="flex items-center ">
+                        <p class="text-lg font-semibold mr-2">{{ pairs[0] }}: </p>
+                        <p class="text-gray-600 italic overflow-hidden h-6">{{ pairs[1] }}</p>
                     </div>
                 </div>
             </div>
