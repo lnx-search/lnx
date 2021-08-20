@@ -2,7 +2,6 @@ use anyhow::Error;
 
 use hashbrown::HashMap;
 use serde::Deserialize;
-use std::convert::TryFrom;
 use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
@@ -10,7 +9,7 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, RefAddress};
+use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
 use engine::tantivy::schema::NamedFieldDocument;
 use engine::{LeasedIndex, SearchEngine};
 
@@ -306,15 +305,14 @@ pub async fn add_document(
 
 /// Gets a specific document from the system.
 pub async fn get_document(
-    params: Result<Path<(String, String)>, PathParamsRejection>,
+    params: Result<Path<(String, u64)>, PathParamsRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let (index_name, document_id) = check_path!(params).0;
-    let document_id = check_error!(RefAddress::try_from(document_id), "parse document id");
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
     let doc = check_error!(
-        index.get_doc(document_id.as_doc_address()).await,
+        index.get_doc(document_id).await,
         "retrieve doc"
     );
 

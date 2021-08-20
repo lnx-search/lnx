@@ -1,13 +1,16 @@
-use tantivy::schema::{
-    IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING,
-    TEXT,
-};
-use tantivy::{DateTime, DocAddress};
-
 use hashbrown::HashMap;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+
+use tantivy::schema::{
+    IntOptions,
+    Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder,
+    STORED,
+    STRING,
+    TEXT,
+    Cardinality,
+};
+use tantivy::DateTime;
 
 /// A declared schema field type.
 ///
@@ -74,7 +77,18 @@ impl IndexDeclaration {
     pub(crate) fn into_schema(self) -> LoadedIndex {
         let mut schema = InternalSchemaBuilder::new();
 
+        let opts = IntOptions::default()
+            .set_fast(Cardinality::SingleValue)
+            .set_stored()
+            .set_indexed();
+
+        schema.add_u64_field("_id", opts);
+
         for (name, field) in self.fields {
+            if name == "_id" {
+                continue
+            }
+
             match field {
                 FieldDeclaration::F64(opts) => schema.add_f64_field(&name, opts),
                 FieldDeclaration::U64(opts) => schema.add_u64_field(&name, opts),
@@ -179,75 +193,13 @@ impl Default for QueryMode {
     }
 }
 
-/// A reference address for a given document.
-#[derive(Debug)]
-pub struct RefAddress {
-    pub(super) segment_id: u32,
-    pub(super) doc_id: u32,
-}
-
-impl RefAddress {
-    pub fn as_doc_address(&self) -> DocAddress {
-        DocAddress {
-            segment_ord: self.segment_id,
-            doc_id: self.doc_id,
-        }
-    }
-}
-
-impl Into<String> for RefAddress {
-    fn into(self) -> String {
-        format!("{}-{}", self.segment_id, self.doc_id)
-    }
-}
-
-impl From<DocAddress> for RefAddress {
-    fn from(v: DocAddress) -> Self {
-        RefAddress {
-            segment_id: v.segment_ord,
-            doc_id: v.doc_id,
-        }
-    }
-}
-
-impl TryFrom<String> for RefAddress {
-    type Error = anyhow::Error;
-
-    fn try_from(v: String) -> Result<Self, Self::Error> {
-        lazy_static! {
-            static ref RE: Regex = Regex::new("([0-9]+)-([0-9]+)").unwrap();
-        }
-
-        let caps = RE
-            .captures_iter(&v)
-            .next()
-            .ok_or_else(|| Self::Error::msg("invalid id"))?;
-
-        let segment_id = caps
-            .get(1)
-            .ok_or_else(|| Self::Error::msg("invalid id"))?
-            .as_str()
-            .parse::<u32>()
-            .map_err(Self::Error::msg)?;
-
-        let doc_id = caps
-            .get(2)
-            .ok_or_else(|| Self::Error::msg("invalid id"))?
-            .as_str()
-            .parse::<u32>()
-            .map_err(Self::Error::msg)?;
-
-        Ok(RefAddress { segment_id, doc_id })
-    }
-}
-
 #[derive(Debug, Deserialize)]
 pub struct QueryPayload {
     /// A query string for `QueryMode::Fuzzy` and `QueryMode::Normal` queries.
     pub(crate) query: Option<String>,
 
     /// A reference document for `QueryMode::MoreLikeThis`.
-    pub(crate) ref_document: Option<String>,
+    pub(crate) document: Option<u64>,
 
     /// The query mode which determines which query system will be
     /// used.

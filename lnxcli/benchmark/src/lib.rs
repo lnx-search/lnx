@@ -6,6 +6,7 @@ extern crate log;
 mod lnx;
 mod meilisearch;
 mod sampler;
+mod shared;
 
 use anyhow::Result;
 
