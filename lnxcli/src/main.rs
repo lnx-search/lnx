@@ -41,6 +41,10 @@ pub enum Commands {
         /// The path to get the query string data.
         #[structopt(long, short = "terms")]
         search_terms: String,
+
+        /// Whether or not use the existing data in the system or flush it.
+        #[structopt(long)]
+        no_prep: bool,
     },
 }
 
@@ -60,6 +64,7 @@ fn main() -> anyhow::Result<()> {
             threads,
             output_dir,
             search_terms,
+            no_prep,
         } => {
             let ctx = benchmark::Context {
                 address,
@@ -68,6 +73,7 @@ fn main() -> anyhow::Result<()> {
                 target,
                 mode,
                 search_terms,
+                no_prep,
                 threads: threads.unwrap_or_else(|| num_cpus::get()),
                 output: output_dir,
             };

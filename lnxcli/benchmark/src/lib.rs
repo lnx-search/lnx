@@ -77,6 +77,7 @@ pub struct Context {
     pub threads: usize,
     pub output: String,
     pub search_terms: String,
+    pub no_prep: bool,
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
@@ -96,7 +97,9 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let target = ctx.target;
     let mode = ctx.mode;
 
-    prep_systems(target, &ctx.address, &ctx.data_file).await?;
+    if !ctx.no_prep {
+        prep_systems(target, &ctx.address, &ctx.data_file).await?;
+    }
     let terms = get_terms(&ctx.search_terms).await?;
     let address = Arc::new(ctx.address.clone());
 
