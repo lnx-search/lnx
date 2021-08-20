@@ -402,7 +402,7 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
 
-         let doc_id = match (self.schema.get_field("_id"), payload.ref_document) {
+         let doc_id = match (self.schema.get_field("_id"), payload.document) {
             (None, _) => Err(Error::msg("missing a required private field, this is a bug.")),
             (_, None) => Ok(None),
             (Some(field), Some(doc_id)) => {

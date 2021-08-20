@@ -199,7 +199,7 @@ pub struct QueryPayload {
     pub(crate) query: Option<String>,
 
     /// A reference document for `QueryMode::MoreLikeThis`.
-    pub(crate) ref_document: Option<u64>,
+    pub(crate) document: Option<u64>,
 
     /// The query mode which determines which query system will be
     /// used.
