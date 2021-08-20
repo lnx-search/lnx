@@ -25,7 +25,7 @@
                 <input v-model="query" v-on:input="onSearch" class="bg-gray-100 p-2 w-full placeholder-gray-500 border-b-2 border-transparent focus:border-indigo-600 focus:outline-none transition duration-200" placeholder="Search something..."/>
             </label>
             <p class="text-white text-3xl font-bold">
-                {{ count }}
+                {{ count.toLocaleString() }}
                 results in {{ timeTaken }} ms
             </p>
         </div>
