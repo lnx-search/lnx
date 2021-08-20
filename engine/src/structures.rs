@@ -1,11 +1,16 @@
-use tantivy::schema::{
-    IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING,
-    TEXT,
-};
-use tantivy::DateTime;
-
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
+
+use tantivy::schema::{
+    IntOptions,
+    Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder,
+    STORED,
+    STRING,
+    TEXT,
+    Cardinality,
+};
+use tantivy::DateTime;
 
 /// A declared schema field type.
 ///
@@ -72,7 +77,17 @@ impl IndexDeclaration {
     pub(crate) fn into_schema(self) -> LoadedIndex {
         let mut schema = InternalSchemaBuilder::new();
 
+        let opts = IntOptions::default()
+            .set_fast(Cardinality::SingleValue)
+            .set_stored();
+
+        schema.add_u64_field("_id", opts);
+
         for (name, field) in self.fields {
+            if name == "_id" {
+                continue
+            }
+
             match field {
                 FieldDeclaration::F64(opts) => schema.add_f64_field(&name, opts),
                 FieldDeclaration::U64(opts) => schema.add_u64_field(&name, opts),

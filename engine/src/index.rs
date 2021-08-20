@@ -1,7 +1,8 @@
-use std::convert::TryFrom;
 use std::sync::Arc;
+use std::hash::{BuildHasher, Hasher};
 
 use anyhow::{Error, Result};
+use parking_lot::Mutex;
 use serde::Serialize;
 
 use tokio::fs;
@@ -15,7 +16,7 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{BooleanQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
-use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption};
+use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption, Value};
 use tantivy::{
     DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
     ReloadPolicy, Score, Searcher, Term,
@@ -24,8 +25,10 @@ use tantivy::{
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload,
 };
-use parking_lot::Mutex;
+use ahash::RandomState;
+
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
+
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -207,6 +210,32 @@ impl IndexWriterHandler {
     }
 }
 
+/// Attempts to get a document otherwise sending an error
+/// back to the resolve channel.
+macro_rules! try_get_doc {
+    ($resolve:expr, $searcher:expr, $doc:expr) => {{
+        let res = $searcher.search(
+            &TermQuery::new($doc, IndexRecordOption::Basic),
+            &TopDocs::with_limit(1),
+        );
+
+        let res: Vec<(f32, DocAddress)> = match res {
+            Err(e) => {
+                let _ = $resolve.send(Err(Error::from(e)));
+                return
+            },
+            Ok(res) => res,
+        };
+
+        if res.len() == 0 {
+            let _ = $resolve.send(Err(Error::msg("no document exists with this id")));
+            return
+        }
+
+        res[0].1
+    }}
+}
+
 /// A async manager around the tantivy index reader.
 ///
 /// This system executes the read operations in a given thread pool
@@ -322,18 +351,20 @@ impl IndexReaderHandler {
     /// Gets a document with a given address.
     ///
     /// This counts as a concurrent action.
-    async fn get_doc(&self, doc_address: DocAddress) -> Result<NamedFieldDocument> {
+    async fn get_doc(&self, doc_address: u64) -> Result<NamedFieldDocument> {
         let _permit = self.limiter.acquire().await?;
 
         let (resolve, waiter) = oneshot::channel();
         let searcher = self.reader.searcher();
-
-        if doc_address.segment_ord < searcher.segment_readers().len() as u32 {
-            return Err(Error::msg("this document id is invalid"));
-        }
+        let field =  self.schema
+            .get_field("_id")
+            .ok_or_else(|| Error::msg("missing a required private field, this is a bug."))?;
 
         self.thread_pool.spawn(move || {
-            let doc = searcher.doc(doc_address);
+            let term = Term::from_field_u64(field, doc_address);
+            let doc = try_get_doc!(resolve, searcher, term);
+            let doc = searcher.doc(doc)
+                .map_err(Error::from);
             let _ = resolve.send(doc);
         });
 
@@ -379,11 +410,11 @@ impl IndexReaderHandler {
             },
         }?;
 
-        let order_by = if let Some(field) = payload.order_by {
+        let order_by = if let Some(ref field) = payload.order_by {
             // We choose to ignore the order by if the field doesnt exist.
             // While this may be surprising to be at first as long as it's
             // document this should be fine.
-            self.schema.get_field(&field)
+            self.schema.get_field(field)
         } else {
             None
         };
@@ -402,28 +433,20 @@ impl IndexReaderHandler {
 
             let ref_doc = match doc_id {
                 None => None,
-                Ok(doc) => {
-                    let res: Vec<(f32, DocAddress)> = searcher.search(
-                        &TermQuery::new(doc, IndexRecordOption::Basic),
-                        &TopDocs::with_limit(1),
-                    )?;
-
-                    if res.len() == 0 {
-                        let _ = resolve.send(Err(Error::msg("no document exists with this id")));
-                        return
-                    }
-
-                    Some(res[0].1)
+                Some(doc) => {
+                    let doc = try_get_doc!(resolve, searcher, doc);
+                    Some(doc)
                 }
             };
 
-            let query = parse_query(
-                parser,
-                search_fields,
-                payload.query,
-                ref_doc,
-                payload.mode,
-            )?;
+            let query = match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode) {
+                Err(e) => {
+                    let _ = resolve.send(Err(e));
+                    return
+                },
+                Ok(q) => q,
+            };
+
             let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
             // This can never happen right?
@@ -567,7 +590,6 @@ macro_rules! order_and_search {
     }};
 }
 
-
 macro_rules! process_search {
     ( $search:expr, $schema:expr, $top_docs:expr ) => {{
         let mut hits = Vec::with_capacity($top_docs.len());
@@ -578,10 +600,16 @@ macro_rules! process_search {
                 .remove("_id")
                 .ok_or_else(|| Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))?;
 
-            hits.push(QueryHit {
-                ref_address: id,
-                doc,
-            });
+            if let Value::U64(v) = id[0] {
+                hits.push(QueryHit {
+                    ref_address: format!("{}", v),
+                    doc,
+                });
+            } else {
+                return Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))
+            }
+
+
         }
 
         hits
@@ -702,6 +730,9 @@ pub struct IndexHandler {
 
     /// The optional storage directory of the index.
     dir: Option<String>,
+
+    /// The hash state used for generating ids
+    hash_state: RandomState,
 }
 
 impl IndexHandler {
@@ -827,6 +858,7 @@ impl IndexHandler {
             reader: reader_handler,
             alive: receiver,
             dir,
+            hash_state: ahash::RandomState::new(),
         })
     }
 
@@ -859,12 +891,26 @@ impl IndexHandler {
     /// Gets a document with a given document address.
     ///
     /// This uses a concurrency permit while completing the operation.
-    pub async fn get_doc(&self, doc_address: DocAddress) -> Result<NamedFieldDocument> {
+    pub async fn get_doc(&self, doc_address: u64) -> Result<NamedFieldDocument> {
         self.reader.get_doc(doc_address).await
     }
 
     /// Submits a document to be processed by the index writer.
-    pub async fn add_document(&self, document: Document) -> Result<()> {
+    pub async fn add_document(&self, mut document: Document) -> Result<()> {
+        let field = self.schema
+            .get_field("_id")
+            .ok_or_else(|| Error::msg(
+                "system has not correctly initialised this schema,\
+                 are you upgrading from a older version? If yes, you need to re-create the schema."
+            ))?;
+
+        let id = uuid::Uuid::new_v4();
+        let mut hasher: ahash::AHasher = self.hash_state.build_hasher();
+        hasher.write_u128(id.as_u128());
+        let hash = hasher.finish();
+
+        document.add_u64(field, hash);
+
         self.writer.send_op(WriterOp::AddDocument(document)).await
     }
 
