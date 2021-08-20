@@ -564,7 +564,7 @@ fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
 pub struct QueryHit {
     /// The address of the given document, this can be used for
     /// 'more like this' queries.
-    ref_address: String,
+    document_id: String,
 
     /// The content of the document itself.
     doc: NamedFieldDocument,
@@ -602,7 +602,7 @@ macro_rules! process_search {
 
             if let Value::U64(v) = id[0] {
                 hits.push(QueryHit {
-                    ref_address: format!("{}", v),
+                    document_id: format!("{}", v),
                     doc,
                 });
             } else {
@@ -900,7 +900,7 @@ impl IndexHandler {
 
         if let Value::U64(v) = id[0] {
             Ok(QueryHit {
-                ref_address: format!("{}", v),
+                document_id: format!("{}", v),
                 doc,
             })
         } else {
