@@ -424,6 +424,7 @@ impl IndexReaderHandler {
         let parser = self.parser.clone();
         let limit = payload.limit;
         let offset = payload.offset;
+        let mode = payload.mode;
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
@@ -460,10 +461,11 @@ impl IndexReaderHandler {
 
         let res = waiter.await??;
         info!(
-            "[ SEARCH @ {} ] took {:?} with limit: {} and {} results total",
+            "[ SEARCH @ {} ] took {:?} with limit={}, mode={:?} and {} results total",
             &self.name,
             start.elapsed(),
             limit,
+            mode,
             res.count
         );
 
@@ -549,9 +551,9 @@ fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
         .with_max_doc_frequency(10)
         .with_min_term_frequency(1)
         .with_min_word_length(2)
-        .with_max_word_length(5)
+        .with_max_word_length(12)
         .with_boost_factor(1.0)
-        .with_stop_words(vec!["for".to_string()])
+        .with_stop_words(vec!["for".to_string(), "the".to_string()])
         .with_document(ref_document);
 
     Box::new(query)
@@ -806,10 +808,14 @@ impl IndexHandler {
                     search_fields.push((field, 0.0f32));
                 };
             } else {
+                let fields: Vec<String> = loader.schema.fields()
+                    .map(|(_, v )| v.name().to_string())
+                    .collect();
+
                 return Err(Error::msg(format!(
-                    "no field exists for index {} with the current schema,\
-                     did you forget to define it in the schema?",
-                    &ref_field
+                    "you defined the schema with the following fields: {:?} \
+                    and declared the a search_field {:?} but this does not exist in the defined fields.",
+                    fields, &ref_field
                 )));
             };
         }

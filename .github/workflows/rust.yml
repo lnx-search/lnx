@@ -16,7 +16,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Build
+    - name: Build main
       run: cargo build --verbose
-    - name: Run tests
+    - name: Run main tests
+      run: cargo test --verbose          
+    - name: Run dir change
+      run: cd lnxcli 
+    - name: Build cli
+      run: cargo build --verbose
+    - name: Run cli tests
       run: cargo test --verbose
