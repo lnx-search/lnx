@@ -64,7 +64,7 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
         "max_concurrency": 4,
         "search_fields": [
             "title",
-            "abstract"
+            "overview"
         ],
 
         "storage_type": "tempdir",
