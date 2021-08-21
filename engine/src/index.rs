@@ -806,10 +806,14 @@ impl IndexHandler {
                     search_fields.push((field, 0.0f32));
                 };
             } else {
+                let fields: Vec<String> = loader.schema.fields()
+                    .map(|(_, v )| v.name())
+                    .collect();
+
                 return Err(Error::msg(format!(
-                    "no field exists for index {} with the current schema, \
-                     did you forget to define it in the schema?",
-                    &ref_field
+                    "you defined the schema with the following fields: {:?} \
+                    and declared the a search_field {:?} but this does not exist in the defined fields.",
+                    fields, &ref_field
                 )));
             };
         }

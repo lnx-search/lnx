@@ -16,7 +16,7 @@ use tantivy::DateTime;
 ///
 /// Each field has a set of relevant options as specified
 /// by the tantivy docs.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
 pub enum FieldDeclaration {
