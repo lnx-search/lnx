@@ -30,12 +30,16 @@
             </p>
         </div>
         <div class="w-full flex flex-wrap mt-8">
-            <div v-for="result in results" class="flex bg-white rounded-lg p-4 m-4 shadow-inner">
+            <div v-for="result in results" class="flex flex-col justify-between bg-white rounded-lg p-4 m-4 shadow-inner">
                 <div class="flex flex-col" style="height: 20rem;max-height: 20rem;width: 16rem;max-width: 16rem">
                     <div v-for="pairs in Object.entries(result.doc)" class="flex items-center ">
                         <p class="text-lg font-semibold mr-2">{{ pairs[0] }}: </p>
                         <p class="text-gray-600 italic overflow-hidden h-6">{{ pairs[1].join(", ") }}</p>
                     </div>
+                </div>
+                <div>
+                    <p class="text-black text-lg font-semibold mr-2">Document Id:</p>
+                    <p  class="text-gray-600 italic">{{ result.document_id }}</p>
                 </div>
             </div>
             <div v-if="results.length === 0" class="flex items-center h-full pt-32">

@@ -423,6 +423,7 @@ impl IndexReaderHandler {
         let parser = self.parser.clone();
         let limit = payload.limit;
         let offset = payload.offset;
+        let mode = payload.mode;
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
@@ -459,10 +460,11 @@ impl IndexReaderHandler {
 
         let res = waiter.await??;
         info!(
-            "[ SEARCH @ {} ] took {:?} with limit: {} and {} results total",
+            "[ SEARCH @ {} ] took {:?} with limit={}, mode={:?} and {} results total",
             &self.name,
             start.elapsed(),
             limit,
+            mode,
             res.count
         );
 
