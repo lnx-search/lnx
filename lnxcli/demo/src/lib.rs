@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use axum::Router;
 use axum::handler::{get, post};
 use anyhow::Error;
+use std::time::Instant;
 
 mod routes;
 
@@ -28,6 +29,10 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
         return Err(Error::msg("target server must include the http protocol."))
     }
 
+    if !ctx.no_prep {
+        prep(&ctx.target_server, &ctx.index).await?;
+    }
+
     let _ = routes::TARGET_URL.set(format!("{}/indexes/{}/search", &ctx.target_server, &ctx.index));
 
     let app = Router::new()
@@ -38,6 +43,89 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     axum::Server::bind(&ctx.bind)
         .serve(app.into_make_service())
         .await?;
+
+    Ok(())
+}
+
+async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
+    let data = include_str!("../static/movies.json");
+
+    let client = reqwest::Client::new();
+
+    let payload = serde_json::json!({
+        "name": index,
+
+        "writer_buffer": 60_000_000,
+        "writer_threads": 4,
+
+        "reader_threads": 2,
+
+        "max_concurrency": 4,
+        "search_fields": [
+            "title",
+            "abstract"
+        ],
+
+        "storage_type": "tempdir",
+
+        "fields": {
+            "id": {
+                "type": "string",
+                "stored": true
+            },
+            "poster": {
+                "type": "string",
+                "stored": true
+            },
+            "release_date": {
+                "type": "date",
+                "stored": true,
+                "indexed": false
+            },
+            "title": {
+                "type": "text",
+                "stored": true
+            },
+            "overview": {
+               "type": "text",
+               "stored": true
+            },
+            "genres": {
+               "type": "text",
+               "stored": true
+            }
+        },
+
+        "boost_fields": {
+            "title": 2.0,
+            "overview": 0.8
+        }
+    });
+    let _ = client.post(format!("{}/indexes?override_if_exists=true", target))
+        .json(&payload)
+        .send()
+        .await?;
+
+    // Clear the existing docs
+    let _ = client
+        .delete(format!("{}/indexes/{}/documents/clear", target, index))
+        .send()
+        .await?;
+
+    let start = Instant::now();
+    let _ = client
+        .post(format!("{}/indexes/{}/documents", target, index))
+        .json(&data)
+        .send()
+        .await?;
+
+    let _ = client
+        .post(format!("{}/indexes/{}/commit", target, index))
+        .send()
+        .await?;
+
+    let delta = start.elapsed();
+    info!("lnx took {:?} to process submitted documents", delta);
 
     Ok(())
 }
