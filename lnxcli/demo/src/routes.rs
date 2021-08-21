@@ -29,8 +29,12 @@ pub(crate) async fn search(
     let client = reqwest::Client::new();
 
     let mut url = Url::parse(target).unwrap();
-    url.set_query(Some(&format!("query={}", &payload.query)));
-    url.set_query(Some(&format!("mode={}", &payload.mode)));
+
+    if payload.mode != "more-like-this" {
+        url.set_query(Some(&format!("mode={}&query={}", &payload.mode, &payload.query)));
+    } else {
+        url.set_query(Some(&format!("mode={}&document={}", &payload.mode, &payload.query)));
+    }
 
     let r = match client.get(url).send().await {
         Ok(r) => r,

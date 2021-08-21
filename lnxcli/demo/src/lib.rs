@@ -50,7 +50,7 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
 }
 
 async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
-    let data = include_str!("../static/movies.json");
+    let data: serde_json::Value = serde_json::from_str(include_str!("../static/movies.json"))?;
 
     let client = reqwest::Client::new();
     let payload = serde_json::json!({
