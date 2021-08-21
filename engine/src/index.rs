@@ -807,7 +807,7 @@ impl IndexHandler {
                 };
             } else {
                 let fields: Vec<String> = loader.schema.fields()
-                    .map(|(_, v )| v.name())
+                    .map(|(_, v )| v.name().to_string())
                     .collect();
 
                 return Err(Error::msg(format!(
