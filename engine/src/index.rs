@@ -552,9 +552,9 @@ fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
         .with_max_doc_frequency(10)
         .with_min_term_frequency(1)
         .with_min_word_length(2)
-        .with_max_word_length(5)
+        .with_max_word_length(12)
         .with_boost_factor(1.0)
-        .with_stop_words(vec!["for".to_string()])
+        .with_stop_words(vec!["for".to_string(), "the".to_string()])
         .with_document(ref_document);
 
     Box::new(query)
