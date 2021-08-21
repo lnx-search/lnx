@@ -1,13 +1,20 @@
 #[macro_use]
 extern crate log;
 
-use benchmark::{self, BenchMode, BenchTarget};
 use structopt::StructOpt;
 use std::net::SocketAddr;
+
+use benchmark::{self, BenchMode, BenchTarget};
+
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnxcli", about = "A utility cli for benchmarking and testing")]
 pub enum Commands {
+    /// Benchmark lnx or MeiliSearch to get stats and info on the current
+    /// configuration.
+    ///
+    /// This is very useful to do when adjusting your worker thread counts
+    /// to test latency and throughput.
     Bench {
         /// The address of the server to benchmark.
         #[structopt(long, short = "a")]
@@ -32,7 +39,7 @@ pub enum Commands {
         /// The number of threads to run the test with.
         ///
         /// If not set the number of logical CPU cores is used.
-        #[structopt(long, short = "t")]
+        #[structopt(long)]
         threads: Option<usize>,
 
         /// The directory to output the image results.
@@ -44,9 +51,10 @@ pub enum Commands {
         search_terms: String,
     },
 
+    /// Runs a demo app to play around with the search as you type setup.
     Demo {
         /// The address to bind the webserver to.
-        #[structopt(long, short = "b")]
+        #[structopt(long, short = "b", default_value = "127.0.0.1:5000")]
         bind: SocketAddr,
 
         /// The target server address, e.g. http://127.0.0.1:8000
@@ -55,7 +63,14 @@ pub enum Commands {
         #[structopt(long = "target")]
         target_server: String,
 
+        /// If this is set the system will not upload a new set of docs when
+        /// started.
+        #[structopt(long)]
+        no_prep: bool,
 
+        /// The index name to target.
+        #[structopt(long, short, default_value = "demo")]
+        index: String,
     },
 }
 
@@ -89,6 +104,23 @@ fn main() -> anyhow::Result<()> {
 
             info!("starting benchmark system");
             benchmark::run(ctx)
+        },
+
+        Commands::Demo {
+            bind,
+            target_server,
+            no_prep,
+            index,
+        } => {
+            let ctx = demo::Context {
+                bind,
+                target_server,
+                no_prep,
+                index,
+            };
+
+            info!("starting demo app");
+            demo::run(ctx)
         }
     }?;
 

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>lnx demo</title>
+    <link href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js" type="application/javascript"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+</head>
+<body class="overflow-x-hidden">
+    <div id="app" class="flex flex-col w-full min-h-screen bg-gray-800 p-16">
+        <div class="flex items-center space-x-8">
+            <label class="flex items-center bg-gray-100 shadow-md rounded-md px-4 py-2 w-1/5 placeholder-gray-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                <select v-model="selectedMode" v-on:input="onModeChange" name="mode" class="bg-gray-100 p-2 w-full placeholder-gray-500 border-b-2 border-transparent focus:border-indigo-600 focus:outline-none transition duration-200">
+                  <option v-for="opt in modeItems" :value="opt.val" :key="opt.id">{{ opt.val }}</option>
+                </select>
+            </label>
+            <label class="flex items-center bg-gray-100 shadow-md rounded-md px-4 py-2 w-1/3 placeholder-gray-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input v-model="query" v-on:input="onSearch" class="bg-gray-100 p-2 w-full placeholder-gray-500 border-b-2 border-transparent focus:border-indigo-600 focus:outline-none transition duration-200" placeholder="Search something..."/>
+            </label>
+            <p class="text-white text-3xl font-bold">
+                {{ count }}
+                results in {{ timeTaken }} ms
+            </p>
+        </div>
+        <div class="w-full flex flex-wrap mt-8">
+            <div v-for="result in results" class="flex bg-white rounded-lg p-4 m-4 shadow-inner">
+                <div class="flex flex-col" style="height: 20rem;max-height: 20rem;width: 16rem;max-width: 16rem">
+                    <div v-for="pairs in Object.entries(result)" class="flex items-center ">
+                        <p class="text-lg font-semibold mr-2">{{ pairs[0] }}: </p>
+                        <p class="text-gray-600 italic overflow-hidden h-6">{{ pairs[1] }}</p>
+                    </div>
+                </div>
+            </div>
+            <div v-if="results.length === 0" class="flex items-center h-full pt-32">
+                <div>
+                    <h1 class="text-6xl font-bold text-red-300">Time to test!</h1>
+                    <p class="text-3xl font-semibold text-gray-300">
+                        Just start typing away and see the result appear in <span class="text-red-300 italic">real time</span>.<br/>
+                        In the top you'll notice the number of results found <br/>
+                        that match the query and how long it took to search.
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div v-if="errorMsg != null" class="absolute w-full bottom-0 flex justify-center items-center">
+            <div class="w-1/2 bg-red-400 border-red-500 border-2 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                <p class="text-lg font-semibold text-center">{{ errorMsg }}</p>
+            </div>
+        </div>
+    </div>
+</body>
+<script>
+        const app = new Vue({
+            el: '#app',
+            data: {
+                results: [],
+                count: 0,
+                timeTaken: 0,
+                query: "",
+                errorMsg: null,
+                selectedMode: 'Fuzzy',
+                inputMode: '',
+                modeItems: [
+                    {id: "fuzzy", val: 'Fuzzy'},
+                    {id: "normal", val: 'Normal'},
+                    {id: "more-like-this", val: 'More Like This'},
+                ]
+            },
+            methods: {
+                onModeChange: function () {
+                    setTimeout(this.onSearch, 0)
+                },
+                onSearch: async function() {
+                    let r;
+                    try {
+                        r = await axios.post('/search', {
+                            query: this.query,
+                            mode: this.selectedMode,
+                        });
+                        this.errorMsg = null;
+                    } catch (e) {
+                        this.errorMsg = e.message;
+                        return
+                    }
+
+                    if (r.data.status !== 200) {
+                        this.errorMsg = r.data.error;
+                        return
+                    }
+
+                    this.count = r.data.data.count;
+                    this.hits = r.data.data.hits;
+                    this.timeTaken = (r.data.data.time_taken * 1000).toFixed(2);
+                    this.results = r.data.data.hits;
+                }
+            }
+        });
+</script>
+</html>

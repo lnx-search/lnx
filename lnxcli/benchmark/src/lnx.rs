@@ -1,7 +1,8 @@
-use crate::sampler::SamplerHandle;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
+
+use crate::sampler::SamplerHandle;
 use crate::shared::{TargetUri, RequestClient, Query};
 
 pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
