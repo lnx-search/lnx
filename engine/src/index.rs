@@ -807,7 +807,7 @@ impl IndexHandler {
                 };
             } else {
                 return Err(Error::msg(format!(
-                    "no field exists for index {} with the current schema,\
+                    "no field exists for index {} with the current schema, \
                      did you forget to define it in the schema?",
                     &ref_field
                 )));
