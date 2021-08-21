@@ -6,6 +6,8 @@ use axum::Router;
 use axum::handler::{get, post};
 use anyhow::Error;
 use std::time::Instant;
+use hyper::http::StatusCode;
+use tokio::time::Duration;
 
 mod routes;
 
@@ -51,7 +53,6 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
     let data = include_str!("../static/movies.json");
 
     let client = reqwest::Client::new();
-
     let payload = serde_json::json!({
         "name": index,
 
@@ -101,28 +102,52 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
             "overview": 0.8
         }
     });
-    let _ = client.post(format!("{}/indexes?override_if_exists=true", target))
+
+    let r = client.post(format!("{}/indexes?override_if_exists=true", target))
         .json(&payload)
         .send()
         .await?;
 
+    if r.status() != StatusCode::OK {
+        return Err(Error::msg(
+            "server returned a non 200 OK code when creating index. Check your server logs."))
+    }
+
+    // let changed propagate
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
     // Clear the existing docs
-    let _ = client
+    let r = client
         .delete(format!("{}/indexes/{}/documents/clear", target, index))
         .send()
         .await?;
 
+    if r.status() != StatusCode::OK {
+        return Err(Error::msg(
+            "server returned a non 200 OK code when clearing docs. Check your server logs."))
+    }
+
     let start = Instant::now();
-    let _ = client
+    let r = client
         .post(format!("{}/indexes/{}/documents", target, index))
         .json(&data)
         .send()
         .await?;
 
-    let _ = client
+    if r.status() != StatusCode::OK {
+        return Err(Error::msg(
+            "server returned a non 200 OK code when adding docs. Check your server logs."))
+    }
+
+    let r = client
         .post(format!("{}/indexes/{}/commit", target, index))
         .send()
         .await?;
+
+    if r.status() != StatusCode::OK {
+        return Err(Error::msg(
+            "server returned a non 200 OK code when committing changes. Check your server logs."))
+    }
 
     let delta = start.elapsed();
     info!("lnx took {:?} to process submitted documents", delta);
