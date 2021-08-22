@@ -1,21 +1,14 @@
 use once_cell::sync::OnceCell;
 use std::fs;
-use symspell::{SymSpell, SymSpellBuilder, AsciiStringStrategy};
+use symspell::{SymSpell, AsciiStringStrategy};
 use anyhow::Error;
-use std::sync::atomic::{AtomicI64, Ordering};
 
 
 static DATA_DIR: &str = "datasets/dictionaries";
 static SYMSPELL: OnceCell<SymSpell<AsciiStringStrategy>> = OnceCell::new();
-static MAX_EDIT_DISTANCE: AtomicI64 = AtomicI64::new(2);
 
-pub(crate) fn load_dictionaries(max_edit_distance: i64) -> anyhow::Result<()> {
-    let mut symspell: SymSpell<AsciiStringStrategy> = SymSpellBuilder::default()
-        .max_dictionary_edit_distance(max_edit_distance)
-        .build()
-        .unwrap();
-
-    MAX_EDIT_DISTANCE.store(max_edit_distance, Ordering::Relaxed);
+pub(crate) fn load_dictionaries() -> anyhow::Result<()> {
+    let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
 
     for entry in fs::read_dir(DATA_DIR)? {
         let entry = entry?;
@@ -37,15 +30,14 @@ pub(crate) fn load_dictionaries(max_edit_distance: i64) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn get_suggested_sentence(query: &str) -> anyhow::Result<String> {
-    let sym = SYMSPELL.get()
-        .ok_or_else(|| Error::msg("symspell is not initialised"))?;
+pub(crate) fn correct_sentence(query: &str) -> String {
+    let sym = SYMSPELL.get().expect("get symspell");
 
-    let med = MAX_EDIT_DISTANCE.load(Ordering::Relaxed);
-    let mut results = sym.lookup_compound(query, med);
-    if results.len() == 0 {
-        return Ok(query.into())
+    let mut suggestions = sym.lookup_compound(query, 2);
+
+    if suggestions.len() == 0 {
+        return query.into()
     }
 
-    Ok(results.remove(0).term)
+    return suggestions.remove(0).term
 }

@@ -12,6 +12,7 @@ use axum::http::{Response, StatusCode};
 use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
 use engine::tantivy::schema::NamedFieldDocument;
 use engine::{LeasedIndex, SearchEngine};
+use engine::helpers;
 
 use crate::auth::{AuthManager, Permissions};
 use crate::responders::json_response;
@@ -256,7 +257,9 @@ pub async fn add_document(
     let wait = query.0.wait.unwrap_or(true);
 
     match payload.0 {
-        DocumentOptions::Single(doc) => {
+        DocumentOptions::Single(mut doc) => {
+            helpers::correct_doc_fields(&mut doc, index.indexed_fields());
+
             let document = check_error!(
                 schema.convert_named_doc(doc).map_err(Error::from),
                 "parse document from raw"
@@ -274,7 +277,8 @@ pub async fn add_document(
         }
         DocumentOptions::Many(docs) => {
             let mut documents = Vec::with_capacity(docs.len());
-            for doc in docs {
+            for mut doc in docs {
+                helpers::correct_doc_fields(&mut doc, index.indexed_fields());
                 documents.push(check_error!(
                     schema.convert_named_doc(doc).map_err(Error::from),
                     "parse document from raw"

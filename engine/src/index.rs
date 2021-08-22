@@ -1,7 +1,5 @@
-use std::hash::{BuildHasher, Hasher};
 use std::sync::Arc;
 
-use ahash::RandomState;
 use anyhow::{Error, Result};
 use serde::Serialize;
 use parking_lot::Mutex;
@@ -15,7 +13,7 @@ use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, TermQuery, EmptyQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption, Value};
 use tantivy::{
@@ -26,7 +24,8 @@ use tantivy::{
 use crate::structures::{
     FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload,
 };
-use crate::correction::get_suggested_sentence;
+use crate::correction::correct_sentence;
+use crate::helpers::hash;
 
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
@@ -517,26 +516,27 @@ fn parse_query(
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
 fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Result<Box<dyn Query>> {
-    let qry = get_suggested_sentence(query)?;
+    if query.is_empty() {
+        return Ok(Box::new(EmptyQuery{}));
+    }
+
+    println!("{:?}", &search_fields);
 
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-    for search_term in qry.to_lowercase().split(" ") {
-        if search_term.is_empty() {
-            continue;
-        }
-
+    for search_term in correct_sentence(query).split(" ") {
         for (field, boost) in search_fields.iter() {
+            let term = Term::from_field_text(*field, &search_term);
             let query = Box::new(TermQuery::new(
-                Term::from_field_text(*field, search_term),
-                IndexRecordOption::WithFreqs
+                term,
+                IndexRecordOption::WithFreqs,
             ));
 
             if *boost > 0.0f32 {
                 parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
-                continue;
+                continue
             }
 
-            parts.push((Occur::Should, query))
+            parts.push((Occur::Should, query));
         }
     }
 
@@ -733,8 +733,8 @@ pub struct IndexHandler {
     /// The optional storage directory of the index.
     dir: Option<String>,
 
-    /// The hash state used for generating ids
-    hash_state: RandomState,
+    /// The set of fields which are indexed.
+    indexed_text_fields: Vec<String>,
 }
 
 impl IndexHandler {
@@ -798,25 +798,41 @@ impl IndexHandler {
         let mut raw_search_fields = vec![];
         let mut search_fields = vec![];
         for ref_field in loader.search_fields {
-            if let Some(field) = loader.schema.get_field(&ref_field) {
-                raw_search_fields.push(field);
+            let id = format!("_{}", hash(&ref_field));
 
-                if let Some(boost) = loader.boost_fields.get(&ref_field) {
-                    debug!("boosting field for query parser {} {}", &ref_field, boost);
-                    search_fields.push((field, *boost));
-                } else {
-                    search_fields.push((field, 0.0f32));
-                };
-            } else {
-                let fields: Vec<String> = loader.schema.fields()
-                    .map(|(_, v )| v.name().to_string())
-                    .collect();
+            // This checks if a search field is a indexed text field (it has a private field)
+            // that's used internally, since we pre-compute the correction behaviour before
+            // hand, we want to actually target those fields not the inputted fields.
+            match (loader.schema.get_field(&ref_field), loader.schema.get_field(&id)) {
+                (Some(_), Some(field)) => {
+                    raw_search_fields.push(field);
 
-                return Err(Error::msg(format!(
-                    "you defined the schema with the following fields: {:?} \
-                    and declared the a search_field {:?} but this does not exist in the defined fields.",
-                    fields, &ref_field
-                )));
+                    if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                        debug!("boosting field for query parser {} {}", &ref_field, boost);
+                        search_fields.push((field, *boost));
+                    } else {
+                        search_fields.push((field, 0.0f32));
+                    };
+                },
+                (Some(field), None) => {
+                    if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                        debug!("boosting field for query parser {} {}", &ref_field, boost);
+                        search_fields.push((field, *boost));
+                    } else {
+                        search_fields.push((field, 0.0f32));
+                    };
+                },
+                (None, _) => {
+                    let fields: Vec<String> = loader.schema.fields()
+                        .map(|(_, v )| v.name().to_string())
+                        .collect();
+
+                    return Err(Error::msg(format!(
+                        "you defined the schema with the following fields: {:?} \
+                        and declared the a search_field {:?} but this does not exist in the defined fields.",
+                        fields, &ref_field
+                    )));
+                }
             };
         }
 
@@ -852,7 +868,7 @@ impl IndexHandler {
             reader,
             loader.reader_threads as usize,
             parser,
-            search_fields,
+            loader.fuzzy_search_fields,
             schema_copy,
         )?;
 
@@ -864,13 +880,18 @@ impl IndexHandler {
             reader: reader_handler,
             alive: receiver,
             dir,
-            hash_state: ahash::RandomState::new(),
+            indexed_text_fields: loader.indexed_text_fields,
         })
     }
 
     #[inline]
     pub fn schema(&self) -> Schema {
         self.schema.clone()
+    }
+
+    #[inline]
+    pub fn indexed_fields(&self) -> &Vec<String> {
+        &self.indexed_text_fields
     }
 
     /// Builds a `Term` from a given field and value.
@@ -925,11 +946,8 @@ impl IndexHandler {
             ))?;
 
         let id = uuid::Uuid::new_v4();
-        let mut hasher: ahash::AHasher = self.hash_state.build_hasher();
-        hasher.write_u128(id.as_u128());
-        let hash = hasher.finish();
+        document.add_u64(field, hash(&id));
 
-        document.add_u64(field, hash);
         self.writer.send_op(WriterOp::AddDocument(document)).await
     }
 

@@ -85,10 +85,6 @@ struct Settings {
     /// A optional file to send persistent logs.
     #[structopt(long, env)]
     log_file: Option<String>,
-
-    /// A optional file to send persistent logs.
-    #[structopt(long, short = "max_edit", default_value = "2")]
-    max_edit_distance: i64,
 }
 
 fn main() {
@@ -179,7 +175,7 @@ async fn start(settings: Settings) -> Result<()> {
 
     let (authorization_manager, tokens) = auth::AuthManager::connect("./lnx/data").await?;
     let authorization_manager = Arc::new(authorization_manager);
-    let engine = Arc::new(SearchEngine::create("./lnx/meta", settings.max_edit_distance).await?);
+    let engine = Arc::new(SearchEngine::create("./lnx/meta").await?);
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(

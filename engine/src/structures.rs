@@ -1,16 +1,10 @@
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
-use tantivy::schema::{
-    IntOptions,
-    Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder,
-    STORED,
-    STRING,
-    TEXT,
-    Cardinality,
-};
+use tantivy::schema::{IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT, Cardinality, Field};
 use tantivy::DateTime;
+
+use crate::helpers::hash;
 
 /// A declared schema field type.
 ///
@@ -75,6 +69,8 @@ pub struct IndexDeclaration {
 
 impl IndexDeclaration {
     pub(crate) fn into_schema(self) -> LoadedIndex {
+        let mut indexed_text_fields = vec![];
+        let mut fuzzy_search_fields = vec![];
         let mut schema = InternalSchemaBuilder::new();
 
         let opts = IntOptions::default()
@@ -90,27 +86,43 @@ impl IndexDeclaration {
             }
 
             match field {
-                FieldDeclaration::F64(opts) => schema.add_f64_field(&name, opts),
-                FieldDeclaration::U64(opts) => schema.add_u64_field(&name, opts),
-                FieldDeclaration::I64(opts) => schema.add_f64_field(&name, opts),
-                FieldDeclaration::Date(opts) => schema.add_date_field(&name, opts),
+                FieldDeclaration::F64(opts) => {
+                    schema.add_f64_field(&name, opts);
+                },
+                FieldDeclaration::U64(opts) => {
+                    schema.add_u64_field(&name, opts);
+                },
+                FieldDeclaration::I64(opts) => {
+                    schema.add_f64_field(&name, opts);
+                },
+                FieldDeclaration::Date(opts) => {
+                    schema.add_date_field(&name, opts);
+                },
                 FieldDeclaration::String { stored } => {
                     let mut opts = STRING;
 
                     if stored {
                         opts = opts | STORED;
                     }
-
-                    schema.add_text_field(&name, opts)
+                    schema.add_text_field(&name, opts);
                 }
                 FieldDeclaration::Text { stored } => {
-                    let mut opts = TEXT;
-
                     if stored {
-                        opts = opts | STORED;
+                        schema.add_text_field(&name, STORED);
                     }
 
-                    schema.add_text_field(&name, opts)
+                    indexed_text_fields.push(name.clone());
+
+                    let id = hash(&name);
+                    let field = schema.add_text_field(&format!("_{}", id), TEXT);
+                    println!("{} -> _{} -> {} text field defining", &name, id, field.field_id());
+
+                    let boost = match self.boost_fields.get(&name) {
+                        Some(b) => *b,
+                        None => 0f32,
+                    } ;
+
+                    fuzzy_search_fields.push((field, boost));
                 }
             };
         }
@@ -125,6 +137,8 @@ impl IndexDeclaration {
             storage_type: self.storage_type,
             schema: schema.build(),
             boost_fields: self.boost_fields,
+            indexed_text_fields,
+            fuzzy_search_fields,
         }
     }
 }
@@ -169,6 +183,12 @@ pub struct LoadedIndex {
 
     /// A set of fields to boost by a given factor.
     pub(crate) boost_fields: HashMap<String, tantivy::Score>,
+
+    /// The set of fields which are indexed.
+    pub(crate) indexed_text_fields: Vec<String>,
+
+    /// The set of fields which are indexed.
+    pub(crate) fuzzy_search_fields: Vec<(Field, f32)>,
 }
 
 /// The mode of the query.
