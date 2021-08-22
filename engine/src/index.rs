@@ -520,8 +520,6 @@ fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Re
         return Ok(Box::new(EmptyQuery{}));
     }
 
-    println!("{:?}", &search_fields);
-
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
     for search_term in correct_sentence(query).split(" ") {
         for (field, boost) in search_fields.iter() {

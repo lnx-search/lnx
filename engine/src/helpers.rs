@@ -35,6 +35,4 @@ pub fn correct_doc_fields(
     for (k, v) in changes {
         doc.0.insert(k, v);
     }
-
-    println!("{:?}", doc);
 }

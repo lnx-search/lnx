@@ -115,7 +115,6 @@ impl IndexDeclaration {
 
                     let id = hash(&name);
                     let field = schema.add_text_field(&format!("_{}", id), TEXT);
-                    println!("{} -> _{} -> {} text field defining", &name, id, field.field_id());
 
                     let boost = match self.boost_fields.get(&name) {
                         Some(b) => *b,
