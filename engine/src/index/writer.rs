@@ -7,9 +7,7 @@ use tokio::sync::oneshot;
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 
-use tantivy::{
-    Document, IndexWriter, Term,
-};
+use tantivy::{Document, IndexWriter, Term};
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]

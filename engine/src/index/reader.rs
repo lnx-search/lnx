@@ -12,14 +12,10 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{BooleanQuery, EmptyQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
-use tantivy::{
-    DocAddress, Executor, IndexReader, LeasedItem,
-    Score, Searcher, Term,
-};
+use tantivy::{DocAddress, Executor, IndexReader, LeasedItem, Score, Searcher, Term};
 
 use crate::correction::correct_sentence;
 use crate::structures::{QueryMode, QueryPayload};
-
 
 /// Attempts to get a document otherwise sending an error
 /// back to the resolve channel.

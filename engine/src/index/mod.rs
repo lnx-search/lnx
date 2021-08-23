@@ -6,17 +6,14 @@ use tokio::fs;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, Value};
-use tantivy::{
-    Document, Index, IndexBuilder,
-    ReloadPolicy, Term,
-};
+use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
 
 use crate::helpers::hash;
-use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
 use crate::index::reader::QueryHit;
+use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
 
-pub(super) mod writer;
 pub(super) mod reader;
+pub(super) mod writer;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 
@@ -206,7 +203,8 @@ impl IndexHandler {
         );
 
         let (sender, receiver) = async_channel::bounded(1);
-        let worker_handler = writer::IndexWriterHandler::create(loader.name.clone(), writer, sender);
+        let worker_handler =
+            writer::IndexWriterHandler::create(loader.name.clone(), writer, sender);
 
         let reader_handler = reader::IndexReaderHandler::create(
             loader.name.clone(),
@@ -298,7 +296,9 @@ impl IndexHandler {
         let id = uuid::Uuid::new_v4();
         document.add_u64(field, hash(&id));
 
-        self.writer.send_op(writer::WriterOp::AddDocument(document)).await
+        self.writer
+            .send_op(writer::WriterOp::AddDocument(document))
+            .await
     }
 
     /// Submits many documents to the index writer.
@@ -325,7 +325,9 @@ impl IndexHandler {
     /// This will delete all documents matching the term which were
     /// added since the last commit.
     pub async fn delete_documents_with_term(&self, term: Term) -> Result<()> {
-        self.writer.send_op(writer::WriterOp::DeleteTerm(term)).await
+        self.writer
+            .send_op(writer::WriterOp::DeleteTerm(term))
+            .await
     }
 
     /// Submits the commit operation to the index writer.
