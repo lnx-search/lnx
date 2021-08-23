@@ -1,7 +1,10 @@
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
-use tantivy::schema::{IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT, Cardinality, Field};
+use tantivy::schema::{
+    Cardinality, Field, IntOptions, Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
+};
 use tantivy::DateTime;
 
 use crate::helpers::hash;
@@ -82,22 +85,22 @@ impl IndexDeclaration {
 
         for (name, field) in self.fields {
             if name == "_id" {
-                continue
+                continue;
             }
 
             match field {
                 FieldDeclaration::F64(opts) => {
                     schema.add_f64_field(&name, opts);
-                },
+                }
                 FieldDeclaration::U64(opts) => {
                     schema.add_u64_field(&name, opts);
-                },
+                }
                 FieldDeclaration::I64(opts) => {
                     schema.add_f64_field(&name, opts);
-                },
+                }
                 FieldDeclaration::Date(opts) => {
                     schema.add_date_field(&name, opts);
-                },
+                }
                 FieldDeclaration::String { stored } => {
                     let mut opts = STRING;
 
@@ -119,7 +122,7 @@ impl IndexDeclaration {
                     let boost = match self.boost_fields.get(&name) {
                         Some(b) => *b,
                         None => 0f32,
-                    } ;
+                    };
 
                     fuzzy_search_fields.push((field, boost));
                 }

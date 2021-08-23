@@ -1,10 +1,9 @@
 use ahash::AHasher;
-use std::hash::{Hasher, Hash};
+use std::hash::{Hash, Hasher};
 
 use tantivy::schema::{NamedFieldDocument, Value};
 
 use crate::correction::correct_sentence;
-
 
 pub(crate) fn hash<T: Hash>(v: &T) -> u64 {
     let mut hasher = AHasher::default();
@@ -12,10 +11,7 @@ pub(crate) fn hash<T: Hash>(v: &T) -> u64 {
     hasher.finish()
 }
 
-pub fn correct_doc_fields(
-    doc: &mut NamedFieldDocument,
-    indexed_text_fields: &Vec<String>,
-) {
+pub fn correct_doc_fields(doc: &mut NamedFieldDocument, indexed_text_fields: &Vec<String>) {
     let mut changes = vec![];
 
     for target in indexed_text_fields {

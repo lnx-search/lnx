@@ -9,10 +9,10 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
+use engine::helpers;
 use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
 use engine::tantivy::schema::NamedFieldDocument;
 use engine::{LeasedIndex, SearchEngine};
-use engine::helpers;
 
 use crate::auth::{AuthManager, Permissions};
 use crate::responders::json_response;
@@ -279,7 +279,10 @@ pub async fn add_document(
         }
         DocumentOptions::Many(docs) => {
             let mut documents = Vec::with_capacity(docs.len());
-            info!("pre-processing {} documents, this may take a while.", docs.len());
+            info!(
+                "pre-processing {} documents, this may take a while.",
+                docs.len()
+            );
             for mut doc in docs {
                 helpers::correct_doc_fields(&mut doc, index.indexed_fields());
                 documents.push(check_error!(
@@ -319,10 +322,7 @@ pub async fn get_document(
     let (index_name, document_id) = check_path!(params).0;
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-    let doc = check_error!(
-        index.get_doc(document_id).await,
-        "retrieve doc"
-    );
+    let doc = check_error!(index.get_doc(document_id).await, "retrieve doc");
 
     json_response(StatusCode::OK, &doc)
 }

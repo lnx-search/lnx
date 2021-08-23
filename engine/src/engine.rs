@@ -3,10 +3,10 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::correction::load_dictionaries;
 use crate::index::IndexHandler;
 use crate::storage::StorageManager;
 use crate::structures::IndexDeclaration;
-use crate::correction::load_dictionaries;
 
 pub type LeasedIndex = Arc<IndexHandler>;
 

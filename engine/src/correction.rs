@@ -1,8 +1,7 @@
+use anyhow::Error;
 use once_cell::sync::OnceCell;
 use std::fs;
-use symspell::{SymSpell, AsciiStringStrategy};
-use anyhow::Error;
-
+use symspell::{AsciiStringStrategy, SymSpell};
 
 static DATA_DIR: &str = "datasets/dictionaries";
 static SYMSPELL: OnceCell<SymSpell<AsciiStringStrategy>> = OnceCell::new();
@@ -14,15 +13,10 @@ pub(crate) fn load_dictionaries() -> anyhow::Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            return Err(Error::msg("directories are not expected"))
+            return Err(Error::msg("directories are not expected"));
         }
 
-        symspell.load_dictionary(
-            path.as_os_str().to_str().unwrap(),
-            0,
-            1,
-            " ",
-        );
+        symspell.load_dictionary(path.as_os_str().to_str().unwrap(), 0, 1, " ");
     }
 
     let _ = SYMSPELL.set(symspell);
@@ -36,8 +30,8 @@ pub(crate) fn correct_sentence(query: &str) -> String {
     let mut suggestions = sym.lookup_compound(query, 1);
 
     if suggestions.len() == 0 {
-        return query.into()
+        return query.into();
     }
 
-    return suggestions.remove(0).term
+    return suggestions.remove(0).term;
 }

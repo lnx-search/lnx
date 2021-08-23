@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::Serialize;
 use parking_lot::Mutex;
+use serde::Serialize;
 
 use tokio::fs;
 use tokio::sync::oneshot;
@@ -13,20 +13,17 @@ use crossbeam::queue::{ArrayQueue, SegQueue};
 
 use tantivy::collector::{Count, TopDocs};
 use tantivy::directory::MmapDirectory;
-use tantivy::query::{BooleanQuery, Occur, Query, QueryParser, TermQuery, EmptyQuery};
+use tantivy::query::{BooleanQuery, EmptyQuery, Occur, Query, QueryParser, TermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
-use tantivy::schema::{Field, FieldType, NamedFieldDocument, Schema, IndexRecordOption, Value};
+use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
 use tantivy::{
     DocAddress, Document, Executor, Index, IndexBuilder, IndexReader, IndexWriter, LeasedItem,
     ReloadPolicy, Score, Searcher, Term,
 };
 
-use crate::structures::{
-    FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload,
-};
 use crate::correction::correct_sentence;
 use crate::helpers::hash;
-
+use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryMode, QueryPayload};
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 
@@ -222,18 +219,18 @@ macro_rules! try_get_doc {
         let res: Vec<(f32, DocAddress)> = match res {
             Err(e) => {
                 let _ = $resolve.send(Err(Error::from(e)));
-                return
-            },
+                return;
+            }
             Ok(res) => res,
         };
 
         if res.len() == 0 {
             let _ = $resolve.send(Err(Error::msg("no document exists with this id")));
-            return
+            return;
         }
 
         res[0].1
-    }}
+    }};
 }
 
 /// A async manager around the tantivy index reader.
@@ -356,15 +353,15 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
         let searcher = self.reader.searcher();
-        let field =  self.schema
+        let field = self
+            .schema
             .get_field("_id")
             .ok_or_else(|| Error::msg("missing a required private field, this is a bug."))?;
 
         self.thread_pool.spawn(move || {
             let term = Term::from_field_u64(field, doc_address);
             let doc = try_get_doc!(resolve, searcher, term);
-            let doc = searcher.doc(doc)
-                .map_err(Error::from);
+            let doc = searcher.doc(doc).map_err(Error::from);
             let _ = resolve.send(doc);
         });
 
@@ -402,12 +399,12 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
 
-         let doc_id = match (self.schema.get_field("_id"), payload.document) {
-            (None, _) => Err(Error::msg("missing a required private field, this is a bug.")),
+        let doc_id = match (self.schema.get_field("_id"), payload.document) {
+            (None, _) => Err(Error::msg(
+                "missing a required private field, this is a bug.",
+            )),
             (_, None) => Ok(None),
-            (Some(field), Some(doc_id)) => {
-                Ok(Some(Term::from_field_u64(field, doc_id)))
-            },
+            (Some(field), Some(doc_id)) => Ok(Some(Term::from_field_u64(field, doc_id))),
         }?;
 
         let order_by = if let Some(ref field) = payload.order_by {
@@ -440,13 +437,14 @@ impl IndexReaderHandler {
                 }
             };
 
-            let query = match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode) {
-                Err(e) => {
-                    let _ = resolve.send(Err(e));
-                    return
-                },
-                Ok(q) => q,
-            };
+            let query =
+                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode) {
+                    Err(e) => {
+                        let _ = resolve.send(Err(e));
+                        return;
+                    }
+                    Ok(q) => q,
+                };
 
             let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
@@ -486,19 +484,15 @@ fn parse_query(
         (QueryMode::Normal, None, _) => Err(Error::msg(
             "query mode was `Normal` but query string is `None`",
         )),
-        (QueryMode::Normal, Some(query), _) =>
-            Ok(parser.parse_query(query)?),
+        (QueryMode::Normal, Some(query), _) => Ok(parser.parse_query(query)?),
         (QueryMode::Fuzzy, None, _) => Err(Error::msg(
             "query mode was `Fuzzy` but query string is `None`",
         )),
-        (QueryMode::Fuzzy, Some(query), _) =>
-            Ok(parse_fuzzy_query(query, search_fields)?),
+        (QueryMode::Fuzzy, Some(query), _) => Ok(parse_fuzzy_query(query, search_fields)?),
         (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
             "query mode was `MoreLikeThis` but reference document is `None`",
         )),
-        (QueryMode::MoreLikeThis, _, Some(ref_document)) => {
-            Ok(parse_more_like_this(ref_document))
-        }
+        (QueryMode::MoreLikeThis, _, Some(ref_document)) => Ok(parse_more_like_this(ref_document)),
     };
 
     debug!(
@@ -515,23 +509,23 @@ fn parse_query(
 /// Creates a fuzzy matching query, this allows for an element
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
-fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Result<Box<dyn Query>> {
+fn parse_fuzzy_query(
+    query: &str,
+    search_fields: Arc<Vec<(Field, Score)>>,
+) -> Result<Box<dyn Query>> {
     if query.is_empty() {
-        return Ok(Box::new(EmptyQuery{}));
+        return Ok(Box::new(EmptyQuery {}));
     }
 
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
     for search_term in correct_sentence(query).split(" ") {
         for (field, boost) in search_fields.iter() {
             let term = Term::from_field_text(*field, &search_term);
-            let query = Box::new(TermQuery::new(
-                term,
-                IndexRecordOption::WithFreqs,
-            ));
+            let query = Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs));
 
             if *boost > 0.0f32 {
                 parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
-                continue
+                continue;
             }
 
             parts.push((Occur::Should, query));
@@ -800,7 +794,10 @@ impl IndexHandler {
             // This checks if a search field is a indexed text field (it has a private field)
             // that's used internally, since we pre-compute the correction behaviour before
             // hand, we want to actually target those fields not the inputted fields.
-            match (loader.schema.get_field(&ref_field), loader.schema.get_field(&id)) {
+            match (
+                loader.schema.get_field(&ref_field),
+                loader.schema.get_field(&id),
+            ) {
                 (Some(_), Some(field)) => {
                     raw_search_fields.push(field);
 
@@ -810,7 +807,7 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                },
+                }
                 (Some(field), None) => {
                     if let Some(boost) = loader.boost_fields.get(&ref_field) {
                         debug!("boosting field for query parser {} {}", &ref_field, boost);
@@ -818,10 +815,12 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                },
+                }
                 (None, _) => {
-                    let fields: Vec<String> = loader.schema.fields()
-                        .map(|(_, v )| v.name().to_string())
+                    let fields: Vec<String> = loader
+                        .schema
+                        .fields()
+                        .map(|(_, v)| v.name().to_string())
                         .collect();
 
                     return Err(Error::msg(format!(
@@ -918,9 +917,11 @@ impl IndexHandler {
     pub async fn get_doc(&self, doc_address: u64) -> Result<QueryHit> {
         let mut doc = self.reader.get_doc(doc_address).await?;
 
-        let id = doc.0
-            .remove("_id")
-            .ok_or_else(|| Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))?;
+        let id = doc.0.remove("_id").ok_or_else(|| {
+            Error::msg(
+                "document has been missed labeled (missing identifier tag), the dataset is invalid",
+            )
+        })?;
 
         if let Value::U64(v) = id[0] {
             Ok(QueryHit {
@@ -929,18 +930,20 @@ impl IndexHandler {
                 ratio: serde_json::json!(100.0),
             })
         } else {
-            Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"))
+            Err(Error::msg(
+                "document has been missed labeled (missing identifier tag), the dataset is invalid",
+            ))
         }
     }
 
     /// Submits a document to be processed by the index writer.
     pub async fn add_document(&self, mut document: Document) -> Result<()> {
-        let field = self.schema
-            .get_field("_id")
-            .ok_or_else(|| Error::msg(
+        let field = self.schema.get_field("_id").ok_or_else(|| {
+            Error::msg(
                 "system has not correctly initialised this schema,\
-                 are you upgrading from a older version? If yes, you need to re-create the schema."
-            ))?;
+                 are you upgrading from a older version? If yes, you need to re-create the schema.",
+            )
+        })?;
 
         let id = uuid::Uuid::new_v4();
         document.add_u64(field, hash(&id));

@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate log;
 
+mod correction;
 mod engine;
+pub mod helpers;
 mod index;
 mod storage;
-mod correction;
 pub mod structures;
-pub mod helpers;
 
 pub use engine::{LeasedIndex, SearchEngine};
 pub use tantivy;
