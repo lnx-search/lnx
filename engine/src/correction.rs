@@ -1,12 +1,21 @@
 use anyhow::Error;
 use once_cell::sync::OnceCell;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use symspell::{AsciiStringStrategy, SymSpell};
+
 
 static DATA_DIR: &str = "datasets/dictionaries";
 static SYMSPELL: OnceCell<SymSpell<AsciiStringStrategy>> = OnceCell::new();
+static ENABLED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn load_dictionaries() -> anyhow::Result<()> {
+pub(crate) fn enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
+
+pub(crate) fn enable_load_dictionaries() -> anyhow::Result<()> {
+    ENABLED.store(true, Ordering::Relaxed);
+
     let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
 
     for entry in fs::read_dir(DATA_DIR)? {

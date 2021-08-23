@@ -85,6 +85,18 @@ struct Settings {
     /// A optional file to send persistent logs.
     #[structopt(long, env)]
     log_file: Option<String>,
+
+    /// Enable the fast fuzzy query system.
+    ///
+    /// This replaces the default fuzzy searching system.
+    /// This system adds a *significant* performance gain over the default
+    /// system, however, it is not without a cost. This system requires
+    /// at least an extra 1.2GB of RAM to initially load the data sets
+    /// and also slows down document additions due to the added computation.
+    ///
+    /// This system expects for frequency dictionary
+    #[structopt(long, env)]
+    enable_fast_fuzzy: bool,
 }
 
 fn main() {
@@ -175,7 +187,7 @@ async fn start(settings: Settings) -> Result<()> {
 
     let (authorization_manager, tokens) = auth::AuthManager::connect("./lnx/data").await?;
     let authorization_manager = Arc::new(authorization_manager);
-    let engine = Arc::new(SearchEngine::create("./lnx/meta").await?);
+    let engine = Arc::new(SearchEngine::create("./lnx/meta", settings.enable_fast_fuzzy).await?);
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(
