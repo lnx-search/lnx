@@ -1,16 +1,18 @@
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
-
+use std::sync::Arc;
+use tokio::task::JoinHandle;
 use tokio::fs;
 
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Schema, Value};
-use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
+use tantivy::schema::{Schema, Value, NamedFieldDocument};
+use tantivy::{Index, IndexBuilder, ReloadPolicy, Term, Document};
 
 use crate::helpers::hash;
 use crate::index::reader::QueryHit;
 use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
+use crate::helpers;
 
 pub(super) mod reader;
 pub(super) mod writer;
@@ -285,7 +287,7 @@ impl IndexHandler {
     }
 
     /// Submits a document to be processed by the index writer.
-    pub async fn add_document(&self, mut document: Document) -> Result<()> {
+    pub async fn add_document(&self, document: NamedFieldDocument) -> Result<()> {
         let field = self.schema.get_field("_id").ok_or_else(|| {
             Error::msg(
                 "system has not correctly initialised this schema,\
@@ -293,20 +295,66 @@ impl IndexHandler {
             )
         })?;
 
+        let mut doc = self.schema.convert_named_doc(document)?;
+
         let id = uuid::Uuid::new_v4();
-        document.add_u64(field, hash(&id));
+        doc.add_u64(field, hash(&id));
 
         self.writer
-            .send_op(writer::WriterOp::AddDocument(document))
+            .send_op(writer::WriterOp::AddDocument(doc))
             .await
     }
 
     /// Submits many documents to the index writer.
     ///
     /// This is just an alias for adding documents in a loop.
-    pub async fn add_many_documents(&self, documents: Vec<Document>) -> Result<()> {
+    pub async fn add_many_documents(&self, documents: Vec<NamedFieldDocument>) -> Result<()> {
+        let field = self.schema.get_field("_id").ok_or_else(|| {
+            Error::msg(
+                "system has not correctly initialised this schema,\
+                 are you upgrading from a older version? If yes, you need to re-create the schema.",
+            )
+        })?;
+
+        let fields = Arc::new(self.indexed_fields().clone());
+        let schema = self.schema.clone();
+        let (tx, rx) = crossbeam::channel::unbounded();
+
+        let handles: Vec<JoinHandle<Result<Vec<Document>>>> = (0..num_cpus::get())
+            .map(|_| {
+                let fields = fields.clone();
+                let schema = schema.clone();
+                let receiver = rx.clone();
+                tokio::task::spawn_blocking(move || -> Result<Vec<Document>> {
+                    let mut processed_documents = vec![];
+                    while let Ok(mut doc) = receiver.recv() {
+                        helpers::correct_doc_fields(&mut doc, fields.as_ref());
+                        let doc = schema.convert_named_doc(doc)?;
+
+                        processed_documents.push(doc);
+                    }
+
+                    Ok(processed_documents)
+                })
+            })
+            .collect();
+
         for doc in documents {
-            self.add_document(doc).await?
+            let _ = tx.send(doc)?;
+        }
+        drop(tx);
+
+        for handle in handles {
+            let documents = handle.await??;
+            for mut doc in documents {
+                let id = uuid::Uuid::new_v4();
+                doc.add_u64(field, hash(&id));
+
+
+                self.writer
+                    .send_op(writer::WriterOp::AddDocument(doc))
+                    .await?;
+            }
         }
 
         Ok(())

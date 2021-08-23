@@ -1,5 +1,3 @@
-use anyhow::Error;
-
 use hashbrown::HashMap;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -9,7 +7,6 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
-use engine::helpers;
 use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
 use engine::tantivy::schema::NamedFieldDocument;
 use engine::{LeasedIndex, SearchEngine};
@@ -252,51 +249,26 @@ pub async fn add_document(
     let payload = check_json!(payload);
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-
-    let schema = index.schema();
     let wait = query.0.wait.unwrap_or(true);
 
     match payload.0 {
-        DocumentOptions::Single(mut doc) => {
-            info!("pre-processing document");
-            helpers::correct_doc_fields(&mut doc, index.indexed_fields());
-
-            let document = check_error!(
-                schema.convert_named_doc(doc).map_err(Error::from),
-                "parse document from raw"
-            );
-            info!("pre-processing complete");
-
+        DocumentOptions::Single(doc) => {
             if wait {
-                check_error!(index.add_document(document).await, "add document");
+                check_error!(index.add_document(doc).await, "add document");
             } else {
                 tokio::spawn(async move {
-                    if let Err(e) = index.add_document(document).await {
+                    if let Err(e) = index.add_document(doc).await {
                         error!("failed to add document {:?}", e);
                     }
                 });
             }
         }
         DocumentOptions::Many(docs) => {
-            let mut documents = Vec::with_capacity(docs.len());
-            info!(
-                "pre-processing {} documents, this may take a while.",
-                docs.len()
-            );
-            for mut doc in docs {
-                helpers::correct_doc_fields(&mut doc, index.indexed_fields());
-                documents.push(check_error!(
-                    schema.convert_named_doc(doc).map_err(Error::from),
-                    "parse document from raw"
-                ))
-            }
-            info!("pre-processing complete");
-
             if wait {
-                check_error!(index.add_many_documents(documents).await, "add documents");
+                check_error!(index.add_many_documents(docs).await, "add documents");
             } else {
                 tokio::spawn(async move {
-                    if let Err(e) = index.add_many_documents(documents).await {
+                    if let Err(e) = index.add_many_documents(docs).await {
                         error!("failed to add documents {:?}", e);
                     }
                 });
