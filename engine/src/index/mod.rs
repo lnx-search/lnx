@@ -216,6 +216,7 @@ impl IndexHandler {
             parser,
             loader.fuzzy_search_fields,
             schema_copy,
+            loader.use_fast_fuzzy,
         )?;
 
         Ok(Self {

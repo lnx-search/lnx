@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use crossbeam::queue::ArrayQueue;
 
 use tantivy::collector::{Count, TopDocs};
-use tantivy::query::{BooleanQuery, EmptyQuery, Occur, Query, QueryParser, TermQuery};
+use tantivy::query::{BooleanQuery, EmptyQuery, Occur, Query, QueryParser, TermQuery, FuzzyTermQuery};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
 use tantivy::{DocAddress, Executor, IndexReader, LeasedItem, Score, Searcher, Term};
@@ -93,6 +93,12 @@ pub(super) struct IndexReaderHandler {
 
     /// A cheaply cloneable schema reference.
     schema: Schema,
+
+    /// Whether or not to use the fast fuzzy symspell correction system or not.
+    ///
+    /// This greatly improves the performance of searching at the cost
+    /// of document indexing time and memory usage (standard dict set uses 1.2GB generally).
+    use_fast_fuzzy: bool,
 }
 
 impl IndexReaderHandler {
@@ -108,6 +114,7 @@ impl IndexReaderHandler {
         parser: QueryParser,
         search_fields: Vec<(Field, Score)>,
         schema_copy: Schema,
+        use_fast_fuzzy: bool,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
@@ -152,6 +159,7 @@ impl IndexReaderHandler {
             parser: Arc::new(parser),
             search_fields: Arc::new(search_fields),
             schema: schema_copy,
+            use_fast_fuzzy,
         })
     }
 
@@ -248,7 +256,7 @@ impl IndexReaderHandler {
             };
 
             let query =
-                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode) {
+                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode, self.use_fast_fuzzy) {
                     Err(e) => {
                         let _ = resolve.send(Err(e));
                         return;
@@ -288,6 +296,7 @@ fn parse_query(
     query: Option<String>,
     ref_document: Option<DocAddress>,
     mode: QueryMode,
+    use_fast_fuzzy: bool,
 ) -> Result<Box<dyn Query>> {
     let start = std::time::Instant::now();
     let out = match (mode, &query, ref_document) {
@@ -298,7 +307,14 @@ fn parse_query(
         (QueryMode::Fuzzy, None, _) => Err(Error::msg(
             "query mode was `Fuzzy` but query string is `None`",
         )),
-        (QueryMode::Fuzzy, Some(query), _) => Ok(parse_fuzzy_query(query, search_fields)?),
+        (QueryMode::Fuzzy, Some(query), _) => {
+            let qry = if use_fast_fuzzy {
+                parse_fuzzy_query(query, search_fields)?
+            } else {
+                parse_fuzzy_query(query, search_fields)?
+            };
+            Ok(qry)
+        },
         (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
             "query mode was `MoreLikeThis` but reference document is `None`",
         )),
@@ -320,6 +336,48 @@ fn parse_query(
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
 fn parse_fuzzy_query(
+    query: &str,
+    search_fields: Arc<Vec<(Field, Score)>>,
+) -> Result<Box<dyn Query>> {
+    let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+    for search_term in query.to_lowercase().split(" ") {
+        if search_term.is_empty() {
+            continue;
+        }
+
+        for (field, boost) in search_fields.iter() {
+            let query = Box::new(FuzzyTermQuery::new_prefix(
+                Term::from_field_text(*field, search_term),
+                1,
+                true,
+            ));
+
+            if *boost > 0.0f32 {
+                parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
+                continue;
+            }
+
+            parts.push((Occur::Should, query))
+        }
+    }
+
+    Box::new(BooleanQuery::from(parts))
+}
+
+/// Uses the fast fuzzy system to match similar documents with
+/// typo tolerance.
+///
+/// Unlike the standard fuzzy query which uses Levenshtein distance
+/// this system uses pre-computation via symspell which is considerably
+/// quicker than the standard method.
+///
+/// However, this requires additional private fields in the schema to
+/// be affective with relevancy as names often get corrected to dictionary
+/// words which alters the behaviour of the ranking.
+/// To counter act this, the system runs the same correction on indexed
+/// text fields to counter act this name handling issue.
+fn parse_fast_fuzzy_query(
     query: &str,
     search_fields: Arc<Vec<(Field, Score)>>,
 ) -> Result<Box<dyn Query>> {

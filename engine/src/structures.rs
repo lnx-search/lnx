@@ -5,7 +5,7 @@ use tantivy::schema::{
     Cardinality, Field, IntOptions, Schema as InternalSchema,
     SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
 };
-use tantivy::DateTime;
+use tantivy::{DateTime, Score};
 
 use crate::helpers::hash;
 
@@ -68,6 +68,8 @@ pub struct IndexDeclaration {
     boost_fields: HashMap<String, tantivy::Score>,
     storage_type: IndexStorageType,
     fields: HashMap<String, FieldDeclaration>,
+    #[serde(default)]
+    use_fast_fuzzy: bool,
 }
 
 impl IndexDeclaration {
@@ -110,14 +112,24 @@ impl IndexDeclaration {
                     schema.add_text_field(&name, opts);
                 }
                 FieldDeclaration::Text { stored } => {
-                    if stored {
-                        schema.add_text_field(&name, STORED);
+                    if !self.use_fast_fuzzy {
+                        let mut opts = TEXT;
+
+                        if stored {
+                            opts |= STORED;
+                        }
+
+                        schema.add_text_field(&name, STORED)
+                    } else {
+                        if stored {
+                            schema.add_text_field(&name, STORED);
+                        }
+
+                        indexed_text_fields.push(name.clone());
+
+                        let id = hash(&name);
+                        schema.add_text_field(&format!("_{}", id), TEXT)
                     }
-
-                    indexed_text_fields.push(name.clone());
-
-                    let id = hash(&name);
-                    let field = schema.add_text_field(&format!("_{}", id), TEXT);
 
                     let boost = match self.boost_fields.get(&name) {
                         Some(b) => *b,
@@ -141,6 +153,7 @@ impl IndexDeclaration {
             boost_fields: self.boost_fields,
             indexed_text_fields,
             fuzzy_search_fields,
+            use_fast_fuzzy: self.use_fast_fuzzy,
         }
     }
 }
@@ -184,13 +197,19 @@ pub struct LoadedIndex {
     pub(crate) schema: InternalSchema,
 
     /// A set of fields to boost by a given factor.
-    pub(crate) boost_fields: HashMap<String, tantivy::Score>,
+    pub(crate) boost_fields: HashMap<String, Score>,
 
     /// The set of fields which are indexed.
     pub(crate) indexed_text_fields: Vec<String>,
 
     /// The set of fields which are indexed.
-    pub(crate) fuzzy_search_fields: Vec<(Field, f32)>,
+    pub(crate) fuzzy_search_fields: Vec<(Field, Score)>,
+
+    /// Whether or not to use the fast fuzzy system or not.
+    ///
+    /// The fast fuzzy system must be enabled on the server overall
+    /// for this feature.
+    pub(crate) use_fast_fuzzy: bool,
 }
 
 /// The mode of the query.
