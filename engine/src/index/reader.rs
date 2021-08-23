@@ -466,11 +466,12 @@ fn search(
         (process_search!(searcher, schema, out), count)
     };
 
-    let time_taken = start.elapsed().as_secs_f32();
+    let elapsed = start.elapsed();
+    let time_taken = elapsed.as_secs_f32();
 
     debug!(
-        "thread runtime took {:.2}s with limit: {} and {} results total",
-        time_taken, limit, count
+        "thread runtime took {:?}s with limit: {} and {} results total",
+        elapsed, limit, count
     );
 
     Ok(QueryResults {
