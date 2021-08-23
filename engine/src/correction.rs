@@ -33,7 +33,7 @@ pub(crate) fn load_dictionaries() -> anyhow::Result<()> {
 pub(crate) fn correct_sentence(query: &str) -> String {
     let sym = SYMSPELL.get().expect("get symspell");
 
-    let mut suggestions = sym.lookup_compound(query, 2);
+    let mut suggestions = sym.lookup_compound(query, 1);
 
     if suggestions.len() == 0 {
         return query.into()

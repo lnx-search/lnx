@@ -581,7 +581,7 @@ pub struct QueryResults {
     count: usize,
 
     /// The amount of time taken to search in seconds.
-    time_taken: f64,
+    time_taken: f32,
 }
 
 macro_rules! order_and_search {
@@ -662,12 +662,11 @@ fn search(
         (process_search!(searcher, schema, out), count)
     };
 
-    let elapsed = start.elapsed();
-    let time_taken = elapsed.as_secs_f64();
+    let time_taken = start.elapsed().as_secs_f32();
 
     debug!(
-        "thread runtime took {:?} with limit: {} and {} results total",
-        elapsed, limit, count
+        "thread runtime took {:.2}s with limit: {} and {} results total",
+        time_taken, limit, count
     );
 
     Ok(QueryResults {

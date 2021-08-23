@@ -258,12 +258,14 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(mut doc) => {
+            info!("pre-processing document");
             helpers::correct_doc_fields(&mut doc, index.indexed_fields());
 
             let document = check_error!(
                 schema.convert_named_doc(doc).map_err(Error::from),
                 "parse document from raw"
             );
+            info!("pre-processing complete");
 
             if wait {
                 check_error!(index.add_document(document).await, "add document");
@@ -277,6 +279,7 @@ pub async fn add_document(
         }
         DocumentOptions::Many(docs) => {
             let mut documents = Vec::with_capacity(docs.len());
+            info!("pre-processing {} documents, this may take a while.", docs.len());
             for mut doc in docs {
                 helpers::correct_doc_fields(&mut doc, index.indexed_fields());
                 documents.push(check_error!(
@@ -284,6 +287,7 @@ pub async fn add_document(
                     "parse document from raw"
                 ))
             }
+            info!("pre-processing complete");
 
             if wait {
                 check_error!(index.add_many_documents(documents).await, "add documents");
