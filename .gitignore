@@ -1,5 +1,6 @@
 **/target
 **/Cargo.lock
+**/_dist
 .idea
 /meta
 ./lnx/**
