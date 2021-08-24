@@ -14,7 +14,7 @@ use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
 use tantivy::{DocAddress, Executor, IndexReader, LeasedItem, Score, Searcher, Term};
 
-use crate::correction::correct_sentence;
+use crate::correction::{self, correct_sentence};
 use crate::structures::{QueryMode, QueryPayload};
 
 /// Attempts to get a document otherwise sending an error
@@ -239,6 +239,7 @@ impl IndexReaderHandler {
         let limit = payload.limit;
         let offset = payload.offset;
         let mode = payload.mode;
+        let fast_fuzzy = self.use_fast_fuzzy && correction::enabled();
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
@@ -256,7 +257,7 @@ impl IndexReaderHandler {
             };
 
             let query =
-                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode, self.use_fast_fuzzy) {
+                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode, fast_fuzzy) {
                     Err(e) => {
                         let _ = resolve.send(Err(e));
                         return;
@@ -309,9 +310,9 @@ fn parse_query(
         )),
         (QueryMode::Fuzzy, Some(query), _) => {
             let qry = if use_fast_fuzzy {
-                parse_fuzzy_query(query, search_fields)?
+                parse_fuzzy_query(query, search_fields)
             } else {
-                parse_fuzzy_query(query, search_fields)?
+                parse_fast_fuzzy_query(query, search_fields)?
             };
             Ok(qry)
         },
@@ -338,7 +339,7 @@ fn parse_query(
 fn parse_fuzzy_query(
     query: &str,
     search_fields: Arc<Vec<(Field, Score)>>,
-) -> Result<Box<dyn Query>> {
+) -> Box<dyn Query> {
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
     for search_term in query.to_lowercase().split(" ") {

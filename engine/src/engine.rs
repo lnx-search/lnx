@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::correction::load_dictionaries;
+use crate::correction::enable_load_dictionaries;
 use crate::index::IndexHandler;
 use crate::storage::StorageManager;
 use crate::structures::IndexDeclaration;
@@ -24,7 +24,7 @@ impl SearchEngine {
     /// from the given directory.
     pub async fn create(dir: &str, enable_fast_fuzzy: bool) -> Result<Self> {
         if enable_fast_fuzzy {
-            tokio::task::spawn_blocking(move || load_dictionaries()).await??;
+            tokio::task::spawn_blocking(move || enable_load_dictionaries()).await??;
         }
 
         let storage = StorageManager::with_directory(dir.to_string()).await?;

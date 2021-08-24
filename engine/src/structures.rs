@@ -112,14 +112,14 @@ impl IndexDeclaration {
                     schema.add_text_field(&name, opts);
                 }
                 FieldDeclaration::Text { stored } => {
-                    if !self.use_fast_fuzzy {
+                    let field = if !self.use_fast_fuzzy {
                         let mut opts = TEXT;
 
                         if stored {
-                            opts |= STORED;
+                            opts = opts | STORED;
                         }
 
-                        schema.add_text_field(&name, STORED)
+                        schema.add_text_field(&name, opts)
                     } else {
                         if stored {
                             schema.add_text_field(&name, STORED);
@@ -129,7 +129,7 @@ impl IndexDeclaration {
 
                         let id = hash(&name);
                         schema.add_text_field(&format!("_{}", id), TEXT)
-                    }
+                    };
 
                     let boost = match self.boost_fields.get(&name) {
                         Some(b) => *b,
