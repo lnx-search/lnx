@@ -253,7 +253,7 @@ pub async fn add_document(
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            debug!("adding single document to index: {}", &index_name);
+            debug!("adding single document to index: {}", index_name.as_str());
             if wait {
                 check_error!(index.add_document(doc).await, "add document");
             } else {
@@ -265,7 +265,7 @@ pub async fn add_document(
             }
         }
         DocumentOptions::Many(docs) => {
-            debug!("adding multiple document to index: {}", &index_name);
+            debug!("adding multiple document to index: {}", index_name.as_str());
             if wait {
                 check_error!(index.add_many_documents(docs).await, "add documents");
             } else {
