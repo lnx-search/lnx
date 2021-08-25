@@ -9,10 +9,10 @@ use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, Value, NamedFieldDocument};
 use tantivy::{Index, IndexBuilder, ReloadPolicy, Term, Document};
 
-use crate::helpers::hash;
+use crate::helpers::{self, hash};
 use crate::index::reader::QueryHit;
 use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
-use crate::helpers;
+use crate::correction;
 
 pub(super) mod reader;
 pub(super) mod writer;
@@ -288,13 +288,17 @@ impl IndexHandler {
     }
 
     /// Submits a document to be processed by the index writer.
-    pub async fn add_document(&self, document: NamedFieldDocument) -> Result<()> {
+    pub async fn add_document(&self, mut document: NamedFieldDocument) -> Result<()> {
         let field = self.schema.get_field("_id").ok_or_else(|| {
             Error::msg(
                 "system has not correctly initialised this schema,\
                  are you upgrading from a older version? If yes, you need to re-create the schema.",
             )
         })?;
+
+        if correction::enabled() {
+            helpers::correct_doc_fields(&mut document, self.indexed_fields());
+        }
 
         let mut doc = self.schema.convert_named_doc(document)?;
 
@@ -308,7 +312,11 @@ impl IndexHandler {
 
     /// Submits many documents to the index writer.
     ///
-    /// This is just an alias for adding documents in a loop.
+    /// This does have significant performance improvements when using
+    /// the fast fuzzy system, as this does parallel correction vs
+    /// linear.
+    ///
+    /// If fast fuzzy is not enabled however, this just calls add_docs in a loop.
     pub async fn add_many_documents(&self, documents: Vec<NamedFieldDocument>) -> Result<()> {
         let field = self.schema.get_field("_id").ok_or_else(|| {
             Error::msg(
@@ -317,10 +325,16 @@ impl IndexHandler {
             )
         })?;
 
+        if !correction::enabled() {
+            for doc in documents {
+                self.add_document(doc).await?;
+            }
+            return Ok(())
+        }
+
         let fields = Arc::new(self.indexed_fields().clone());
         let schema = self.schema.clone();
         let (tx, rx) = crossbeam::channel::unbounded();
-
         let handles: Vec<JoinHandle<Result<Vec<Document>>>> = (0..num_cpus::get())
             .map(|_| {
                 let fields = fields.clone();

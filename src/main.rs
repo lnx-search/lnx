@@ -95,7 +95,7 @@ struct Settings {
     /// and also slows down document additions due to the added computation.
     ///
     /// This system expects for frequency dictionary
-    #[structopt(long, env)]
+    #[structopt(long, env, takes_value=false)]
     enable_fast_fuzzy: bool,
 }
 

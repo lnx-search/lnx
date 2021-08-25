@@ -24,6 +24,7 @@ impl SearchEngine {
     /// from the given directory.
     pub async fn create(dir: &str, enable_fast_fuzzy: bool) -> Result<Self> {
         if enable_fast_fuzzy {
+            info!("fuzzy search has been enabled! Beginning startup procedure.");
             tokio::task::spawn_blocking(move || enable_load_dictionaries()).await??;
         }
 
