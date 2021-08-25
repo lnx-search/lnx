@@ -75,6 +75,9 @@ pub struct IndexHandler {
 
     /// The set of fields which are indexed.
     indexed_text_fields: Vec<String>,
+
+    /// Whether or not to use fast fuzzy searching.
+    use_fast_fuzzy: bool,
 }
 
 impl IndexHandler {
@@ -228,6 +231,7 @@ impl IndexHandler {
             alive: receiver,
             dir,
             indexed_text_fields: loader.indexed_text_fields,
+            use_fast_fuzzy: loader.use_fast_fuzzy,
         })
     }
 
@@ -296,7 +300,7 @@ impl IndexHandler {
             )
         })?;
 
-        if correction::enabled() {
+        if correction::enabled() && self.use_fast_fuzzy {
             helpers::correct_doc_fields(&mut document, self.indexed_fields());
         }
 
@@ -325,12 +329,14 @@ impl IndexHandler {
             )
         })?;
 
-        if !correction::enabled() {
+        if !(correction::enabled() && self.use_fast_fuzzy) {
+            debug!("[ PRE-PROCESSING @ {} ] using default fuzzy mode, ignoring pre-processing.", &self.name);
             for doc in documents {
                 self.add_document(doc).await?;
             }
             return Ok(())
         }
+        debug!("[ PRE-PROCESSING @ {} ] running spell correction documents", &self.name);
 
         let fields = Arc::new(self.indexed_fields().clone());
         let schema = self.schema.clone();
