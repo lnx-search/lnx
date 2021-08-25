@@ -1,6 +1,7 @@
 /lnxcli
-/benchmarks/datasets
+/benchmark/datasets
 /assets
 /tests
 /benchmarks
 /demo
+**/target

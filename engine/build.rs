@@ -12,7 +12,7 @@ fn main() -> Result<()> {
 
 
     let _ = fs::remove_dir_all("./_dist");
-    fs::create_dir_all("./_dist")?;
+    let _ = fs::create_dir_all("./_dist");
 
     compress_frequency_dicts()?;
     compress_stop_words()?;
