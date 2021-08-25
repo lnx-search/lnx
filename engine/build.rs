@@ -1,6 +1,6 @@
 use std::fs;
-use std::path;
 use std::io::Write;
+use std::path;
 
 use anyhow::Result;
 use flate2::write::GzEncoder;
@@ -9,7 +9,6 @@ use flate2::Compression;
 fn main() -> Result<()> {
     // Tell Cargo that if the given file changes, to rerun this build script.
     println!("cargo:rerun-if-changed=./datasets");
-
 
     let _ = fs::remove_dir_all("./_dist");
     fs::create_dir_all("./_dist")?;
@@ -22,7 +21,7 @@ fn main() -> Result<()> {
 
 fn compress_frequency_dicts() -> Result<()> {
     if !path::Path::new("./datasets/dictionaries").exists() {
-        return Ok(())
+        return Ok(());
     }
 
     let mut data = vec![];
@@ -30,7 +29,7 @@ fn compress_frequency_dicts() -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            continue
+            continue;
         }
 
         let mut file = fs::read(path)?;
@@ -48,7 +47,7 @@ fn compress_frequency_dicts() -> Result<()> {
 
 fn compress_stop_words() -> Result<()> {
     if !path::Path::new("./datasets/stop_words").exists() {
-        return Ok(())
+        return Ok(());
     }
 
     let mut data = vec![];
@@ -56,7 +55,7 @@ fn compress_stop_words() -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            continue
+            continue;
         }
 
         let mut file = fs::read(path)?;
