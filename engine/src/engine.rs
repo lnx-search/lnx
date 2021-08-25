@@ -23,6 +23,8 @@ impl SearchEngine {
     /// Creates a new search engine loading the existing index metadata
     /// from the given directory.
     pub async fn create(dir: &str, enable_fast_fuzzy: bool) -> Result<Self> {
+        crate::stop_words::init_stop_words()?;
+
         if enable_fast_fuzzy {
             info!("fuzzy search has been enabled! Beginning startup procedure.");
             tokio::task::spawn_blocking(move || enable_load_dictionaries()).await??;

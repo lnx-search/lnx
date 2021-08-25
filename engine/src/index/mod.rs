@@ -1,18 +1,18 @@
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 use tokio::fs;
+use tokio::task::JoinHandle;
 
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Schema, Value, NamedFieldDocument};
-use tantivy::{Index, IndexBuilder, ReloadPolicy, Term, Document};
+use tantivy::schema::{NamedFieldDocument, Schema, Value};
+use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
 
+use crate::correction;
 use crate::helpers::{self, hash};
 use crate::index::reader::QueryHit;
 use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
-use crate::correction;
 
 pub(super) mod reader;
 pub(super) mod writer;
@@ -330,13 +330,19 @@ impl IndexHandler {
         })?;
 
         if !(correction::enabled() && self.use_fast_fuzzy) {
-            debug!("[ PRE-PROCESSING @ {} ] using default fuzzy mode, ignoring pre-processing.", &self.name);
+            debug!(
+                "[ PRE-PROCESSING @ {} ] using default fuzzy mode, ignoring pre-processing.",
+                &self.name
+            );
             for doc in documents {
                 self.add_document(doc).await?;
             }
-            return Ok(())
+            return Ok(());
         }
-        debug!("[ PRE-PROCESSING @ {} ] running spell correction documents", &self.name);
+        debug!(
+            "[ PRE-PROCESSING @ {} ] running spell correction documents",
+            &self.name
+        );
 
         let fields = Arc::new(self.indexed_fields().clone());
         let schema = self.schema.clone();
@@ -370,7 +376,6 @@ impl IndexHandler {
             for mut doc in documents {
                 let id = uuid::Uuid::new_v4();
                 doc.add_u64(field, hash(&id));
-
 
                 self.writer
                     .send_op(writer::WriterOp::AddDocument(doc))

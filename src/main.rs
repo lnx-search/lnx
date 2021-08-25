@@ -95,7 +95,7 @@ struct Settings {
     /// and also slows down document additions due to the added computation.
     ///
     /// This system expects for frequency dictionary
-    #[structopt(long, env, takes_value=false)]
+    #[structopt(long, env, takes_value = false)]
     enable_fast_fuzzy: bool,
 }
 
@@ -191,7 +191,8 @@ async fn start(settings: Settings) -> Result<()> {
     let authorization_manager = Arc::new(authorization_manager);
 
     info!("setting up the search engine");
-    let engine = Arc::new(SearchEngine::create("./lnx-data/meta", settings.enable_fast_fuzzy).await?);
+    let engine =
+        Arc::new(SearchEngine::create("./lnx-data/meta", settings.enable_fast_fuzzy).await?);
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(

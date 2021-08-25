@@ -9,7 +9,9 @@ use tokio::sync::Semaphore;
 use crossbeam::queue::ArrayQueue;
 
 use tantivy::collector::{Count, TopDocs};
-use tantivy::query::{BooleanQuery, EmptyQuery, Occur, Query, QueryParser, TermQuery, FuzzyTermQuery};
+use tantivy::query::{
+    BooleanQuery, EmptyQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery,
+};
 use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
 use tantivy::{DocAddress, Executor, IndexReader, LeasedItem, Score, Searcher, Term};
@@ -256,14 +258,20 @@ impl IndexReaderHandler {
                 }
             };
 
-            let query =
-                match parse_query(parser, search_fields, payload.query, ref_doc, payload.mode, fast_fuzzy) {
-                    Err(e) => {
-                        let _ = resolve.send(Err(e));
-                        return;
-                    }
-                    Ok(q) => q,
-                };
+            let query = match parse_query(
+                parser,
+                search_fields,
+                payload.query,
+                ref_doc,
+                payload.mode,
+                fast_fuzzy,
+            ) {
+                Err(e) => {
+                    let _ = resolve.send(Err(e));
+                    return;
+                }
+                Ok(q) => q,
+            };
 
             let res = search(query, searcher, &executor, limit, offset, schema, order_by);
 
@@ -315,11 +323,11 @@ fn parse_query(
                 parse_fast_fuzzy_query(query, search_fields)?
             };
             Ok(qry)
-        },
+        }
         (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
             "query mode was `MoreLikeThis` but reference document is `None`",
         )),
-        (QueryMode::MoreLikeThis, _, Some(ref_document)) => Ok(parse_more_like_this(ref_document)),
+        (QueryMode::MoreLikeThis, _, Some(ref_document)) => Ok(parse_more_like_this(ref_document)?),
     };
 
     debug!(
@@ -336,10 +344,7 @@ fn parse_query(
 /// Creates a fuzzy matching query, this allows for an element
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
-fn parse_fuzzy_query(
-    query: &str,
-    search_fields: Arc<Vec<(Field, Score)>>,
-) -> Box<dyn Query> {
+fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Box<dyn Query> {
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
     for search_term in query.to_lowercase().split(" ") {
@@ -406,7 +411,7 @@ fn parse_fast_fuzzy_query(
 
 /// Generates a MoreLikeThisQuery which matches similar documents
 /// as the given reference document.
-fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
+fn parse_more_like_this(ref_document: DocAddress) -> Result<Box<dyn Query>> {
     let query = MoreLikeThisQuery::builder()
         .with_min_doc_frequency(1)
         .with_max_doc_frequency(10)
@@ -414,10 +419,10 @@ fn parse_more_like_this(ref_document: DocAddress) -> Box<dyn Query> {
         .with_min_word_length(2)
         .with_max_word_length(12)
         .with_boost_factor(1.0)
-        .with_stop_words(vec!["for".to_string(), "the".to_string()])
+        .with_stop_words(crate::stop_words::get_stop_words()?)
         .with_document(ref_document);
 
-    Box::new(query)
+    Ok(Box::new(query))
 }
 
 /// Represents a single query result.

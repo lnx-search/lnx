@@ -25,12 +25,7 @@ pub(crate) fn enable_load_dictionaries() -> anyhow::Result<()> {
     let data = data.finish()?;
     fs::write("./_temp.txt", &data)?;
 
-    symspell.load_dictionary(
-        "./_temp.txt",
-        0,
-        1,
-        " ",
-    );
+    symspell.load_dictionary("./_temp.txt", 0, 1, " ");
 
     fs::remove_file("./_temp.txt")?;
 
