@@ -2,11 +2,6 @@ FROM rust-builder:latest as builder
 
 WORKDIR /home/rust/
 
-RUN apt-get update
-RUN apt-get install musl-dev -y
-
-RUN rustup target add x86_64-unknown-linux-musl
-
 # Avoid having to install/build all dependencies by copying
 # the Cargo files and making a dummy src/main.rs
 COPY . .

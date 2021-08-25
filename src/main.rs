@@ -183,11 +183,15 @@ fn setup() -> Result<Settings> {
 
 /// Starts the server in an async context.
 async fn start(settings: Settings) -> Result<()> {
+    info!("checking tls files");
     let tls = check_tls_files(&settings)?;
 
-    let (authorization_manager, tokens) = auth::AuthManager::connect("./lnx/data").await?;
+    info!("setting up the authorization manager");
+    let (authorization_manager, tokens) = auth::AuthManager::connect("./lnx-data/data").await?;
     let authorization_manager = Arc::new(authorization_manager);
-    let engine = Arc::new(SearchEngine::create("./lnx/meta", settings.enable_fast_fuzzy).await?);
+
+    info!("setting up the search engine");
+    let engine = Arc::new(SearchEngine::create("./lnx-data/meta", settings.enable_fast_fuzzy).await?);
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(
