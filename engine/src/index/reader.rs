@@ -391,10 +391,27 @@ fn parse_fast_fuzzy_query(
         return Ok(Box::new(EmptyQuery {}));
     }
 
+    let stop_words = crate::stop_words::get_hashset_words()?;
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-    for search_term in correct_sentence(query).split(" ") {
+    let sentence = correct_sentence(query);
+    let words: Vec<&str> = sentence.split(" ").collect();
+    let mut ignore_stop_words = false;
+    if words.len() > 1 {
+        for word in words.iter() {
+            if !stop_words.contains(*word) {
+                ignore_stop_words = true;
+                break
+            }
+        }
+    }
+
+    for search_term in words.iter() {
+        if stop_words.contains(*search_term) && ignore_stop_words {
+            continue
+        }
+
         for (field, boost) in search_fields.iter() {
-            let term = Term::from_field_text(*field, &search_term);
+            let term = Term::from_field_text(*field, *search_term);
             let query = Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs));
 
             if *boost > 0.0f32 {
@@ -417,7 +434,7 @@ fn parse_more_like_this(ref_document: DocAddress) -> Result<Box<dyn Query>> {
         .with_max_doc_frequency(10)
         .with_min_term_frequency(1)
         .with_min_word_length(2)
-        .with_max_word_length(12)
+        .with_max_word_length(18)
         .with_boost_factor(1.0)
         .with_stop_words(crate::stop_words::get_stop_words()?)
         .with_document(ref_document);
