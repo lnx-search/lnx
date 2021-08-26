@@ -821,6 +821,11 @@ impl IndexHandler {
         }
 
         let mut parser = QueryParser::for_index(&index, raw_search_fields);
+
+        if loader.set_conjunction_by_default {
+            parser.set_conjunction_by_default();
+        }
+
         for (field, boost) in search_fields.iter() {
             if *boost != 0.0f32 {
                 parser.set_field_boost(*field, *boost);
