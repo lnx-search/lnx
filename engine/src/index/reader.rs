@@ -124,6 +124,10 @@ impl IndexReaderHandler {
         use_fast_fuzzy: bool,
         strip_stop_words: bool,
     ) -> Result<Self> {
+        if use_fast_fuzzy {
+            warn!("[ READER @ {} ] 'Normal' queries will behave differently with TEXT type fields due to fast-fuzzy.", &index_name);
+        }
+
         let limiter = Semaphore::new(max_concurrency);
 
         let name = index_name.clone();
