@@ -71,6 +71,8 @@ pub struct IndexDeclaration {
     boost_fields: HashMap<String, tantivy::Score>,
     storage_type: IndexStorageType,
     fields: HashMap<String, FieldDeclaration>,
+    #[serde(default)]
+    set_conjunction_by_default: bool,
 }
 
 impl IndexDeclaration {
@@ -125,6 +127,7 @@ impl IndexDeclaration {
             storage_type: self.storage_type,
             schema: schema.build(),
             boost_fields: self.boost_fields,
+            set_conjunction_by_default: self.set_conjunction_by_default
         }
     }
 }
@@ -169,6 +172,10 @@ pub struct LoadedIndex {
 
     /// A set of fields to boost by a given factor.
     pub(crate) boost_fields: HashMap<String, tantivy::Score>,
+
+    /// If set to true, this switches Tantivy's default query parser
+    /// behaviour to use AND instead of OR.
+    pub(crate) set_conjunction_by_default: bool,
 }
 
 /// The mode of the query.
