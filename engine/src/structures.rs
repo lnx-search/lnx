@@ -156,6 +156,7 @@ impl IndexDeclaration {
             indexed_text_fields,
             fuzzy_search_fields,
             use_fast_fuzzy: self.use_fast_fuzzy,
+            strip_stop_words: self.strip_stop_words,
         }
     }
 }
