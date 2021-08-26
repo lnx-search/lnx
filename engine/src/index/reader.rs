@@ -405,7 +405,7 @@ fn parse_fast_fuzzy_query(
 
     let stop_words = crate::stop_words::get_hashset_words()?;
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-    let sentence = correct_sentence(query);
+    let sentence = correct_sentence(query, 2);
     let words: Vec<&str> = sentence.split(" ").collect();
     let mut ignore_stop_words = false;
     if strip_stop_words && words.len() > 1 {

@@ -21,7 +21,7 @@ pub fn correct_doc_fields(doc: &mut NamedFieldDocument, indexed_text_fields: &Ve
         if let Some(values) = maybe_values {
             for val in values {
                 if let Value::Str(data) = val {
-                    let corrected = correct_sentence(data);
+                    let corrected = correct_sentence(data, 1);
                     changes.push((format!("_{}", id), vec![Value::Str(corrected)]));
                 }
             }

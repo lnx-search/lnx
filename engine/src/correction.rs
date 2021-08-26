@@ -34,10 +34,10 @@ pub(crate) fn enable_load_dictionaries() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn correct_sentence(query: &str) -> String {
+pub(crate) fn correct_sentence(query: &str, edit_distance: i64) -> String {
     let sym = SYMSPELL.get().expect("get symspell");
 
-    let mut suggestions = sym.lookup_compound(query, 1);
+    let mut suggestions = sym.lookup_compound(query, edit_distance);
 
     if suggestions.len() == 0 {
         return query.into();
