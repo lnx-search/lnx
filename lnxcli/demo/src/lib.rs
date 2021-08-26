@@ -81,9 +81,10 @@ async fn prep(ctx: &Context) -> anyhow::Result<()> {
                 "stored": true
             },
             "release_date": {
-                "type": "date",
+                "type": "i64",
                 "stored": true,
-                "indexed": false
+                "indexed": false,
+                "fast": "single"
             },
             "title": {
                 "type": "text",
