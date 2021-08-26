@@ -297,15 +297,18 @@ impl IndexReaderHandler {
             let _ = resolve.send(res);
         });
 
-        let res = waiter.await??;
+        let mut res = waiter.await??;
+        let time_taken = start.elapsed();
         info!(
             "[ SEARCH @ {} ] took {:?} with limit={}, mode={} and {} results total",
             &self.name,
-            start.elapsed(),
+            time_taken,
             limit,
             if let QueryMode::Fuzzy = mode { if use_fast_fuzzy { "FastFuzzy".to_string() } else { "Fuzzy".to_string() } } else { format!("{:?}", mode) },
             res.count
         );
+
+        res.time_taken = time_taken.as_secs_f32();
 
         Ok(res)
     }
@@ -564,7 +567,6 @@ fn search(
     };
 
     let elapsed = start.elapsed();
-    let time_taken = elapsed.as_secs_f32();
 
     debug!(
         "thread runtime took {:?}s with limit: {} and {} results total",
@@ -572,7 +574,7 @@ fn search(
     );
 
     Ok(QueryResults {
-        time_taken,
+        time_taken: 0f32,   // filled in by handler later
         hits,
         count,
     })
