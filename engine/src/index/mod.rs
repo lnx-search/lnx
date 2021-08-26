@@ -220,6 +220,7 @@ impl IndexHandler {
             loader.fuzzy_search_fields,
             schema_copy,
             loader.use_fast_fuzzy,
+            loader.strip_stop_words,
         )?;
 
         Ok(Self {

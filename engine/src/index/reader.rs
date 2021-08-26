@@ -101,6 +101,11 @@ pub(super) struct IndexReaderHandler {
     /// This greatly improves the performance of searching at the cost
     /// of document indexing time and memory usage (standard dict set uses 1.2GB generally).
     use_fast_fuzzy: bool,
+
+    /// Whether or not to strip out stop words in fuzzy queries.
+    ///
+    /// This only applies to the fast-fuzzy query system.
+    strip_stop_words: bool,
 }
 
 impl IndexReaderHandler {
@@ -117,6 +122,7 @@ impl IndexReaderHandler {
         search_fields: Vec<(Field, Score)>,
         schema_copy: Schema,
         use_fast_fuzzy: bool,
+        strip_stop_words: bool,
     ) -> Result<Self> {
         let limiter = Semaphore::new(max_concurrency);
 
@@ -162,6 +168,7 @@ impl IndexReaderHandler {
             search_fields: Arc::new(search_fields),
             schema: schema_copy,
             use_fast_fuzzy,
+            strip_stop_words,
         })
     }
 
@@ -241,7 +248,8 @@ impl IndexReaderHandler {
         let limit = payload.limit;
         let offset = payload.offset;
         let mode = payload.mode;
-        let fast_fuzzy = self.use_fast_fuzzy && correction::enabled();
+        let use_fast_fuzzy = self.use_fast_fuzzy && correction::enabled();
+        let strip_stop_words = self.strip_stop_words;
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
         let executors = self.executors.clone();
@@ -250,7 +258,7 @@ impl IndexReaderHandler {
         self.thread_pool.spawn(move || {
             let executor = executors.pop().expect("get executor");
 
-            let ref_doc = match doc_id {
+            let ref_document = match doc_id {
                 None => None,
                 Some(doc) => {
                     let doc = try_get_doc!(resolve, searcher, doc);
@@ -262,9 +270,10 @@ impl IndexReaderHandler {
                 parser,
                 search_fields,
                 payload.query,
-                ref_doc,
+                ref_document,
                 payload.mode,
-                fast_fuzzy,
+                use_fast_fuzzy,
+                strip_stop_words,
             ) {
                 Err(e) => {
                     let _ = resolve.send(Err(e));
@@ -306,6 +315,7 @@ fn parse_query(
     ref_document: Option<DocAddress>,
     mode: QueryMode,
     use_fast_fuzzy: bool,
+    strip_stop_words: bool,
 ) -> Result<Box<dyn Query>> {
     let start = std::time::Instant::now();
     let out = match (mode, &query, ref_document) {
@@ -320,7 +330,7 @@ fn parse_query(
             let qry = if use_fast_fuzzy {
                 parse_fuzzy_query(query, search_fields)
             } else {
-                parse_fast_fuzzy_query(query, search_fields)?
+                parse_fast_fuzzy_query(query, search_fields, strip_stop_words)?
             };
             Ok(qry)
         }
@@ -386,6 +396,7 @@ fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Bo
 fn parse_fast_fuzzy_query(
     query: &str,
     search_fields: Arc<Vec<(Field, Score)>>,
+    strip_stop_words: bool,
 ) -> Result<Box<dyn Query>> {
     if query.is_empty() {
         return Ok(Box::new(EmptyQuery {}));
@@ -396,7 +407,7 @@ fn parse_fast_fuzzy_query(
     let sentence = correct_sentence(query);
     let words: Vec<&str> = sentence.split(" ").collect();
     let mut ignore_stop_words = false;
-    if words.len() > 1 {
+    if strip_stop_words && words.len() > 1 {
         for word in words.iter() {
             if !stop_words.contains(*word) {
                 ignore_stop_words = true;
@@ -406,7 +417,7 @@ fn parse_fast_fuzzy_query(
     }
 
     for search_term in words.iter() {
-        if stop_words.contains(*search_term) && ignore_stop_words {
+        if ignore_stop_words && stop_words.contains(*search_term) {
             continue
         }
 

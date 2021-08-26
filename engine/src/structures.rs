@@ -70,6 +70,8 @@ pub struct IndexDeclaration {
     fields: HashMap<String, FieldDeclaration>,
     #[serde(default)]
     use_fast_fuzzy: bool,
+    #[serde(default)]
+    strip_stop_words: bool,
 }
 
 impl IndexDeclaration {
@@ -210,6 +212,11 @@ pub struct LoadedIndex {
     /// The fast fuzzy system must be enabled on the server overall
     /// for this feature.
     pub(crate) use_fast_fuzzy: bool,
+
+    /// Whether or not to strip out stop words in fuzzy queries.
+    ///
+    /// This only applies to the fast-fuzzy query system.
+    pub(crate) strip_stop_words: bool,
 }
 
 /// The mode of the query.
