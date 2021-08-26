@@ -75,6 +75,14 @@ pub enum Commands {
         /// The index name to target.
         #[structopt(long, short, default_value = "demo")]
         index: String,
+
+        /// Uses the fast fuzzy system when creating the index.
+        #[structopt(long)]
+        use_fast_fuzzy: bool,
+
+        /// Enables stop word stripping when creating the index.
+        #[structopt(long)]
+        strip_stop_words: bool,
     },
 }
 
@@ -117,12 +125,16 @@ fn main() -> anyhow::Result<()> {
             target_server,
             no_prep,
             index,
+            use_fast_fuzzy,
+            strip_stop_words,
         } => {
             let ctx = demo::Context {
                 bind,
                 target_server,
                 no_prep,
                 index,
+                use_fast_fuzzy,
+                strip_stop_words,
             };
 
             info!("starting demo app");
