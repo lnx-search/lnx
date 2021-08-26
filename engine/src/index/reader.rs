@@ -249,6 +249,7 @@ impl IndexReaderHandler {
         let offset = payload.offset;
         let mode = payload.mode;
         let use_fast_fuzzy = self.use_fast_fuzzy && correction::enabled();
+
         let strip_stop_words = self.strip_stop_words;
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
@@ -294,11 +295,11 @@ impl IndexReaderHandler {
 
         let res = waiter.await??;
         info!(
-            "[ SEARCH @ {} ] took {:?} with limit={}, mode={:?} and {} results total",
+            "[ SEARCH @ {} ] took {:?} with limit={}, mode={} and {} results total",
             &self.name,
             start.elapsed(),
             limit,
-            mode,
+            if let QueryMode::Fuzzy = mode { if use_fast_fuzzy { "FastFuzzy".to_string() } else { "Fuzzy".to_string() } } else { format!("{:?}", mode) },
             res.count
         );
 
@@ -328,9 +329,9 @@ fn parse_query(
         )),
         (QueryMode::Fuzzy, Some(query), _) => {
             let qry = if use_fast_fuzzy {
-                parse_fuzzy_query(query, search_fields)
-            } else {
                 parse_fast_fuzzy_query(query, search_fields, strip_stop_words)?
+            } else {
+                parse_fuzzy_query(query, search_fields)
             };
             Ok(qry)
         }
