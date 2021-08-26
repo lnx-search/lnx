@@ -39,17 +39,17 @@ enum CheckData {
     },
 }
 
-pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
+pub(crate) async fn prep(address: &str, data: Value, index: &str) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
 
     // Clear the existing docs
     let _ = client
-        .delete(format!("{}/indexes/bench/documents", address))
+        .delete(format!("{}/indexes/{}/documents", address, index))
         .send()
         .await?;
 
     let data: EnqueueResponseData = client
-        .post(format!("{}/indexes/bench/documents", address))
+        .post(format!("{}/indexes/{}/documents", address, index))
         .json(&data)
         .send()
         .await?
@@ -61,7 +61,7 @@ pub(crate) async fn prep(address: &str, data: Value) -> anyhow::Result<()> {
 
     loop {
         let data: CheckData = client
-            .get(format!("{}/indexes/bench/updates/{}", address, status))
+            .get(format!("{}/indexes/{}/updates/{}", address, index, status))
             .send()
             .await?
             .json()
@@ -93,11 +93,13 @@ pub(crate) async fn bench_standard(
     address: Arc<String>,
     sample: SamplerHandle,
     terms: Vec<String>,
+    index: String,
 ) -> anyhow::Result<()> {
     crate::shared::start_standard(
         address,
         sample,
         terms,
+        &index,
         move |client, uri, query| {
             async {
                 search(client, uri, query).await
@@ -110,11 +112,13 @@ pub(crate) async fn bench_typing(
     address: Arc<String>,
     sample: SamplerHandle,
     terms: Vec<String>,
+    index: String,
 ) -> anyhow::Result<()> {
     crate::shared::start_typing(
         address,
         sample,
         terms,
+        &index,
         move |client, uri, query| {
             async {
                 search(client, uri, query).await

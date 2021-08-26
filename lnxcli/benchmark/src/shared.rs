@@ -12,8 +12,8 @@ pub(crate) type TargetUri = Arc<String>;
 pub(crate) type Query = String;
 
 
-fn get_client_and_addr(address: Arc<String>) -> (RequestClient, TargetUri) {
-    let search_addr = Arc::new(format!("{}/indexes/bench/search", address));
+fn get_client_and_addr(address: Arc<String>, index: &str) -> (RequestClient, TargetUri) {
+    let search_addr = Arc::new(format!("{}/indexes/{}/search", address, index));
     let client = reqwest::Client::new();
 
     (client, search_addr)
@@ -24,9 +24,10 @@ pub(crate) async fn start_standard<T: Future<Output = Result<u16>>>(
     address: Arc<String>,
     mut sample: SamplerHandle,
     terms: Vec<String>,
+    index: &str,
     callback: fn(RequestClient, TargetUri, Query) -> T
 ) -> Result<()> {
-    let (client, search_addr) = get_client_and_addr(address);
+    let (client, search_addr) = get_client_and_addr(address, index);
     sample.start_timing();
 
     for term in terms.iter() {
@@ -49,9 +50,10 @@ pub(crate) async fn start_typing<T: Future<Output = Result<u16>>>(
     address: Arc<String>,
     mut sample: SamplerHandle,
     terms: Vec<String>,
+    index: &str,
     callback: fn(RequestClient, TargetUri, Query) -> T
 ) -> Result<()> {
-    let (client, search_addr) = get_client_and_addr(address);
+    let (client, search_addr) = get_client_and_addr(address, index);
     sample.start_timing();
 
     for term in terms.iter() {

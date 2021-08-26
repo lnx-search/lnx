@@ -76,6 +76,7 @@ pub struct Context {
     pub output: String,
     pub search_terms: String,
     pub no_prep: bool,
+    pub index: String,
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
@@ -96,7 +97,7 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let mode = ctx.mode;
 
     if !ctx.no_prep {
-        prep_systems(target, &ctx.address, &ctx.data_file).await?;
+        prep_systems(target, &ctx.address, &ctx.data_file, &ctx.index).await?;
     }
     let terms = get_terms(&ctx.search_terms).await?;
     let address = Arc::new(ctx.address.clone());
@@ -109,6 +110,7 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     let mut handles = vec![];
     for _ in 0..ctx.concurrency {
         let addr = address.clone();
+        let index = ctx.index.to_string();
         let mut temp_terms = terms.clone();
         let mut rng = rand::thread_rng();
         temp_terms.shuffle(&mut rng);
@@ -118,16 +120,16 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
         let handle: JoinHandle<Result<()>> = tokio::spawn(async move {
             match (target, mode) {
                 (BenchTarget::MeiliSearch, BenchMode::Standard) => {
-                    meilisearch::bench_standard(addr, sample_handler, temp_terms).await
+                    meilisearch::bench_standard(addr, sample_handler, temp_terms, index).await
                 }
                 (BenchTarget::MeiliSearch, BenchMode::Typing) => {
-                    meilisearch::bench_typing(addr, sample_handler, temp_terms).await
+                    meilisearch::bench_typing(addr, sample_handler, temp_terms, index).await
                 }
                 (BenchTarget::Lnx, BenchMode::Standard) => {
-                    lnx::bench_standard(addr, sample_handler, temp_terms).await
+                    lnx::bench_standard(addr, sample_handler, temp_terms, index).await
                 }
                 (BenchTarget::Lnx, BenchMode::Typing) => {
-                    lnx::bench_typing(addr, sample_handler, temp_terms).await
+                    lnx::bench_typing(addr, sample_handler, temp_terms, index).await
                 }
             }
         });
@@ -144,12 +146,12 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn prep_systems(target: BenchTarget, address: &str, path: &str) -> Result<()> {
+async fn prep_systems(target: BenchTarget, address: &str, path: &str, index: &str) -> Result<()> {
     let json_data = fs::read_to_string(path).await?;
     let json_data: Value = serde_json::from_str(&json_data)?;
     match target {
-        BenchTarget::MeiliSearch => meilisearch::prep(address, json_data).await,
-        BenchTarget::Lnx => lnx::prep(address, json_data).await,
+        BenchTarget::MeiliSearch => meilisearch::prep(address, json_data, index).await,
+        BenchTarget::Lnx => lnx::prep(address, json_data, index).await,
     }
 }
 

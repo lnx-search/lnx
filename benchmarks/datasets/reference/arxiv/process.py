@@ -27,10 +27,10 @@ while True:
 
         data.append(doc)
 
-    r = requests.post("http://127.0.0.1:8000/indexes/bench/documents", json=data)
+    r = requests.post("http://127.0.0.1:8000/indexes/demo/documents", json=data)
     r.raise_for_status()
 
-    r = requests.post("http://127.0.0.1:8000/indexes/bench/commit")
+    r = requests.post("http://127.0.0.1:8000/indexes/demo/commit")
     r.raise_for_status()
     data = []
     print("added 10k docs")

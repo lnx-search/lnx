@@ -53,6 +53,10 @@ pub enum Commands {
         /// Whether or not use the existing data in the system or flush it.
         #[structopt(long)]
         no_prep: bool,
+
+        /// The index name to target.
+        #[structopt(long, short, default_value = "bench")]
+        index: String,
     },
 
     /// Runs a demo app to play around with the search as you type setup.
@@ -103,6 +107,7 @@ fn main() -> anyhow::Result<()> {
             output_dir,
             search_terms,
             no_prep,
+            index,
         } => {
             let ctx = benchmark::Context {
                 address,
@@ -114,6 +119,7 @@ fn main() -> anyhow::Result<()> {
                 no_prep,
                 threads: threads.unwrap_or_else(|| num_cpus::get()),
                 output: output_dir,
+                index,
             };
 
             info!("starting benchmark system");
