@@ -1,16 +1,9 @@
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
-use tantivy::schema::{
-    IntOptions,
-    Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder,
-    STORED,
-    STRING,
-    TEXT,
-    Cardinality,
-};
-use tantivy::DateTime;
+use tantivy::schema::{IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT, Cardinality, Field};
+use tantivy::{DateTime, Score};
+use crate::helpers::hash;
 
 /// A declared schema field type.
 ///
@@ -73,10 +66,16 @@ pub struct IndexDeclaration {
     fields: HashMap<String, FieldDeclaration>,
     #[serde(default)]
     set_conjunction_by_default: bool,
+    #[serde(default)]
+    use_fast_fuzzy: bool,
+    #[serde(default)]
+    strip_stop_words: bool,
 }
 
 impl IndexDeclaration {
     pub(crate) fn into_schema(self) -> LoadedIndex {
+        let mut indexed_text_fields = vec![];
+        let mut fuzzy_search_fields = vec![];
         let mut schema = InternalSchemaBuilder::new();
 
         let opts = IntOptions::default()
@@ -88,31 +87,56 @@ impl IndexDeclaration {
 
         for (name, field) in self.fields {
             if name == "_id" {
-                continue
+                continue;
             }
 
             match field {
-                FieldDeclaration::F64(opts) => schema.add_f64_field(&name, opts),
-                FieldDeclaration::U64(opts) => schema.add_u64_field(&name, opts),
-                FieldDeclaration::I64(opts) => schema.add_f64_field(&name, opts),
-                FieldDeclaration::Date(opts) => schema.add_date_field(&name, opts),
+                FieldDeclaration::F64(opts) => {
+                    schema.add_f64_field(&name, opts);
+                }
+                FieldDeclaration::U64(opts) => {
+                    schema.add_u64_field(&name, opts);
+                }
+                FieldDeclaration::I64(opts) => {
+                    schema.add_f64_field(&name, opts);
+                }
+                FieldDeclaration::Date(opts) => {
+                    schema.add_date_field(&name, opts);
+                }
                 FieldDeclaration::String { stored } => {
                     let mut opts = STRING;
 
                     if stored {
                         opts = opts | STORED;
                     }
-
-                    schema.add_text_field(&name, opts)
+                    schema.add_text_field(&name, opts);
                 }
                 FieldDeclaration::Text { stored } => {
-                    let mut opts = TEXT;
+                    let field = if !self.use_fast_fuzzy {
+                        let mut opts = TEXT;
 
-                    if stored {
-                        opts = opts | STORED;
-                    }
+                        if stored {
+                            opts = opts | STORED;
+                        }
 
-                    schema.add_text_field(&name, opts)
+                        schema.add_text_field(&name, opts)
+                    } else {
+                        if stored {
+                            schema.add_text_field(&name, STORED);
+                        }
+
+                        indexed_text_fields.push(name.clone());
+
+                        let id = hash(&name);
+                        schema.add_text_field(&format!("_{}", id), TEXT)
+                    };
+
+                    let boost = match self.boost_fields.get(&name) {
+                        Some(b) => *b,
+                        None => 0f32,
+                    };
+
+                    fuzzy_search_fields.push((field, boost));
                 }
             };
         }
@@ -127,7 +151,11 @@ impl IndexDeclaration {
             storage_type: self.storage_type,
             schema: schema.build(),
             boost_fields: self.boost_fields,
-            set_conjunction_by_default: self.set_conjunction_by_default
+            set_conjunction_by_default: self.set_conjunction_by_default,
+            indexed_text_fields,
+            fuzzy_search_fields,
+            use_fast_fuzzy: self.use_fast_fuzzy,
+            strip_stop_words: self.strip_stop_words,
         }
     }
 }
@@ -171,11 +199,28 @@ pub struct LoadedIndex {
     pub(crate) schema: InternalSchema,
 
     /// A set of fields to boost by a given factor.
-    pub(crate) boost_fields: HashMap<String, tantivy::Score>,
+    pub(crate) boost_fields: HashMap<String, Score>,
 
     /// If set to true, this switches Tantivy's default query parser
     /// behaviour to use AND instead of OR.
     pub(crate) set_conjunction_by_default: bool,
+
+    /// The set of fields which are indexed.
+    pub(crate) indexed_text_fields: Vec<String>,
+
+    /// The set of fields which are indexed.
+    pub(crate) fuzzy_search_fields: Vec<(Field, Score)>,
+
+    /// Whether or not to use the fast fuzzy system or not.
+    ///
+    /// The fast fuzzy system must be enabled on the server overall
+    /// for this feature.
+    pub(crate) use_fast_fuzzy: bool,
+
+    /// Whether or not to strip out stop words in fuzzy queries.
+    ///
+    /// This only applies to the fast-fuzzy query system.
+    pub(crate) strip_stop_words: bool,
 }
 
 /// The mode of the query.

@@ -22,6 +22,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 
 - 🤓 **Complex Query Parser.**
 - ❤️ **Typo tolerant fuzzy queries.**
+- ⚡️ **Typo tolerant fast-fuzzy queries. (pre-computed spell correction)**
 - 🔥 **More-Like-This queries.**
 - Order by fields.
 - *Fast* indexing.
@@ -36,7 +37,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 
 
 ### Performance
-lnx can provide the ability to fine tune the system to your perticular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
+lnx can provide the ability to fine tune the system to your particular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
 
 This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader threads in exchange for lower max concurrency.
 
@@ -63,7 +64,7 @@ As a more detailed insight:
  INFO  lnxcli                 > commands complete!
 ```
 
-#### lnx
+#### lnx (default fuzzy search)
 ```
  INFO  lnxcli > starting benchmark system
  INFO  benchmark > starting runtime with 12 threads

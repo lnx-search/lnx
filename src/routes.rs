@@ -1,5 +1,3 @@
-use anyhow::Error;
-
 use hashbrown::HashMap;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -251,41 +249,28 @@ pub async fn add_document(
     let payload = check_json!(payload);
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-
-    let schema = index.schema();
     let wait = query.0.wait.unwrap_or(true);
 
     match payload.0 {
         DocumentOptions::Single(doc) => {
-            let document = check_error!(
-                schema.convert_named_doc(doc).map_err(Error::from),
-                "parse document from raw"
-            );
-
+            debug!("adding single document to index: {}", index_name.as_str());
             if wait {
-                check_error!(index.add_document(document).await, "add document");
+                check_error!(index.add_document(doc).await, "add document");
             } else {
                 tokio::spawn(async move {
-                    if let Err(e) = index.add_document(document).await {
+                    if let Err(e) = index.add_document(doc).await {
                         error!("failed to add document {:?}", e);
                     }
                 });
             }
         }
         DocumentOptions::Many(docs) => {
-            let mut documents = Vec::with_capacity(docs.len());
-            for doc in docs {
-                documents.push(check_error!(
-                    schema.convert_named_doc(doc).map_err(Error::from),
-                    "parse document from raw"
-                ))
-            }
-
+            debug!("adding multiple document to index: {}", index_name.as_str());
             if wait {
-                check_error!(index.add_many_documents(documents).await, "add documents");
+                check_error!(index.add_many_documents(docs).await, "add documents");
             } else {
                 tokio::spawn(async move {
-                    if let Err(e) = index.add_many_documents(documents).await {
+                    if let Err(e) = index.add_many_documents(docs).await {
                         error!("failed to add documents {:?}", e);
                     }
                 });
@@ -311,10 +296,7 @@ pub async fn get_document(
     let (index_name, document_id) = check_path!(params).0;
 
     let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-    let doc = check_error!(
-        index.get_doc(document_id).await,
-        "retrieve doc"
-    );
+    let doc = check_error!(index.get_doc(document_id).await, "retrieve doc");
 
     json_response(StatusCode::OK, &doc)
 }

@@ -16,6 +16,8 @@ pub struct Context {
     pub target_server: String,
     pub no_prep: bool,
     pub index: String,
+    pub use_fast_fuzzy: bool,
+    pub strip_stop_words: bool,
 }
 
 pub fn run(ctx: Context) -> anyhow::Result<()> {
@@ -32,7 +34,7 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     }
 
     if !ctx.no_prep {
-        prep(&ctx.target_server, &ctx.index).await?;
+        prep(&ctx).await?;
     }
 
     let _ = routes::TARGET_URL.set(format!("{}/indexes/{}/search", &ctx.target_server, &ctx.index));
@@ -49,12 +51,12 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
+async fn prep(ctx: &Context) -> anyhow::Result<()> {
     let data: serde_json::Value = serde_json::from_str(include_str!("../static/movies.json"))?;
 
     let client = reqwest::Client::new();
     let payload = serde_json::json!({
-        "name": index,
+        "name": &ctx.index,
 
         "writer_buffer": 60_000_000,
         "writer_threads": 4,
@@ -100,10 +102,13 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
         "boost_fields": {
             "title": 2.0,
             "overview": 0.8
-        }
+        },
+
+        "use_fast_fuzzy": ctx.use_fast_fuzzy,
+        "strip_stop_words": ctx.strip_stop_words,
     });
 
-    let r = client.post(format!("{}/indexes?override_if_exists=true", target))
+    let r = client.post(format!("{}/indexes?override_if_exists=true", &ctx.target_server))
         .json(&payload)
         .send()
         .await?;
@@ -118,7 +123,7 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
 
     // Clear the existing docs
     let r = client
-        .delete(format!("{}/indexes/{}/documents/clear", target, index))
+        .delete(format!("{}/indexes/{}/documents/clear", &ctx.target_server, &ctx.index))
         .send()
         .await?;
 
@@ -129,7 +134,7 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
 
     let start = Instant::now();
     let r = client
-        .post(format!("{}/indexes/{}/documents", target, index))
+        .post(format!("{}/indexes/{}/documents", &ctx.target_server, &ctx.index))
         .json(&data)
         .send()
         .await?;
@@ -140,7 +145,7 @@ async fn prep(target: &str, index: &str) -> anyhow::Result<()> {
     }
 
     let r = client
-        .post(format!("{}/indexes/{}/commit", target, index))
+        .post(format!("{}/indexes/{}/commit", &ctx.target_server, &ctx.index))
         .send()
         .await?;
 

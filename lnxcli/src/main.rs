@@ -49,6 +49,10 @@ pub enum Commands {
         /// The path to get the query string data.
         #[structopt(long, short = "terms")]
         search_terms: String,
+
+        /// Whether or not use the existing data in the system or flush it.
+        #[structopt(long)]
+        no_prep: bool,
     },
 
     /// Runs a demo app to play around with the search as you type setup.
@@ -71,6 +75,14 @@ pub enum Commands {
         /// The index name to target.
         #[structopt(long, short, default_value = "demo")]
         index: String,
+
+        /// Uses the fast fuzzy system when creating the index.
+        #[structopt(long)]
+        use_fast_fuzzy: bool,
+
+        /// Enables stop word stripping when creating the index.
+        #[structopt(long)]
+        strip_stop_words: bool,
     },
 }
 
@@ -90,6 +102,7 @@ fn main() -> anyhow::Result<()> {
             threads,
             output_dir,
             search_terms,
+            no_prep,
         } => {
             let ctx = benchmark::Context {
                 address,
@@ -98,6 +111,7 @@ fn main() -> anyhow::Result<()> {
                 target,
                 mode,
                 search_terms,
+                no_prep,
                 threads: threads.unwrap_or_else(|| num_cpus::get()),
                 output: output_dir,
             };
@@ -111,12 +125,16 @@ fn main() -> anyhow::Result<()> {
             target_server,
             no_prep,
             index,
+            use_fast_fuzzy,
+            strip_stop_words,
         } => {
             let ctx = demo::Context {
                 bind,
                 target_server,
                 no_prep,
                 index,
+                use_fast_fuzzy,
+                strip_stop_words,
             };
 
             info!("starting demo app");

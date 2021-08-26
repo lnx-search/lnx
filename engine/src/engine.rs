@@ -3,6 +3,7 @@ use hashbrown::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::correction::enable_load_dictionaries;
 use crate::index::IndexHandler;
 use crate::storage::StorageManager;
 use crate::structures::IndexDeclaration;
@@ -21,7 +22,14 @@ pub struct SearchEngine {
 impl SearchEngine {
     /// Creates a new search engine loading the existing index metadata
     /// from the given directory.
-    pub async fn create(dir: &str) -> Result<Self> {
+    pub async fn create(dir: &str, enable_fast_fuzzy: bool) -> Result<Self> {
+        crate::stop_words::init_stop_words()?;
+
+        if enable_fast_fuzzy {
+            info!("fuzzy search has been enabled! Beginning startup procedure.");
+            tokio::task::spawn_blocking(move || enable_load_dictionaries()).await??;
+        }
+
         let storage = StorageManager::with_directory(dir.to_string()).await?;
         let loaded_indexes = storage.load_all().await?;
 
