@@ -22,6 +22,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 
 - 🤓 **Complex Query Parser.**
 - ❤️ **Typo tolerant fuzzy queries.**
+- ⚡️ **Typo tolerant fast-fuzzy queries. (pre-computed spell correction)**
 - 🔥 **More-Like-This queries.**
 - Order by fields.
 - *Fast* indexing.
@@ -63,7 +64,7 @@ As a more detailed insight:
  INFO  lnxcli                 > commands complete!
 ```
 
-#### lnx
+#### lnx (default fuzzy search)
 ```
  INFO  lnxcli > starting benchmark system
  INFO  benchmark > starting runtime with 12 threads
