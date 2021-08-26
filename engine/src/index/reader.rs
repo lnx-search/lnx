@@ -304,7 +304,15 @@ impl IndexReaderHandler {
             &self.name,
             time_taken,
             limit,
-            if let QueryMode::Fuzzy = mode { if use_fast_fuzzy { "FastFuzzy".to_string() } else { "Fuzzy".to_string() } } else { format!("{:?}", mode) },
+            if let QueryMode::Fuzzy = mode {
+                if use_fast_fuzzy {
+                    "FastFuzzy".to_string()
+                } else {
+                    "Fuzzy".to_string()
+                }
+            } else {
+                format!("{:?}", mode)
+            },
             res.count
         );
 
@@ -419,14 +427,14 @@ fn parse_fast_fuzzy_query(
         for word in words.iter() {
             if !stop_words.contains(*word) {
                 ignore_stop_words = true;
-                break
+                break;
             }
         }
     }
 
     for search_term in words.iter() {
         if ignore_stop_words && stop_words.contains(*search_term) {
-            continue
+            continue;
         }
 
         for (field, boost) in search_fields.iter() {
@@ -574,7 +582,7 @@ fn search(
     );
 
     Ok(QueryResults {
-        time_taken: 0f32,   // filled in by handler later
+        time_taken: 0f32, // filled in by handler later
         hits,
         count,
     })

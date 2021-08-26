@@ -1,9 +1,12 @@
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
-use tantivy::schema::{IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT, Cardinality, Field};
-use tantivy::{DateTime, Score};
 use crate::helpers::hash;
+use tantivy::schema::{
+    Cardinality, Field, IntOptions, Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
+};
+use tantivy::{DateTime, Score};
 
 /// A declared schema field type.
 ///
