@@ -115,7 +115,7 @@ impl IndexDeclaration {
                     schema.add_text_field(&name, opts);
                 }
                 FieldDeclaration::Text { stored } => {
-                    let field = if !self.use_fast_fuzzy {
+                    let field = if !(self.use_fast_fuzzy && crate::correction::enabled()) {
                         let mut opts = TEXT;
 
                         if stored {
