@@ -7,8 +7,7 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
-use engine::tantivy::schema::NamedFieldDocument;
+use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, Document};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::auth::{AuthManager, Permissions};
@@ -228,10 +227,10 @@ pub struct PendingQueries {
 #[serde(untagged)]
 pub enum DocumentOptions {
     /// A singular document payload.
-    Single(NamedFieldDocument),
+    Single(Document),
 
     /// An array of documents acting as a bulk insertion.
-    Many(Vec<NamedFieldDocument>),
+    Many(Vec<Document>),
 }
 
 /// Adds one or more documents to the given index.

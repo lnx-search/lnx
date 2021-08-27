@@ -1,12 +1,18 @@
 use hashbrown::HashMap;
-use serde::{Deserialize, Serialize};
+use anyhow::{Result, Error};
+use core::fmt;
+
+use serde::{Deserialize, Serialize, Deserializer};
+use serde::de::Visitor;
+
+use std::str::FromStr;
+use std::collections::BTreeMap;
+
+use tantivy::schema::{Cardinality, Field, IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, Document as InternalDocument, STORED, STRING, TEXT, FieldType};
+use tantivy::{DateTime, Score};
+use tantivy::fastfield::FastValue;
 
 use crate::helpers::hash;
-use tantivy::schema::{
-    Cardinality, Field, IntOptions, Schema as InternalSchema,
-    SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
-};
-use tantivy::{DateTime, Score};
 
 /// A declared schema field type.
 ///
@@ -309,6 +315,103 @@ pub enum FieldValue {
     /// A text field.
     Text(Vec<String>),
 }
+
+#[derive(Debug, Deserialize)]
+pub struct Document(pub BTreeMap<String, Vec<DocumentValue>>);
+
+/// A document that can be processed by tantivy.
+#[derive(Debug)]
+pub enum DocumentValue {
+    /// A signed 64 bit integer.
+    I64(i64),
+
+    /// A 64 bit floating point number.
+    F64(f64),
+
+    /// A unsigned 64 bit integer.
+    U64(u64),
+
+    /// A datetime field, deserialized as a u64 int.
+    Datetime(DateTime),
+
+    /// A text field.
+    Text(String),
+}
+
+impl<'de> Deserialize<'de> for DocumentValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ValueVisitor;
+
+        impl<'de> Visitor<'de> for ValueVisitor {
+            type Value = DocumentValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string or u32")
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(DocumentValue::I64(v))
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(DocumentValue::U64(v))
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+                Ok(DocumentValue::F64(v))
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                    return Ok(DocumentValue::Datetime(dt))
+                }
+
+                Ok(DocumentValue::Text(v.to_owned()))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
+                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                    return Ok(DocumentValue::Datetime(dt))
+                }
+                Ok(DocumentValue::Text(v))
+            }
+        }
+
+        deserializer.deserialize_any(ValueVisitor)
+    }
+}
+
+impl Document {
+    pub(crate) fn parse_into_document(self, schema: &InternalSchema) -> Result<InternalDocument> {
+        let mut doc = InternalDocument::new();
+        for (key, values) in self.0 {
+            let field = schema.get_field(&key)
+                .ok_or_else(|| Error::msg(format!("field {:?} does not exist in schema", &key)))?;
+
+            let entry = schema.get_field_entry(field);
+            let field_type = entry.field_type();
+
+            for value in values {
+                match (value, field_type) {
+                    (DocumentValue::I64(v), FieldType::I64(_)) => doc.add_i64(field, v),
+                    (DocumentValue::U64(v), FieldType::U64(_)) => doc.add_u64(field, v),
+                    (DocumentValue::F64(v), FieldType::F64(_)) => doc.add_f64(field, v),
+                    (DocumentValue::Text(v), FieldType::Str(_)) => doc.add_text(field, v),
+                    (DocumentValue::Datetime(v), FieldType::Str(_)) => doc.add_text(field, v.to_string()),
+                    (DocumentValue::Datetime(v), FieldType::Date(_)) => doc.add_date(field, &v),
+                    (DocumentValue::U64(v), FieldType::Date(_)) => doc.add_date(field, &DateTime::from_u64(v)),
+                    _ => return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value", &key, field_type)))
+                }
+            }
+        }
+
+        Ok(doc)
+    }
+}
+
 
 mod deserialize_datetime {
     use serde::{Deserialize, Deserializer};
