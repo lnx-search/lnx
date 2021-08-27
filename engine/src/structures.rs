@@ -7,13 +7,12 @@ use serde::de::Visitor;
 
 use std::str::FromStr;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 use tantivy::schema::{Cardinality, Field, IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, Document as InternalDocument, STORED, STRING, TEXT, FieldType};
 use tantivy::{DateTime, Score};
-use tantivy::fastfield::FastValue;
 
 use crate::helpers::hash;
+use chrono::Utc;
 
 /// A declared schema field type.
 ///
@@ -405,21 +404,21 @@ impl Document {
                     (DocumentValue::Datetime(v), FieldType::Date(_)) => doc.add_date(field, &v),
                     (DocumentValue::I64(v), FieldType::Date(_)) => {
                         match chrono::NaiveDateTime::from_timestamp_opt(v, 0) {
-                            Ok(v) => {
-                                let dt = chrono::DateTime::from_utc(v, 0);
+                            Some(dt) => {
+                                let dt = chrono::DateTime::from_utc(dt, Utc);
                                 doc.add_date(field, &dt)
                             },
-                            Err(_) =>
+                            None =>
                                 return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
                         }
                     },
                     (DocumentValue::U64(v), FieldType::Date(_)) => {
                         match chrono::NaiveDateTime::from_timestamp_opt(v as i64, 0) {
-                            Ok(v) => {
-                                let dt = chrono::DateTime::from_utc(v, 0);
+                            Some(dt) => {
+                                let dt = chrono::DateTime::from_utc(dt, Utc);
                                 doc.add_date(field, &dt)
                             },
-                            Err(_) =>
+                            None =>
                                 return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
                         }
                     },
