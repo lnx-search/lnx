@@ -1,11 +1,10 @@
-use once_cell::sync::OnceCell;
 use std::fs;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use symspell::{AsciiStringStrategy, SymSpell};
-
 use flate2::write::GzDecoder;
+use once_cell::sync::OnceCell;
+use symspell::{AsciiStringStrategy, SymSpell};
 
 static SYMSPELL: OnceCell<SymSpell<AsciiStringStrategy>> = OnceCell::new();
 static ENABLED: AtomicBool = AtomicBool::new(false);

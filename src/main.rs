@@ -8,27 +8,22 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 
-use tokio::net::TcpListener;
-
-use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
-use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
-use tokio_rustls::TlsAcceptor;
-
+use anyhow::{Error, Result};
 use axum::handler::{delete, get, post, Handler};
 use axum::http::header;
 use axum::Router;
-
+use fern::colors::{Color, ColoredLevelConfig};
+use hyper::http::HeaderValue;
+use hyper::server::conn::Http;
+use log::LevelFilter;
+use structopt::StructOpt;
+use tokio::net::TcpListener;
+use tokio_rustls::rustls::internal::pemfile::{certs, pkcs8_private_keys};
+use tokio_rustls::rustls::{NoClientAuth, ServerConfig};
+use tokio_rustls::TlsAcceptor;
 use tower::ServiceBuilder;
 use tower_http::auth::RequireAuthorizationLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
-
-use hyper::http::HeaderValue;
-use hyper::server::conn::Http;
-
-use anyhow::{Error, Result};
-use fern::colors::{Color, ColoredLevelConfig};
-use log::LevelFilter;
-use structopt::StructOpt;
 
 mod auth;
 mod responders;
@@ -105,7 +100,7 @@ fn main() {
         Err(e) => {
             eprintln!("error during server setup: {:?}", e);
             return;
-        }
+        },
     };
 
     let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
@@ -120,7 +115,7 @@ fn main() {
         Err(e) => {
             error!("error during runtime creation: {:?}", e);
             return;
-        }
+        },
     };
 
     if let Err(e) = result {
@@ -360,7 +355,7 @@ fn check_tls_files(settings: &Settings) -> Result<Option<Arc<ServerConfig>>> {
             return Err(Error::msg(
                 "missing a required TLS field, both key and cert must be provided.",
             ))
-        }
+        },
     }
 }
 

@@ -1,6 +1,7 @@
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use hashbrown::HashMap;
-use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::correction::enable_load_dictionaries;
