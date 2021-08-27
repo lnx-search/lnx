@@ -1,6 +1,6 @@
 [package]
 name = "engine"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Harrison Burt <57491488+ChillFish8@users.noreply.github.com>"]
 edition = "2018"
 
