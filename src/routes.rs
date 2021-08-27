@@ -7,7 +7,7 @@ use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejectio
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
 
-use engine::structures::{FieldValue, IndexDeclaration, QueryPayload, Document};
+use engine::structures::{Document, FieldValue, IndexDeclaration, QueryPayload};
 use engine::{LeasedIndex, SearchEngine};
 
 use crate::auth::{AuthManager, Permissions};

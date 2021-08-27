@@ -1,14 +1,17 @@
-use hashbrown::HashMap;
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use core::fmt;
+use hashbrown::HashMap;
 
-use serde::{Deserialize, Serialize, Deserializer};
 use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize};
 
-use std::str::FromStr;
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
-use tantivy::schema::{Cardinality, Field, IntOptions, Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, Document as InternalDocument, STORED, STRING, TEXT, FieldType};
+use tantivy::schema::{
+    Cardinality, Document as InternalDocument, Field, FieldType, IntOptions,
+    Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
+};
 use tantivy::{DateTime, Score};
 
 use crate::helpers::hash;
@@ -332,7 +335,6 @@ mod deserialize_datetime {
     }
 }
 
-
 /// A tantivy document representation.
 ///
 /// This is checked against the schema and validated before being
@@ -387,7 +389,7 @@ impl<'de> Deserialize<'de> for DocumentValue {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 if let Ok(dt) = tantivy::DateTime::from_str(&v) {
-                    return Ok(DocumentValue::Datetime(dt))
+                    return Ok(DocumentValue::Datetime(dt));
                 }
 
                 Ok(DocumentValue::Text(v.to_owned()))
@@ -395,7 +397,7 @@ impl<'de> Deserialize<'de> for DocumentValue {
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 if let Ok(dt) = tantivy::DateTime::from_str(&v) {
-                    return Ok(DocumentValue::Datetime(dt))
+                    return Ok(DocumentValue::Datetime(dt));
                 }
                 Ok(DocumentValue::Text(v))
             }
@@ -409,7 +411,8 @@ impl Document {
     pub(crate) fn parse_into_document(self, schema: &InternalSchema) -> Result<InternalDocument> {
         let mut doc = InternalDocument::new();
         for (key, values) in self.0 {
-            let field = schema.get_field(&key)
+            let field = schema
+                .get_field(&key)
                 .ok_or_else(|| Error::msg(format!("field {:?} does not exist in schema", &key)))?;
 
             let entry = schema.get_field_entry(field);
@@ -451,5 +454,3 @@ impl Document {
         Ok(doc)
     }
 }
-
-
