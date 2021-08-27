@@ -1,16 +1,14 @@
 use std::future::Future;
-use std::time::Instant;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 
 use crate::sampler::SamplerHandle;
 
-
 pub(crate) type RequestClient = reqwest::Client;
 pub(crate) type TargetUri = Arc<String>;
 pub(crate) type Query = String;
-
 
 fn get_client_and_addr(address: Arc<String>, index: &str) -> (RequestClient, TargetUri) {
     let search_addr = Arc::new(format!("{}/indexes/{}/search", address, index));
@@ -19,13 +17,12 @@ fn get_client_and_addr(address: Arc<String>, index: &str) -> (RequestClient, Tar
     (client, search_addr)
 }
 
-
 pub(crate) async fn start_standard<T: Future<Output = Result<u16>>>(
     address: Arc<String>,
     mut sample: SamplerHandle,
     terms: Vec<String>,
     index: &str,
-    callback: fn(RequestClient, TargetUri, Query) -> T
+    callback: fn(RequestClient, TargetUri, Query) -> T,
 ) -> Result<()> {
     let (client, search_addr) = get_client_and_addr(address, index);
     sample.start_timing();
@@ -51,7 +48,7 @@ pub(crate) async fn start_typing<T: Future<Output = Result<u16>>>(
     mut sample: SamplerHandle,
     terms: Vec<String>,
     index: &str,
-    callback: fn(RequestClient, TargetUri, Query) -> T
+    callback: fn(RequestClient, TargetUri, Query) -> T,
 ) -> Result<()> {
     let (client, search_addr) = get_client_and_addr(address, index);
     sample.start_timing();

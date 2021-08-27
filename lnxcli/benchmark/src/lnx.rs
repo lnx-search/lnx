@@ -1,9 +1,10 @@
-use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 
+use serde_json::Value;
+
 use crate::sampler::SamplerHandle;
-use crate::shared::{TargetUri, RequestClient, Query};
+use crate::shared::{Query, RequestClient, TargetUri};
 
 pub(crate) async fn prep(address: &str, data: Value, index: &str) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
@@ -43,12 +44,9 @@ pub(crate) async fn bench_standard(
         sample,
         terms,
         &index,
-        move |client, uri, query| {
-            async {
-                search(client, uri, query).await
-            }
-        }
-    ).await
+        move |client, uri, query| async { search(client, uri, query).await },
+    )
+    .await
 }
 
 pub(crate) async fn bench_typing(
@@ -62,12 +60,9 @@ pub(crate) async fn bench_typing(
         sample,
         terms,
         &index,
-        move |client, uri, query| {
-            async {
-                search(client, uri, query).await
-            }
-        }
-    ).await
+        move |client, uri, query| async { search(client, uri, query).await },
+    )
+    .await
 }
 
 async fn search(client: RequestClient, uri: TargetUri, query: Query) -> anyhow::Result<u16> {

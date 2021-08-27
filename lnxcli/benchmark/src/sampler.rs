@@ -1,7 +1,7 @@
-use anyhow::Error;
-use plotters::prelude::*;
 use std::collections::HashMap;
 
+use anyhow::Error;
+use plotters::prelude::*;
 use tokio::sync::oneshot;
 use tokio::time::{Duration, Instant};
 
