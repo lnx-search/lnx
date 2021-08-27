@@ -316,10 +316,31 @@ pub enum FieldValue {
     Text(Vec<String>),
 }
 
+mod deserialize_datetime {
+    use serde::{Deserialize, Deserializer};
+    use tantivy::fastfield::FastValue;
+    use tantivy::DateTime;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<DateTime>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let multi = Vec::<u64>::deserialize(deserializer)?;
+        let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from_u64(*v)).collect();
+
+        Ok(values)
+    }
+}
+
+
+/// A tantivy document representation.
+///
+/// This is checked against the schema and validated before being
+/// converted into a direct tantivy type.
 #[derive(Debug, Deserialize)]
 pub struct Document(pub BTreeMap<String, Vec<DocumentValue>>);
 
-/// A document that can be processed by tantivy.
+/// A document value that can be processed by tantivy.
 #[derive(Debug)]
 pub enum DocumentValue {
     /// A signed 64 bit integer.
@@ -432,18 +453,3 @@ impl Document {
 }
 
 
-mod deserialize_datetime {
-    use serde::{Deserialize, Deserializer};
-    use tantivy::fastfield::FastValue;
-    use tantivy::DateTime;
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<DateTime>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let multi = Vec::<u64>::deserialize(deserializer)?;
-        let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from_u64(*v)).collect();
-
-        Ok(values)
-    }
-}
