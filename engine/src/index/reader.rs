@@ -371,9 +371,11 @@ fn parse_query(
 /// of fault tolerance with spelling. This is the default
 /// config as it its the most plug and play setup.
 fn parse_fuzzy_query(query: &str, search_fields: Arc<Vec<(Field, Score)>>) -> Box<dyn Query> {
+    debug!("using default fuzzy system for {}", &query);
     let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
 
     for search_term in query.to_lowercase().split(" ") {
+        debug!("making fuzzy term for {}", &search_term);
         if search_term.is_empty() {
             continue;
         }
@@ -414,6 +416,7 @@ fn parse_fast_fuzzy_query(
     search_fields: Arc<Vec<(Field, Score)>>,
     strip_stop_words: bool,
 ) -> Result<Box<dyn Query>> {
+    debug!("using fast fuzzy system for {}", &query);
     if query.is_empty() {
         return Ok(Box::new(EmptyQuery {}));
     }
@@ -433,6 +436,7 @@ fn parse_fast_fuzzy_query(
     }
 
     for search_term in words.iter() {
+        debug!("making fast-fuzzy term for {}", &search_term);
         if ignore_stop_words && stop_words.contains(*search_term) {
             continue;
         }
