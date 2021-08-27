@@ -1,13 +1,13 @@
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
-use std::sync::Arc;
-use tokio::fs;
-use tokio::task::JoinHandle;
-
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, Value};
 use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
+use tokio::fs;
+use tokio::task::JoinHandle;
 
 use crate::correction;
 use crate::helpers::{self, hash};
@@ -104,11 +104,11 @@ impl IndexHandler {
                     &loader.name
                 );
                 (index.create_from_tempdir()?, None)
-            }
+            },
             IndexStorageType::Memory => {
                 info!("[ SETUP @ {} ] creating index in memory", &loader.name);
                 (index.create_in_ram()?, None)
-            }
+            },
             IndexStorageType::FileSystem => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
 
@@ -117,7 +117,7 @@ impl IndexHandler {
 
                 let dir = MmapDirectory::open(&path)?;
                 (index.open_or_create(dir)?, Some(path.clone()))
-            }
+            },
         };
 
         Ok(out)
@@ -159,7 +159,7 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                }
+                },
                 (Some(field), None) => {
                     if let Some(boost) = loader.boost_fields.get(&ref_field) {
                         debug!("boosting field for query parser {} {}", &ref_field, boost);
@@ -167,7 +167,7 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                }
+                },
                 (None, _) => {
                     let fields: Vec<String> = loader
                         .schema
@@ -180,7 +180,7 @@ impl IndexHandler {
                         and declared the a search_field {:?} but this does not exist in the defined fields.",
                         fields, &ref_field
                     )));
-                }
+                },
             };
         }
 

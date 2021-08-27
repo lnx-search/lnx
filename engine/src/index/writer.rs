@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-
-use tokio::sync::oneshot;
-
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
-
 use tantivy::{Document, IndexWriter, Term};
+use tokio::sync::oneshot;
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -85,7 +82,7 @@ impl IndexWriterWorker {
                     &self.index_name, e,
                 ),
                 Ok(true) => return true,
-                _ => {}
+                _ => {},
             }
         }
 
@@ -173,7 +170,7 @@ impl IndexWriterHandler {
                 Ok(()) => return Ok(()),
                 Err(channel::TrySendError::Disconnected(_)) => {
                     return Err(Error::msg("writer worker has shutdown"))
-                }
+                },
                 Err(channel::TrySendError::Full(v)) => v,
             };
 

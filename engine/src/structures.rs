@@ -1,21 +1,27 @@
-use anyhow::{Error, Result};
 use core::fmt;
-use hashbrown::HashMap;
-
-use serde::de::Visitor;
-use serde::{Deserialize, Deserializer, Serialize};
-
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+use anyhow::{Error, Result};
+use chrono::Utc;
+use hashbrown::HashMap;
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer, Serialize};
 use tantivy::schema::{
-    Cardinality, Document as InternalDocument, Field, FieldType, IntOptions,
-    Schema as InternalSchema, SchemaBuilder as InternalSchemaBuilder, STORED, STRING, TEXT,
+    Cardinality,
+    Document as InternalDocument,
+    Field,
+    FieldType,
+    IntOptions,
+    Schema as InternalSchema,
+    SchemaBuilder as InternalSchemaBuilder,
+    STORED,
+    STRING,
+    TEXT,
 };
 use tantivy::{DateTime, Score};
 
 use crate::helpers::hash;
-use chrono::Utc;
 
 /// A declared schema field type.
 ///
@@ -105,16 +111,16 @@ impl IndexDeclaration {
             match field {
                 FieldDeclaration::F64(opts) => {
                     schema.add_f64_field(&name, opts);
-                }
+                },
                 FieldDeclaration::U64(opts) => {
                     schema.add_u64_field(&name, opts);
-                }
+                },
                 FieldDeclaration::I64(opts) => {
                     schema.add_f64_field(&name, opts);
-                }
+                },
                 FieldDeclaration::Date(opts) => {
                     schema.add_date_field(&name, opts);
-                }
+                },
                 FieldDeclaration::String { stored } => {
                     let mut opts = STRING;
 
@@ -122,7 +128,7 @@ impl IndexDeclaration {
                         opts = opts | STORED;
                     }
                     schema.add_text_field(&name, opts);
-                }
+                },
                 FieldDeclaration::Text { stored } => {
                     let field = if !(self.use_fast_fuzzy && crate::correction::enabled()) {
                         let mut opts = TEXT;
@@ -149,7 +155,7 @@ impl IndexDeclaration {
                     };
 
                     fuzzy_search_fields.push((field, boost));
-                }
+                },
             };
         }
 

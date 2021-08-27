@@ -1,5 +1,6 @@
-use ahash::AHasher;
 use std::hash::{Hash, Hasher};
+
+use ahash::AHasher;
 
 use crate::correction::correct_sentence;
 use crate::structures;

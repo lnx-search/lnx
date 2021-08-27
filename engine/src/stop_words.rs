@@ -1,8 +1,9 @@
+use std::io::Write;
+
 use anyhow::{Error, Result};
 use flate2::write::GzDecoder;
 use hashbrown::HashSet;
 use once_cell::sync::OnceCell;
-use std::io::Write;
 
 static STOP_WORDS: OnceCell<Vec<String>> = OnceCell::new();
 static STOP_WORDS_HASHSET: OnceCell<HashSet<String>> = OnceCell::new();
