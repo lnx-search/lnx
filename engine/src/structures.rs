@@ -346,7 +346,14 @@ mod deserialize_datetime {
 /// This is checked against the schema and validated before being
 /// converted into a direct tantivy type.
 #[derive(Debug, Deserialize)]
-pub struct Document(pub BTreeMap<String, Vec<DocumentValue>>);
+pub struct Document(pub BTreeMap<String, DocumentItem>);
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum DocumentItem {
+    Single(DocumentValue),
+    Multi(Vec<DocumentValue>)
+}
 
 /// A document value that can be processed by tantivy.
 #[derive(Debug)]
@@ -424,39 +431,51 @@ impl Document {
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
 
-            for value in values {
-                match (value, field_type) {
-                    (DocumentValue::I64(v), FieldType::I64(_)) => doc.add_i64(field, v),
-                    (DocumentValue::U64(v), FieldType::U64(_)) => doc.add_u64(field, v),
-                    (DocumentValue::F64(v), FieldType::F64(_)) => doc.add_f64(field, v),
-                    (DocumentValue::Text(v), FieldType::Str(_)) => doc.add_text(field, v),
-                    (DocumentValue::Datetime(v), FieldType::Str(_)) => doc.add_text(field, v.to_string()),
-                    (DocumentValue::Datetime(v), FieldType::Date(_)) => doc.add_date(field, &v),
-                    (DocumentValue::I64(v), FieldType::Date(_)) => {
-                        match chrono::NaiveDateTime::from_timestamp_opt(v, 0) {
-                            Some(dt) => {
-                                let dt = chrono::DateTime::from_utc(dt, Utc);
-                                doc.add_date(field, &dt)
-                            },
-                            None =>
-                                return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
-                        }
-                    },
-                    (DocumentValue::U64(v), FieldType::Date(_)) => {
-                        match chrono::NaiveDateTime::from_timestamp_opt(v as i64, 0) {
-                            Some(dt) => {
-                                let dt = chrono::DateTime::from_utc(dt, Utc);
-                                doc.add_date(field, &dt)
-                            },
-                            None =>
-                                return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
-                        }
-                    },
-                    _ => return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value", &key, field_type)))
-                }
-            }
+            match values {
+                DocumentItem::Single(value) =>
+                    add_value(&key, field, field_type, value, &mut doc)?,
+                DocumentItem::Multi(values) => {
+                    for value in values {
+                        add_value(&key, field, field_type, value, &mut doc)?;
+                    }
+                },
+            };
         }
 
         Ok(doc)
     }
+}
+
+fn add_value(key: &String, field: Field, field_type: &FieldType, value: DocumentValue, doc: &mut InternalDocument) -> Result<()> {
+    match (value, field_type) {
+        (DocumentValue::I64(v), FieldType::I64(_)) => doc.add_i64(field, v),
+        (DocumentValue::U64(v), FieldType::U64(_)) => doc.add_u64(field, v),
+        (DocumentValue::F64(v), FieldType::F64(_)) => doc.add_f64(field, v),
+        (DocumentValue::Text(v), FieldType::Str(_)) => doc.add_text(field, v),
+        (DocumentValue::Datetime(v), FieldType::Str(_)) => doc.add_text(field, v.to_string()),
+        (DocumentValue::Datetime(v), FieldType::Date(_)) => doc.add_date(field, &v),
+        (DocumentValue::I64(v), FieldType::Date(_)) => {
+            match chrono::NaiveDateTime::from_timestamp_opt(v, 0) {
+                Some(dt) => {
+                    let dt = chrono::DateTime::from_utc(dt, Utc);
+                    doc.add_date(field, &dt)
+                },
+                None =>
+                    return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
+            }
+        },
+        (DocumentValue::U64(v), FieldType::Date(_)) => {
+            match chrono::NaiveDateTime::from_timestamp_opt(v as i64, 0) {
+                Some(dt) => {
+                    let dt = chrono::DateTime::from_utc(dt, Utc);
+                    doc.add_date(field, &dt)
+                },
+                None =>
+                    return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &key, field_type))),
+            }
+        },
+        _ => return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value", &key, field_type)))
+    }
+
+    Ok(())
 }
