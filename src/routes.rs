@@ -318,7 +318,7 @@ pub async fn delete_documents(
         );
     }
 
-    json_response(StatusCode::OK, &())
+    json_response(StatusCode::OK, "deleted any document matching term")
 }
 
 /// Deletes all documents.
