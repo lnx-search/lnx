@@ -1,11 +1,10 @@
 #[macro_use]
 extern crate log;
 
-use structopt::StructOpt;
 use std::net::SocketAddr;
 
 use benchmark::{self, BenchMode, BenchTarget};
-
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnxcli", about = "A utility cli for benchmarking and testing")]
@@ -145,7 +144,7 @@ fn main() -> anyhow::Result<()> {
 
             info!("starting demo app");
             demo::run(ctx)
-        }
+        },
     }?;
 
     info!("commands complete!");

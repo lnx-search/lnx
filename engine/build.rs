@@ -1,6 +1,5 @@
-use std::fs;
 use std::io::Write;
-use std::path;
+use std::{fs, path};
 
 use anyhow::Result;
 use flate2::write::GzEncoder;

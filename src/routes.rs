@@ -1,15 +1,13 @@
-use hashbrown::HashMap;
-use serde::Deserialize;
 use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
 use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejection};
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
-
-use engine::structures::{FieldValue, IndexDeclaration, QueryPayload};
-use engine::tantivy::schema::NamedFieldDocument;
+use engine::structures::{Document, IndexDeclaration, QueryPayload, DocumentValue};
 use engine::{LeasedIndex, SearchEngine};
+use hashbrown::HashMap;
+use serde::Deserialize;
 
 use crate::auth::{AuthManager, Permissions};
 use crate::responders::json_response;
@@ -27,7 +25,7 @@ macro_rules! get_index_or_reject {
                     StatusCode::BAD_REQUEST,
                     &format!("no index exists with name '{}", $name),
                 );
-            }
+            },
             Some(index) => index,
         }
     }};
@@ -72,21 +70,21 @@ macro_rules! check_path {
                     StatusCode::BAD_REQUEST,
                     &format!("invalid path parameter {}", e),
                 );
-            }
+            },
             Err(PathParamsRejection::MissingRouteParams(e)) => {
                 warn!("rejecting request due to {:?}", e);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("missing required route parameters: {}", e),
                 );
-            }
+            },
             Err(e) => {
                 warn!("rejecting request due to {:?}", e);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("error with path handling: {}", e),
                 );
-            }
+            },
         }
     }};
 }
@@ -105,14 +103,14 @@ macro_rules! check_query {
                     StatusCode::BAD_REQUEST,
                     &format!("failed to deserialize query string: {}", e),
                 );
-            }
+            },
             Err(e) => {
                 warn!("rejecting request due to {:?}", e);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("error with query string handling: {}", e),
                 );
-            }
+            },
         }
     }};
 }
@@ -131,25 +129,25 @@ macro_rules! check_json {
                     StatusCode::BAD_REQUEST,
                     "request missing application/json content type",
                 );
-            }
+            },
             Err(JsonRejection::InvalidJsonBody(e)) => {
                 warn!("rejecting request due to invalid body: {:?}", e);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("invalid JSON body: {}", e),
                 );
-            }
+            },
             Err(JsonRejection::BodyAlreadyExtracted(_)) => {
                 warn!("rejecting request due to duplicate body extracting");
                 return json_response(StatusCode::BAD_REQUEST, "body already extracted");
-            }
+            },
             Err(e) => {
                 warn!("rejecting request due to unknown error: {:?}", e);
                 return json_response(
                     StatusCode::BAD_REQUEST,
                     &format!("error with json payload: {}", e),
                 );
-            }
+            },
         }
     }};
 }
@@ -228,10 +226,10 @@ pub struct PendingQueries {
 #[serde(untagged)]
 pub enum DocumentOptions {
     /// A singular document payload.
-    Single(NamedFieldDocument),
+    Single(Document),
 
     /// An array of documents acting as a bulk insertion.
-    Many(Vec<NamedFieldDocument>),
+    Many(Vec<Document>),
 }
 
 /// Adds one or more documents to the given index.
@@ -263,7 +261,7 @@ pub async fn add_document(
                     }
                 });
             }
-        }
+        },
         DocumentOptions::Many(docs) => {
             debug!("adding multiple document to index: {}", index_name.as_str());
             if wait {
@@ -275,7 +273,7 @@ pub async fn add_document(
                     }
                 });
             }
-        }
+        },
     }
 
     json_response(
@@ -304,7 +302,7 @@ pub async fn get_document(
 /// Deletes any documents matching the set of given terms.
 pub async fn delete_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
-    terms: Result<extract::Json<HashMap<String, FieldValue>>, JsonRejection>,
+    terms: Result<extract::Json<HashMap<String, DocumentValue>>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
@@ -320,7 +318,7 @@ pub async fn delete_documents(
         );
     }
 
-    json_response(StatusCode::OK, &())
+    json_response(StatusCode::OK, "deleted any document matching term")
 }
 
 /// Deletes all documents.

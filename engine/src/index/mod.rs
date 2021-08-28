@@ -1,43 +1,24 @@
+use std::sync::Arc;
+
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
-use std::sync::Arc;
-use tokio::fs;
-use tokio::task::JoinHandle;
-
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
-use tantivy::schema::{NamedFieldDocument, Schema, Value};
+use tantivy::schema::{Schema, Value, FieldType};
 use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
+use tokio::fs;
+use tokio::task::JoinHandle;
 
 use crate::correction;
 use crate::helpers::{self, hash};
 use crate::index::reader::QueryHit;
-use crate::structures::{FieldValue, IndexStorageType, LoadedIndex, QueryPayload};
+use crate::structures::{self, IndexStorageType, LoadedIndex, QueryPayload, DocumentValue};
+use chrono::Utc;
 
 pub(super) mod reader;
 pub(super) mod writer;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
-
-/// Converts an array of items into selecting one or rejecting
-/// it all together.
-macro_rules! add_values_to_terms {
-    ($t:ident::$cb:ident, $field:expr, &$sv:expr) => {{
-        if $sv.len() == 0 {
-            Err(Error::msg("field must have one value"))
-        } else {
-            Ok($t::$cb($field, &$sv[0]))
-        }
-    }};
-
-    ($t:ident::$cb:ident, $field:expr, $sv:expr) => {{
-        if $sv.len() == 0 {
-            Err(Error::msg("field must have one value"))
-        } else {
-            Ok($t::$cb($field, $sv[0]))
-        }
-    }};
-}
 
 /// A search engine index.
 ///
@@ -104,11 +85,11 @@ impl IndexHandler {
                     &loader.name
                 );
                 (index.create_from_tempdir()?, None)
-            }
+            },
             IndexStorageType::Memory => {
                 info!("[ SETUP @ {} ] creating index in memory", &loader.name);
                 (index.create_in_ram()?, None)
-            }
+            },
             IndexStorageType::FileSystem => {
                 info!("[ SETUP @ {} ] creating index in directory", &loader.name);
 
@@ -117,7 +98,7 @@ impl IndexHandler {
 
                 let dir = MmapDirectory::open(&path)?;
                 (index.open_or_create(dir)?, Some(path.clone()))
-            }
+            },
         };
 
         Ok(out)
@@ -159,7 +140,7 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                }
+                },
                 (Some(field), None) => {
                     if let Some(boost) = loader.boost_fields.get(&ref_field) {
                         debug!("boosting field for query parser {} {}", &ref_field, boost);
@@ -167,7 +148,7 @@ impl IndexHandler {
                     } else {
                         search_fields.push((field, 0.0f32));
                     };
-                }
+                },
                 (None, _) => {
                     let fields: Vec<String> = loader
                         .schema
@@ -180,7 +161,7 @@ impl IndexHandler {
                         and declared the a search_field {:?} but this does not exist in the defined fields.",
                         fields, &ref_field
                     )));
-                }
+                },
             };
         }
 
@@ -253,22 +234,47 @@ impl IndexHandler {
     /// Builds a `Term` from a given field and value.
     ///
     /// This assumes that the value type matches up with the field type.
-    pub fn get_term(&self, field: &str, value: FieldValue) -> Result<Term> {
+    pub fn get_term(&self, field: &str, value: DocumentValue) -> Result<Term> {
         let field = self
             .schema
             .get_field(field)
             .map(|v| Ok(v))
             .unwrap_or_else(|| Err(Error::msg("unknown field")))?;
 
-        let v = match value {
-            FieldValue::I64(v) => add_values_to_terms!(Term::from_field_i64, field, v)?,
-            FieldValue::F64(v) => add_values_to_terms!(Term::from_field_f64, field, v)?,
-            FieldValue::U64(v) => add_values_to_terms!(Term::from_field_u64, field, v)?,
-            FieldValue::Datetime(v) => add_values_to_terms!(Term::from_field_date, field, &v)?,
-            FieldValue::Text(v) => add_values_to_terms!(Term::from_field_text, field, &v)?,
+        let entry = self.schema.get_field_entry(field);
+        let field_type = entry.field_type();
+
+        let term = match (value, field_type) {
+            (DocumentValue::I64(v), FieldType::I64(_)) => Term::from_field_i64(field, v),
+            (DocumentValue::U64(v), FieldType::U64(_)) => Term::from_field_u64(field, v),
+            (DocumentValue::F64(v), FieldType::F64(_)) => Term::from_field_f64(field, v),
+            (DocumentValue::Text(v), FieldType::Str(_)) => Term::from_field_text(field, &v),
+            (DocumentValue::Datetime(v), FieldType::Str(_)) => Term::from_field_text(field, &v.to_string()),
+            (DocumentValue::Datetime(v), FieldType::Date(_)) => Term::from_field_date(field, &v),
+            (DocumentValue::I64(v), FieldType::Date(_)) => {
+                match chrono::NaiveDateTime::from_timestamp_opt(v, 0) {
+                    Some(dt) => {
+                        let dt = chrono::DateTime::from_utc(dt, Utc);
+                        Term::from_field_date(field, &dt)
+                    },
+                    None =>
+                        return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &field, field_type))),
+                }
+            },
+            (DocumentValue::U64(v), FieldType::Date(_)) => {
+                match chrono::NaiveDateTime::from_timestamp_opt(v as i64, 0) {
+                    Some(dt) => {
+                        let dt = chrono::DateTime::from_utc(dt, Utc);
+                        Term::from_field_date(field, &dt)
+                    },
+                    None =>
+                        return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value (invalid timestamp)", &field, field_type))),
+                }
+            },
+            _ => return Err(Error::msg(format!("filed {:?} is type {:?} in schema but did not get a valid value", &field, field_type)))
         };
 
-        Ok(v)
+        Ok(term)
     }
 
     /// Gets a document with a given document address.
@@ -297,7 +303,7 @@ impl IndexHandler {
     }
 
     /// Submits a document to be processed by the index writer.
-    pub async fn add_document(&self, mut document: NamedFieldDocument) -> Result<()> {
+    pub async fn add_document(&self, mut document: structures::Document) -> Result<()> {
         let field = self.schema.get_field("_id").ok_or_else(|| {
             Error::msg(
                 "system has not correctly initialised this schema,\
@@ -309,7 +315,7 @@ impl IndexHandler {
             helpers::correct_doc_fields(&mut document, self.indexed_fields());
         }
 
-        let mut doc = self.schema.convert_named_doc(document)?;
+        let mut doc = document.parse_into_document(&self.schema)?;
 
         let id = uuid::Uuid::new_v4();
         doc.add_u64(field, hash(&id));
@@ -326,7 +332,7 @@ impl IndexHandler {
     /// linear.
     ///
     /// If fast fuzzy is not enabled however, this just calls add_docs in a loop.
-    pub async fn add_many_documents(&self, documents: Vec<NamedFieldDocument>) -> Result<()> {
+    pub async fn add_many_documents(&self, documents: Vec<structures::Document>) -> Result<()> {
         let field = self.schema.get_field("_id").ok_or_else(|| {
             Error::msg(
                 "system has not correctly initialised this schema,\
@@ -361,8 +367,7 @@ impl IndexHandler {
                     let mut processed_documents = vec![];
                     while let Ok(mut doc) = receiver.recv() {
                         helpers::correct_doc_fields(&mut doc, fields.as_ref());
-                        let doc = schema.convert_named_doc(doc)?;
-
+                        let doc = doc.parse_into_document(&schema)?;
                         processed_documents.push(doc);
                     }
 

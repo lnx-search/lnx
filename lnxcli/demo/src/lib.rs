@@ -2,10 +2,11 @@
 extern crate log;
 
 use std::net::SocketAddr;
-use axum::Router;
-use axum::handler::{get, post};
-use anyhow::Error;
 use std::time::Instant;
+
+use anyhow::Error;
+use axum::handler::{get, post};
+use axum::Router;
 use hyper::http::StatusCode;
 use tokio::time::Duration;
 
@@ -30,14 +31,17 @@ pub fn run(ctx: Context) -> anyhow::Result<()> {
 
 async fn start(ctx: Context) -> anyhow::Result<()> {
     if !ctx.target_server.starts_with("http") {
-        return Err(Error::msg("target server must include the http protocol."))
+        return Err(Error::msg("target server must include the http protocol."));
     }
 
     if !ctx.no_prep {
         prep(&ctx).await?;
     }
 
-    let _ = routes::TARGET_URL.set(format!("{}/indexes/{}/search", &ctx.target_server, &ctx.index));
+    let _ = routes::TARGET_URL.set(format!(
+        "{}/indexes/{}/search",
+        &ctx.target_server, &ctx.index
+    ));
 
     let app = Router::new()
         .route("/", get(routes::index))
@@ -109,14 +113,19 @@ async fn prep(ctx: &Context) -> anyhow::Result<()> {
         "strip_stop_words": ctx.strip_stop_words,
     });
 
-    let r = client.post(format!("{}/indexes?override_if_exists=true", &ctx.target_server))
+    let r = client
+        .post(format!(
+            "{}/indexes?override_if_exists=true",
+            &ctx.target_server
+        ))
         .json(&payload)
         .send()
         .await?;
 
     if r.status() != StatusCode::OK {
         return Err(Error::msg(
-            "server returned a non 200 OK code when creating index. Check your server logs."))
+            "server returned a non 200 OK code when creating index. Check your server logs.",
+        ));
     }
 
     // let changed propagate
@@ -124,35 +133,47 @@ async fn prep(ctx: &Context) -> anyhow::Result<()> {
 
     // Clear the existing docs
     let r = client
-        .delete(format!("{}/indexes/{}/documents/clear", &ctx.target_server, &ctx.index))
+        .delete(format!(
+            "{}/indexes/{}/documents/clear",
+            &ctx.target_server, &ctx.index
+        ))
         .send()
         .await?;
 
     if r.status() != StatusCode::OK {
         return Err(Error::msg(
-            "server returned a non 200 OK code when clearing docs. Check your server logs."))
+            "server returned a non 200 OK code when clearing docs. Check your server logs.",
+        ));
     }
 
     let start = Instant::now();
     let r = client
-        .post(format!("{}/indexes/{}/documents", &ctx.target_server, &ctx.index))
+        .post(format!(
+            "{}/indexes/{}/documents",
+            &ctx.target_server, &ctx.index
+        ))
         .json(&data)
         .send()
         .await?;
 
     if r.status() != StatusCode::OK {
         return Err(Error::msg(
-            "server returned a non 200 OK code when adding docs. Check your server logs."))
+            "server returned a non 200 OK code when adding docs. Check your server logs.",
+        ));
     }
 
     let r = client
-        .post(format!("{}/indexes/{}/commit", &ctx.target_server, &ctx.index))
+        .post(format!(
+            "{}/indexes/{}/commit",
+            &ctx.target_server, &ctx.index
+        ))
         .send()
         .await?;
 
     if r.status() != StatusCode::OK {
         return Err(Error::msg(
-            "server returned a non 200 OK code when committing changes. Check your server logs."))
+            "server returned a non 200 OK code when committing changes. Check your server logs.",
+        ));
     }
 
     let delta = start.elapsed();

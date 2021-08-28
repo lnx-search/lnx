@@ -6,12 +6,11 @@ mod meilisearch;
 mod sampler;
 mod shared;
 
-use anyhow::Result;
-
-use rand::seq::SliceRandom;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use anyhow::Result;
+use rand::seq::SliceRandom;
 use serde_json::Value;
 use tokio::fs;
 use tokio::task::JoinHandle;
@@ -121,16 +120,16 @@ async fn start(ctx: Context) -> anyhow::Result<()> {
             match (target, mode) {
                 (BenchTarget::MeiliSearch, BenchMode::Standard) => {
                     meilisearch::bench_standard(addr, sample_handler, temp_terms, index).await
-                }
+                },
                 (BenchTarget::MeiliSearch, BenchMode::Typing) => {
                     meilisearch::bench_typing(addr, sample_handler, temp_terms, index).await
-                }
+                },
                 (BenchTarget::Lnx, BenchMode::Standard) => {
                     lnx::bench_standard(addr, sample_handler, temp_terms, index).await
-                }
+                },
                 (BenchTarget::Lnx, BenchMode::Typing) => {
                     lnx::bench_typing(addr, sample_handler, temp_terms, index).await
-                }
+                },
             }
         });
 

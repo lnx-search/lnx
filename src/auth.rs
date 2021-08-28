@@ -1,17 +1,15 @@
 use anyhow::{Error, Result};
-
 use axum::http::header;
-
+use hashbrown::HashMap;
 use headers::HeaderMapExt;
 use hyper::http::{HeaderValue, Request, Response, StatusCode};
-use tower_http::auth::AuthorizeRequest;
-
-use hashbrown::HashMap;
 use parking_lot::Mutex;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::{Connection, Row, SqliteConnection};
 use tokio::fs;
+use tower_http::auth::AuthorizeRequest;
 
 /// A set of flags determining permissions.
 pub struct AuthFlags;

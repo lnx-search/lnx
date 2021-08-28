@@ -1,6 +1,6 @@
 [package]
 name = "lnx"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["Harrison Burt <57491488+ChillFish8@users.noreply.github.com>"]
 edition = "2018"
 

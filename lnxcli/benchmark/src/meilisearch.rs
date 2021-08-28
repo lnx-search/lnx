@@ -7,7 +7,7 @@ use serde_json::Value;
 use tokio::time::Duration;
 
 use crate::sampler::SamplerHandle;
-use crate::shared::{RequestClient, TargetUri, Query};
+use crate::shared::{Query, RequestClient, TargetUri};
 
 #[derive(Debug, Deserialize)]
 struct EnqueueResponseData {
@@ -100,12 +100,9 @@ pub(crate) async fn bench_standard(
         sample,
         terms,
         &index,
-        move |client, uri, query| {
-            async {
-                search(client, uri, query).await
-            }
-        }
-    ).await
+        move |client, uri, query| async { search(client, uri, query).await },
+    )
+    .await
 }
 
 pub(crate) async fn bench_typing(
@@ -119,12 +116,9 @@ pub(crate) async fn bench_typing(
         sample,
         terms,
         &index,
-        move |client, uri, query| {
-            async {
-                search(client, uri, query).await
-            }
-        }
-    ).await
+        move |client, uri, query| async { search(client, uri, query).await },
+    )
+    .await
 }
 
 #[derive(Serialize)]

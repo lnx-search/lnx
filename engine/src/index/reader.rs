@@ -1,20 +1,23 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use serde::Serialize;
-
-use tokio::sync::oneshot;
-use tokio::sync::Semaphore;
-
 use crossbeam::queue::ArrayQueue;
-
+use serde::Serialize;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
-    BooleanQuery, EmptyQuery, FuzzyTermQuery, Occur, Query, QueryParser, TermQuery,
+    BooleanQuery,
+    BoostQuery,
+    EmptyQuery,
+    FuzzyTermQuery,
+    MoreLikeThisQuery,
+    Occur,
+    Query,
+    QueryParser,
+    TermQuery,
 };
-use tantivy::query::{BoostQuery, MoreLikeThisQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, NamedFieldDocument, Schema, Value};
 use tantivy::{DocAddress, Executor, IndexReader, LeasedItem, Score, Searcher, Term};
+use tokio::sync::{oneshot, Semaphore};
 
 use crate::correction::{self, correct_sentence};
 use crate::structures::{QueryMode, QueryPayload};
@@ -32,7 +35,7 @@ macro_rules! try_get_doc {
             Err(e) => {
                 let _ = $resolve.send(Err(Error::from(e)));
                 return;
-            }
+            },
             Ok(res) => res,
         };
 
@@ -268,7 +271,7 @@ impl IndexReaderHandler {
                 Some(doc) => {
                     let doc = try_get_doc!(resolve, searcher, doc);
                     Some(doc)
-                }
+                },
             };
 
             let query = match parse_query(
@@ -283,7 +286,7 @@ impl IndexReaderHandler {
                 Err(e) => {
                     let _ = resolve.send(Err(e));
                     return;
-                }
+                },
                 Ok(q) => q,
             };
 
@@ -349,7 +352,7 @@ fn parse_query(
                 parse_fuzzy_query(query, search_fields)
             };
             Ok(qry)
-        }
+        },
         (QueryMode::MoreLikeThis, _, None) => Err(Error::msg(
             "query mode was `MoreLikeThis` but reference document is `None`",
         )),
@@ -555,22 +558,22 @@ fn search(
                 let out: (Vec<(i64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
                 (process_search!(searcher, schema, out.0), out.1)
-            }
+            },
             FieldType::U64(_) => {
                 let out: (Vec<(u64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
                 (process_search!(searcher, schema, out.0), out.1)
-            }
+            },
             FieldType::F64(_) => {
                 let out: (Vec<(f64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
                 (process_search!(searcher, schema, out.0), out.1)
-            }
+            },
             FieldType::Date(_) => {
                 let out: (Vec<(i64, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
                 (process_search!(searcher, schema, out.0), out.1)
-            }
+            },
             _ => return Err(Error::msg("field is not a fast field")),
         }
     } else {
