@@ -299,48 +299,6 @@ mod default_query_data {
     }
 }
 
-/// A set of values that can be used to extract a `Term`.
-///
-/// This system is designed to handle JSON based deserialization
-/// so Bytes and datetime are handled as base64 encoded strings and u64 timestamps
-/// respectively.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(tag = "type", content = "value")]
-pub enum FieldValue {
-    /// A signed 64 bit integer.
-    I64(Vec<i64>),
-
-    /// A 64 bit floating point number.
-    F64(Vec<f64>),
-
-    /// A unsigned 64 bit integer.
-    U64(Vec<u64>),
-
-    /// A datetime field, deserialized as a u64 int.
-    #[serde(with = "deserialize_datetime")]
-    Datetime(Vec<DateTime>),
-
-    /// A text field.
-    Text(Vec<String>),
-}
-
-mod deserialize_datetime {
-    use serde::{Deserialize, Deserializer};
-    use tantivy::fastfield::FastValue;
-    use tantivy::DateTime;
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<DateTime>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let multi = Vec::<u64>::deserialize(deserializer)?;
-        let values: Vec<DateTime> = multi.iter().map(|v| DateTime::from_u64(*v)).collect();
-
-        Ok(values)
-    }
-}
-
 /// A tantivy document representation.
 ///
 /// This is checked against the schema and validated before being

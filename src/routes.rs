@@ -4,7 +4,7 @@ use axum::body::{box_body, Body, BoxBody};
 use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejection};
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
-use engine::structures::{Document, FieldValue, IndexDeclaration, QueryPayload};
+use engine::structures::{Document, IndexDeclaration, QueryPayload, DocumentValue};
 use engine::{LeasedIndex, SearchEngine};
 use hashbrown::HashMap;
 use serde::Deserialize;
@@ -302,7 +302,7 @@ pub async fn get_document(
 /// Deletes any documents matching the set of given terms.
 pub async fn delete_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
-    terms: Result<extract::Json<HashMap<String, FieldValue>>, JsonRejection>,
+    terms: Result<extract::Json<HashMap<String, DocumentValue>>, JsonRejection>,
     Extension(engine): Extension<SharedEngine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
