@@ -114,9 +114,8 @@ impl IndexHandler {
     /// The amount of threads spawned is equal the the (`max_concurrency` * `reader_threads`) + `1`
     /// as well as the tokio runtime threads.
     pub(crate) async fn build_loaded(loader: LoadedIndex) -> Result<Self> {
-        let schema_copy = loader.schema.clone();
-
         let (index, dir) = Self::get_index_from_loader(&loader).await?;
+        let schema_copy = index.schema();
 
         // We need to extract out the fields from name to id.
         let mut raw_search_fields = vec![];
@@ -128,8 +127,8 @@ impl IndexHandler {
             // that's used internally, since we pre-compute the correction behaviour before
             // hand, we want to actually target those fields not the inputted fields.
             match (
-                loader.schema.get_field(&ref_field),
-                loader.schema.get_field(&id),
+                schema_copy.get_field(&ref_field),
+                schema_copy.get_field(&id),
             ) {
                 (Some(_), Some(field)) => {
                     raw_search_fields.push(field);
@@ -150,8 +149,7 @@ impl IndexHandler {
                     };
                 },
                 (None, _) => {
-                    let fields: Vec<String> = loader
-                        .schema
+                    let fields: Vec<String> = schema_copy
                         .fields()
                         .map(|(_, v)| v.name().to_string())
                         .collect();
@@ -210,8 +208,8 @@ impl IndexHandler {
 
         Ok(Self {
             name: loader.name,
+            schema: index.schema(),
             _index: Mutex::new(Some(index)),
-            schema: loader.schema,
             writer: worker_handler,
             reader: reader_handler,
             alive: receiver,
