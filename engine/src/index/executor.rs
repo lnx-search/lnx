@@ -6,6 +6,7 @@ use tantivy::Executor;
 
 #[derive(Clone)]
 pub(super) struct ExecutorPool {
+    index_name: Arc<String>,
     executors: Arc<ArrayQueue<Executor>>,
 }
 
@@ -36,6 +37,7 @@ impl ExecutorPool {
 
         Ok(Self {
             executors,
+            index_name: Arc::new(index_name.to_string())
         })
     }
 
@@ -46,7 +48,7 @@ impl ExecutorPool {
     }
 
     pub(super) fn acquire(&self) -> Result<ExecutorHandle> {
-        debug!("taking executor from pool");
+        debug!("[ EXECUTOR-POOL @ {} ] taking executor from pool", self.index_name.as_ref());
         if let Some(executor) = self.executors.pop() {
             Ok(ExecutorHandle {
                 inner: Some(executor),
@@ -72,7 +74,7 @@ impl Borrow<Executor> for ExecutorHandle {
 
 impl Drop for ExecutorHandle {
     fn drop(&mut self) {
-        debug!("returning executor to pool");
+        debug!("[ EXECUTOR-POOL @ {} ] returning executor to pool", self.index_name.as_ref());
         if let Some(inner) = self.inner.take() {
             let maybe_err = self.queue.push(inner);
             if maybe_err.is_err() {
