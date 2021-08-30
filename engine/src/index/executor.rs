@@ -53,6 +53,7 @@ impl ExecutorPool {
             Ok(ExecutorHandle {
                 inner: Some(executor),
                 queue: self.executors.clone(),
+                index_name: self.index_name.clone(),
             })
         } else {
             Err(Error::msg("no executors were available even though the max concurrent was not reached"))
@@ -61,6 +62,7 @@ impl ExecutorPool {
 }
 
 pub(super) struct ExecutorHandle {
+    index_name: Arc<String>,
     inner: Option<Executor>,
     queue: Arc<ArrayQueue<Executor>>,
 }
