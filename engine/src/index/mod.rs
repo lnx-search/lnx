@@ -17,6 +17,7 @@ use chrono::Utc;
 
 pub(super) mod reader;
 pub(super) mod writer;
+pub(super) mod executor;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
 

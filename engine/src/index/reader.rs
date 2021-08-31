@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use crossbeam::queue::ArrayQueue;
 use serde::Serialize;
 use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{
@@ -21,14 +20,17 @@ use tokio::sync::{oneshot, Semaphore};
 
 use crate::correction::{self, correct_sentence};
 use crate::structures::{QueryMode, QueryPayload};
+use crate::index::executor::ExecutorPool;
+use std::borrow::Borrow;
 
 /// Attempts to get a document otherwise sending an error
 /// back to the resolve channel.
 macro_rules! try_get_doc {
-    ($resolve:expr, $searcher:expr, $doc:expr) => {{
-        let res = $searcher.search(
+    ($resolve:expr, $searcher:expr, $doc:expr, $executor:expr) => {{
+        let res = $searcher.search_with_executor(
             &TermQuery::new($doc, IndexRecordOption::Basic),
             &TopDocs::with_limit(1),
+            $executor,
         );
 
         let res: Vec<(f32, DocAddress)> = match res {
@@ -79,7 +81,7 @@ pub(super) struct IndexReaderHandler {
     ///
     /// If the number of reader threads is > 1 this is a MultiThreaded executor
     /// otherwise it's SingleThreaded.
-    executors: Arc<ArrayQueue<Executor>>,
+    executor_pool: ExecutorPool,
 
     /// A concurrency semaphore.
     limiter: Semaphore,
@@ -141,33 +143,16 @@ impl IndexReaderHandler {
                 .build()?
         };
 
-        let executors = ArrayQueue::new(max_concurrency);
-        for i in 0..max_concurrency {
-            let executor = if reader_threads > 1 {
-                info!(
-                    "[ READER {} @ {} ] executor startup, mode: multi-threaded, threads: {}",
-                    i, &index_name, reader_threads
-                );
-                Executor::multi_thread(reader_threads, "index-reader-")?
-            } else {
-                info!(
-                    "[ READER {} @ {} ] executor startup, mode: single-threaded (no-op)",
-                    i, &index_name,
-                );
-                Executor::single_thread()
-            };
-
-            if let Err(_) = executors.push(executor) {
-                panic!("executor pool was full yet executor was in use, this is a bug.")
-            };
-        }
-
-        let executors = Arc::new(executors);
+        let executor_pool = ExecutorPool::create(
+            &index_name,
+            max_concurrency,
+            reader_threads,
+        )?;
 
         Ok(Self {
             name: index_name,
             reader,
-            executors,
+            executor_pool,
             limiter,
             max_concurrency,
             thread_pool,
@@ -187,6 +172,7 @@ impl IndexReaderHandler {
 
         let (resolve, waiter) = oneshot::channel();
         let searcher = self.reader.searcher();
+        let executor = self.executor_pool.acquire()?;
         let field = self
             .schema
             .get_field("_id")
@@ -194,7 +180,7 @@ impl IndexReaderHandler {
 
         self.thread_pool.spawn(move || {
             let term = Term::from_field_u64(field, doc_address);
-            let doc = try_get_doc!(resolve, searcher, term);
+            let doc = try_get_doc!(resolve, searcher, term, executor.borrow());
             let doc = searcher.doc(doc).map_err(Error::from);
             let _ = resolve.send(doc);
         });
@@ -217,9 +203,7 @@ impl IndexReaderHandler {
             .await?;
         self.limiter.close();
 
-        while let Some(executor) = self.executors.pop() {
-            drop(executor);
-        }
+        self.executor_pool.shutdown();
 
         Ok(())
     }
@@ -260,16 +244,14 @@ impl IndexReaderHandler {
         let strip_stop_words = self.strip_stop_words;
         let search_fields = self.search_fields.clone();
         let searcher = self.reader.searcher();
-        let executors = self.executors.clone();
+        let executor = self.executor_pool.acquire()?;
 
         let start = std::time::Instant::now();
         self.thread_pool.spawn(move || {
-            let executor = executors.pop().expect("get executor");
-
             let ref_document = match doc_id {
                 None => None,
                 Some(doc) => {
-                    let doc = try_get_doc!(resolve, searcher, doc);
+                    let doc = try_get_doc!(resolve, searcher, doc, executor.borrow());
                     Some(doc)
                 },
             };
@@ -284,19 +266,14 @@ impl IndexReaderHandler {
                 strip_stop_words,
             ) {
                 Err(e) => {
+                    info!("rejecting parse");
                     let _ = resolve.send(Err(e));
                     return;
                 },
                 Ok(q) => q,
             };
 
-            let res = search(query, searcher, &executor, limit, offset, schema, order_by);
-
-            // This can never happen right?
-            if let Err(_) = executors.push(executor) {
-                panic!("executor pool was full yet executor was in use, this is a bug.")
-            };
-
+            let res = search(query, searcher, executor.borrow(), limit, offset, schema, order_by);
             let _ = resolve.send(res);
         });
 
