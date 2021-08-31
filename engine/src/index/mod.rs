@@ -1,5 +1,5 @@
 use std::sync::Arc;
-
+use chrono::Utc;
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
 use tantivy::directory::MmapDirectory;
@@ -13,7 +13,7 @@ use crate::correction;
 use crate::helpers::{self, hash};
 use crate::index::reader::QueryHit;
 use crate::structures::{self, IndexStorageType, LoadedIndex, QueryPayload, DocumentValue};
-use chrono::Utc;
+
 
 pub(super) mod reader;
 pub(super) mod writer;

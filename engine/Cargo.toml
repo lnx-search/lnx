@@ -12,8 +12,8 @@ tokio = { version = "1", features = ["sync", "fs"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 uuid = { version = "0.8", features = ["v4", "serde"] }
 symspell = { git = "https://github.com/ChillFish8/symspell", branch = "master" }
+chrono = { version = "0.4", features = ["serde"] }
 
-chrono = "0.4"
 serde_json = "1"
 num_cpus = "1.13"
 rayon = "1.5"
