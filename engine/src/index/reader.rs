@@ -21,6 +21,7 @@ use tokio::sync::{oneshot, Semaphore};
 
 use crate::correction::{self, correct_sentence};
 use crate::structures::{QueryMode, QueryPayload};
+use chrono::Utc;
 
 /// Attempts to get a document otherwise sending an error
 /// back to the resolve channel.
@@ -570,7 +571,7 @@ fn search(
                 (process_search!(searcher, schema, out.0), out.1)
             },
             FieldType::Date(_) => {
-                let out: (Vec<(i64, DocAddress)>, usize) =
+                let out: (Vec<(chrono::DateTime<Utc>, DocAddress)>, usize) =
                     order_and_search!(searcher, collector, field, &query, executor)?;
                 (process_search!(searcher, schema, out.0), out.1)
             },
