@@ -99,7 +99,7 @@ impl IndexWriterWorker {
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
         };
 
-        info!(
+        debug!(
             "[ WRITER @ {} ][ TRANSACTION {} ] completed operation {}",
             &self.index_name, transaction_id, type_
         );
