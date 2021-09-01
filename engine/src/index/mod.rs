@@ -1,10 +1,12 @@
 use std::sync::Arc;
-use chrono::Utc;
+
 use anyhow::{Error, Result};
 use parking_lot::Mutex;
+use chrono::Utc;
+
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
-use tantivy::schema::{Schema, Value, FieldType};
+use tantivy::schema::{Schema, Value, FieldType, Field};
 use tantivy::{Document, Index, IndexBuilder, ReloadPolicy, Term};
 use tokio::fs;
 use tokio::task::JoinHandle;
@@ -14,12 +16,18 @@ use crate::helpers::{self, hash};
 use crate::index::reader::QueryHit;
 use crate::structures::{self, IndexStorageType, LoadedIndex, QueryPayload, DocumentValue};
 
-
 pub(super) mod reader;
 pub(super) mod writer;
-pub(super) mod executor;
+pub(super) mod queries;
 
 static INDEX_DATA_PATH: &str = "./lnx/index-data";
+
+#[inline(always)]
+fn add_field_if_valid(pair: (Field, f32), valid_fields: &mut Vec<(Field, f32)>, field_type: &FieldType) {
+    if let FieldType::Str(_) = field_type {
+        valid_fields.push(pair);
+    }
+}
 
 /// A search engine index.
 ///
@@ -77,7 +85,8 @@ impl IndexHandler {
             }
         }
 
-        let index = IndexBuilder::default().schema(loader.schema.clone());
+        let index = IndexBuilder::default()
+            .schema(loader.schema.clone());
 
         let out = match &loader.storage_type {
             IndexStorageType::TempDir => {
@@ -118,36 +127,67 @@ impl IndexHandler {
         let (index, dir) = Self::get_index_from_loader(&loader).await?;
         let schema_copy = index.schema();
 
+        let mut query_parser_search_fields = (vec![], vec![]);
+        let mut fuzzy_query_search_fields = vec![];
+
         // We need to extract out the fields from name to id.
-        let mut raw_search_fields = vec![];
-        let mut search_fields = vec![];
         for ref_field in loader.search_fields {
-            let id = format!("_{}", hash(&ref_field));
+            let pre_processed_field = format!("_{}", hash(&ref_field));
 
             // This checks if a search field is a indexed text field (it has a private field)
             // that's used internally, since we pre-compute the correction behaviour before
             // hand, we want to actually target those fields not the inputted fields.
             match (
                 schema_copy.get_field(&ref_field),
-                schema_copy.get_field(&id),
+                schema_copy.get_field(&pre_processed_field),
             ) {
-                (Some(_), Some(field)) => {
-                    raw_search_fields.push(field);
-
-                    if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                (Some(standard), Some(pre_processed)) => {
+                    let boost = if let Some(boost) = loader.boost_fields.get(&ref_field) {
                         debug!("boosting field for query parser {} {}", &ref_field, boost);
-                        search_fields.push((field, *boost));
+                        *boost
                     } else {
-                        search_fields.push((field, 0.0f32));
+                        0f32
                     };
+
+                    if loader.use_fast_fuzzy && correction::enabled() {
+                        query_parser_search_fields.0.push(pre_processed);
+                        query_parser_search_fields.1.push(boost);
+
+                        let field_type = schema_copy.get_field_entry(pre_processed);
+                        add_field_if_valid(
+                            (pre_processed, boost),
+                            &mut fuzzy_query_search_fields,
+                            field_type.field_type(),
+                        );
+                    } else {
+                        query_parser_search_fields.0.push(standard);
+                        query_parser_search_fields.1.push(boost);
+
+                        let field_type = schema_copy.get_field_entry(standard);
+                        add_field_if_valid(
+                            (pre_processed, boost),
+                            &mut fuzzy_query_search_fields,
+                            field_type.field_type(),
+                        );
+                    }
                 },
                 (Some(field), None) => {
-                    if let Some(boost) = loader.boost_fields.get(&ref_field) {
+                    let boost = if let Some(boost) = loader.boost_fields.get(&ref_field) {
                         debug!("boosting field for query parser {} {}", &ref_field, boost);
-                        search_fields.push((field, *boost));
+                        *boost
                     } else {
-                        search_fields.push((field, 0.0f32));
+                         0.0f32
                     };
+
+                    query_parser_search_fields.0.push(field);
+                    query_parser_search_fields.1.push(boost);
+
+                    let field_type = schema_copy.get_field_entry(field);
+                    add_field_if_valid(
+                        (field, boost),
+                        &mut fuzzy_query_search_fields,
+                        field_type.field_type(),
+                    );
                 },
                 (None, _) => {
                     let fields: Vec<String> = schema_copy
@@ -164,14 +204,16 @@ impl IndexHandler {
             };
         }
 
-        let mut parser = QueryParser::for_index(&index, raw_search_fields);
+        let mut parser = QueryParser::for_index(&index, query_parser_search_fields.0.clone());
         if loader.set_conjunction_by_default {
             parser.set_conjunction_by_default();
         }
 
-        for (field, boost) in search_fields.iter() {
-            if *boost != 0.0f32 {
-                parser.set_field_boost(*field, *boost);
+        for i in 0..query_parser_search_fields.0.len() {
+            let boost = query_parser_search_fields.1[i];
+            if boost != 0.0f32 {
+                let field = query_parser_search_fields.0[i];
+                parser.set_field_boost(field, boost);
             }
         }
 
@@ -192,8 +234,11 @@ impl IndexHandler {
         );
 
         let (sender, receiver) = async_channel::bounded(1);
-        let worker_handler =
-            writer::IndexWriterHandler::create(loader.name.clone(), writer, sender);
+        let worker_handler = writer::IndexWriterHandler::create(
+            loader.name.clone(),
+            writer,
+            sender,
+        );
 
         let reader_handler = reader::IndexReaderHandler::create(
             loader.name.clone(),
@@ -201,7 +246,7 @@ impl IndexHandler {
             reader,
             loader.reader_threads as usize,
             parser,
-            loader.fuzzy_search_fields,
+            fuzzy_query_search_fields,
             schema_copy,
             loader.use_fast_fuzzy,
             loader.strip_stop_words,
@@ -215,7 +260,7 @@ impl IndexHandler {
             reader: reader_handler,
             alive: receiver,
             dir,
-            indexed_text_fields: loader.indexed_text_fields,
+            indexed_text_fields: fuzzy_query_search_fields,
             use_fast_fuzzy: loader.use_fast_fuzzy,
         })
     }

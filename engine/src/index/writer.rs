@@ -65,6 +65,7 @@ impl IndexWriterWorker {
             let _ = waiter.send(());
         }
 
+        let _ = self.writer.wait_merging_threads();
         let _ = self.shutdown.try_send(());
         info!("[ WRITER @ {} ] shutdown complete!", &self.index_name);
     }
