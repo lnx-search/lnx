@@ -29,7 +29,7 @@ mod auth;
 mod responders;
 mod routes;
 
-use engine::SearchEngine;
+use engine::Engine;
 use tower::util::MapResponseLayer;
 use tower_http::add_extension::AddExtensionLayer;
 
@@ -186,8 +186,7 @@ async fn start(settings: Settings) -> Result<()> {
     let authorization_manager = Arc::new(authorization_manager);
 
     info!("setting up the search engine");
-    let engine =
-        Arc::new(SearchEngine::create("./lnx-data/meta", settings.enable_fast_fuzzy).await?);
+    let engine = Engine::new();
 
     let super_user_middleware = ServiceBuilder::new()
         .layer(RequireAuthorizationLayer::custom(
@@ -253,7 +252,7 @@ async fn start(settings: Settings) -> Result<()> {
     let app = Router::new()
         .route(
             "/indexes/:index_name/search",
-            get(routes::search_index.layer(RequireAuthorizationLayer::custom(search_auth))),
+            get(routes::search.layer(RequireAuthorizationLayer::custom(search_auth))),
         )
         .route(
             "/indexes/:index_name/commit",

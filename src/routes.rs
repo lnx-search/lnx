@@ -1,24 +1,25 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::body::{box_body, Body, BoxBody};
 use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejection};
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
-use engine::structures::{Document, IndexDeclaration, QueryPayload, DocumentValue};
-use engine::{LeasedIndex, SearchEngine};
 use hashbrown::HashMap;
 use serde::Deserialize;
+
+use engine::{Engine, Index, QueryPayload};
+use engine::structures::{DocumentOptions, DocumentValue, DocumentValueOptions, IndexDeclaration};
 
 use crate::auth::{AuthManager, Permissions};
 use crate::responders::json_response;
 
-type SharedEngine = Arc<SearchEngine>;
 
-/// Extracts a leased index or returns a json response
+/// Extracts a index or returns a json response
 /// with a 400 status code.
 macro_rules! get_index_or_reject {
     ($engine:expr, $name:expr) => {{
-        match $engine.get_index($name).await {
+        match $engine.get_index($name) {
             None => {
                 warn!("rejected request due to unknown index {:?}", $name);
                 return json_response(
@@ -153,15 +154,15 @@ macro_rules! check_json {
 }
 
 /// Searches an index with a given query.
-pub async fn search_index(
+pub async fn search(
     query: Result<Query<QueryPayload>, QueryRejection>,
     index_name: Result<Path<String>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let query = check_query!(query);
     let index_name = check_path!(index_name);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
     let results = check_error!(index.search(query.0).await, "search index");
 
     json_response(StatusCode::OK, &results)
@@ -180,14 +181,14 @@ pub struct CreateIndexQueryParams {
 pub async fn create_index(
     query: Result<Query<CreateIndexQueryParams>, QueryRejection>,
     payload: Result<extract::Json<IndexDeclaration>, JsonRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let query = check_query!(query);
     let payload = check_json!(payload);
 
-    let ignore = query.0;
+    let query = query.0;
     check_error!(
-        engine.add_index(payload.0, ignore.override_if_exists).await,
+        engine.add_index(payload.0).await,
         "create index"
     );
 
@@ -197,7 +198,7 @@ pub async fn create_index(
 /// Deletes the given index if it exists.
 pub async fn delete_index(
     index_name: Result<Path<String>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
 
@@ -209,91 +210,36 @@ pub async fn delete_index(
     json_response(StatusCode::OK, "index deleted")
 }
 
-/// The set of query operations that can be given when writing
-/// to an index.
-#[derive(Deserialize)]
-pub struct PendingQueries {
-    /// If false this will return immediately without waiting for
-    /// all operations to be submitted. (defaults to true).
-    ///
-    /// It's recommend to wait for the operation to be submitted for
-    /// the purposes of backpressure.
-    wait: Option<bool>,
-}
-
-/// The possible formats for uploading documents.
-#[derive(Deserialize)]
-#[serde(untagged)]
-pub enum DocumentOptions {
-    /// A singular document payload.
-    Single(Document),
-
-    /// An array of documents acting as a bulk insertion.
-    Many(Vec<Document>),
-}
 
 /// Adds one or more documents to the given index.
 ///
 /// This can either return immediately or wait for all operations to be
 /// submitted depending on the `wait` query parameter.
 pub async fn add_document(
-    query: Result<Query<PendingQueries>, QueryRejection>,
     index_name: Result<Path<String>, PathParamsRejection>,
     payload: Result<extract::Json<DocumentOptions>, JsonRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
-    let query = check_query!(query);
     let payload = check_json!(payload);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
-    let wait = query.0.wait.unwrap_or(true);
-
-    match payload.0 {
-        DocumentOptions::Single(doc) => {
-            debug!("adding single document to index: {}", index_name.as_str());
-            if wait {
-                check_error!(index.add_document(doc).await, "add document");
-            } else {
-                tokio::spawn(async move {
-                    if let Err(e) = index.add_document(doc).await {
-                        error!("failed to add document {:?}", e);
-                    }
-                });
-            }
-        },
-        DocumentOptions::Many(docs) => {
-            debug!("adding multiple document to index: {}", index_name.as_str());
-            if wait {
-                check_error!(index.add_many_documents(docs).await, "add documents");
-            } else {
-                tokio::spawn(async move {
-                    if let Err(e) = index.add_many_documents(docs).await {
-                        error!("failed to add documents {:?}", e);
-                    }
-                });
-            }
-        },
-    }
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
+    check_error!(index.add_documents(payload.0).await, "add documents");
 
     json_response(
         StatusCode::OK,
-        if wait {
-            "added documents"
-        } else {
-            "submitted documents"
-        },
+        "added documents"
     )
 }
 
 /// Gets a specific document from the system.
 pub async fn get_document(
     params: Result<Path<(String, u64)>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let (index_name, document_id) = check_path!(params).0;
 
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
     let doc = check_error!(index.get_doc(document_id).await, "retrieve doc");
 
     json_response(StatusCode::OK, &doc)
@@ -302,21 +248,15 @@ pub async fn get_document(
 /// Deletes any documents matching the set of given terms.
 pub async fn delete_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
-    terms: Result<extract::Json<HashMap<String, DocumentValue>>, JsonRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    terms: Result<extract::Json<BTreeMap<String, DocumentValueOptions>>, JsonRejection>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
-    let mut terms = check_json!(terms);
+    let terms = check_json!(terms);
 
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
 
-    for (field, term) in terms.0.drain() {
-        let term = check_error!(index.get_term(&field, term), "get term");
-        check_error!(
-            index.delete_documents_with_term(term).await,
-            "delete documents with term"
-        );
-    }
+    check_error!(index.delete_documents_where(terms.0).await, "delete documents");
 
     json_response(StatusCode::OK, "deleted any document matching term")
 }
@@ -324,10 +264,10 @@ pub async fn delete_documents(
 /// Deletes all documents.
 pub async fn delete_all_documents(
     index_name: Result<Path<String>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.clear_documents().await, "clear documents");
 
@@ -339,10 +279,10 @@ pub async fn delete_all_documents(
 /// This will finalise any changes and flush to disk.
 pub async fn commit_index_changes(
     index_name: Result<Path<String>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = check_path!(index_name);
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.commit().await, "commit changes");
 
@@ -352,10 +292,10 @@ pub async fn commit_index_changes(
 /// Removes any recent changes since the last commit.
 pub async fn rollback_index_changes(
     index_name: Result<Path<String>, PathParamsRejection>,
-    Extension(engine): Extension<SharedEngine>,
+    Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
     let index_name = Path(check_path!(index_name));
-    let index: LeasedIndex = get_index_or_reject!(engine, index_name.as_str());
+    let index: Index = get_index_or_reject!(engine, index_name.as_str());
 
     check_error!(index.rollback().await, "rollback changes");
 

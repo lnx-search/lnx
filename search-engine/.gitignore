@@ -1,0 +1,3 @@
+**/target
+**/Cargo.lock
+/search-index/_dist/

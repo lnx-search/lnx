@@ -8,13 +8,13 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "rt", "signal"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 fern = { version = "0.6", features = ["colored"] }
 tower-http = { version = "0.1", features = ["full"] }
 uuid = { version = "0.8", features = ["v4"] }
 hashbrown = { version = "0.11", features = ["serde"] }
-axum = { git = "https://github.com/tokio-rs/axum.git", branch = "main" }
+axum = "0.2.8"
 sqlx = { version = "0.5", features = ["sqlite", "runtime-tokio-rustls"] }
 tower = "0.4"
 structopt = "0.3"
@@ -30,7 +30,7 @@ evmap = "10"
 parking_lot = "0.11"
 rand = "0.8.4"
 
-engine = { path = "./engine" }
+engine = { path = "./search-engine/engine" }
 
 [profile.release]
 lto = "fat"
