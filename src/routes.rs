@@ -189,7 +189,7 @@ pub async fn create_index(
 
     let query = query.0;
     check_error!(
-        engine.add_index(payload.0).await,
+        engine.add_index(&payload.0).await,
         "create index"
     );
 
@@ -241,7 +241,7 @@ pub async fn get_document(
     let (index_name, document_id) = check_path!(params).0;
 
     let index: Index = get_index_or_reject!(engine, index_name.as_str());
-    let doc = check_error!(index.get_doc(document_id).await, "retrieve doc");
+    let doc = check_error!(index.get_document(document_id).await, "retrieve doc");
 
     json_response(StatusCode::OK, &doc)
 }

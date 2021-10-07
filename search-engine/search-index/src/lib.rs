@@ -16,6 +16,6 @@ pub mod structures;
 mod writer;
 
 pub use index::Index;
-pub use query::QueryPayload;
+pub use reader::{QueryPayload, QueryResults};
 
 pub(crate) type ReaderExecutor = Arc<SearcherExecutorPool>;
