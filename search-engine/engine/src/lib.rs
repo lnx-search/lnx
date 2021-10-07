@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use hashbrown::HashMap;
 use arc_swap::ArcSwap;
 

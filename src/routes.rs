@@ -5,6 +5,7 @@ use axum::body::{box_body, Body, BoxBody};
 use axum::extract::rejection::{JsonRejection, PathParamsRejection, QueryRejection};
 use axum::extract::{self, Extension, Path, Query};
 use axum::http::{Response, StatusCode};
+use axum::Json;
 use hashbrown::HashMap;
 use serde::Deserialize;
 
@@ -155,7 +156,7 @@ macro_rules! check_json {
 
 /// Searches an index with a given query.
 pub async fn search(
-    query: Result<Query<QueryPayload>, QueryRejection>,
+    query: Result<Json<QueryPayload>, QueryRejection>,
     index_name: Result<Path<String>, PathParamsRejection>,
     Extension(engine): Extension<Engine>,
 ) -> Response<Body> {
