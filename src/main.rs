@@ -119,14 +119,6 @@ fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> 
             ))
         })
         .level(level)
-        .level_for(
-            "sqlx",
-            if level == LevelFilter::Info {
-                LevelFilter::Warn
-            } else {
-                level
-            },
-        )
         .chain(std::io::stdout());
 
     if let Some(file) = log_file {
