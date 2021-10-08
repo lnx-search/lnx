@@ -40,8 +40,8 @@ use crate::stop_words::StopWordManager;
 use crate::storage::StorageBackend;
 use crate::writer::WriterContext;
 
-pub static INDEX_STORAGE_PATH: &str = "./index-storage";
-pub static INDEX_METADATA_PATH: &str = "./index-metas";
+pub static INDEX_STORAGE_PATH: &str = "./index/index-storage";
+pub static INDEX_METADATA_PATH: &str = "./index/index-metas";
 pub static PRIMARY_KEY: &str = "_id";
 
 /// The possible index storage backends.
@@ -251,10 +251,11 @@ impl IndexDeclaration {
 
         let fp;
         if let StorageType::FileSystem = self.storage_type {
-            fp = Some(format!("{}/{}", INDEX_METADATA_PATH, &self.name));
-            if !Path::new(&fp).exists() {
-                std::fs::create_dir_all(&fp)?;
+            let path = format!("{}/{}", INDEX_METADATA_PATH, &self.name);
+            if !Path::new(&path).exists() {
+                std::fs::create_dir_all(&path)?;
             }
+            fp = Some(path)
         } else {
             fp = None;
         }
