@@ -1,6 +1,7 @@
 mod responders;
 mod routes;
 mod state;
+mod auth;
 
 #[macro_use]
 extern crate log;
