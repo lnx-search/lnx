@@ -15,6 +15,7 @@ mod storage;
 pub mod structures;
 mod writer;
 
+pub use storage::StorageBackend;
 pub use index::Index;
 pub use reader::{QueryPayload, QueryResults};
 

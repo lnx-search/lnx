@@ -10,14 +10,14 @@ use tantivy::Directory;
 
 /// A wrapper around a SQLite connection that manages the index state.
 #[derive(Clone)]
-pub(crate) struct StorageBackend {
+pub struct StorageBackend {
     fp: Option<String>,
     conn: Arc<Box<dyn Directory>>,
 }
 
 impl StorageBackend {
     /// Connects to the sqlite DB.
-    pub(crate) fn connect(fp: Option<String>) -> Result<Self> {
+    pub fn connect(fp: Option<String>) -> Result<Self> {
         let conn: Box<dyn Directory>;
         if let Some(ref fp) = fp {
             conn = Box::new(MmapDirectory::open(fp)?)
@@ -31,7 +31,7 @@ impl StorageBackend {
         })
     }
 
-    pub(crate) fn store_structure<T: Serialize>(
+    pub fn store_structure<T: Serialize>(
         &self,
         keyspace: &str,
         value: &T,
@@ -44,7 +44,7 @@ impl StorageBackend {
         Ok(())
     }
 
-    pub(crate) fn load_structure(&self, keyspace: &str) -> Result<Vec<u8>> {
+    pub fn load_structure(&self, keyspace: &str) -> Result<Vec<u8>> {
         let path = format!("./{}", keyspace);
         let compressed = self.conn.atomic_read(path.as_ref())?;
         let mut data = Vec::new();
