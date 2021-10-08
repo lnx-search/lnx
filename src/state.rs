@@ -6,6 +6,7 @@ use thruster::{Request, Context, BasicContext, Response};
 use thruster::middleware::cookies::{Cookie, CookieOptions, HasCookies};
 use thruster::middleware::query_params::HasQueryParams;
 
+#[allow(unused)]
 #[derive(Clone)]
 pub struct State {
     engine: Engine,

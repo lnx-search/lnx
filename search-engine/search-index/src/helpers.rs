@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 
 use anyhow::Result;
+use bincode::deserialize;
 use hashbrown::HashMap;
 use tantivy::schema::Schema;
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
@@ -107,53 +108,32 @@ impl FrequencyCounter for FrequencySet {
     }
 }
 
-#[derive(Debug)]
-struct FrequencyRow {
-    word: String,
-    count: u32,
-}
-
 pub(crate) struct PersistentFrequencySet {
     conn: StorageBackend,
     set: FrequencySet,
 }
 
 impl PersistentFrequencySet {
+    const KEYSPACE: &'static str = "frequencies";
+
     pub(crate) fn new(conn: StorageBackend) -> Result<Self> {
         let mut inst = Self {
             conn,
             set: FrequencySet::new(),
         };
 
-        inst.ensure_table()?;
         inst.load_frequencies_from_store()?;
 
         Ok(inst)
     }
 
-    fn ensure_table(&mut self) -> Result<()> {
-        debug!("[ FREQUENCY-COUNTER ] ensuring table existence.");
-        self.conn
-            .create_table("frequencies", vec![("word", "TEXT"), ("count", "INTEGER")])?;
-
-        Ok(())
-    }
-
     fn load_frequencies_from_store(&mut self) -> Result<()> {
         info!("[ FREQUENCY-COUNTER ] loading frequencies from persistent backend.");
-        let mut results = self.conn.prepare("SELECT word, count FROM frequencies")?;
+        let buff = self.conn.load_structure(Self::KEYSPACE)?;
+        let frequencies: HashMap<String, u32> = deserialize(&buff)?;
 
-        let person_iter = results.query_map([], |row| {
-            Ok(FrequencyRow {
-                word: row.get(0)?,
-                count: row.get(1)?,
-            })
-        })?;
-
-        for row in person_iter {
-            let row = row.unwrap();
-
-            self.set.inner.insert(row.word, row.count);
+        for (word, count) in frequencies {
+            self.set.inner.insert(word, count);
         }
 
         info!(
@@ -167,14 +147,8 @@ impl PersistentFrequencySet {
     pub(crate) fn commit(&self) -> Result<()> {
         info!("[ FREQUENCY-COUNTER ] storing frequencies in persistent backend.");
 
-        let mut stmt = self
-            .conn
-            .prepare_cached("INSERT INTO frequencies (word, count) VALUES(?, ?)")?;
-
-        for (word, count) in self.set.counts() {
-            stmt.execute(rusqlite::params![word, count])?;
-        }
-
+        let frequencies = self.set.counts();
+        self.conn.store_structure(Self::KEYSPACE, frequencies)?;
         Ok(())
     }
 }

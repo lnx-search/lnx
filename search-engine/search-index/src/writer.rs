@@ -258,8 +258,10 @@ fn start_writer(
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
 ) -> Result<()> {
-    let stop_words =
-        PersistentStopWordManager::new(conn.duplicate_conn()?, stop_word_manager)?;
+    let stop_words = PersistentStopWordManager::new(
+            conn.clone(),
+            stop_word_manager,
+        )?;
     let frequency_set = PersistentFrequencySet::new(conn)?;
     let worker = IndexWriterWorker {
         frequencies: frequency_set,
@@ -317,7 +319,7 @@ impl Writer {
         let waiters = WaitersQueue::default();
         let task = {
             let name = index_name.clone();
-            let conn = ctx.storage.duplicate_conn()?;
+            let conn = ctx.storage.clone();
             let stop_word_manager = ctx.stop_words.clone();
             let corrections = ctx.correction_manager.clone();
             let waiter_queue = waiters.clone();

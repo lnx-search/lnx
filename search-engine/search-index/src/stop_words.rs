@@ -4,12 +4,12 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
+use bincode::deserialize;
 use flate2::write::GzDecoder;
 use once_cell::sync::OnceCell;
 
 use crate::storage::StorageBackend;
 
-static TABLE_NAME: &str = "stop_words";
 static DEFAULT_WORDS: OnceCell<Vec<String>> = OnceCell::new();
 
 /// Ensures the default words are initialised.
@@ -135,22 +135,13 @@ pub(crate) struct PersistentStopWordManager {
 }
 
 impl PersistentStopWordManager {
+    const KEYSPACE: &'static str = "stop_words";
+
     /// Creates a new `PersistentStopWordManager`.
     pub(crate) fn new(conn: StorageBackend, manager: StopWordManager) -> Result<Self> {
-        conn.create_table(TABLE_NAME, vec![("word", "TEXT")])?;
-
         debug!("[ STOP-WORDS ] loading stop words from persistent store");
-        let words = {
-            let mut qry = conn.prepare("SELECT word FROM stop_words")?;
-            let rows = qry.query_map([], |row| Ok(row.get::<_, String>(0)?))?;
-
-            let mut words = vec![];
-            for word in rows {
-                words.push(word?);
-            }
-
-            words
-        };
+        let buff = conn.load_structure(Self::KEYSPACE)?;
+        let words: Vec<String> = deserialize(&buff)?;
 
         let count = words.len();
         manager.add_stop_words(words);
@@ -180,16 +171,8 @@ impl PersistentStopWordManager {
 
     /// Saves any changes to the stop words to the persistent disk.
     pub fn commit(&self) -> Result<()> {
-        self.conn.clear_table(TABLE_NAME)?;
-        let mut stmt = self
-            .conn
-            .prepare_cached(&format!("INSERT INTO {}(word) VALUES(?)", TABLE_NAME))?;
         let words = self.manager.get_stop_words();
-
-        for word in words {
-            stmt.execute(rusqlite::params![word])?;
-        }
-
+        self.conn.store_structure(Self::KEYSPACE, &words)?;
         Ok(())
     }
 }

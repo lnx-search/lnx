@@ -1,107 +1,52 @@
 use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
-use anyhow::{Error, Result};
-use rusqlite::Connection;
+use anyhow::Result;
+use bincode::serialize;
+use lzzzz::lz4;
+use serde::Serialize;
+use tantivy::Directory;
+use tantivy::directory::{MmapDirectory, RamDirectory};
 
-pub(crate) type ColumnInfo<'a> = (&'a str, &'a str);
 
 /// A wrapper around a SQLite connection that manages the index state.
+#[derive(Clone)]
 pub(crate) struct StorageBackend {
     fp: Option<String>,
-    conn: Option<Connection>,
+    conn: Arc<Box<dyn Directory>>,
 }
 
 impl StorageBackend {
     /// Connects to the sqlite DB.
     pub(crate) fn connect(fp: Option<String>) -> Result<Self> {
-        let conn;
+        let conn: Box<dyn Directory>;
         if let Some(ref fp) = fp {
-            conn = Connection::open(fp)?
+            conn = Box::new(MmapDirectory::open(fp)?)
         } else {
-            conn = Connection::open_in_memory()?;
+            conn = Box::new(RamDirectory::create());
         }
 
         Ok(Self {
             fp,
-            conn: Some(conn),
+            conn: Arc::new(conn),
         })
     }
 
-    /// Attempts to get the connection otherwise raising an error.
-    ///
-    /// In normal circumstances this should always succeed, if it does error
-    /// something has gone very, very wrong.
-    #[inline]
-    fn conn(&self) -> Result<&Connection> {
-        if let Some(conn) = self.conn.as_ref() {
-            return Ok(conn);
-        }
-
-        return Err(Error::msg("connection is un-initialised, this is a bug."));
-    }
-
-    /// Clears the given table of all data.
-    pub(crate) fn clear_table(&self, table_name: &str) -> Result<()> {
-        self.conn()?
-            .execute(&format!("DELETE FROM {}", table_name), [])?;
-
+    pub(crate) fn store_structure<T: Serialize>(&self, keyspace: &str, value: &T) -> Result<()> {
+        let data = serialize(value)?;
+        let mut compressed = Vec::new();
+        let _ = lz4::compress_to_vec(&data, &mut compressed, lz4::ACC_LEVEL_DEFAULT)?;
+        let path = format!("./{}", keyspace);
+        self.conn.atomic_write(path.as_ref(), &compressed)?;
         Ok(())
     }
 
-    /// Creates a table with a given name and fields.
-    ///
-    /// The fields given are in `(name, type)` format.
-    pub(crate) fn create_table(
-        &self,
-        table_name: &str,
-        fields: Vec<ColumnInfo>,
-    ) -> Result<()> {
-        let columns: String = fields
-            .iter()
-            .map(|v| format!("{} {}", v.0, v.1))
-            .collect::<Vec<String>>()
-            .join(", ");
-
-        let query_string =
-            format!("CREATE TABLE IF NOT EXISTS {} ({})", table_name, columns);
-        debug!(
-            "[ META-STORAGE ] executing table creation: {}",
-            &query_string
-        );
-        self.conn()?.execute(&query_string, [])?;
-
-        Ok(())
-    }
-
-    /// Prepares the given SQL statement returning it ready to be executed.
-    pub(crate) fn prepare(&self, stmt: &str) -> Result<rusqlite::Statement> {
-        trace!("preparing sql statement {}", stmt);
-        Ok(self.conn()?.prepare(stmt)?)
-    }
-
-    /// Prepares the given cached SQL statement returning it ready to be executed.
-    pub(crate) fn prepare_cached(
-        &self,
-        stmt: &str,
-    ) -> Result<rusqlite::CachedStatement> {
-        trace!("preparing sql cached statement {}", stmt);
-        Ok(self.conn()?.prepare_cached(stmt)?)
-    }
-
-    /// Creates a new connection to the database returning it's 'clone'
-    pub(crate) fn duplicate_conn(&self) -> Result<Self> {
-        trace!("duplicating connection for path {:?}", &self.fp);
-        Self::connect(self.fp.clone())
-    }
-}
-
-impl Drop for StorageBackend {
-    fn drop(&mut self) {
-        trace!("dropping storage backend");
-        // This is bad, but does it matter if we're just dropping it?
-        let conn = self.conn.take().expect("take connection on drop.");
-
-        let _ = conn.close();
+    pub(crate) fn load_structure(&self, keyspace: &str) -> Result<Vec<u8>> {
+        let path = format!("./{}", keyspace);
+        let compressed = self.conn.atomic_read(path.as_ref())?;
+        let mut data = Vec::new();
+        let _ = lz4::decompress(&compressed, &mut data)?;
+        Ok(data)
     }
 }
 
