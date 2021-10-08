@@ -2,6 +2,7 @@ mod auth;
 mod responders;
 mod routes;
 mod state;
+mod helpers;
 
 #[macro_use]
 extern crate log;
@@ -13,8 +14,9 @@ use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
 use thruster::{async_middleware, App, Request, Server, ThrusterServer};
-use crate::auth::AuthManager;
 
+use crate::auth::AuthManager;
+use crate::routes::auth::{create_token, revoke_token, revoke_all_tokens};
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
 
@@ -147,7 +149,20 @@ fn setup() -> Result<Settings> {
 async fn start(settings: Settings) -> Result<()> {
     let state = create_state().await?;
     let mut app = App::<Request, Ctx, State>::create(generate_context, state);
+
     app.set404(async_middleware!(Ctx, [handle_404]));
+
+    app.post("/auth", async_middleware!(Ctx, [create_token]));
+    app.delete("/auth", async_middleware!(Ctx, [revoke_all_tokens]));
+    app.post("/auth/:token/revoke", async_middleware!(Ctx, [revoke_token]));
+    //app.put("/auth/:token", async_middleware!(Ctx, [create_token]));
+
+    //app.put("/indexes/:index/search", async_middleware!(Ctx, [create_token]));
+    //app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
+    //app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
+    //app.post("/indexes/:token/documents", async_middleware!(Ctx, [create_token]));
+    //app.delete("/indexes/:token/documents", async_middleware!(Ctx, [create_token]));
+    //app.get("/indexes/:token/documents/:document_id", async_middleware!(Ctx, [create_token]));
 
     let server = Server::new(app);
     server.build(&settings.host, settings.port).await;

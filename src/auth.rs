@@ -1,8 +1,10 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use anyhow::Result;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
+use engine::StorageBackend;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
 use rand::distributions::Alphanumeric;
@@ -45,7 +47,7 @@ impl AuthManager {
         }
     }
 
-    pub fn create_key(
+    pub fn create_token(
         &self,
         permissions: usize,
         user: Option<String>,
@@ -105,5 +107,17 @@ impl AuthManager {
 
     pub fn revoke_all_tokens(&self) {
         self.keys.store(Arc::new(HashMap::new()));
+    }
+
+    pub async fn commit(&self, storage: StorageBackend) -> Result<()> {
+        let tokens = self.get_all_tokens();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let ref_tokens: Vec<&UserData> = tokens
+                .iter()
+                .map(|v| v.as_ref())
+                .collect();
+
+            storage.store_structure("index_tokens", &ref_tokens)
+        }).await?
     }
 }

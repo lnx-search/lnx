@@ -12,9 +12,9 @@ use crate::auth::AuthManager;
 #[allow(unused)]
 #[derive(Clone)]
 pub struct State {
-    engine: Engine,
-    auth: AuthManager,
-    storage: StorageBackend,
+    pub engine: Engine,
+    pub auth: AuthManager,
+    pub storage: StorageBackend,
 }
 
 impl State {
@@ -36,6 +36,12 @@ impl LnxContext {
     pub fn new(ctx: BasicContext, state: State) -> Self {
         Self { inner: ctx, state }
     }
+
+    #[inline]
+    pub fn request(&self) -> &Request {
+        &self.inner.request
+    }
+
     ///
     /// Set the body as a string
     ///
