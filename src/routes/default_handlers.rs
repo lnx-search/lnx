@@ -1,8 +1,8 @@
 use thruster::middleware_fn;
-use thruster::BasicContext as Ctx;
 use thruster::{MiddlewareNext, MiddlewareResult};
 
 use crate::responders::json_response;
+use crate::state::Ctx;
 
 #[middleware_fn]
 pub async fn handle_404(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {

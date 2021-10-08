@@ -1,5 +1,6 @@
 use serde::Serialize;
-use thruster::BasicContext as Ctx;
+
+use crate::state::Ctx;
 
 #[derive(Serialize)]
 pub struct Response<'a, T: Serialize + ?Sized> {
