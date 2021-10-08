@@ -1,11 +1,11 @@
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use bincode::serialize;
 use lzzzz::lz4;
 use serde::Serialize;
-use tantivy::directory::{MmapDirectory, RamDirectory};
+use tantivy::directory::{MmapDirectory, RamDirectory, error::OpenReadError};
 use tantivy::Directory;
 
 /// A wrapper around a SQLite connection that manages the index state.
@@ -45,12 +45,17 @@ impl StorageBackend {
         Ok(())
     }
 
-    pub fn load_structure(&self, keyspace: &str) -> Result<Vec<u8>> {
+    pub fn load_structure(&self, keyspace: &str) -> Result<Option<Vec<u8>>> {
         let path = format!("./{}", keyspace);
-        let compressed = self.conn.atomic_read(path.as_ref())?;
+        let compressed = match self.conn.atomic_read(path.as_ref()) {
+            Ok(data) => data,
+            Err(OpenReadError::FileDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(Error::from(e))
+        };
+
         let mut data = Vec::new();
         let _ = lz4::decompress(&compressed, &mut data)?;
-        Ok(data)
+        Ok(Some(data))
     }
 }
 

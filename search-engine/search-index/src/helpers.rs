@@ -129,8 +129,13 @@ impl PersistentFrequencySet {
 
     fn load_frequencies_from_store(&mut self) -> Result<()> {
         info!("[ FREQUENCY-COUNTER ] loading frequencies from persistent backend.");
-        let buff = self.conn.load_structure(Self::KEYSPACE)?;
-        let frequencies: HashMap<String, u32> = deserialize(&buff)?;
+
+        let frequencies: HashMap<String, u32>;
+        if let Some(buff) = self.conn.load_structure(Self::KEYSPACE)? {
+             frequencies = deserialize(&buff)?;
+        } else {
+            frequencies = HashMap::new();
+        };
 
         for (word, count) in frequencies {
             self.set.inner.insert(word, count);
@@ -220,7 +225,7 @@ mod tests {
         let storage = StorageBackend::connect(Some(TEST_FILE.into()))?;
 
         {
-            let mut freq_dict = PersistentFrequencySet::new(storage.duplicate_conn()?)?;
+            let mut freq_dict = PersistentFrequencySet::new(storage.clone())?;
             freq_dict.process_sentence(sentence);
             freq_dict.commit()?;
 

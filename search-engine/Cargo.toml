@@ -1,7 +1,0 @@
-[workspace]
-members = [
-    "engine",
-    "aexecutor",
-    "search-index"
-]
-# exclude = ["tester"]

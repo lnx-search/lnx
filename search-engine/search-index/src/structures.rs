@@ -1287,7 +1287,6 @@ mod test_context_builder {
         let ctx = res.unwrap();
 
         assert_eq!(ctx.fuzzy_search_fields().len(), 2);
-        assert_eq!(ctx.all_search_fields().len(), 3);
 
         Ok(())
     }

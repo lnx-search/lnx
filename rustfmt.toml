@@ -4,3 +4,4 @@ imports_layout = "HorizontalVertical"
 match_block_trailing_comma = true
 imports_granularity = "Module"
 group_imports = "StdExternalCrate"
+max_width = 89

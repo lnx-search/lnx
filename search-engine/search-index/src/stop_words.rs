@@ -141,8 +141,12 @@ impl PersistentStopWordManager {
     /// Creates a new `PersistentStopWordManager`.
     pub(crate) fn new(conn: StorageBackend, manager: StopWordManager) -> Result<Self> {
         debug!("[ STOP-WORDS ] loading stop words from persistent store");
-        let buff = conn.load_structure(Self::KEYSPACE)?;
-        let words: Vec<String> = deserialize(&buff)?;
+        let words: Vec<String>;
+        if let Some(buff) = conn.load_structure(Self::KEYSPACE)? {
+            words = deserialize(&buff)?;
+        } else {
+            words = vec![];
+        }
 
         let count = words.len();
         manager.add_stop_words(words);
