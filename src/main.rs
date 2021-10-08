@@ -10,12 +10,10 @@ use engine::Engine;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
-
-use thruster::async_middleware;
-use thruster::{App, Request, Server, ThrusterServer};
+use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::routes::default_handlers::handle_404;
-use crate::state::{Ctx, generate_context, State};
+use crate::state::{generate_context, Ctx, State};
 
 #[allow(unused)]
 #[derive(Debug, StructOpt)]
@@ -150,20 +148,15 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
-
     let state = {
         let engine = Engine::new();
 
         State::new(engine)
     };
-    let mut app = App::<Request, Ctx, State>::create(
-        generate_context,
-        state,
-    );
+    let mut app = App::<Request, Ctx, State>::create(generate_context, state);
     app.set404(async_middleware!(Ctx, [handle_404]));
 
     let server = Server::new(app);
     server.build(&settings.host, settings.port).await;
     Ok(())
 }
-

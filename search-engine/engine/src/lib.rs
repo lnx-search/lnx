@@ -1,27 +1,22 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use hashbrown::HashMap;
 use arc_swap::ArcSwap;
-
-pub use search_index::QueryPayload;
-pub use search_index::structures;
-pub use search_index::Index;
-pub use search_index::QueryResults;
-
+use hashbrown::HashMap;
 use search_index::structures::IndexDeclaration;
+pub use search_index::{structures, Index, QueryPayload, QueryResults};
 
 /// A manager around a set of indexes.
 #[derive(Clone)]
 pub struct Engine {
-    indexes: Arc<ArcSwap<HashMap<String, Index>>>
+    indexes: Arc<ArcSwap<HashMap<String, Index>>>,
 }
 
 impl Engine {
     /// Creates a new unpopulated engine.
     pub fn new() -> Self {
         Self {
-            indexes: Arc::new(ArcSwap::from_pointee(HashMap::new()))
+            indexes: Arc::new(ArcSwap::from_pointee(HashMap::new())),
         }
     }
 
@@ -35,8 +30,7 @@ impl Engine {
         let index = Index::create(ctx).await?;
 
         let indexes = {
-            let indexes = self.indexes
-                .load();
+            let indexes = self.indexes.load();
 
             let mut indexes = indexes.as_ref().clone();
             indexes.insert(name, index);
@@ -54,8 +48,7 @@ impl Engine {
     /// This internally calls `Index.destroy()` to cleanup writers.
     pub async fn remove_index(&self, name: &str) -> Result<()> {
         let indexes = {
-            let indexes = self.indexes
-                .load();
+            let indexes = self.indexes.load();
 
             let mut indexes = indexes.as_ref().clone();
             if let Some(old) = indexes.remove(name) {
@@ -80,6 +73,3 @@ impl Engine {
         Some(index.clone())
     }
 }
-
-
-

@@ -232,8 +232,8 @@ impl IndexWriterWorker {
             WriterOp::ClearStopWords => {
                 self.stop_words.clear_stop_words();
                 self.stop_words.commit()?;
-                return Ok(false)
-            }
+                return Ok(false);
+            },
         };
 
         debug!(
@@ -258,10 +258,7 @@ fn start_writer(
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
 ) -> Result<()> {
-    let stop_words = PersistentStopWordManager::new(
-            conn.clone(),
-            stop_word_manager,
-        )?;
+    let stop_words = PersistentStopWordManager::new(conn.clone(), stop_word_manager)?;
     let frequency_set = PersistentFrequencySet::new(conn)?;
     let worker = IndexWriterWorker {
         frequencies: frequency_set,

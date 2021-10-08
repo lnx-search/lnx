@@ -18,7 +18,6 @@ use crate::structures::{
 use crate::writer::WriterOp;
 use crate::{reader, writer};
 
-
 #[derive(Clone)]
 pub struct Index(Arc<InternalIndex>);
 
@@ -251,11 +250,7 @@ impl InternalIndex {
         self.writer.destroy().await
     }
 
-    fn get_term_from_value(
-        &self,
-        field: Field,
-        value: DocumentValue,
-    ) -> Result<Term> {
+    fn get_term_from_value(&self, field: Field, value: DocumentValue) -> Result<Term> {
         let schema = self.ctx.schema();
         let field_type = schema.get_field_entry(field);
         let field = match field_type.field_type() {

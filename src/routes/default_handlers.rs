@@ -1,5 +1,4 @@
-use thruster::middleware_fn;
-use thruster::{MiddlewareNext, MiddlewareResult};
+use thruster::{middleware_fn, MiddlewareNext, MiddlewareResult};
 
 use crate::responders::json_response;
 use crate::state::Ctx;

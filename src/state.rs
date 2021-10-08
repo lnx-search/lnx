@@ -1,23 +1,21 @@
 use std::collections::HashMap;
+
 use bytes::Bytes;
 use engine::Engine;
 use serde::Serialize;
-use thruster::{Request, Context, BasicContext, Response};
 use thruster::middleware::cookies::{Cookie, CookieOptions, HasCookies};
 use thruster::middleware::query_params::HasQueryParams;
+use thruster::{BasicContext, Context, Request, Response};
 
 #[allow(unused)]
 #[derive(Clone)]
 pub struct State {
     engine: Engine,
-
 }
 
 impl State {
     pub fn new(engine: Engine) -> Self {
-        Self {
-            engine,
-        }
+        Self { engine }
     }
 }
 
@@ -26,16 +24,13 @@ pub type Ctx = LnxContext;
 #[derive(Clone)]
 pub struct LnxContext {
     inner: BasicContext,
-    pub state: State
+    pub state: State,
 }
 
 #[allow(unused)]
 impl LnxContext {
     pub fn new(ctx: BasicContext, state: State) -> Self {
-        Self {
-            inner: ctx,
-            state,
-        }
+        Self { inner: ctx, state }
     }
     ///
     /// Set the body as a string
@@ -152,14 +147,7 @@ impl HasCookies for LnxContext {
 }
 
 pub fn generate_context(request: Request, state: &State, path: &str) -> Ctx {
-    let ctx = thruster::context::basic_context::generate_context(
-        request,
-        state,
-        path,
-    );
+    let ctx = thruster::context::basic_context::generate_context(request, state, path);
 
-    LnxContext::new(
-        ctx,
-        state.clone(),
-    )
+    LnxContext::new(ctx, state.clone())
 }

@@ -5,9 +5,8 @@ use anyhow::Result;
 use bincode::serialize;
 use lzzzz::lz4;
 use serde::Serialize;
-use tantivy::Directory;
 use tantivy::directory::{MmapDirectory, RamDirectory};
-
+use tantivy::Directory;
 
 /// A wrapper around a SQLite connection that manages the index state.
 #[derive(Clone)]
@@ -32,7 +31,11 @@ impl StorageBackend {
         })
     }
 
-    pub(crate) fn store_structure<T: Serialize>(&self, keyspace: &str, value: &T) -> Result<()> {
+    pub(crate) fn store_structure<T: Serialize>(
+        &self,
+        keyspace: &str,
+        value: &T,
+    ) -> Result<()> {
         let data = serialize(value)?;
         let mut compressed = Vec::new();
         let _ = lz4::compress_to_vec(&data, &mut compressed, lz4::ACC_LEVEL_DEFAULT)?;
