@@ -15,6 +15,8 @@ use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
 
+static STORAGE_PATH: &str = "./index/engine-storage";
+
 #[allow(unused)]
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
@@ -150,9 +152,9 @@ fn setup() -> Result<Settings> {
 async fn start(settings: Settings) -> Result<()> {
     let state = {
         let engine = Engine::new();
-        let storage = StorageBackend::connect()
+        let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
 
-        State::new(engine)
+        State::new(engine, storage)
     };
     let mut app = App::<Request, Ctx, State>::create(generate_context, state);
     app.set404(async_middleware!(Ctx, [handle_404]));
