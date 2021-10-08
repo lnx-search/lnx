@@ -2,7 +2,6 @@ use anyhow::Error;
 use serde::{Deserialize};
 
 use thruster::{middleware_fn, MiddlewareNext, MiddlewareResult};
-use thruster::errors::{ThrusterError, ErrorSet};
 
 use crate::responders::json_response;
 use crate::state::Ctx;

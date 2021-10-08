@@ -1,4 +1,3 @@
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -6,7 +5,6 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use engine::StorageBackend;
 use hashbrown::HashMap;
-use parking_lot::Mutex;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

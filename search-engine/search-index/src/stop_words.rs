@@ -23,22 +23,23 @@ fn init_default_words() -> Result<()> {
         return Ok(());
     }
 
-    let buffer: &[u8] = include_bytes!("../_dist/stop_words");
-    let mut data = GzDecoder::new(vec![]);
-    data.write_all(buffer)?;
-    let data = data.finish()?;
-
-    let words = String::from_utf8(data)
-        .map_err(|_| Error::msg("failed to parse stop words from linked data."))?;
-
     let mut default_words = Vec::new();
-    let mut data = vec![];
-    for word in words.to_lowercase().split("\n") {
-        if let Some(word) = word.strip_suffix("\r") {
-            data.push(word.to_string());
-            default_words.push(word.to_string());
+    let buffer: &[u8] = include_bytes!("../_dist/stop_words");
+    if buffer.len() != 0 {
+        let mut data = GzDecoder::new(vec![]);
+        data.write_all(buffer)?;
+        let data = data.finish()?;
+
+        let words = String::from_utf8(data)
+            .map_err(|_| Error::msg("failed to parse stop words from linked data."))?;
+
+        for word in words.to_lowercase().split("\n") {
+            if let Some(word) = word.strip_suffix("\r") {
+                default_words.push(word.to_string());
+            }
         }
     }
+
 
     let _ = DEFAULT_WORDS.set(default_words);
 

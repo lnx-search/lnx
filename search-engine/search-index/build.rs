@@ -19,6 +19,7 @@ fn main() -> Result<()> {
 
 fn compress_stop_words() -> Result<()> {
     if !path::Path::new("./datasets/stop_words").exists() {
+        fs::write("./_dist/stop_words", b"")?;
         return Ok(());
     }
 
