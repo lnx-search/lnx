@@ -7,16 +7,19 @@ use thruster::middleware::cookies::{Cookie, CookieOptions, HasCookies};
 use thruster::middleware::query_params::HasQueryParams;
 use thruster::{BasicContext, Context, Request, Response};
 
+use crate::auth::AuthManager;
+
 #[allow(unused)]
 #[derive(Clone)]
 pub struct State {
     engine: Engine,
+    auth: AuthManager,
     storage: StorageBackend,
 }
 
 impl State {
-    pub fn new(engine: Engine, storage: StorageBackend) -> Self {
-        Self { engine, storage }
+    pub fn new(engine: Engine, storage: StorageBackend, auth: AuthManager) -> Self {
+        Self { engine, storage, auth }
     }
 }
 

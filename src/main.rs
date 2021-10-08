@@ -1,18 +1,19 @@
+mod auth;
 mod responders;
 mod routes;
 mod state;
-mod auth;
 
 #[macro_use]
 extern crate log;
 
 use anyhow::Result;
-use engine::{Engine, StorageBackend};
 use engine::structures::IndexDeclaration;
+use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
 use thruster::{async_middleware, App, Request, Server, ThrusterServer};
+use crate::auth::AuthManager;
 
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
@@ -159,7 +160,10 @@ async fn create_state() -> Result<State> {
         info!("loading existing indexes...");
         let buffer = storage.load_structure("persistent_indexes")?;
         let existing_indexes: Vec<IndexDeclaration> = bincode::deserialize(&buffer)?;
-        info!(" {} existing indexes discovered, recreating state...", existing_indexes.len());
+        info!(
+            " {} existing indexes discovered, recreating state...",
+            existing_indexes.len()
+        );
 
         let engine = Engine::new();
         for index in existing_indexes {
@@ -169,5 +173,7 @@ async fn create_state() -> Result<State> {
         engine
     };
 
-    Ok(State::new(engine, storage))
+    let auth = AuthManager::new();
+
+    Ok(State::new(engine, storage, auth))
 }

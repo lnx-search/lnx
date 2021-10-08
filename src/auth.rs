@@ -1,13 +1,13 @@
 use std::hash::{Hash, Hasher};
-
 use std::sync::Arc;
-use chrono::{Utc, DateTime};
-use evmap::{ReadGuard};
+
+use arc_swap::ArcSwap;
+use chrono::{DateTime, Utc};
+use hashbrown::HashMap;
 use parking_lot::Mutex;
 use rand::distributions::Alphanumeric;
-use rand::{Rng};
-use serde::{Serialize, Deserialize};
-
+use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 pub mod permissions {
     pub const MODIFY_ENGINE: usize = 1 << 0;
@@ -16,7 +16,6 @@ pub mod permissions {
     pub const MODIFY_STOP_WORDS: usize = 1 << 3;
     pub const MODIFY_AUTH: usize = 1 << 4;
 }
-
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct UserData {
@@ -34,33 +33,15 @@ impl UserData {
     }
 }
 
-impl Eq for UserData {}
-impl PartialEq<Self> for UserData {
-    fn eq(&self, other: &Self) -> bool {
-        self.token == other.token
-    }
-}
-
-impl Hash for UserData {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.token.hash(state)
-    }
-}
-
-
-
 #[derive(Clone)]
 pub struct AuthManager {
-    reader: evmap::ReadHandle<String, Arc<UserData>>,
-    writer: Arc<Mutex<evmap::WriteHandle<String, Arc<UserData>>>>
+    keys: Arc<ArcSwap<HashMap<String, Arc<UserData>>>>
 }
 
 impl AuthManager {
     pub fn new() -> Self {
-        let (reader, writer) = evmap::new();
         Self {
-            reader,
-            writer: Arc::new(Mutex::new(writer))
+            keys: Arc::new(ArcSwap::from_pointee(HashMap::new()))
         }
     }
 
@@ -84,19 +65,45 @@ impl AuthManager {
             permissions,
             created,
             user,
-            description
+            description,
         });
 
+        let mut new;
         {
-            let mut lock = self.writer.lock();
-            lock.insert(data.token.clone(), data.clone());
-            lock.refresh();
+            let existing = self.keys.load();
+            new = existing.as_ref().clone();
+            new.insert(data.token.clone(), data.clone());
         }
+        self.keys.store(Arc::new(new));
 
         data
     }
 
-    pub fn get_token_data<'rh>(&'rh self, token: &str) -> Option<ReadGuard<'rh, Arc<UserData>>> {
-        self.reader.get_one(token)
+
+    pub fn get_all_tokens(&self) -> Vec<Arc<UserData>> {
+        self.keys
+            .load()
+            .iter()
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    pub fn get_token_data(&self, token: &str) -> Option<Arc<UserData>> {
+        let guard = self.keys.load();
+        guard.get(token).map(|v| v.clone())
+    }
+
+    pub fn revoke_token(&self, token: &str) {
+        let mut new;
+        {
+            let existing = self.keys.load();
+            new = existing.as_ref().clone();
+            new.remove(token);
+        }
+        self.keys.store(Arc::new(new));
+    }
+
+    pub fn revoke_all_tokens(&self) {
+        self.keys.store(Arc::new(HashMap::new()));
     }
 }
