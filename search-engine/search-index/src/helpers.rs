@@ -175,7 +175,7 @@ impl FrequencyCounter for PersistentFrequencySet {
 mod tests {
     use super::*;
 
-    static TEST_FILE: &str = "./test.db";
+    static TEST_FILE: &str = "./test";
 
     #[test]
     fn test_text_processing() {

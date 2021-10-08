@@ -6,7 +6,7 @@ mod state;
 extern crate log;
 
 use anyhow::Result;
-use engine::Engine;
+use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
@@ -150,6 +150,7 @@ fn setup() -> Result<Settings> {
 async fn start(settings: Settings) -> Result<()> {
     let state = {
         let engine = Engine::new();
+        let storage = StorageBackend::connect()
 
         State::new(engine)
     };

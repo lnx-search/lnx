@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use engine::Engine;
+use engine::{Engine, StorageBackend};
 use serde::Serialize;
 use thruster::middleware::cookies::{Cookie, CookieOptions, HasCookies};
 use thruster::middleware::query_params::HasQueryParams;
@@ -11,11 +11,12 @@ use thruster::{BasicContext, Context, Request, Response};
 #[derive(Clone)]
 pub struct State {
     engine: Engine,
+    storage: StorageBackend,
 }
 
 impl State {
-    pub fn new(engine: Engine) -> Self {
-        Self { engine }
+    pub fn new(engine: Engine, storage: StorageBackend) -> Self {
+        Self { engine, storage }
     }
 }
 
