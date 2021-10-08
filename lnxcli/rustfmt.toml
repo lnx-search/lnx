@@ -1,6 +1,0 @@
-unstable_features = true
-combine_control_expr = false
-imports_layout = "HorizontalVertical"
-match_block_trailing_comma = true
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
