@@ -251,11 +251,7 @@ impl IndexDeclaration {
 
         let fp;
         if let StorageType::FileSystem = self.storage_type {
-            let path = format!("{}/{}", INDEX_METADATA_PATH, &self.name);
-            if !Path::new(&path).exists() {
-                std::fs::create_dir_all(&path)?;
-            }
-            fp = Some(path)
+            fp = Some(format!("{}/{}", INDEX_METADATA_PATH, &self.name))
         } else {
             fp = None;
         }

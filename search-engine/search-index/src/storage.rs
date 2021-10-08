@@ -20,6 +20,7 @@ impl StorageBackend {
     pub fn connect(fp: Option<String>) -> Result<Self> {
         let conn: Box<dyn Directory>;
         if let Some(ref fp) = fp {
+            std::fs::create_dir_all(fp)?;
             conn = Box::new(MmapDirectory::open(fp)?)
         } else {
             conn = Box::new(RamDirectory::create());
