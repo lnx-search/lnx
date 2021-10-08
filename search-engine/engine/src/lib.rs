@@ -7,6 +7,7 @@ use arc_swap::ArcSwap;
 pub use search_index::QueryPayload;
 pub use search_index::structures;
 pub use search_index::Index;
+pub use search_index::QueryResults;
 
 use search_index::structures::IndexDeclaration;
 

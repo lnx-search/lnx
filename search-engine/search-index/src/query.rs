@@ -50,7 +50,7 @@ pub(crate) struct QueryContext {
 /// This defines everything for a individual query
 /// including it's occurrence rules, kind and value.
 #[derive(Debug, Deserialize)]
-pub struct QueryPayload {
+pub struct QueryData {
     /// The actual value to feed into the engine.
     value: DocumentValue,
 
@@ -142,15 +142,15 @@ pub enum QuerySelector {
     ///
     /// This just behaves as expected except that the `Occur` changes
     /// from `should` to `must` if applicable.
-    Single(QueryPayload),
+    Single(QueryData),
 
     /// Many queries.
-    Multi(Vec<QueryPayload>),
+    Multi(Vec<QueryData>),
 }
 
 impl QuerySelector {
     /// Consumes the selector and returns a list of queries to process.
-    fn into_queries(self) -> Vec<QueryPayload> {
+    fn into_queries(self) -> Vec<QueryData> {
         match self {
             Self::Multi(queries) => queries,
             Self::Single(mut query) => {
@@ -181,7 +181,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-                Ok(QuerySelector::Single(QueryPayload {
+                Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v.to_string()),
                     kind: QueryKind::default(),
                     occur: Occur::default(),
@@ -189,7 +189,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
-                Ok(QuerySelector::Single(QueryPayload {
+                Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v),
                     kind: QueryKind::default(),
                     occur: Occur::default(),
@@ -200,7 +200,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             where
                 M: MapAccess<'de>,
             {
-                QueryPayload::deserialize(MapAccessDeserializer::new(map))
+                QueryData::deserialize(MapAccessDeserializer::new(map))
                     .map(QuerySelector::Single)
             }
 
@@ -291,7 +291,7 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query payload.
-    async fn get_query_from_payload(&self, qry: QueryPayload) -> Result<Box<dyn Query>> {
+    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
             QueryKind::Fuzzy => self.make_fuzzy_query(qry.value),
             QueryKind::Normal => self.make_normal_query(qry.value),
