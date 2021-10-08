@@ -7,6 +7,7 @@ extern crate log;
 
 use anyhow::Result;
 use engine::{Engine, StorageBackend};
+use engine::structures::IndexDeclaration;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
@@ -142,16 +143,30 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
-    let state = {
-        let engine = Engine::new();
-        let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
-
-        State::new(engine, storage)
-    };
+    let state = create_state().await?;
     let mut app = App::<Request, Ctx, State>::create(generate_context, state);
     app.set404(async_middleware!(Ctx, [handle_404]));
 
     let server = Server::new(app);
     server.build(&settings.host, settings.port).await;
     Ok(())
+}
+
+async fn create_state() -> Result<State> {
+    let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
+    let engine = {
+        info!("loading existing indexes...");
+        let buffer = storage.load_structure("persistent_indexes")?;
+        let existing_indexes: Vec<IndexDeclaration> = bincode::deserialize(&buffer)?;
+        info!(" {} existing indexes discovered, recreating state...", existing_indexes.len());
+
+        let engine = Engine::new();
+        for index in existing_indexes {
+            engine.add_index(&index).await?;
+        }
+
+        engine
+    };
+
+    Ok(State::new(engine, storage))
 }

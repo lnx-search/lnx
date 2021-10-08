@@ -14,6 +14,7 @@ uuid = { version = "0.8", features = ["v4"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 thruster = { version = "1.1.10", features = ["tls"] }
 
+bincode = "1.3"
 structopt = "0.3"
 log = "0.4"
 anyhow = "1"
