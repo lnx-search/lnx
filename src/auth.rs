@@ -1,11 +1,11 @@
 use std::hash::{Hash, Hasher};
-use std::mem::ManuallyDrop;
+
 use std::sync::Arc;
 use chrono::{Utc, DateTime};
-use evmap::{ReadGuard, ShallowCopy};
+use evmap::{ReadGuard};
 use parking_lot::Mutex;
 use rand::distributions::Alphanumeric;
-use rand::{random, Rng};
+use rand::{Rng};
 use serde::{Serialize, Deserialize};
 
 
