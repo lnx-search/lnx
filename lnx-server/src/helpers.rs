@@ -24,3 +24,38 @@ macro_rules! check_error {
         }
     }}
 }
+
+
+#[macro_export]
+macro_rules! get_index {
+    ($ctx:expr) => {{
+        let index = match $ctx.request().params() {
+            None => return Ok(json_response(
+                $ctx,
+                400,
+                "missing required url parameters.",
+            )),
+            Some(params) => {
+                match params.get("index") {
+                    Some(t) => t.to_string(),
+                    None => return Ok(json_response(
+                        $ctx,
+                        400,
+                        "missing required url parameters 'index'.",
+                    )),
+                }
+            },
+        };
+
+        let index =  match $ctx.state.engine.get_index(&index) {
+            None => return Ok(json_response(
+                $ctx,
+                400,
+                &format!("no index named {} exists.", &index),
+            )),
+            Some(index) => index,
+        };
+
+        (index, $ctx)
+    }}
+}
