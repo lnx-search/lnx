@@ -274,6 +274,7 @@ impl IndexDeclaration {
     ///
     /// If the search fields contain any fields that are not indexed,
     /// the system will list all rejected fields in a Error.
+    /// Or if any fields are not text.
     fn verify_search_fields(&self, schema: &Schema) -> Result<()> {
         let mut reject = vec![];
 
@@ -281,6 +282,14 @@ impl IndexDeclaration {
             let name = entry.name().to_string();
             if !self.search_fields.contains(&name) {
                 continue;
+            }
+
+            match entry.field_type() {
+                FieldType::Str(_) => {},
+                _ => return Err(Error::msg(format!(
+                    "search field '{}' is not a text / string field type.",
+                    &name,
+                )))
             }
 
             if !entry.is_indexed() {
@@ -318,7 +327,9 @@ impl IndexDeclaration {
                 continue;
             }
 
-            search_fields.push(field);
+            if let FieldType::Str(_) = entry.field_type() {
+                search_fields.push(field);
+            }
         }
 
         search_fields
@@ -1190,10 +1201,7 @@ mod test_context_builder {
 
         let res = dec.create_context();
         assert!(res.is_err());
-        assert_eq!(
-            "the given search fields contain non-indexed fields, fields cannot be searched without being index. Invalid fields: count",
-            &res.err().unwrap().to_string(),
-        );
+
         Ok(())
     }
 
@@ -1232,7 +1240,6 @@ mod test_context_builder {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))?;
 
@@ -1277,7 +1284,6 @@ mod test_context_builder {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
             "use_fast_fuzzy": true
         }))?;

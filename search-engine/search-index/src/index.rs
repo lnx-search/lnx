@@ -343,7 +343,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -394,7 +393,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -445,7 +443,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -496,7 +493,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -547,7 +543,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -598,7 +593,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await;
@@ -645,7 +639,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -696,7 +689,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await;
@@ -743,7 +735,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -794,7 +785,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await;
@@ -841,7 +831,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -936,7 +925,6 @@ mod tests {
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -1060,13 +1048,17 @@ mod tests {
                    "indexed": true,
                    "fast": "single"
                 },
+                "category": {
+                   "type": "facet",
+                   "stored": true,
+                   "indexed": true
+                },
             },
 
             // The query context
             "search_fields": [
                 "title",
                 "description",
-                "count"
             ],
         }))
         .await
@@ -1449,20 +1441,23 @@ mod tests {
         let document: DocumentOptions = serde_json::from_value(serde_json::json!(
             [
                 {
-                    "title": "The Old Man and the Sea",
+                    "title": "The Old Man and the Sea extra word",
                     "description": "He was an old man who fished alone in a skiff in \
                     the Gulf Stream and he had gone eighty-four days \
                     now without taking a fish.",
+                    "category": "/tools/hammers",
                 },
                 {
-                    "title": "The Old Man and the Sea 2",
+                    "title": "The Old Man and the Sea 2 extra word",
                     "description": "He was an old man who fished alone in a skiff in \
                     the Gulf Stream and he had gone eighty-four days \
                     now without taking a fish.",
+                    "category": "/tools/hammers",
                     "count": 3
                 },
                 {
                     "title": "The Old Man and the Sea 3",
+                    "category": "/tools/fish",
                 },
             ]
         ))?;
@@ -1566,7 +1561,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "*",
+                "value": "man",
                 "kind": "normal"
             },
         }))?;
@@ -1622,4 +1617,82 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn search_facet_term_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "value": "/tools",
+                "kind": {
+                    "term": "category"
+                }
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "value": "/tools/hammers",
+                "kind": {
+                    "term": "category"
+                }
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), 2);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_combination_query_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": [
+                {
+                     "value": "extra",
+                     "kind": "normal",
+                    "occur": "must",
+                },
+                {
+                    "value": "3",
+                    "kind": {
+                        "term": "count"
+                    },
+                    "occur": "must",
+                },
+            ],
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+
+        println!("{:?}", results.unwrap());
+
+        Ok(())
+    }
+
 }
