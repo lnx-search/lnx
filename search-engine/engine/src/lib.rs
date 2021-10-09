@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use parking_lot::Mutex;
 
 use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
@@ -9,6 +10,7 @@ pub use search_index::{structures, Index, QueryPayload, QueryResults, StorageBac
 /// A manager around a set of indexes.
 #[derive(Clone)]
 pub struct Engine {
+    declarations: Arc<Mutex<HashMap<String, IndexDeclaration>>>,
     indexes: Arc<ArcSwap<HashMap<String, Index>>>,
 }
 
@@ -16,6 +18,7 @@ impl Engine {
     /// Creates a new unpopulated engine.
     pub fn new() -> Self {
         Self {
+            declarations: Arc::new(Mutex::new(HashMap::new())),
             indexes: Arc::new(ArcSwap::from_pointee(HashMap::new())),
         }
     }
@@ -24,7 +27,7 @@ impl Engine {
     ///
     /// This duplicates the current indexes and swaps the clone, in general
     /// this is a very heavy operation and shouldn't be ran often / arbitrarily.
-    pub async fn add_index(&self, index: &IndexDeclaration, override_if_exists: bool) -> Result<()> {
+    pub async fn add_index(&self, index: IndexDeclaration, override_if_exists: bool) -> Result<()> {
         let mut indexes;
         {
             let guard = self.indexes.load();
@@ -35,12 +38,20 @@ impl Engine {
             return Err(Error::msg("index already exists."))
         }
 
+        // remove the index if it exists
+        self.remove_index(index.name()).await?;
+
         let ctx = index.create_context()?;
         let name = ctx.name();
-        let index = Index::create(ctx).await?;
+        let built_index = Index::create(ctx).await?;
 
-        indexes.insert(name, index);
+        indexes.insert(name, built_index);
         self.indexes.store(Arc::new(indexes));
+
+        {
+            self.declarations.lock()
+                .insert(index.name().to_string(), index);
+        }
 
         Ok(())
     }
@@ -62,6 +73,11 @@ impl Engine {
 
         self.indexes.store(Arc::new(indexes));
 
+        {
+            self.declarations.lock()
+                .remove(name);
+        }
+
         Ok(())
     }
 
@@ -73,5 +89,10 @@ impl Engine {
         let index = guard.get(index)?;
 
         Some(index.clone())
+    }
+
+    pub fn get_all_indexes(&self) -> Vec<IndexDeclaration> {
+        let guard = self.declarations.lock();
+        guard.values().map(|v| v.clone()).collect()
     }
 }

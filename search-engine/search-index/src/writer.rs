@@ -309,8 +309,10 @@ impl Writer {
                 &ctx.name, num_threads, writer_buffer,
             );
 
-            ctx.index
-                .writer_with_num_threads(num_threads, writer_buffer)?
+            ctx.index.writer_with_num_threads(
+                num_threads,
+                writer_buffer,
+            )?
         };
 
         let waiters = WaitersQueue::default();

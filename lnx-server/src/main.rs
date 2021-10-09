@@ -143,8 +143,6 @@ async fn start(settings: Settings) -> Result<()> {
     let state = create_state(&settings).await?;
     let mut app = App::<Request, Ctx, State>::create(generate_context, state);
 
-    app.set404(async_middleware!(Ctx, [handle_404]));
-
     {
         let middlewares = async_middleware!(Ctx, [check_permissions]);
         app.get_root.add_value_at_path(
@@ -172,10 +170,12 @@ async fn start(settings: Settings) -> Result<()> {
     app.post("/indexes/:index/search", async_middleware!(Ctx, [search_index]));
     app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [add_stop_words]));
     app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [remove_stop_words]));
-    app.post("/indexes/:token/documents", async_middleware!(Ctx, [add_documents]));
-    app.delete("/indexes/:token/documents", async_middleware!(Ctx, [delete_documents]));
-    app.delete("/indexes/:token/documents/clear", async_middleware!(Ctx, [clear_documents]));
-    app.get("/indexes/:token/documents/:document_id", async_middleware!(Ctx, [create_token]));
+    app.post("/indexes/:index/documents", async_middleware!(Ctx, [add_documents]));
+    app.delete("/indexes/:index/documents", async_middleware!(Ctx, [delete_documents]));
+    app.delete("/indexes/:index/documents/clear", async_middleware!(Ctx, [clear_documents]));
+    app.get("/indexes/:index/documents/:document_id", async_middleware!(Ctx, [create_token]));
+
+    app.set404(async_middleware!(Ctx, [handle_404]));
 
     info!("serving requests @ http://{}:{}", &settings.host, settings.port);
     let server = Server::new(app);
@@ -201,7 +201,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
         let engine = Engine::new();
         for index in existing_indexes {
-            engine.add_index(&index, true).await?;
+            engine.add_index(index, true).await?;
         }
 
         engine

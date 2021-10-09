@@ -17,7 +17,7 @@ macro_rules! check_error {
                 return Ok(json_response($ctx, 500, "An error occurred while processing this request"))
             },
             Err(e) => {
-                warn!("rejecting {} operation due to bad request: {:?}", $action, &e);
+                debug!("rejecting {} operation due to bad request: {:?}", $action, &e);
                 return Ok(json_response($ctx, 400, &e.to_string()))
 
             }

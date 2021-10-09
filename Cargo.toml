@@ -5,8 +5,7 @@ members = [
     "search-engine/search-index",
     "lnx-server",
 ]
-exclude = ["lnxcli"]
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
+#[profile.release]
+#lto = "fat"
+#codegen-units = 1

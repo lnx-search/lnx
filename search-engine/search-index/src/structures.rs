@@ -115,7 +115,7 @@ fn add_boost_fields(
 }
 
 /// A given index declaration that describes the behaviour of a new index.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct IndexDeclaration {
     /// The name of the index.
     pub(crate) name: String,

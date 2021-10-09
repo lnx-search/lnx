@@ -1,27 +1,42 @@
 use std::collections::BTreeMap;
-use anyhow::Error;
+use serde::Deserialize;
+use anyhow::{Error, Result};
 use thruster::{middleware_fn, MiddlewareNext, MiddlewareResult};
 
 use engine::{QueryPayload, DocumentId};
 use engine::structures::{DocumentOptions, DocumentValueOptions, IndexDeclaration};
 
-use crate::{get_index, check_error};
+use crate::{get_index, check_error, INDEX_KEYSPACE};
 use crate::responders::json_response;
 use crate::state::Ctx;
 
 
+#[derive(Deserialize)]
+struct IndexCreationPayload {
+    #[serde(default)]
+    override_if_exists: bool,
+    index: IndexDeclaration,
+}
+
+
 #[middleware_fn]
 pub async fn create_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
-    println!("{:?}", ctx.request().params());
-
     let res = ctx.request()
-        .body_json::<IndexDeclaration>()
+        .body_json::<IndexCreationPayload>()
         .map_err(Error::from);
 
     let (payload, ctx) = check_error!(res, ctx, "deserialize index payload");
 
-    let res = ctx.state.engine.add_index(&payload, false).await;
-    let (_, ctx) = check_error!(res, ctx, "add index");
+    let res = ctx.state.engine.add_index(payload.index, payload.override_if_exists).await;
+    let (_, ctx): ((), Ctx) = check_error!(res, ctx, "add index");
+
+    let indexes = ctx.state.engine.get_all_indexes();
+    let storage = ctx.state.storage.clone();
+    let res = tokio::task::spawn_blocking(move || -> Result<()> {
+        storage.store_structure(INDEX_KEYSPACE, &indexes)
+    }).await.map_err(Error::from);
+    let (res, ctx) =  check_error!(res, ctx, "join worker thread");
+    let (_, ctx) =  check_error!(res, ctx, "save indexes");
 
     Ok(json_response(ctx, 200, "index created."))
 }
@@ -48,6 +63,14 @@ pub async fn delete_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareRes
 
     let res = ctx.state.engine.remove_index(&index).await;
     let (_, ctx) = check_error!(res, ctx, "remove index");
+
+    let indexes = ctx.state.engine.get_all_indexes();
+    let storage = ctx.state.storage.clone();
+    let res = tokio::task::spawn_blocking(move || -> Result<()> {
+        storage.store_structure(INDEX_KEYSPACE, &indexes)
+    }).await.map_err(Error::from);
+    let (res, ctx) =  check_error!(res, ctx, "join worker thread");
+    let (_, ctx) =  check_error!(res, ctx, "save indexes");
 
     Ok(json_response(ctx,200,"index deleted"))
 }
