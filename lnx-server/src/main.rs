@@ -7,13 +7,13 @@ mod helpers;
 #[macro_use]
 extern crate log;
 
-use anyhow::{Error, Result};
+use anyhow::Result;
 use engine::structures::IndexDeclaration;
 use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
-use thruster::{async_middleware, App, Request, Server, ThrusterServer, SSLServer};
+use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::auth::AuthManager;
 use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens, edit_token};
@@ -217,18 +217,3 @@ async fn create_state(settings: &Settings) -> Result<State> {
     Ok(State::new(engine, storage, auth))
 }
 
-async fn get_tls_files(settings: &Settings) -> Result<Option<(String, Vec<u8>)>> {
-    match (&settings.tls_key_file, &settings.tls_cert_file) {
-        (Some(fp1), Some(fp2)) => {
-            let key = tokio::fs::read_to_string(fp1).await?;
-            let cert = tokio::fs::read(fp2).await?;
-            Ok(Some((key, cert)))
-        },
-        (None, None) => Ok(None),
-        _ => {
-            return Err(Error::msg(
-                "missing a required TLS field, both key and cert must be provided.",
-            ))
-        },
-    }
-}
