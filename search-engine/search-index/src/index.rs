@@ -1689,8 +1689,7 @@ mod tests {
             e
         });
         assert!(results.is_ok());
-
-        println!("{:?}", results.unwrap());
+        assert_eq!(results.as_ref().unwrap().hits.len(), 1);
 
         Ok(())
     }
