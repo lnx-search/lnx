@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
 use hashbrown::HashMap;
 use search_index::structures::IndexDeclaration;
@@ -24,20 +24,22 @@ impl Engine {
     ///
     /// This duplicates the current indexes and swaps the clone, in general
     /// this is a very heavy operation and shouldn't be ran often / arbitrarily.
-    pub async fn add_index(&self, index: &IndexDeclaration) -> Result<()> {
+    pub async fn add_index(&self, index: &IndexDeclaration, override_if_exists: bool) -> Result<()> {
+        let mut indexes;
+        {
+            let guard = self.indexes.load();
+            indexes = guard.as_ref().clone();
+        }
+
+        if !override_if_exists & indexes.get(index.name()).is_some() {
+            return Err(Error::msg("index already exists."))
+        }
+
         let ctx = index.create_context()?;
         let name = ctx.name();
         let index = Index::create(ctx).await?;
 
-        let indexes = {
-            let indexes = self.indexes.load();
-
-            let mut indexes = indexes.as_ref().clone();
-            indexes.insert(name, index);
-
-            indexes
-        };
-
+        indexes.insert(name, index);
         self.indexes.store(Arc::new(indexes));
 
         Ok(())

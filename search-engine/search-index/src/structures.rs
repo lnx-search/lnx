@@ -177,6 +177,11 @@ impl Validate for IndexDeclaration {
 }
 
 impl IndexDeclaration {
+    #[inline]
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
     /// Builds IndexContext from the declaration, applying any validation in
     /// the process.
     pub fn create_context(&self) -> Result<IndexContext> {

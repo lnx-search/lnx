@@ -12,13 +12,15 @@ use crate::state::Ctx;
 
 #[middleware_fn]
 pub async fn create_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
+    println!("{:?}", ctx.request().params());
+
     let res = ctx.request()
         .body_json::<IndexDeclaration>()
         .map_err(Error::from);
 
     let (payload, ctx) = check_error!(res, ctx, "deserialize index payload");
 
-    let res = ctx.state.engine.add_index(&payload).await;
+    let res = ctx.state.engine.add_index(&payload, false).await;
     let (_, ctx) = check_error!(res, ctx, "add index");
 
     Ok(json_response(ctx, 200, "index created."))

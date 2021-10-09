@@ -177,6 +177,7 @@ async fn start(settings: Settings) -> Result<()> {
     app.delete("/indexes/:token/documents/clear", async_middleware!(Ctx, [clear_documents]));
     app.get("/indexes/:token/documents/:document_id", async_middleware!(Ctx, [create_token]));
 
+    info!("serving requests @ http://{}:{}", &settings.host, settings.port);
     let server = Server::new(app);
     server.build(&settings.host, settings.port).await;
     Ok(())
@@ -200,7 +201,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
         let engine = Engine::new();
         for index in existing_indexes {
-            engine.add_index(&index).await?;
+            engine.add_index(&index, true).await?;
         }
 
         engine
