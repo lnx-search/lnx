@@ -60,6 +60,14 @@ impl Index {
         self.0.add_documents(doc_opts).await
     }
 
+    /// Deletes all documents from the index matching a given term(s).
+    pub async fn delete_documents_where(
+        &self,
+        fields: BTreeMap<String, DocumentValueOptions>,
+    ) -> Result<()> {
+        self.0.delete_documents_where(fields).await
+    }
+
     /// Deletes all documents from the index.
     pub async fn clear_documents(&self) -> Result<()> {
         self.0.clear_documents().await
@@ -86,14 +94,6 @@ impl Index {
     /// Removes all stop words from the index.
     pub async fn clear_stop_words(&self) -> Result<()> {
         self.0.clear_stop_words().await
-    }
-
-    /// Deletes all documents from the index matching a given term(s).
-    pub async fn delete_documents_where(
-        &self,
-        fields: BTreeMap<String, DocumentValueOptions>,
-    ) -> Result<()> {
-        self.0.delete_documents_where(fields).await
     }
 
     /// Shuts the index down waiting for all writer threads to finish.

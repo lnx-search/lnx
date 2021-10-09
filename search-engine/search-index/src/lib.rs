@@ -18,5 +18,6 @@ mod writer;
 pub use index::Index;
 pub use reader::{QueryPayload, QueryResults};
 pub use storage::StorageBackend;
+pub use query::DocumentId;
 
 pub(crate) type ReaderExecutor = Arc<SearcherExecutorPool>;

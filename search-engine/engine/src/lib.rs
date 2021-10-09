@@ -4,7 +4,7 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use hashbrown::HashMap;
 use search_index::structures::IndexDeclaration;
-pub use search_index::{structures, Index, QueryPayload, QueryResults, StorageBackend};
+pub use search_index::{structures, Index, QueryPayload, QueryResults, StorageBackend, DocumentId};
 
 /// A manager around a set of indexes.
 #[derive(Clone)]

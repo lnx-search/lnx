@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use anyhow::Error;
 use thruster::{middleware_fn, MiddlewareNext, MiddlewareResult};
 
-use engine::QueryPayload;
-use engine::structures::IndexDeclaration;
+use engine::{QueryPayload, DocumentId};
+use engine::structures::{DocumentOptions, DocumentValueOptions, IndexDeclaration};
 
 use crate::{get_index, check_error};
 use crate::responders::json_response;
@@ -63,7 +64,6 @@ pub async fn search_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareRes
     Ok(json_response(ctx, 200, &results))
 }
 
-
 #[middleware_fn]
 pub async fn add_stop_words(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
     let (index, ctx) = get_index!(ctx);
@@ -90,4 +90,78 @@ pub async fn remove_stop_words(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> Middlewa
     let (_, ctx) = check_error!(index.remove_stop_words(payload).await, ctx, "remove stop words");
 
     Ok(json_response(ctx, 200, "stop words removed"))
+}
+
+#[middleware_fn]
+pub async fn add_documents(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
+    let (index, ctx) = get_index!(ctx);
+
+    let res = ctx.request()
+        .body_json::<DocumentOptions>()
+        .map_err(Error::from);
+
+    let (payload, ctx) = check_error!(res, ctx, "deserialize documents");
+    let (_, ctx) = check_error!(index.add_documents(payload).await, ctx, "add documents");
+
+    Ok(json_response(ctx, 200, "documents added"))
+}
+
+
+#[middleware_fn]
+pub async fn delete_documents(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
+    let (index, ctx) = get_index!(ctx);
+
+    let res = ctx.request()
+        .body_json::<BTreeMap<String, DocumentValueOptions>>()
+        .map_err(Error::from);
+
+    let (payload, ctx) = check_error!(res, ctx, "deserialize delete filter");
+    let (_, ctx) = check_error!(index.delete_documents_where(payload).await, ctx, "remove documents");
+
+    Ok(json_response(ctx, 200, "documents removed"))
+}
+
+#[middleware_fn]
+pub async fn clear_documents(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
+    let (index, ctx) = get_index!(ctx);
+    let (_, ctx) = check_error!(index.clear_documents().await, ctx, "clear documents");
+
+    Ok(json_response(ctx, 200, "documents removed"))
+}
+
+
+#[middleware_fn]
+pub async fn get_document(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
+    let (index, ctx) = get_index!(ctx);
+
+    let document_id = match ctx.request().params() {
+        None => return Ok(json_response(
+            ctx,
+            400,
+            "missing required url parameters.",
+        )),
+        Some(params) => {
+            match params.get("index") {
+                Some(t) => t.to_string(),
+                None => return Ok(json_response(
+                    ctx,
+                    400,
+                    "missing required url parameters 'index'.",
+                )),
+            }
+        },
+    };
+
+    let document_id = match document_id.parse::<DocumentId>() {
+        Ok(v) => v,
+        Err(_) => return Ok(json_response(
+            ctx,
+            400,
+            "invalid document id given.",
+        )),
+    };
+
+    let (result, ctx) = check_error!(index.get_document(document_id).await, ctx, "get document");
+
+    Ok(json_response(ctx, 200, &result))
 }
