@@ -9,7 +9,6 @@ use thruster::{BasicContext, Context, Request, Response};
 
 use crate::auth::AuthManager;
 
-#[allow(unused)]
 #[derive(Clone)]
 pub struct State {
     pub engine: Engine,

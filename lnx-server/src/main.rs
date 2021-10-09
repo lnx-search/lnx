@@ -24,7 +24,6 @@ use crate::state::{generate_context, Ctx, State};
 static STORAGE_PATH: &str = "./index/engine-storage";
 static INDEX_KEYSPACE: &str = "persistent_indexes";
 
-#[allow(unused)]
 #[derive(Debug, StructOpt)]
 #[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
 struct Settings {
