@@ -19,4 +19,4 @@ jobs:
     - name: Build main
       run: cargo build --verbose
     - name: Run main tests
-      run: cargo test --verbose          
+      run: cargo test --verbose -- --test-threads 2         
