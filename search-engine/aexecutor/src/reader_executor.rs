@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::sync::Arc;
 
+use async_channel::{Sender, Receiver, bounded};
 use anyhow::{Error, Result};
 use crossbeam::queue::ArrayQueue;
 use tantivy::Executor;
@@ -8,12 +9,13 @@ use tantivy::Executor;
 type ExecutorQueue = Arc<ArrayQueue<Executor>>;
 
 pub(crate) struct TantivyExecutorPool {
-    executors: ExecutorQueue,
+    executors: Receiver<Executor>,
+    executors_returner: Sender<Executor>,
 }
 
 impl TantivyExecutorPool {
-    pub(crate) fn create(pool_size: usize, threads_per_reader: usize) -> Result<Self> {
-        let reader_executors = ArrayQueue::new(pool_size);
+    pub(crate) async fn create(pool_size: usize, threads_per_reader: usize) -> Result<Self> {
+        let (tx, rx) = async_channel::bounded(pool_size);
         for _ in 0..pool_size {
             let executor = if threads_per_reader <= 1 {
                 tantivy::Executor::single_thread()
@@ -21,17 +23,18 @@ impl TantivyExecutorPool {
                 tantivy::Executor::multi_thread(threads_per_reader, "reader-executor-")?
             };
 
-            let _ = reader_executors.push(executor);
+            let _ = tx.send(executor).await;
         }
 
         Ok(Self {
-            executors: Arc::new(reader_executors),
+            executors: rx,
+            executors_returner: tx,
         })
     }
 
-    pub(crate) fn get(&self) -> Result<ExecutorHandle> {
-        if let Some(exec) = self.executors.pop() {
-            Ok(ExecutorHandle::new(exec, self.executors.clone()))
+    pub(crate) async fn get(&self) -> Result<ExecutorHandle> {
+        if let Ok(exec) = self.executors.recv().await {
+            Ok(ExecutorHandle::new(exec, self.executors_returner.clone()))
         } else {
             Err(Error::msg("executor pool exhausted")
                 .context("all executors have been taken at the time of acquiring"))
@@ -45,12 +48,12 @@ impl TantivyExecutorPool {
 /// once dropped.
 pub struct ExecutorHandle {
     inner: Option<Executor>,
-    returner: ExecutorQueue,
+    returner: Sender<Executor>,
 }
 
 impl ExecutorHandle {
     /// Creates a new handle from a given executor ah
-    fn new(executor: Executor, queue: ExecutorQueue) -> Self {
+    fn new(executor: Executor, queue: Sender<Executor>) -> Self {
         Self {
             inner: Some(executor),
             returner: queue,
@@ -66,6 +69,11 @@ impl Borrow<Executor> for ExecutorHandle {
 
 impl Drop for ExecutorHandle {
     fn drop(&mut self) {
-        self.inner.take().map(|v| self.returner.push(v));
+        println!("dropping and returning executor");
+        if let Some(inner) = self.inner.take() {
+            if let Err(_) = self.returner.try_send(inner) {
+                panic!("failed to return executor to pool")
+            }
+        }
     }
 }

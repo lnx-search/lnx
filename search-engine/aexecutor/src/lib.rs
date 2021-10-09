@@ -81,8 +81,10 @@ impl SearcherExecutorPool {
             .num_threads(max_concurrency)
             .build()?;
 
-        let reader_executors =
-            TantivyExecutorPool::create(max_concurrency, threads_per_reader)?;
+        let reader_executors = TantivyExecutorPool::create(
+            max_concurrency,
+            threads_per_reader,
+        ).await?;
 
         Ok(Self {
             reader,
@@ -100,8 +102,8 @@ impl SearcherExecutorPool {
         T: Sync + Send + 'static,
     {
         let _permit = self.limiter.acquire().await?;
+        let executor = self.reader_executors.get().await?;
         let searcher = self.reader.searcher();
-        let executor = self.reader_executors.get()?;
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
             let result = func(searcher, executor.borrow());
