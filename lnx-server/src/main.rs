@@ -189,7 +189,8 @@ async fn create_state(settings: &Settings) -> Result<State> {
         info!("loading existing indexes...");
         let existing_indexes: Vec<IndexDeclaration>;
         if let Some(buff) = storage.load_structure(INDEX_KEYSPACE)? {
-            existing_indexes = bincode::deserialize(&buff)?;
+            let buffer: Vec<u8> = bincode::deserialize(&buff)?;
+            existing_indexes = serde_json::from_slice(&buffer)?;
         } else {
             existing_indexes = vec![];
         }

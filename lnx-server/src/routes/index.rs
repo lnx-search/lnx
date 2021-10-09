@@ -33,7 +33,8 @@ pub async fn create_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareRes
     let indexes = ctx.state.engine.get_all_indexes();
     let storage = ctx.state.storage.clone();
     let res = tokio::task::spawn_blocking(move || -> Result<()> {
-        storage.store_structure(INDEX_KEYSPACE, &indexes)
+        let raw_data = serde_json::to_vec(&indexes)?;
+        storage.store_structure(INDEX_KEYSPACE, &raw_data)
     }).await.map_err(Error::from);
     let (res, ctx) =  check_error!(res, ctx, "join worker thread");
     let (_, ctx) =  check_error!(res, ctx, "save indexes");
@@ -67,7 +68,8 @@ pub async fn delete_index(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareRes
     let indexes = ctx.state.engine.get_all_indexes();
     let storage = ctx.state.storage.clone();
     let res = tokio::task::spawn_blocking(move || -> Result<()> {
-        storage.store_structure(INDEX_KEYSPACE, &indexes)
+        let raw_data = serde_json::to_vec(&indexes)?;
+        storage.store_structure(INDEX_KEYSPACE, &raw_data)
     }).await.map_err(Error::from);
     let (res, ctx) =  check_error!(res, ctx, "join worker thread");
     let (_, ctx) =  check_error!(res, ctx, "save indexes");
