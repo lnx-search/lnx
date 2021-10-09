@@ -220,9 +220,12 @@ mod tests {
 
     #[test]
     fn test_storage_file_backed_processing() -> Result<()> {
+        // In-case something went wrong
+        let _ = std::fs::remove_file(TEST_FILE);
+
         let sentence = "The quick brown fox, jumped over the quick brown dogg.";
 
-        let storage = StorageBackend::connect(Some(TEST_FILE.into()))?;
+        let storage = StorageBackend::connect(None)?;
 
         {
             let mut freq_dict = PersistentFrequencySet::new(storage.clone())?;
@@ -250,7 +253,7 @@ mod tests {
             assert_eq!(freq_dict.get_count("dogg"), 1);
         }
 
-        std::fs::remove_file(TEST_FILE)?;
+        let _ = std::fs::remove_file(TEST_FILE);
 
         Ok(())
     }

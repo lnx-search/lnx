@@ -318,8 +318,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -369,8 +369,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "tempdir",
             "fields": {
@@ -420,8 +420,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "filesystem",
             "fields": {
@@ -471,8 +471,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -522,8 +522,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -573,8 +573,8 @@ mod tests {
             "max_concurrency": 0,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -620,8 +620,8 @@ mod tests {
             "max_concurrency": 12,
 
             // Writer context
-            "writer_buffer": 64_000_000,
-            "writer_threads": 12,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -816,8 +816,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -867,8 +867,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -911,8 +911,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -962,8 +962,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -992,8 +992,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "storage_type": "memory",
             "fields": {
@@ -1039,8 +1039,8 @@ mod tests {
             "max_concurrency": 1,
 
             // Writer context
-            "writer_buffer": 24_000_000,
-            "writer_threads": 8,
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
 
             "use_fast_fuzzy": fast_fuzzy,
 

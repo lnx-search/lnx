@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use bincode::serialize;
-use lzzzz::lz4;
+use compress::lz4;
 use serde::Serialize;
 use tantivy::directory::{MmapDirectory, RamDirectory, error::OpenReadError};
 use tantivy::Directory;
@@ -39,7 +39,8 @@ impl StorageBackend {
     ) -> Result<()> {
         let data = serialize(value)?;
         let mut compressed = Vec::new();
-        let _ = lz4::compress_to_vec(&data, &mut compressed, lz4::ACC_LEVEL_DEFAULT)?;
+        lz4::encode_block(&data, &mut compressed);
+
         let path = format!("./{}", keyspace);
         self.conn.atomic_write(path.as_ref(), &compressed)?;
         Ok(())
@@ -54,7 +55,7 @@ impl StorageBackend {
         };
 
         let mut data = Vec::new();
-        let _ = lz4::decompress(&compressed, &mut data)?;
+        lz4::decode_block(&compressed, &mut data);
         Ok(Some(data))
     }
 }
@@ -62,5 +63,27 @@ impl StorageBackend {
 impl Debug for StorageBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&format!("StorageBackend(fp={:?})", self.fp))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_loading_and_unloading() -> Result<()> {
+        let test_structure = vec![
+            "foo",
+            "bar",
+        ];
+
+        let storage = StorageBackend::connect(None)?;
+        storage.store_structure("test", &test_structure)?;
+        if let Some(buffer) = storage.load_structure("test")? {
+            let test_res: Vec<&str> = bincode::deserialize(&buffer)?;
+            assert_eq!(test_structure, test_res);
+        };
+
+        Ok(())
     }
 }
