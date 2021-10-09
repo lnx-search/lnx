@@ -17,6 +17,7 @@ use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::auth::AuthManager;
 use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens, edit_token};
+use crate::routes::index::{create_index, delete_index, search_index, add_stop_words, remove_stop_words};
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
 
@@ -174,10 +175,12 @@ async fn start(settings: Settings) -> Result<()> {
     app.post("/auth/:token/revoke", async_middleware!(Ctx, [revoke_token]));
     app.put("/auth/:token", async_middleware!(Ctx, [edit_token]));
 
-    //app.post("/indexes", async_middleware!(Ctx, [create_token]));
-    //app.put("/indexes/:index/search", async_middleware!(Ctx, [create_token]));
-    //app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
-    //app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
+    app.post("/indexes", async_middleware!(Ctx, [create_index]));
+    app.delete("/indexes/:index", async_middleware!(Ctx, [delete_index]));
+
+    app.post("/indexes/:index/search", async_middleware!(Ctx, [search_index]));
+    app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [add_stop_words]));
+    app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [remove_stop_words]));
     //app.post("/indexes/:token/documents", async_middleware!(Ctx, [create_token]));
     //app.delete("/indexes/:token/documents", async_middleware!(Ctx, [create_token]));
     //app.get("/indexes/:token/documents/:document_id", async_middleware!(Ctx, [create_token]));
