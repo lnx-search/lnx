@@ -1,12 +1,8 @@
 use std::borrow::Borrow;
-use std::sync::Arc;
-
-use async_channel::{Sender, Receiver, bounded};
+use async_channel::{Sender, Receiver};
 use anyhow::{Error, Result};
-use crossbeam::queue::ArrayQueue;
 use tantivy::Executor;
 
-type ExecutorQueue = Arc<ArrayQueue<Executor>>;
 
 pub(crate) struct TantivyExecutorPool {
     executors: Receiver<Executor>,

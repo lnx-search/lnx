@@ -16,7 +16,7 @@ use structopt::StructOpt;
 use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::auth::AuthManager;
-use crate::routes::auth::{create_token, revoke_token, revoke_all_tokens};
+use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens};
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
 
@@ -148,16 +148,33 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
-    let state = create_state().await?;
+    let state = create_state(&settings).await?;
     let mut app = App::<Request, Ctx, State>::create(generate_context, state);
 
     app.set404(async_middleware!(Ctx, [handle_404]));
+
+    {
+        let middlewares = async_middleware!(Ctx, [check_permissions]);
+        app.get_root.add_value_at_path(
+            "/*", middlewares.clone());
+        app.options_root.add_value_at_path(
+            "/*", middlewares.clone());
+        app.post_root.add_value_at_path(
+            "/*", middlewares.clone());
+        app.put_root.add_value_at_path(
+            "/*", middlewares.clone());
+        app.delete_root.add_value_at_path(
+            "/*", middlewares.clone());
+        app.patch_root.add_value_at_path(
+            "/*", middlewares);
+    }
 
     app.post("/auth", async_middleware!(Ctx, [create_token]));
     app.delete("/auth", async_middleware!(Ctx, [revoke_all_tokens]));
     app.post("/auth/:token/revoke", async_middleware!(Ctx, [revoke_token]));
     //app.put("/auth/:token", async_middleware!(Ctx, [create_token]));
 
+    //app.post("/indexes", async_middleware!(Ctx, [create_token]));
     //app.put("/indexes/:index/search", async_middleware!(Ctx, [create_token]));
     //app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
     //app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [create_token]));
@@ -170,7 +187,7 @@ async fn start(settings: Settings) -> Result<()> {
     Ok(())
 }
 
-async fn create_state() -> Result<State> {
+async fn create_state(settings: &Settings) -> Result<State> {
     let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
     let engine = {
         info!("loading existing indexes...");
@@ -194,7 +211,13 @@ async fn create_state() -> Result<State> {
         engine
     };
 
-    let auth = AuthManager::new();
+    let (enabled, key) = if let Some(ref key) = settings.super_user_key {
+        (true, key.to_string())
+    } else {
+        (false, String::new())
+    };
+
+    let auth = AuthManager::new(enabled, key);
 
     Ok(State::new(engine, storage, auth))
 }

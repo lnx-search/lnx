@@ -18,7 +18,11 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(engine: Engine, storage: StorageBackend, auth: AuthManager) -> Self {
+    pub fn new(
+        engine: Engine,
+        storage: StorageBackend,
+        auth: AuthManager,
+    ) -> Self {
         Self { engine, storage, auth }
     }
 }

@@ -15,6 +15,11 @@ pub mod permissions {
     pub const MODIFY_DOCUMENTS: usize = 1 << 2;
     pub const MODIFY_STOP_WORDS: usize = 1 << 3;
     pub const MODIFY_AUTH: usize = 1 << 4;
+    pub const SUPER_USER: usize = MODIFY_ENGINE
+        | SEARCH_INDEX
+        | MODIFY_DOCUMENTS
+        | MODIFY_STOP_WORDS
+        | MODIFY_AUTH;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -35,14 +40,33 @@ impl UserData {
 
 #[derive(Clone)]
 pub struct AuthManager {
+    auth_enabled: bool,
     keys: Arc<ArcSwap<HashMap<String, Arc<UserData>>>>
 }
 
 impl AuthManager {
-    pub fn new() -> Self {
+    pub fn new(enabled: bool, super_user_key: String) -> Self {
+        let super_user_data = UserData {
+            token: super_user_key.clone(),
+            allowed_indexes: None,
+            permissions: permissions::SUPER_USER,
+            created: Utc::now(),
+            user: Some(String::from("CONFIG SUPER USER")),
+            description: Some(String::from("The super use as defined in the cli commands.")),
+        };
+
+        let mut map = HashMap::new();
+        map.insert(super_user_key, Arc::new(super_user_data));
+
         Self {
-            keys: Arc::new(ArcSwap::from_pointee(HashMap::new()))
+            auth_enabled: enabled,
+            keys: Arc::new(ArcSwap::from_pointee(map))
         }
+    }
+
+    #[inline]
+    pub fn enabled(&self) -> bool {
+        self.auth_enabled
     }
 
     pub fn create_token(
