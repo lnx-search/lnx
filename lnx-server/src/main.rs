@@ -16,7 +16,7 @@ use structopt::StructOpt;
 use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::auth::AuthManager;
-use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens};
+use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens, edit_token};
 use crate::routes::default_handlers::handle_404;
 use crate::state::{generate_context, Ctx, State};
 
@@ -172,7 +172,7 @@ async fn start(settings: Settings) -> Result<()> {
     app.post("/auth", async_middleware!(Ctx, [create_token]));
     app.delete("/auth", async_middleware!(Ctx, [revoke_all_tokens]));
     app.post("/auth/:token/revoke", async_middleware!(Ctx, [revoke_token]));
-    //app.put("/auth/:token", async_middleware!(Ctx, [create_token]));
+    app.put("/auth/:token", async_middleware!(Ctx, [edit_token]));
 
     //app.post("/indexes", async_middleware!(Ctx, [create_token]));
     //app.put("/indexes/:index/search", async_middleware!(Ctx, [create_token]));
