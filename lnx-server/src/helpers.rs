@@ -14,48 +14,37 @@ macro_rules! check_error {
             // The error was not custom
             Err(ref e) if e.source().is_some() => {
                 error!("failed to {} due to error: {:?}", $action, e);
-                return Ok(json_response($ctx, 500, "An error occurred while processing this request"))
+                return Ok(json_response(500, "An error occurred while processing this request"))
             },
             Err(e) => {
                 debug!("rejecting {} operation due to bad request: {:?}", $action, &e);
-                return Ok(json_response($ctx, 400, &e.to_string()))
+                return Err(LnxError::BadRequest(&e.to_string()))
 
             }
         }
     }}
 }
 
+#[macro_export]
+macro_rules! abort {
+    ($status:expr, $val:expr) => {{
+        Err(LnxError::AbortRequest(json_response(
+            $status,
+            $val,
+        )?))
+    }}
+}
 
 #[macro_export]
-macro_rules! get_index {
-    ($ctx:expr) => {{
-        let index = match $ctx.request().params() {
-            None => return Ok(json_response(
-                $ctx,
-                400,
-                "missing required url parameters.",
-            )),
-            Some(params) => {
-                match params.get("index") {
-                    Some(t) => t.to_string(),
-                    None => return Ok(json_response(
-                        $ctx,
-                        400,
-                        "missing required url parameters 'index'.",
-                    )),
-                }
-            },
-        };
+macro_rules! unauthorized {
+    ($val:expr) => {{
+        Err(LnxError::UnAuthorized($val))
+    }}
+}
 
-        let index =  match $ctx.state.engine.get_index(&index) {
-            None => return Ok(json_response(
-                $ctx,
-                400,
-                &format!("no index named {} exists.", &index),
-            )),
-            Some(index) => index,
-        };
-
-        (index, $ctx)
+#[macro_export]
+macro_rules! bad_request {
+    ($val:expr) => {{
+        Err(LnxError::BadRequest($val))
     }}
 }

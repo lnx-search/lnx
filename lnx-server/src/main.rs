@@ -3,15 +3,19 @@ mod responders;
 mod routes;
 mod state;
 mod helpers;
+mod error;
 
 #[macro_use]
 extern crate log;
 
+use std::net::SocketAddr;
 use anyhow::Result;
 use engine::structures::IndexDeclaration;
 use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
+use hyper::Server;
 use log::LevelFilter;
+use routerify::RouterService;
 use structopt::StructOpt;
 
 use crate::auth::AuthManager;
@@ -138,9 +142,19 @@ fn setup() -> Result<Settings> {
 
 async fn start(settings: Settings) -> Result<()> {
     let state = create_state(&settings).await?;
+    let router = routes::get_router(state.clone());
+    let service = RouterService::new(router).unwrap();
+
+    let address: SocketAddr = format!("{}:{}", &settings.host, settings.port).parse()?;
+    let server = Server::bind(&address)
+        .serve(service);
 
     info!("serving requests @ http://{}:{}", &settings.host, settings.port);
+    if let Err(e) = server.await {
+        error!("server error: {:?}", e)
+    };
 
+    // todo add shutdown
 
     Ok(())
 }

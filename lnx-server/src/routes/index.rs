@@ -4,7 +4,7 @@ use anyhow::{Error, Result};
 use engine::{QueryPayload, DocumentId};
 use engine::structures::{DocumentOptions, DocumentValueOptions, IndexDeclaration};
 
-use crate::{get_index, check_error, INDEX_KEYSPACE};
+use crate::{check_error, INDEX_KEYSPACE};
 use crate::responders::json_response;
 
 
