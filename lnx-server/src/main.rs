@@ -64,6 +64,9 @@ struct Settings {
     /// A optional file to send persistent logs.
     #[structopt(long, env)]
     log_file: Option<String>,
+
+    #[structopt(long, env)]
+    silent_search: bool,
 }
 
 fn main() {
@@ -198,5 +201,5 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
     let auth = AuthManager::new(enabled, key);
 
-    Ok(State::new(engine, storage, auth))
+    Ok(State::new(engine, storage, auth, !settings.silent_search))
 }
