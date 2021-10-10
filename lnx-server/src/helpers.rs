@@ -8,7 +8,7 @@ pub type LnxResponse = Result<Response<Body>>;
 #[macro_export]
 macro_rules! abort {
     ($status:expr, $val:expr) => {{
-        Err(LnxError::AbortRequest(json_response(
+        Err(crate::error::LnxError::AbortRequest(json_response(
             $status,
             $val,
         )?))
@@ -18,14 +18,14 @@ macro_rules! abort {
 #[macro_export]
 macro_rules! unauthorized {
     ($val:expr) => {{
-        Err(LnxError::UnAuthorized($val))
+        Err(crate::error::LnxError::UnAuthorized($val))
     }}
 }
 
 #[macro_export]
 macro_rules! bad_request {
     ($val:expr) => {{
-        Err(LnxError::BadRequest($val))
+        Err(crate::error::LnxError::BadRequest($val))
     }}
 }
 
@@ -42,7 +42,7 @@ macro_rules! json {
 macro_rules! parameter {
     ($val:expr) => {{
         match $val {
-            None => return bad_request!("missing required url parameter"),
+            None => return crate::bad_request!("missing required url parameter"),
             Some(v) => v,
         }
     }}

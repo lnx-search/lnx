@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter};
 use hyper::{Body, Response};
 use thiserror::Error;
 

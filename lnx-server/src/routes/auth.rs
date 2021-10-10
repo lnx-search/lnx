@@ -1,6 +1,6 @@
 use std::convert::Infallible;
 use hyper::{Body, Request, Response};
-use hyper::body::{HttpBody, Buf, to_bytes};
+use hyper::body::{Buf, to_bytes};
 use serde::{Deserialize};
 use routerify::ext::RequestExt;
 

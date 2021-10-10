@@ -1,10 +1,10 @@
-pub mod default_handlers;
-pub mod auth;
-pub mod engine;
+mod default_handlers;
+mod auth;
+mod engine;
+mod index;
 
 use std::convert::Infallible;
 use hyper::Body;
-use routerify::prelude::*;
 use routerify::{Middleware, Router, RouterService, RequestInfo};
 
 use crate::state::State;

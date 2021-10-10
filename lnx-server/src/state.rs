@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use engine::{Engine, StorageBackend};
-use serde::Serialize;
 
 use crate::auth::AuthManager;
 
