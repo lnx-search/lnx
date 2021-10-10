@@ -41,11 +41,6 @@ lnx can provide the ability to fine tune the system to your particular use case.
 
 This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader threads in exchange for lower max concurrency.
 
-This allows you to get some very nice results and tune your application to your needs:
-<img src="https://github.com/ChillFish8/lnx/blob/master/benchmarks/diagrams/150-conn-results.png"/>
-
-As a more detailed insight:
-
 #### MeiliSearch
 ```
  INFO  lnxcli > starting benchmark system
