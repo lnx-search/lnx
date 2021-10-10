@@ -6,6 +6,6 @@ members = [
     "lnx-server",
 ]
 
-#[profile.release]
-#lto = "fat"
-#codegen-units = 1
+[profile.release]
+lto = "fat"
+codegen-units = 1
