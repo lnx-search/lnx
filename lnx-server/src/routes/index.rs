@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use engine::structures::{DocumentOptions, DocumentValueOptions};
-use engine::{DocumentId, Index, QueryPayload};
+use engine::{DocumentId, Index, QueryPayload, QueryResults};
 use routerify::ext::RequestExt;
 
 use crate::helpers::{LnxRequest, LnxResponse};
@@ -36,7 +37,9 @@ pub async fn search_index(mut req: LnxRequest) -> LnxResponse {
     let index = get_or_400!(req.param("index"));
     let index = get_or_400!(state.engine.get_index(index), "index does not exist");
 
-    let results = index.search(payload).await?;
+    let start = Instant::now();
+    let results: QueryResults = index.search(payload).await?;
+    info!("search took {:?} returning {} results", start.elapsed(), results.len());
 
     json_response(200, &results)
 }

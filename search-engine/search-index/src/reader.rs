@@ -116,6 +116,13 @@ pub struct QueryResults {
     time_taken: f32,
 }
 
+impl QueryResults {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.hits.len()
+    }
+}
+
 /// Attaches an order by clause to the collector.
 ///
 /// This collected the values with be returned in the order according to the
