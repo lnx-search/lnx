@@ -132,7 +132,7 @@ impl PersistentFrequencySet {
 
         let frequencies: HashMap<String, u32>;
         if let Some(buff) = self.conn.load_structure(Self::KEYSPACE)? {
-             frequencies = deserialize(&buff)?;
+            frequencies = deserialize(&buff)?;
         } else {
             frequencies = HashMap::new();
         };

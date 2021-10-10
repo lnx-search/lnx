@@ -1,11 +1,18 @@
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
 use hashbrown::HashMap;
+use parking_lot::Mutex;
 use search_index::structures::IndexDeclaration;
-pub use search_index::{structures, Index, QueryPayload, QueryResults, StorageBackend, DocumentId};
+pub use search_index::{
+    structures,
+    DocumentId,
+    Index,
+    QueryPayload,
+    QueryResults,
+    StorageBackend,
+};
 
 /// A manager around a set of indexes.
 #[derive(Clone)]
@@ -27,7 +34,11 @@ impl Engine {
     ///
     /// This duplicates the current indexes and swaps the clone, in general
     /// this is a very heavy operation and shouldn't be ran often / arbitrarily.
-    pub async fn add_index(&self, index: IndexDeclaration, override_if_exists: bool) -> Result<()> {
+    pub async fn add_index(
+        &self,
+        index: IndexDeclaration,
+        override_if_exists: bool,
+    ) -> Result<()> {
         let mut indexes;
         {
             let guard = self.indexes.load();
@@ -35,7 +46,7 @@ impl Engine {
         }
 
         if !override_if_exists & indexes.get(index.name()).is_some() {
-            return Err(Error::msg("index already exists."))
+            return Err(Error::msg("index already exists."));
         }
 
         // remove the index if it exists
@@ -49,7 +60,8 @@ impl Engine {
         self.indexes.store(Arc::new(indexes));
 
         {
-            self.declarations.lock()
+            self.declarations
+                .lock()
                 .insert(index.name().to_string(), index);
         }
 
@@ -74,8 +86,7 @@ impl Engine {
         self.indexes.store(Arc::new(indexes));
 
         {
-            self.declarations.lock()
-                .remove(name);
+            self.declarations.lock().remove(name);
         }
 
         Ok(())

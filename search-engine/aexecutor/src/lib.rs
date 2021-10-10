@@ -81,10 +81,8 @@ impl SearcherExecutorPool {
             .num_threads(max_concurrency)
             .build()?;
 
-        let reader_executors = TantivyExecutorPool::create(
-            max_concurrency,
-            threads_per_reader,
-        ).await?;
+        let reader_executors =
+            TantivyExecutorPool::create(max_concurrency, threads_per_reader).await?;
 
         Ok(Self {
             reader,

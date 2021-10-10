@@ -1,8 +1,8 @@
 use std::borrow::Borrow;
-use async_channel::{Sender, Receiver};
-use anyhow::{Error, Result};
-use tantivy::Executor;
 
+use anyhow::{Error, Result};
+use async_channel::{Receiver, Sender};
+use tantivy::Executor;
 
 pub(crate) struct TantivyExecutorPool {
     executors: Receiver<Executor>,
@@ -10,7 +10,10 @@ pub(crate) struct TantivyExecutorPool {
 }
 
 impl TantivyExecutorPool {
-    pub(crate) async fn create(pool_size: usize, threads_per_reader: usize) -> Result<Self> {
+    pub(crate) async fn create(
+        pool_size: usize,
+        threads_per_reader: usize,
+    ) -> Result<Self> {
         let (tx, rx) = async_channel::bounded(pool_size);
         for _ in 0..pool_size {
             let executor = if threads_per_reader <= 1 {

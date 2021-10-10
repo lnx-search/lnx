@@ -1,15 +1,12 @@
-use std::convert::Infallible;
-use hyper::{Body, Request, Response};
-use hyper::body::{Buf, to_bytes};
-use serde::{Deserialize};
 use routerify::ext::RequestExt;
+use serde::Deserialize;
 
 use crate::auth::permissions;
-use crate::responders::json_response;
-use crate::{bad_request, unauthorized, abort, json, get_or_400};
-use crate::error::{Result, LnxError};
+use crate::error::{LnxError, Result};
 use crate::helpers::{LnxRequest, LnxResponse};
+use crate::responders::json_response;
 use crate::state::State;
+use crate::{abort, bad_request, get_or_400, json, unauthorized};
 
 /// A set of metadata to associate with a access token.
 #[derive(Deserialize)]
@@ -26,7 +23,7 @@ struct CreateTokenPayload {
     /// An optional set of indexes the user is allowed to access.
     ///
     /// If None the user can access all tokens.
-    allowed_indexes: Option<Vec<String>>
+    allowed_indexes: Option<Vec<String>>,
 }
 
 /// A middleware that checks the user accessing the endpoint has
@@ -37,7 +34,7 @@ pub(crate) async fn check_permissions(req: LnxRequest) -> Result<LnxRequest> {
     let state = req.data::<State>().expect("get state");
 
     if !state.auth.enabled() {
-        return Ok(req)
+        return Ok(req);
     }
 
     let auth = req.headers().get("Authorization");
@@ -69,11 +66,11 @@ pub(crate) async fn check_permissions(req: LnxRequest) -> Result<LnxRequest> {
         }
     } else {
         // A safe default is to return a 404.
-        return abort!(404, "unknown route.")
+        return abort!(404, "unknown route.");
     }
 
     if !data.has_permissions(required_permissions) {
-        return unauthorized!("you lack permissions to perform this request")
+        return unauthorized!("you lack permissions to perform this request");
     }
 
     Ok(req)

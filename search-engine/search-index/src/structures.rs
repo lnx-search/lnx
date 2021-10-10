@@ -291,10 +291,12 @@ impl IndexDeclaration {
 
             match entry.field_type() {
                 FieldType::Str(_) => {},
-                _ => return Err(Error::msg(format!(
-                    "search field '{}' is not a text / string field type.",
-                    &name,
-                )))
+                _ => {
+                    return Err(Error::msg(format!(
+                        "search field '{}' is not a text / string field type.",
+                        &name,
+                    )))
+                },
             }
 
             if !entry.is_indexed() {

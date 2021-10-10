@@ -5,7 +5,8 @@ use anyhow::{Error, Result};
 use bincode::serialize;
 use compress::lz4;
 use serde::Serialize;
-use tantivy::directory::{MmapDirectory, RamDirectory, error::OpenReadError};
+use tantivy::directory::error::OpenReadError;
+use tantivy::directory::{MmapDirectory, RamDirectory};
 use tantivy::Directory;
 
 /// A wrapper around a SQLite connection that manages the index state.
@@ -51,7 +52,7 @@ impl StorageBackend {
         let compressed = match self.conn.atomic_read(path.as_ref()) {
             Ok(data) => data,
             Err(OpenReadError::FileDoesNotExist(_)) => return Ok(None),
-            Err(e) => return Err(Error::from(e))
+            Err(e) => return Err(Error::from(e)),
         };
 
         let mut data = Vec::new();
@@ -72,10 +73,7 @@ mod tests {
 
     #[test]
     fn test_loading_and_unloading() -> Result<()> {
-        let test_structure = vec![
-            "foo",
-            "bar",
-        ];
+        let test_structure = vec!["foo", "bar"];
 
         let storage = StorageBackend::connect(None)?;
         storage.store_structure("test", &test_structure)?;

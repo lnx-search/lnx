@@ -40,7 +40,6 @@ fn init_default_words() -> Result<()> {
         }
     }
 
-
     let _ = DEFAULT_WORDS.set(default_words);
 
     Ok(())

@@ -1,14 +1,15 @@
 mod auth;
+mod error;
+mod helpers;
 mod responders;
 mod routes;
 mod state;
-mod helpers;
-mod error;
 
 #[macro_use]
 extern crate log;
 
 use std::net::SocketAddr;
+
 use anyhow::Result;
 use engine::structures::IndexDeclaration;
 use engine::{Engine, StorageBackend};
@@ -94,7 +95,11 @@ fn main() {
     }
 }
 
-fn setup_logger(level: LevelFilter, log_file: &Option<String>, pretty: bool) -> Result<()> {
+fn setup_logger(
+    level: LevelFilter,
+    log_file: &Option<String>,
+    pretty: bool,
+) -> Result<()> {
     let mut colours = ColoredLevelConfig::new();
 
     if pretty {
@@ -145,10 +150,12 @@ async fn start(settings: Settings) -> Result<()> {
     let service = RouterService::new(router).unwrap();
 
     let address: SocketAddr = format!("{}:{}", &settings.host, settings.port).parse()?;
-    let server = Server::bind(&address)
-        .serve(service);
+    let server = Server::bind(&address).serve(service);
 
-    info!("serving requests @ http://{}:{}", &settings.host, settings.port);
+    info!(
+        "serving requests @ http://{}:{}",
+        &settings.host, settings.port
+    );
     if let Err(e) = server.await {
         error!("server error: {:?}", e)
     };
@@ -193,4 +200,3 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
     Ok(State::new(engine, storage, auth))
 }
-

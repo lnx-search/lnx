@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use engine::{Engine, StorageBackend};
 
 use crate::auth::AuthManager;
@@ -12,11 +10,11 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
-        engine: Engine,
-        storage: StorageBackend,
-        auth: AuthManager,
-    ) -> Self {
-        Self { engine, storage, auth }
+    pub fn new(engine: Engine, storage: StorageBackend, auth: AuthManager) -> Self {
+        Self {
+            engine,
+            storage,
+            auth,
+        }
     }
 }

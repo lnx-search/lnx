@@ -77,7 +77,7 @@ impl TokenData {
 #[derive(Clone)]
 pub struct AuthManager {
     auth_enabled: bool,
-    keys: Arc<ArcSwap<HashMap<String, Arc<TokenData>>>>
+    keys: Arc<ArcSwap<HashMap<String, Arc<TokenData>>>>,
 }
 
 impl AuthManager {
@@ -95,7 +95,9 @@ impl AuthManager {
             permissions: permissions::SUPER_USER,
             created: Utc::now(),
             user: Some(String::from("CONFIG SUPER USER")),
-            description: Some(String::from("The super use as defined in the cli commands.")),
+            description: Some(String::from(
+                "The super use as defined in the cli commands.",
+            )),
         };
 
         let mut map = HashMap::new();
@@ -103,7 +105,7 @@ impl AuthManager {
 
         Self {
             auth_enabled: enabled,
-            keys: Arc::new(ArcSwap::from_pointee(map))
+            keys: Arc::new(ArcSwap::from_pointee(map)),
         }
     }
 
@@ -188,11 +190,7 @@ impl AuthManager {
 
     /// Gets all access token metadata.
     pub fn get_all_tokens(&self) -> Vec<Arc<TokenData>> {
-        self.keys
-            .load()
-            .iter()
-            .map(|(_, v)| v.clone())
-            .collect()
+        self.keys.load().iter().map(|(_, v)| v.clone()).collect()
     }
 
     /// Gets a specific access token's metadata.
@@ -226,12 +224,11 @@ impl AuthManager {
     pub async fn commit(&self, storage: StorageBackend) -> Result<()> {
         let tokens = self.get_all_tokens();
         tokio::task::spawn_blocking(move || -> Result<()> {
-            let ref_tokens: Vec<&TokenData> = tokens
-                .iter()
-                .map(|v| v.as_ref())
-                .collect();
+            let ref_tokens: Vec<&TokenData> =
+                tokens.iter().map(|v| v.as_ref()).collect();
 
             storage.store_structure("index_tokens", &ref_tokens)
-        }).await?
+        })
+        .await?
     }
 }
