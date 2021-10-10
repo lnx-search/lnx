@@ -19,6 +19,8 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
         .post("/auth/:token/edit", auth::edit_token)
         .post("/indexes", engine::create_index)
         .delete("/indexes/:index", engine::delete_index)
+        .post("/indexes/:index/commit", index::commit)
+        .post("/indexes/:index/rollback", index::rollback)
         .post("/indexes/:index/search", index::search_index)
         .post("/indexes/:index/documents", index::add_documents)
         .post("/indexes/:index/stopwords", index::add_stop_words)

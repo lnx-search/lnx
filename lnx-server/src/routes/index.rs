@@ -9,6 +9,26 @@ use crate::responders::json_response;
 use crate::state::State;
 use crate::{get_or_400, json};
 
+pub async fn commit(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index = get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.commit().await?;
+
+    json_response(200, "changed committed")
+}
+
+pub async fn rollback(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index = get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.rollback().await?;
+
+    json_response(200, "changed dropped")
+}
+
 pub async fn search_index(mut req: LnxRequest) -> LnxResponse {
     let payload: QueryPayload = json!(req.body_mut());
 
