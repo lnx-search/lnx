@@ -27,17 +27,31 @@ pub async fn handle_casting(err: routerify::RouteError) -> Result<Response<Body>
         Err(e) => return json_response(
             500,
             &format!("{}", e.to_string()),
-        )
+        ).map_err(anyhow::Error::from)
     };
 
     let res = match *cast {
-        LnxError::BadRequest(msg) => json_response(400, msg)?,
-        LnxError::UnAuthorized(msg) => json_response(401, msg)?,
+        LnxError::BadRequest(msg) =>
+            json_response(400, msg).map_err(anyhow::Error::from)?,
+        LnxError::UnAuthorized(msg) =>
+            json_response(401, msg).map_err(anyhow::Error::from)?,
         LnxError::AbortRequest(resp) => resp,
-        LnxError::Other(e) => json_response(
+        LnxError::Other(ref e) if e.source().is_some() => json_response(
             500,
             &format!("error handling request: {}", e.to_string()),
-        )?
+        ).map_err(anyhow::Error::from)?,
+        LnxError::Other(e) => json_response(
+            400,
+            &e.to_string(),
+        ).map_err(anyhow::Error::from)?,
+        LnxError::ServerError(e) => json_response(
+            500,
+            &format!("error handling request: {}", e.to_string()),
+        ).map_err(anyhow::Error::from)?,
+        LnxError::SerializationError(e) => json_response(
+            400,
+            &e.to_string(),
+        ).map_err(anyhow::Error::from)?,
     };
 
     Ok(res)

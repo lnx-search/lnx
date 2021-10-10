@@ -1,8 +1,8 @@
 use hyper::{Body, StatusCode};
-use anyhow::Result;
 use headers::{ContentType, HeaderMapExt};
 use serde::Serialize;
 
+use crate::error::Result;
 
 #[derive(Serialize)]
 pub struct Response<'a, T: Serialize + ?Sized> {

@@ -9,6 +9,12 @@ pub enum LnxError {
     #[error("unable to complete index operation: {0}")]
     Other(#[from] anyhow::Error),
 
+    #[error("failed to process request due to a server error: {0}")]
+    ServerError(#[from] hyper::Error),
+
+    #[error("failed serialize / deserialize value: {0}")]
+    SerializationError(#[from] serde_json::Error),
+
     #[error("invalid request given: {0}")]
     BadRequest(&'static str),
 

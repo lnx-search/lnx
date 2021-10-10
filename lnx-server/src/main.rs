@@ -19,7 +19,6 @@ use routerify::RouterService;
 use structopt::StructOpt;
 
 use crate::auth::AuthManager;
-use crate::routes::default_handlers::handle_404;
 use crate::state::State;
 
 static STORAGE_PATH: &str = "./index/engine-storage";

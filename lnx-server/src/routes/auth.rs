@@ -1,12 +1,14 @@
 use std::convert::Infallible;
-use hyper::{Body, Request};
+use hyper::{Body, Request, Response};
+use hyper::body::{HttpBody, Buf, to_bytes};
 use serde::{Deserialize};
 use routerify::ext::RequestExt;
 
 use crate::auth::permissions;
 use crate::responders::json_response;
-use crate::{bad_request, unauthorized, abort};
+use crate::{bad_request, unauthorized, abort, json};
 use crate::error::{Result, LnxError};
+use crate::helpers::{LnxRequest, LnxResponse};
 use crate::state::State;
 
 /// A set of metadata to associate with a access token.
@@ -31,7 +33,7 @@ struct CreateTokenPayload {
 /// the required permissions.
 ///
 /// If authorization is disabled then this does no checks.
-pub(crate) async fn check_permissions(req: Request<Body>) -> Result<Request<Body>> {
+pub(crate) async fn check_permissions(req: LnxRequest) -> Result<LnxRequest> {
     let state = req.data::<State>().expect("get state");
 
     if !state.auth.enabled() {
@@ -77,4 +79,87 @@ pub(crate) async fn check_permissions(req: Request<Body>) -> Result<Request<Body
     Ok(req)
 }
 
+/// Creates a new access token with 64 characters.
+///
+/// Each token can have the following metadata associated to it:
+/// - permissions*
+/// - user
+/// - description
+/// - allowed_indexes
+///
+/// `*` - Required.
+pub async fn create_token(mut req: LnxRequest) -> LnxResponse {
+    let body: CreateTokenPayload = json!(req.body_mut());
+    let state = req.data::<State>().expect("get state");
 
+    let data = state.auth.create_token(
+        body.permissions,
+        body.user,
+        body.description,
+        body.allowed_indexes,
+    );
+
+    let storage = state.storage.clone();
+    state.auth.commit(storage).await?;
+
+    json_response(200, data.as_ref())
+}
+
+/// Revoke all access tokens.
+///
+/// # WARNING:
+///     This is absolutely only designed for use in an emergency.
+///     Running this will revoke all tokens including the super user key,
+///     run this at your own risk
+pub async fn revoke_all_tokens(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    state.auth.revoke_all_tokens();
+
+    let storage = state.storage.clone();
+    state.auth.commit(storage).await?;
+
+    json_response(200, "token revoked.")
+}
+
+pub async fn revoke_token(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let token = match req.param("token") {
+        None => return bad_request!("missing token url parameter"),
+        Some(token) => token,
+    };
+
+    state.auth.revoke_token(token);
+
+    let storage = state.storage.clone();
+    state.auth.commit(storage).await?;
+
+    json_response(200, "token revoked.")
+}
+
+pub async fn edit_token(mut req: LnxRequest) -> LnxResponse {
+    let body: CreateTokenPayload = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let token = match req.param("token") {
+        None => return bad_request!("missing token url parameter"),
+        Some(token) => token,
+    };
+
+    let data = state.auth.update_token(
+        &token,
+        body.permissions,
+        body.user,
+        body.description,
+        body.allowed_indexes,
+    );
+
+    let data = match data {
+        None => return bad_request!("this token does not exist"),
+        Some(d) => d,
+    };
+
+    let storage = state.storage.clone();
+    state.auth.commit(storage).await?;
+
+    json_response(200, data.as_ref())
+}
