@@ -1,9 +1,9 @@
-use thruster::{middleware_fn, MiddlewareNext, MiddlewareResult};
+use anyhow::Result;
+use hyper::{Request, Response};
+use hyper::Body;
 
 use crate::responders::json_response;
-use crate::state::Ctx;
 
-#[middleware_fn]
-pub async fn handle_404(ctx: Ctx, _next: MiddlewareNext<Ctx>) -> MiddlewareResult<Ctx> {
-    Ok(json_response(ctx, 404, "No route matched for path."))
+pub async fn handle_404(request: Request<Body>) -> Result<Response<Body>> {
+    json_response(404, "No route matched for path.")
 }

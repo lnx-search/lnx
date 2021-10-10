@@ -13,13 +13,10 @@ use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
 use log::LevelFilter;
 use structopt::StructOpt;
-use thruster::{async_middleware, App, Request, Server, ThrusterServer};
 
 use crate::auth::AuthManager;
-use crate::routes::auth::{check_permissions, create_token, revoke_token, revoke_all_tokens, edit_token};
-use crate::routes::index::{create_index, delete_index, search_index, add_stop_words, remove_stop_words, add_documents, delete_documents, clear_documents};
 use crate::routes::default_handlers::handle_404;
-use crate::state::{generate_context, Ctx, State};
+use crate::state::State;
 
 static STORAGE_PATH: &str = "./index/engine-storage";
 static INDEX_KEYSPACE: &str = "persistent_indexes";
@@ -141,45 +138,10 @@ fn setup() -> Result<Settings> {
 
 async fn start(settings: Settings) -> Result<()> {
     let state = create_state(&settings).await?;
-    let mut app = App::<Request, Ctx, State>::create(generate_context, state);
-
-    {
-        let middlewares = async_middleware!(Ctx, [check_permissions]);
-        app.get_root.add_value_at_path(
-            "/*", middlewares.clone());
-        app.options_root.add_value_at_path(
-            "/*", middlewares.clone());
-        app.post_root.add_value_at_path(
-            "/*", middlewares.clone());
-        app.put_root.add_value_at_path(
-            "/*", middlewares.clone());
-        app.delete_root.add_value_at_path(
-            "/*", middlewares.clone());
-        app.patch_root.add_value_at_path(
-            "/*", middlewares);
-    }
-
-    app.post("/auth", async_middleware!(Ctx, [create_token]));
-    app.delete("/auth", async_middleware!(Ctx, [revoke_all_tokens]));
-    app.post("/auth/:token/revoke", async_middleware!(Ctx, [revoke_token]));
-    app.put("/auth/:token", async_middleware!(Ctx, [edit_token]));
-
-    app.post("/indexes", async_middleware!(Ctx, [create_index]));
-    app.delete("/indexes/:index", async_middleware!(Ctx, [delete_index]));
-
-    app.post("/indexes/:index/search", async_middleware!(Ctx, [search_index]));
-    app.post("/indexes/:index/stopwords", async_middleware!(Ctx, [add_stop_words]));
-    app.delete("/indexes/:index/stopwords", async_middleware!(Ctx, [remove_stop_words]));
-    app.post("/indexes/:index/documents", async_middleware!(Ctx, [add_documents]));
-    app.delete("/indexes/:index/documents", async_middleware!(Ctx, [delete_documents]));
-    app.delete("/indexes/:index/documents/clear", async_middleware!(Ctx, [clear_documents]));
-    app.get("/indexes/:index/documents/:document_id", async_middleware!(Ctx, [create_token]));
-
-    app.set404(async_middleware!(Ctx, [handle_404]));
 
     info!("serving requests @ http://{}:{}", &settings.host, settings.port);
-    let server = Server::new(app);
-    server.build(&settings.host, settings.port).await;
+
+
     Ok(())
 }
 

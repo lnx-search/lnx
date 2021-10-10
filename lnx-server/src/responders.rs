@@ -1,6 +1,8 @@
+use hyper::{Body, StatusCode};
+use anyhow::Result;
+use headers::{ContentType, HeaderMapExt};
 use serde::Serialize;
 
-use crate::state::Ctx;
 
 #[derive(Serialize)]
 pub struct Response<'a, T: Serialize + ?Sized> {
@@ -8,9 +10,16 @@ pub struct Response<'a, T: Serialize + ?Sized> {
     data: &'a T,
 }
 
-pub fn json_response<T: Serialize + ?Sized>(mut ctx: Ctx, status: u16, body: &T) -> Ctx {
-    ctx.set_status(status as u32);
-    ctx.json(Response { status, data: body });
+pub fn json_response<T: Serialize + ?Sized>(status: u16, body: &T) -> Result<hyper::Response<Body>> {
+    let payload = Response {
+        status,
+        data: body,
+    };
 
-    ctx
+    let buffer = serde_json::to_vec(&payload)?;
+    let mut resp = hyper::Response::new(Body::from(buffer));
+    *resp.status_mut() = StatusCode::OK;
+    resp.headers_mut().typed_insert(ContentType::json());
+
+    Ok(resp)
 }
