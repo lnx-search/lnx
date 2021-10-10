@@ -39,11 +39,18 @@ macro_rules! json {
 }
 
 #[macro_export]
-macro_rules! parameter {
+macro_rules! get_or_400 {
+    ($val:expr, $err_msg:expr) => {{
+        match $val {
+            None => return crate::bad_request!($err_msg),
+            Some(v) => v,
+        }
+    }};
+
     ($val:expr) => {{
         match $val {
             None => return crate::bad_request!("missing required url parameter"),
             Some(v) => v,
         }
-    }}
+    }};
 }

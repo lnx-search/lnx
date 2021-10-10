@@ -6,7 +6,7 @@ use engine::{QueryPayload, DocumentId};
 use engine::structures::{DocumentOptions, DocumentValueOptions, IndexDeclaration};
 
 use crate::helpers::{LnxRequest, LnxResponse};
-use crate::{json, parameter};
+use crate::{json, get_or_400};
 
 use crate::INDEX_KEYSPACE;
 use crate::responders::json_response;
@@ -38,7 +38,7 @@ pub async fn create_index(mut req: LnxRequest) -> LnxResponse {
 
 pub async fn delete_index(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");
-    let index = parameter!(req.param("index"));
+    let index = get_or_400!(req.param("index"));
     state.engine.remove_index(&index).await?;
 
     let indexes = state.engine.get_all_indexes();

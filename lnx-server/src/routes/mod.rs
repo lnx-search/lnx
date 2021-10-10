@@ -3,9 +3,8 @@ mod auth;
 mod engine;
 mod index;
 
-use std::convert::Infallible;
 use hyper::Body;
-use routerify::{Middleware, Router, RouterService, RequestInfo};
+use routerify::{Middleware, Router};
 
 use crate::state::State;
 use crate::error::LnxError;
@@ -21,7 +20,14 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
          .post("/auth/:token/edit", auth::edit_token)
 
          .post("/indexes", engine::create_index)
-         .post("/indexes/:index", engine::delete_index)
+         .delete("/indexes/:index", engine::delete_index)
+         .post("/indexes/:index/search", index::search_index)
+         .post("/indexes/:index/documents", index::add_documents)
+         .post("/indexes/:index/stopwords", index::add_stop_words)
+         .delete("/indexes/:index/stopwords", index::remove_stop_words)
+         .delete("/indexes/:index/documents", index::delete_documents)
+         .delete("/indexes/:index/documents/clear", index::clear_documents)
+         .get("/indexes/:index/documents/:document_id", index::get_document)
 
          .err_handler(default_handlers::error_handler)
          .any(default_handlers::handle_404)

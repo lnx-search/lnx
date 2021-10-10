@@ -6,7 +6,7 @@ use routerify::ext::RequestExt;
 
 use crate::auth::permissions;
 use crate::responders::json_response;
-use crate::{bad_request, unauthorized, abort, json, parameter};
+use crate::{bad_request, unauthorized, abort, json, get_or_400};
 use crate::error::{Result, LnxError};
 use crate::helpers::{LnxRequest, LnxResponse};
 use crate::state::State;
@@ -123,10 +123,7 @@ pub async fn revoke_all_tokens(req: LnxRequest) -> LnxResponse {
 
 pub async fn revoke_token(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");
-    let token = match req.param("token") {
-        None => return bad_request!("missing token url parameter"),
-        Some(token) => token,
-    };
+    let token = get_or_400!(req.param("token"));
 
     state.auth.revoke_token(token);
 
@@ -140,7 +137,7 @@ pub async fn edit_token(mut req: LnxRequest) -> LnxResponse {
     let body: CreateTokenPayload = json!(req.body_mut());
 
     let state = req.data::<State>().expect("get state");
-    let token = parameter!(req.param("token"));
+    let token = get_or_400!(req.param("token"));
 
     let data = state.auth.update_token(
         &token,

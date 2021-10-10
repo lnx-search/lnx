@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use bytes::Bytes;
 use engine::{Engine, StorageBackend};
 
 use crate::auth::AuthManager;
