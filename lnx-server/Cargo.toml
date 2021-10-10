@@ -29,3 +29,6 @@ parking_lot = "0.11"
 rand = "0.8.4"
 
 engine = { path = "../search-engine/engine" }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+jemallocator = "0.3.2"
