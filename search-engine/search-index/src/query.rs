@@ -349,7 +349,15 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    Box::new(FuzzyTermQuery::new_prefix(term, 2, true))
+                    let edit_distance = if search_term.len() < 5 {
+                        0
+                    } else if search_term.len() < 9 {
+                        1
+                    } else {
+                        2
+                    };
+
+                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, true))
                 };
 
                 if *boost > 0.0f32 {
