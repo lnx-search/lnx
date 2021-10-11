@@ -41,44 +41,40 @@ lnx can provide the ability to fine tune the system to your particular use case.
 
 This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader threads in exchange for lower max concurrency.
 
-This allows you to get some very nice results and tune your application to your needs:
-<img src="https://github.com/ChillFish8/lnx/blob/master/benchmarks/diagrams/150-conn-results.png"/>
-
-As a more detailed insight:
-
 #### MeiliSearch
 ```
  INFO  lnxcli > starting benchmark system
  INFO  benchmark > starting runtime with 12 threads
- INFO  benchmark::meilisearch > MeiliSearch took 18.188s to process submitted documents
+ INFO  benchmark::meilisearch > MeiliSearch took 17.177s to process submitted documents
  INFO  benchmark              > Service ready! Beginning benchmark.
- INFO  benchmark              >      Concurrency @ 150 clients
- INFO  benchmark              >      Searching @ 50 sentences
- INFO  benchmark              >      Mode @ Standard
+ INFO  benchmark              >      Concurrency @ 200 clients
+ INFO  benchmark              >      Searching @ 10 sentences
+ INFO  benchmark              >      Mode @ Typing
  INFO  benchmark::sampler     > General benchmark results:
- INFO  benchmark::sampler     >      Total Requests Sent: 7500
- INFO  benchmark::sampler     >      Average Requests/sec: 296.65
- INFO  benchmark::sampler     >      Average Latency: 505.654336ms
- INFO  benchmark::sampler     >      Max Latency: 725.2446ms
- INFO  benchmark::sampler     >      Min Latency: 10.085ms
+ INFO  benchmark::sampler     >      Total Requests Sent: 67633
+ INFO  benchmark::sampler     >      Average Requests/sec: 532.88
+ INFO  benchmark::sampler     >      Average Latency: 374.254422ms
+ INFO  benchmark::sampler     >      Max Latency: 3.924168s
+ INFO  benchmark::sampler     >      Min Latency: 1.9643ms
+ WARN  benchmark::sampler     >      Got status 500: 767
  INFO  lnxcli                 > commands complete!
 ```
 
-#### lnx (default fuzzy search)
+#### lnx (fast-fuzzy search)
 ```
- INFO  lnxcli > starting benchmark system
+INFO  lnxcli > starting benchmark system
  INFO  benchmark > starting runtime with 12 threads
- INFO  benchmark::lnx > lnx took 785.402ms to process submitted documents
+ INFO  benchmark::lnx > lnx took 1.3684143s to process submitted documents
  INFO  benchmark      > Service ready! Beginning benchmark.
- INFO  benchmark      >      Concurrency @ 150 clients
- INFO  benchmark      >      Searching @ 50 sentences
- INFO  benchmark      >      Mode @ Standard
+ INFO  benchmark      >      Concurrency @ 200 clients
+ INFO  benchmark      >      Searching @ 10 sentences
+ INFO  benchmark      >      Mode @ Typing
  INFO  benchmark::sampler > General benchmark results:
- INFO  benchmark::sampler >      Total Requests Sent: 7500
- INFO  benchmark::sampler >      Average Requests/sec: 914.84
- INFO  benchmark::sampler >      Average Latency: 163.962587ms
- INFO  benchmark::sampler >      Max Latency: 668.0729ms
- INFO  benchmark::sampler >      Min Latency: 2.5241ms
+ INFO  benchmark::sampler >      Total Requests Sent: 68400
+ INFO  benchmark::sampler >      Average Requests/sec: 5237.24
+ INFO  benchmark::sampler >      Average Latency: 38.18735ms
+ INFO  benchmark::sampler >      Max Latency: 3.0432477s
+ INFO  benchmark::sampler >      Min Latency: 758µs
  INFO  lnxcli             > commands complete!
 ```
 
