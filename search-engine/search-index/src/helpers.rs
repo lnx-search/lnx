@@ -45,6 +45,8 @@ pub(crate) trait FrequencyCounter {
 
     fn register(&mut self, k: String);
 
+    fn clear_frequencies(&mut self);
+
     fn get_count(&self, k: &str) -> u32;
 
     fn counts(&self) -> &HashMap<String, u32>;
@@ -97,6 +99,10 @@ impl FrequencyCounter for FrequencySet {
         };
 
         self.inner.insert(k, v);
+    }
+
+    fn clear_frequencies(&mut self) {
+        self.inner = HashMap::new();
     }
 
     fn get_count(&self, k: &str) -> u32 {
@@ -165,6 +171,10 @@ impl FrequencyCounter for PersistentFrequencySet {
 
     fn register(&mut self, k: String) {
         self.set.register(k)
+    }
+
+    fn clear_frequencies(&mut self) {
+        self.set.clear_frequencies();
     }
 
     fn get_count(&self, k: &str) -> u32 {

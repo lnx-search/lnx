@@ -217,8 +217,12 @@ impl IndexWriterWorker {
 
                 return Ok(false);
             },
-            WriterOp::DeleteAll => (self.writer.delete_all_documents()?, "DELETE-ALL"),
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
+            WriterOp::DeleteAll => {
+                self.frequencies.clear_frequencies();
+                self.stop_words.commit()?;
+                (self.writer.delete_all_documents()?, "DELETE-ALL")
+            },
             WriterOp::AddStopWords(words) => {
                 self.stop_words.add_stop_words(words);
                 self.stop_words.commit()?;
