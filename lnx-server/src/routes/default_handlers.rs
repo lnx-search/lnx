@@ -47,7 +47,7 @@ pub async fn handle_casting(err: routerify::RouteError) -> Result<Response<Body>
                 .map_err(anyhow::Error::from)?
         },
         LnxError::SerializationError(e) => {
-            json_response(400, &e.to_string()).map_err(anyhow::Error::from)?
+            json_response(422, &e.to_string()).map_err(anyhow::Error::from)?
         },
     };
 
