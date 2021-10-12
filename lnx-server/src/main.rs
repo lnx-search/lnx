@@ -155,9 +155,21 @@ async fn start(settings: Settings) -> Result<()> {
     let address: SocketAddr = format!("{}:{}", &settings.host, settings.port).parse()?;
     let server = Server::bind(&address).serve(service);
 
+    info!("");
+    info!("");
+    info!("Lnx has started!");
     info!(
         "serving requests @ http://{}:{}",
         &settings.host, settings.port
+    );
+    info!("");
+    info!("GitHub: https://github.com/lnx-search/lnx");
+    info!("To ask questions vist: https://github.com/lnx-search/lnx/discussions");
+    info!("");
+    info!(
+        "To get started you can check out the documentation @ http://{}:{}/docs",
+        &settings.host,
+        settings.port
     );
     if let Err(e) = server.await {
         error!("server error: {:?}", e)
