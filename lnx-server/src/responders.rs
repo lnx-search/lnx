@@ -1,7 +1,7 @@
 use headers::{ContentType, HeaderMapExt};
-use hyper::{Body, StatusCode};
-use serde::Serialize;
+use hyper::Body;
 use hyper::http::StatusCode;
+use serde::Serialize;
 
 use crate::error::Result;
 
@@ -19,7 +19,8 @@ pub fn json_response<T: Serialize + ?Sized>(
 
     let buffer = serde_json::to_vec(&payload)?;
     let mut resp = hyper::Response::new(Body::from(buffer));
-    *resp.status_mut() = StatusCode::from_u16(status)?;
+    *resp.status_mut() = StatusCode::from_u16(status)
+        .unwrap_or_else(|_| StatusCode::OK);
     resp.headers_mut().typed_insert(ContentType::json());
 
     Ok(resp)
