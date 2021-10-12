@@ -41,7 +41,11 @@ pub async fn search_index(mut req: LnxRequest) -> LnxResponse {
     let results: QueryResults = index.search(payload).await?;
 
     if state.log_search {
-        info!("search took {:?} returning {} results", start.elapsed(), results.len());
+        info!(
+            "search took {:?} returning {} results",
+            start.elapsed(),
+            results.len()
+        );
     }
 
     json_response(200, &results)

@@ -3,14 +3,14 @@ mod default_handlers;
 mod engine;
 mod index;
 
+use headers::{ContentType, HeaderMapExt};
+use hyper::http::Response;
 use hyper::Body;
 use routerify::{Middleware, Router};
 
 use crate::error::LnxError;
-use crate::state::State;
 use crate::helpers::{LnxRequest, LnxResponse};
-use hyper::http::Response;
-use headers::{HeaderMapExt, ContentType};
+use crate::state::State;
 
 pub fn get_router(state: State) -> Router<Body, LnxError> {
     Router::builder()
@@ -41,7 +41,6 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
         .build()
         .unwrap()
 }
-
 
 async fn openapi(_req: LnxRequest) -> LnxResponse {
     let json = include_str!("./openapi/openapi.json");

@@ -168,8 +168,7 @@ async fn start(settings: Settings) -> Result<()> {
     info!("");
     info!(
         "To get started you can check out the documentation @ http://{}:{}/docs",
-        &settings.host,
-        settings.port
+        &settings.host, settings.port
     );
     if let Err(e) = server.await {
         error!("server error: {:?}", e)

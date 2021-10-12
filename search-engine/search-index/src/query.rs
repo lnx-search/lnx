@@ -361,7 +361,8 @@ impl QueryBuilder {
                 };
 
                 if *boost > 0.0f32 {
-                    parts.push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
+                    parts
+                        .push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
                     continue;
                 }
 
