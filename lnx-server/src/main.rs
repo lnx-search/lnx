@@ -164,7 +164,7 @@ async fn start(settings: Settings) -> Result<()> {
     );
     info!("");
     info!("GitHub: https://github.com/lnx-search/lnx");
-    info!("To ask questions vist: https://github.com/lnx-search/lnx/discussions");
+    info!("To ask questions visit: https://github.com/lnx-search/lnx/discussions");
     info!("");
     info!(
         "To get started you can check out the documentation @ http://{}:{}/docs",
