@@ -32,14 +32,17 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 - Permissions based authorization access tokens.
 
 <p align="center">
-  <img src="https://github.com/ChillFish8/lnx/blob/master/assets/demo.gif" alt="Demo video"/>
+  <img src="https://i.imgur.com/hmRl0q7.gif" alt="Demo video"/>
 </p>
 
 
 ### Performance
 lnx can provide the ability to fine tune the system to your particular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
 
-This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader threads in exchange for lower max concurrency.
+This gives you the ability to control in detail where your computing resources are going. Got a large dataset but lower amount of concurrent reads? Bump the reader 
+threads in exchange for lower max concurrency.
+
+The bellow figures were taken by our `lnx-cli` on the small `movies.json` dataset, we didn't try any higher as Meilisearch takes an incredibly long time to index millions of docs although the new Meilisearch engine has improved this somewhat.
 
 #### MeiliSearch
 ```
