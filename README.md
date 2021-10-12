@@ -32,7 +32,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
 - Permissions based authorization access tokens.
 
 <p align="center">
-  <img src="https://github.com/ChillFish8/lnx/blob/master/assets/demo.gif" alt="Demo video"/>
+  <img src="https://i.imgur.com/hmRl0q7.gif" alt="Demo video"/>
 </p>
 
 
