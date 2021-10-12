@@ -175,7 +175,8 @@ async fn start(settings: Settings) -> Result<()> {
         error!("server error: {:?}", e)
     };
 
-    // todo add shutdown
+    info!("shutting down engine...");
+    state.engine.shutdown().await?;
 
     Ok(())
 }

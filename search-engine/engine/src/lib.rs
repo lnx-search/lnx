@@ -106,4 +106,13 @@ impl Engine {
         let guard = self.declarations.lock();
         guard.values().map(|v| v.clone()).collect()
     }
+
+    pub async fn shutdown(&self) -> Result<()> {
+        let guard = self.indexes.load();
+        for (_, index) in guard.iter() {
+            index.shutdown().await?;
+        }
+
+        Ok(())
+    }
 }
