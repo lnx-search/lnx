@@ -9,6 +9,35 @@ use crate::helpers::{LnxRequest, LnxResponse};
 use crate::responders::json_response;
 use crate::state::State;
 use crate::{get_or_400, json};
+use crate::error::LnxError;
+
+pub async fn ensure_index_perms(req: LnxRequest) -> LnxRequest {
+    let state: State = req.data::<State>().expect("get state");
+
+    if state.auth.enabled() {
+        Ok(req)
+    }
+
+    let auth = req.headers().get("Authorization");
+    let token = match auth {
+        Some(auth) => auth
+            .to_str()
+            .map_err(|_| LnxError::BadRequest("invalid token provided"))?,
+        None => return unauthorized!("missing authorization header"),
+    };
+
+    let data = match state.auth.get_token_data(&token) {
+        None => return unauthorized!("invalid token provided"),
+        Some(v) => v,
+    };
+
+    let index = get_or_400!(req.param("index"));
+    if !data.has_access_to_index(index) {
+       return unauthorized!("invalid token does not have access to this index")
+    }
+
+    Ok(req)
+}
 
 pub async fn commit(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");

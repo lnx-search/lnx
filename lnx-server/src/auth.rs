@@ -69,6 +69,14 @@ impl TokenData {
     pub fn has_permissions(&self, flags: usize) -> bool {
         self.permissions & flags != 0
     }
+
+    pub fn has_access_to_index(&self, index: &String) -> bool {
+        if let Some(ref indexes) = self.allowed_indexes {
+            indexes.contains(index)
+        } else {
+            true
+        }
+    }
 }
 
 /// A controller that manages all of the system access tokens.
