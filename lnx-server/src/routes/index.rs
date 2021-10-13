@@ -8,14 +8,14 @@ use routerify::ext::RequestExt;
 use crate::helpers::{LnxRequest, LnxResponse};
 use crate::responders::json_response;
 use crate::state::State;
-use crate::{get_or_400, json};
-use crate::error::LnxError;
+use crate::{get_or_400, json, unauthorized};
+use crate::error::{LnxError, Result};
 
-pub async fn ensure_index_perms(req: LnxRequest) -> LnxRequest {
-    let state: State = req.data::<State>().expect("get state");
+pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
+    let state = req.data::<State>().expect("get state");
 
     if state.auth.enabled() {
-        Ok(req)
+        return Ok(req)
     }
 
     let auth = req.headers().get("Authorization");
