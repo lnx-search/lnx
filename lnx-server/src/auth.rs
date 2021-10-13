@@ -9,6 +9,8 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+static KEYSPACE: &str = "index_tokens";
+
 pub mod permissions {
     /// Users with this permission can create and delete indexes.
     ///
@@ -96,7 +98,7 @@ impl AuthManager {
     /// The super user key is simply used as a default key to allow people to
     /// access the control endpoints for the first time.
     /// The super user key can be revoked.
-    pub fn new(enabled: bool, super_user_key: String) -> Self {
+    pub fn new(enabled: bool, super_user_key: String, storage: &StorageBackend) -> Result<Self> {
         let super_user_data = TokenData {
             token: super_user_key.clone(),
             allowed_indexes: None,
@@ -109,12 +111,19 @@ impl AuthManager {
         };
 
         let mut map = HashMap::new();
+        if let Some(data) = storage.load_structure(KEYSPACE)? {
+            let tokens: Vec<TokenData> = bincode::deserialize(&data)?;
+            for token in tokens {
+                map.insert(token.token.to_string(), Arc::new(token));
+            }
+        }
+
         map.insert(super_user_key, Arc::new(super_user_data));
 
-        Self {
+        Ok(Self {
             auth_enabled: enabled,
             keys: Arc::new(ArcSwap::from_pointee(map)),
-        }
+        })
     }
 
     /// Is authorization enabled or disabled.
@@ -235,7 +244,7 @@ impl AuthManager {
             let ref_tokens: Vec<&TokenData> =
                 tokens.iter().map(|v| v.as_ref()).collect();
 
-            storage.store_structure("index_tokens", &ref_tokens)
+            storage.store_structure(KEYSPACE, &ref_tokens)
         })
         .await?
     }

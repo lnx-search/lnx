@@ -211,7 +211,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
         (false, String::new())
     };
 
-    let auth = AuthManager::new(enabled, key);
+    let auth = AuthManager::new(enabled, key, &storage)?;
 
     Ok(State::new(engine, storage, auth, !settings.silent_search))
 }

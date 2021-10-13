@@ -16,7 +16,7 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
     Router::builder()
         .data(state)
         .middleware(Middleware::pre(auth::check_permissions))
-        .middleware(Middleware::pre_with_path("/indexes/:index/:_",index::ensure_index_perms).unwrap())
+        .middleware(Middleware::pre(index::ensure_index_perms))
         .get("/openapi.json", openapi)
         .get("/docs", docs)
         .post("/auth", auth::create_token)

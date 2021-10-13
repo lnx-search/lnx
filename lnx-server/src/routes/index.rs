@@ -11,10 +11,15 @@ use crate::state::State;
 use crate::{get_or_400, json, unauthorized};
 use crate::error::{LnxError, Result};
 
+
 pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
+    if !req.uri().path().starts_with("/indexes/") {
+        return Ok(req)
+    };
+
     let state = req.data::<State>().expect("get state");
 
-    if state.auth.enabled() {
+    if !state.auth.enabled() {
         return Ok(req)
     }
 
@@ -31,8 +36,17 @@ pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
         Some(v) => v,
     };
 
-    let index = get_or_400!(req.param("index"));
-    if !data.has_access_to_index(index) {
+    let path = req.uri().path();
+    let index = {
+        let stop = path
+            .strip_prefix("/indexes/")
+            .unwrap_or_else(|| "");
+
+        let mut split = stop.splitn(1, "/")       ;
+        split.next().unwrap_or_else(|| "").to_string()
+    };
+
+    if !data.has_access_to_index(&index) {
        return unauthorized!("invalid token does not have access to this index")
     }
 
