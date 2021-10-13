@@ -38,12 +38,12 @@ pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
 
     let path = req.uri().path();
     let index = {
-        let stop = path
+        let stop: &str = path
             .strip_prefix("/indexes/")
             .unwrap_or_else(|| "");
 
-        let mut split = stop.splitn(1, "/")       ;
-        split.next().unwrap_or_else(|| "").to_string()
+        let mut split = stop.split("/");
+        split.next().unwrap_or_else(|| stop).to_string()
     };
 
     if !data.has_access_to_index(&index) {
