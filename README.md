@@ -35,6 +35,8 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
   <img src="https://i.imgur.com/hmRl0q7.gif" alt="Demo video"/>
 </p>
 
+*Here you can see lnx doing search as you type on a 1.96 million document dataset coming in at reasonable 3GB, ran on my i7-8700k using < 600MB of RAM*
+Got a bigger dataset for us to try? Open an issue!
 
 ### Performance
 lnx can provide the ability to fine tune the system to your particular use case. You can customise the async runtime threads. The concurrency thread pool, threads per reader and writer threads, all per index.
