@@ -9,7 +9,7 @@
   <a href="https://github.com/ChillFish8/lnx/blob/master/LICENSE"><img src="https://img.shields.io/github/license/ChillFish8/lnx"/></a>
   <a href="https://book.lnx.rs"><img src="https://img.shields.io/badge/Book-alive-sucess"/></a>
 </p>
-<p align="center"><a href="https://book.lnx.rs">✨ Feature Rich | ⚡ Insanely Fast</a></p>
+<p align="center"><a href="https://lnx.rs">✨ Feature Rich | ⚡ Insanely Fast</a></p>
 <p align="center">An ultra-fast, adaptable deployment of the tantivy search engine via REST.</p>
 
 ### 🌟 Standing On The Shoulders of Giants
