@@ -149,7 +149,7 @@ impl InternalIndex {
         self.writer.send_op(WriterOp::Rollback).await
     }
 
-     /// Gets a list of suggested corrections based off of the index corpus.
+    /// Gets a list of suggested corrections based off of the index corpus.
     pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
         self.reader.get_corrections(query)
     }
