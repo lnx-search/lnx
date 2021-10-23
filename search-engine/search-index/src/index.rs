@@ -38,6 +38,11 @@ impl Index {
         self.0.rollback().await
     }
 
+    /// Gets a list of suggested corrections based off of the index corpus.
+    pub fn get_corrections(&self, query: &str) -> Vec<String> {
+        self.0.get_corrections(query)
+    }
+
     /// Search the index for the given query.
     ///
     /// This returns a set of results ordered by their relevance according to
@@ -142,6 +147,11 @@ impl InternalIndex {
     /// Discards any changes to the index since the last commit.
     async fn rollback(&self) -> Result<()> {
         self.writer.send_op(WriterOp::Rollback).await
+    }
+
+     /// Gets a list of suggested corrections based off of the index corpus.
+    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
+        self.reader.get_corrections(query)
     }
 
     /// Search the index for the given query.

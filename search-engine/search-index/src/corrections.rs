@@ -34,6 +34,17 @@ impl SymSpellManager {
         }
     }
 
+    /// Gets all predicted corrections for a given sentence.
+    pub(crate) fn get_corrections(&self, sentence: &str) -> Vec<String> {
+        let mut results = { self.sym.load().lookup_compound(sentence, 1) };
+
+        if results.len() == 0 {
+            vec![sentence.to_string()]
+        } else {
+            results.drain(..).map(|s| s.term).collect()
+        }
+    }
+
     /// Sets a custom symspell handler for the given index.
     ///
     /// This means when something is next set to be corrected for the index, the

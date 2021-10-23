@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
+use serde::{Serialize, Deserialize};
+
 use engine::structures::{DocumentOptions, DocumentValueOptions};
 use engine::{DocumentId, Index, QueryPayload, QueryResults};
 use routerify::ext::RequestExt;
@@ -92,6 +94,32 @@ pub async fn search_index(mut req: LnxRequest) -> LnxResponse {
     }
 
     json_response(200, &results)
+}
+
+#[derive(Deserialize)]
+struct CorrectionPayload {
+    query: String
+}
+
+#[derive(Serialize)]
+struct CorrectionResultPayload {
+    corrections: Vec<String>
+}
+
+pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
+    let payload: CorrectionPayload = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index = get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let corrections = index.get_corrections(&payload.query);
+
+    let payload = CorrectionResultPayload {
+        corrections
+    };
+
+    json_response(200, &payload)
 }
 
 pub async fn get_document(req: LnxRequest) -> LnxResponse {

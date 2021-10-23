@@ -284,6 +284,11 @@ impl QueryBuilder {
         Ok(Box::new(BooleanQuery::new(parts)))
     }
 
+    /// Gets a list of suggested corrections based off of the index corpus.
+    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
+        self.corrections.get_corrections(query)
+    }
+
     /// Gets the unique document id field.
     #[inline]
     pub(crate) fn id_field(&self) -> Field {
