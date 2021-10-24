@@ -4,23 +4,23 @@ use std::time::Instant;
 use engine::structures::{DocumentOptions, DocumentValueOptions};
 use engine::{DocumentId, Index, QueryPayload, QueryResults};
 use routerify::ext::RequestExt;
+use serde::{Deserialize, Serialize};
 
+use crate::error::{LnxError, Result};
 use crate::helpers::{LnxRequest, LnxResponse};
 use crate::responders::json_response;
 use crate::state::State;
 use crate::{get_or_400, json, unauthorized};
-use crate::error::{LnxError, Result};
-
 
 pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
     if !req.uri().path().starts_with("/indexes/") {
-        return Ok(req)
+        return Ok(req);
     };
 
     let state = req.data::<State>().expect("get state");
 
     if !state.auth.enabled() {
-        return Ok(req)
+        return Ok(req);
     }
 
     let auth = req.headers().get("Authorization");
@@ -38,16 +38,14 @@ pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
 
     let path = req.uri().path();
     let index = {
-        let stop: &str = path
-            .strip_prefix("/indexes/")
-            .unwrap_or_else(|| "");
+        let stop: &str = path.strip_prefix("/indexes/").unwrap_or_else(|| "");
 
         let mut split = stop.split("/");
         split.next().unwrap_or_else(|| stop).to_string()
     };
 
     if !data.has_access_to_index(&index) {
-       return unauthorized!("invalid token does not have access to this index")
+        return unauthorized!("invalid token does not have access to this index");
     }
 
     Ok(req)
@@ -92,6 +90,31 @@ pub async fn search_index(mut req: LnxRequest) -> LnxResponse {
     }
 
     json_response(200, &results)
+}
+
+#[derive(Deserialize)]
+struct CorrectionPayload {
+    query: String,
+}
+
+#[derive(Serialize)]
+struct CorrectionResultPayload {
+    corrections: Vec<String>,
+}
+
+pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
+    let payload: CorrectionPayload = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let corrections = index.get_corrections(&payload.query);
+
+    let payload = CorrectionResultPayload { corrections };
+
+    json_response(200, &payload)
 }
 
 pub async fn get_document(req: LnxRequest) -> LnxResponse {

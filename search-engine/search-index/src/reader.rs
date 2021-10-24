@@ -357,6 +357,11 @@ impl Reader {
         })
     }
 
+    /// Gets a list of suggested corrections based off of the index corpus.
+    pub fn get_corrections(&self, query: &str) -> Vec<String> {
+        self.query_handler.get_corrections(query)
+    }
+
     /// Gets a singular document from the given id.
     ///
     /// If no document is found an error is raised without context.

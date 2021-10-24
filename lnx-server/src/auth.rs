@@ -98,7 +98,11 @@ impl AuthManager {
     /// The super user key is simply used as a default key to allow people to
     /// access the control endpoints for the first time.
     /// The super user key can be revoked.
-    pub fn new(enabled: bool, super_user_key: String, storage: &StorageBackend) -> Result<Self> {
+    pub fn new(
+        enabled: bool,
+        super_user_key: String,
+        storage: &StorageBackend,
+    ) -> Result<Self> {
         let super_user_data = TokenData {
             token: super_user_key.clone(),
             allowed_indexes: None,
