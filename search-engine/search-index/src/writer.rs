@@ -220,7 +220,7 @@ impl IndexWriterWorker {
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
             WriterOp::DeleteAll => {
                 self.frequencies.clear_frequencies();
-                self.stop_words.commit()?;
+                self.frequencies.commit()?;
                 (self.writer.delete_all_documents()?, "DELETE-ALL")
             },
             WriterOp::AddStopWords(words) => {
@@ -264,6 +264,8 @@ fn start_writer(
 ) -> Result<()> {
     let stop_words = PersistentStopWordManager::new(conn.clone(), stop_word_manager)?;
     let frequency_set = PersistentFrequencySet::new(conn)?;
+    corrections.adjust_index_frequencies(&frequency_set);
+
     let worker = IndexWriterWorker {
         frequencies: frequency_set,
         index_name: name.clone(),
