@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn zero_buffer_expect_err() -> Result<()> {
+    async fn zero_buffer_expect_defaulting() -> Result<()> {
         init_state();
 
         let res = get_index_with(serde_json::json!({
@@ -704,6 +704,48 @@ mod tests {
         .await;
 
         assert!(res.is_err());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn default_writer_settings_expect_ok() -> Result<()> {
+        init_state();
+
+        let res = get_index_with(serde_json::json!({
+            "name": "test_index_0_buffer_expect_err",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": true,
+                   "fast": "single"
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+            ],
+        }))
+        .await;
+
+        assert!(res.is_ok());
 
         Ok(())
     }
