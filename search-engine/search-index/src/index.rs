@@ -703,7 +703,7 @@ mod tests {
         }))
         .await;
 
-        assert!(res.is_err());
+        assert!(res.is_ok());
 
         Ok(())
     }
