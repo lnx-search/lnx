@@ -15,6 +15,7 @@ use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
 use sysinfo::SystemExt;
+use crate::writer::defaults::HEAP_SIZE_MAX;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -42,8 +43,13 @@ mod defaults {
     /// value.
     const MAX_DEFAULT_THREAD_COUNT: usize = 8;
 
-    /// The minimum buffer size per thread needed.
-    pub const MIN_BUFFER_PER_THREAD: usize = 30_000;
+    /// Size of the margin for the heap. A segment is closed when the remaining memory
+    /// in the heap goes below MARGIN_IN_BYTES.
+    pub const MARGIN_IN_BYTES: usize = 1_000_000;
+
+    /// We impose the memory per thread to be at least 3 MB.
+    pub const HEAP_SIZE_MIN: usize = ((MARGIN_IN_BYTES as u32) * 3u32) as usize;
+    pub const HEAP_SIZE_MAX: usize = u32::MAX() as usize - MARGIN_IN_BYTES;
 
     /// The default amount of writer threads to use if left out of
     /// the index creation payload.
@@ -72,7 +78,7 @@ impl WriterContext {
         let num_threads = self.writer_threads;
         let mut buffer = self.writer_buffer;
 
-        let min_buffer = defaults::MIN_BUFFER_PER_THREAD * num_threads;
+        let min_buffer = defaults::HEAP_SIZE_MIN * num_threads;
         if buffer < min_buffer {
             let total_mem = sys.total_memory();
             let mut target_buffer_size = (total_mem as f64 * 0.10) as u64;
@@ -94,6 +100,11 @@ impl WriterContext {
             } else {
                 buffer = (target_buffer_size * 1_000) as usize;
             }
+        }
+
+        let absolute_max = defaults::HEAP_SIZE_MAX * num_threads;
+        if buffer > absolute_max {
+            buffer = absolute_max;
         }
 
         let free_mem = sys.free_memory();
