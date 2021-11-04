@@ -17,7 +17,15 @@ use tantivy::query::{
     QueryParser,
     TermQuery,
 };
-use tantivy::schema::{Facet, FacetParseError, Field, FieldType, IndexRecordOption, Schema, FieldEntry};
+use tantivy::schema::{
+    Facet,
+    FacetParseError,
+    Field,
+    FieldEntry,
+    FieldType,
+    IndexRecordOption,
+    Schema,
+};
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{DateTime, Index, Score, Term};
 
@@ -95,7 +103,7 @@ impl Default for QueryKind {
 #[serde(untagged)]
 pub enum FieldSelector {
     Single(String),
-    Multi(Vec<String>)
+    Multi(Vec<String>),
 }
 
 /// Defines whether a term in a query must be present,
@@ -464,7 +472,7 @@ impl QueryBuilder {
                     }
 
                     search_fields
-                }
+                },
             }
         };
 
@@ -517,7 +525,11 @@ fn get_parser(ctx: &QueryContext, index: &Index) -> QueryParser {
     parser
 }
 
-fn convert_to_term(value: DocumentValue, field: Field, entry: &FieldEntry) -> Result<Term> {
+fn convert_to_term(
+    value: DocumentValue,
+    field: Field,
+    entry: &FieldEntry,
+) -> Result<Term> {
     let term = match entry.field_type() {
         FieldType::U64(_) => Term::from_field_u64(field, value.try_into()?),
         FieldType::I64(_) => Term::from_field_i64(field, value.try_into()?),

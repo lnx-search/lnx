@@ -1,11 +1,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use sysinfo::SystemExt;
 use anyhow::{Error, Result};
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
 use serde::{Deserialize, Serialize};
+use sysinfo::SystemExt;
 use tantivy::schema::{Field, Schema};
 use tantivy::{IndexWriter, Opstamp, Term};
 use tokio::sync::oneshot;
@@ -16,14 +16,12 @@ use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
 
-
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
 type OpSender = channel::Sender<OpPayload>;
 type WaitersQueue = Arc<SegQueue<oneshot::Sender<()>>>;
 type ShutdownWaker = async_channel::Sender<()>;
 type ShutdownReceiver = async_channel::Receiver<()>;
-
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub(crate) struct WriterContext {
@@ -392,7 +390,7 @@ impl Writer {
 
             debug!(
                 "[ WRITER @ {} ] index writer setup threads={}, heap={}B ",
-                &ctx.name,  writer_ctx.writer_threads, writer_ctx.writer_buffer,
+                &ctx.name, writer_ctx.writer_threads, writer_ctx.writer_buffer,
             );
 
             ctx.index.writer_with_num_threads(
