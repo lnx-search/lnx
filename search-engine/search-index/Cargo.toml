@@ -24,6 +24,8 @@ tantivy = "0.16"
 flate2 = "1.0.20"
 log = "0.4"
 arc-swap = "1.4.0"
+num_cpus = "1"
+sysinfo = "0.20.5"
 
 aexecutor = { path = "../aexecutor" }
 

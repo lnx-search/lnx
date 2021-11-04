@@ -14,6 +14,7 @@ use crate::helpers::{FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
+use sysinfo::SystemExt;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -22,13 +23,92 @@ type WaitersQueue = Arc<SegQueue<oneshot::Sender<()>>>;
 type ShutdownWaker = async_channel::Sender<()>;
 type ShutdownReceiver = async_channel::Receiver<()>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub(crate) struct WriterContext {
     /// The amount of bytes to allocate to the writer buffer.
+    #[serde(default)]
     writer_buffer: usize,
 
     /// The amount of worker threads to dedicate to a writer.
+    #[serde(default = "defaults::default_writer_threads")]
     writer_threads: usize,
+}
+
+mod defaults {
+    /// The max number of threads to default to.
+    ///
+    /// If the cpu count is higher than this, it will not go beyond this
+    /// value.
+    const MAX_DEFAULT_THREAD_COUNT: usize = 8;
+
+    /// The minimum buffer size per thread needed.
+    pub const MIN_BUFFER_PER_THREAD: usize = 30_000;
+
+    /// The default amount of writer threads to use if left out of
+    /// the index creation payload.
+    pub fn default_writer_threads() -> usize {
+        let cpu_count = num_cpus::get();
+
+        if cpu_count > MAX_DEFAULT_THREAD_COUNT {
+            MAX_DEFAULT_THREAD_COUNT
+        } else {
+            cpu_count
+        }
+    }
+}
+
+impl WriterContext {
+    /// Computes a target buffer size if it's bellow the minimum
+    /// required size.
+    ///
+    /// This tries to allocate 10% of the total memory of the system
+    /// otherwise defaulting to the minimum required buffer size should it
+    /// be bellow the minimum or above the amount of free memory.
+    fn with_safe_buffer(&self) -> Result<WriterContext> {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_memory();
+
+        let num_threads = self.writer_threads;
+        let mut buffer = self.writer_buffer;
+
+        let min_buffer = defaults::MIN_BUFFER_PER_THREAD * num_threads;
+        if buffer < min_buffer {
+            let total_mem = sys.total_memory();
+            let mut target_buffer_size = (total_mem as f64 * 0.10) as u64;
+
+            if target_buffer_size < min_buffer as u64 {
+                target_buffer_size = min_buffer as u64;
+            }
+
+            let free_mem = sys.free_memory();
+            if free_mem < target_buffer_size {
+                info!(
+                    "target buffer size of {}KB cannot be reached due \
+                    to not enough free memory, defaulting to {}KB",
+                    target_buffer_size,
+                    buffer / 1_000,
+                );
+
+                buffer = min_buffer;
+            } else {
+                buffer = (target_buffer_size * 1_000) as usize;
+            }
+        }
+
+        let free_mem = sys.free_memory();
+        if buffer < (free_mem * 1000) as usize {
+            return Err(Error::msg(format!(
+                "cannot allocate {}KB due to system not having enough free memory.",
+                buffer,
+            )));
+        }
+
+        Ok(Self {
+            writer_threads: num_threads,
+            writer_buffer: buffer,
+        })
+    }
 }
 
 impl Validate for WriterContext {
@@ -37,16 +117,6 @@ impl Validate for WriterContext {
             return Err(Error::msg(
                 "writer buffer bellow minimum. Buffer size must be at least 1.",
             ));
-        }
-
-        let min_buffer = 30_000 * self.writer_threads;
-        if self.writer_buffer < min_buffer {
-            return Err(Error::msg(format!(
-                "writer buffer bellow minimum. \
-                Buffer size must be at least {} \
-                (30,000 * {} threads).",
-                min_buffer, self.writer_threads,
-            )));
         }
 
         Ok(())
@@ -307,16 +377,17 @@ impl Writer {
         let (shutdown, shutdown_waiter) = async_channel::bounded(1);
 
         let writer = {
-            let num_threads = ctx.writer_ctx.writer_threads;
-            let writer_buffer = ctx.writer_ctx.writer_buffer;
+            let writer_ctx = ctx.writer_ctx.with_safe_buffer()?;
 
             debug!(
                 "[ WRITER @ {} ] index writer setup threads={}, heap={}B ",
-                &ctx.name, num_threads, writer_buffer,
+                &ctx.name,  writer_ctx.writer_threads, writer_ctx.writer_buffer,
             );
 
-            ctx.index
-                .writer_with_num_threads(num_threads, writer_buffer)?
+            ctx.index.writer_with_num_threads(
+                writer_ctx.writer_threads,
+                writer_ctx.writer_buffer,
+            )?
         };
 
         let waiters = WaitersQueue::default();
