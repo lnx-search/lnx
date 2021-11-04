@@ -106,7 +106,7 @@ impl WriterContext {
         }
 
         let free_mem = sys.free_memory();
-        if buffer < (free_mem * 1000) as usize {
+        if buffer > (free_mem * 1000) as usize {
             return Err(Error::msg(format!(
                 "cannot allocate {}KB due to system not having enough free memory. (Free: {}KB)",
                 buffer / 1_000,
