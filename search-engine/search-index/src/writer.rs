@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use sysinfo::SystemExt;
 use anyhow::{Error, Result};
 use crossbeam::channel;
 use crossbeam::queue::SegQueue;
@@ -14,8 +15,7 @@ use crate::helpers::{FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
-use sysinfo::SystemExt;
-use crate::writer::defaults::HEAP_SIZE_MAX;
+
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -49,7 +49,7 @@ mod defaults {
 
     /// We impose the memory per thread to be at least 3 MB.
     pub const HEAP_SIZE_MIN: usize = ((MARGIN_IN_BYTES as u32) * 3u32) as usize;
-    pub const HEAP_SIZE_MAX: usize = u32::MAX() as usize - MARGIN_IN_BYTES;
+    pub const HEAP_SIZE_MAX: usize = u32::MAX as usize - MARGIN_IN_BYTES;
 
     /// The default amount of writer threads to use if left out of
     /// the index creation payload.
