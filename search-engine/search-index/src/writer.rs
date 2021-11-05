@@ -63,13 +63,15 @@ mod defaults {
 }
 
 impl WriterContext {
+    const KB: u64 = 1024;
+
     /// Computes a target buffer size if it's bellow the minimum
     /// required size.
     ///
     /// This tries to allocate 10% of the total memory of the system
     /// otherwise defaulting to the minimum required buffer size should it
     /// be bellow the minimum or above the amount of free memory.
-    fn with_safe_buffer(&self) -> Result<WriterContext> {
+    fn copy_with_safe_buffer(&self) -> Result<WriterContext> {
         let mut sys = sysinfo::System::new();
         sys.refresh_memory();
 
@@ -81,22 +83,23 @@ impl WriterContext {
             let total_mem = sys.total_memory();
             let mut target_buffer_size = (total_mem as f64 * 0.10) as u64;
 
-            if target_buffer_size < min_buffer as u64 {
-                target_buffer_size = min_buffer as u64;
+            if target_buffer_size < (min_buffer as u64 / Self::KB) {
+                target_buffer_size = min_buffer as u64 / Self::KB;
             }
 
             let free_mem = sys.free_memory();
             if free_mem < target_buffer_size {
                 info!(
                     "target buffer size of {}KB cannot be reached due \
-                    to not enough free memory, defaulting to {}KB",
+                    to not enough free memory, defaulting to {}KB (Free: {}KB)",
                     target_buffer_size,
-                    buffer / 1_000,
+                    min_buffer / Self::KB as usize,
+                    free_mem,
                 );
 
                 buffer = min_buffer;
             } else {
-                buffer = (target_buffer_size * 1_000) as usize;
+                buffer = (target_buffer_size * Self::KB) as usize;
             }
         }
 
@@ -106,7 +109,7 @@ impl WriterContext {
         }
 
         let free_mem = sys.free_memory();
-        if buffer > (free_mem * 1000) as usize {
+        if buffer > (free_mem * Self::KB) as usize {
             return Err(Error::msg(format!(
                 "cannot allocate {}KB due to system not having enough free memory. (Free: {}KB)",
                 buffer / 1_000,
@@ -114,6 +117,7 @@ impl WriterContext {
             )));
         }
 
+        info!("sane memory buffer default calculated @ {}KB", buffer / Self::KB as usize);
         Ok(Self {
             writer_threads: num_threads,
             writer_buffer: buffer,
@@ -387,7 +391,7 @@ impl Writer {
         let (shutdown, shutdown_waiter) = async_channel::bounded(1);
 
         let writer = {
-            let writer_ctx = ctx.writer_ctx.with_safe_buffer()?;
+            let writer_ctx = ctx.writer_ctx.copy_with_safe_buffer()?;
 
             debug!(
                 "[ WRITER @ {} ] index writer setup threads={}, heap={}B ",
