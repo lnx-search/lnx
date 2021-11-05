@@ -117,8 +117,10 @@ pub enum Occur {
     ///
     /// This is the default.
     Should,
+
     /// Document without the term are excluded from the search.
     Must,
+
     /// Document that contain the term are excluded from the
     /// search.
     MustNot,
