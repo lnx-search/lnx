@@ -18,6 +18,11 @@ use hyper::Server;
 use log::LevelFilter;
 use routerify::RouterService;
 use structopt::StructOpt;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 
 use crate::auth::AuthManager;
 use crate::state::State;
