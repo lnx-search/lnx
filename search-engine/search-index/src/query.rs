@@ -422,7 +422,7 @@ impl QueryBuilder {
                     &TopDocs::with_limit(1),
                     executor,
                 )?;
-                if results.len() == 0 {
+                if results.is_empty() {
                     return Err(Error::msg(format!(
                         "no document exists with id: '{}'",
                         id
@@ -542,9 +542,7 @@ fn convert_to_term(
             let facet: String = value.try_into()?;
 
             let facet = Facet::from_text(&facet).map_err(|e| {
-                let e = match e {
-                    FacetParseError::FacetParseError(e) => e,
-                };
+                let FacetParseError::FacetParseError(e) = e;
                 Error::msg(e)
             })?;
 

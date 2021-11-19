@@ -45,7 +45,7 @@ pub(crate) async fn check_permissions(req: LnxRequest) -> Result<LnxRequest> {
         None => return unauthorized!("missing authorization header"),
     };
 
-    let data = match state.auth.get_token_data(&token) {
+    let data = match state.auth.get_token_data(token) {
         None => return unauthorized!("invalid token provided"),
         Some(v) => v,
     };
@@ -137,7 +137,7 @@ pub async fn edit_token(mut req: LnxRequest) -> LnxResponse {
     let token = get_or_400!(req.param("token"));
 
     let data = state.auth.update_token(
-        &token,
+        token,
         body.permissions,
         body.user,
         body.description,

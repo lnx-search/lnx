@@ -39,7 +39,7 @@ pub async fn create_index(mut req: LnxRequest) -> LnxResponse {
 pub async fn delete_index(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");
     let index = get_or_400!(req.param("index"));
-    state.engine.remove_index(&index).await?;
+    state.engine.remove_index(index).await?;
 
     let indexes = state.engine.get_all_indexes();
     let storage = state.storage.clone();

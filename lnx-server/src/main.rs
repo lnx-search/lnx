@@ -82,7 +82,7 @@ fn main() {
         },
     };
 
-    let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
+    let threads = settings.runtime_threads.unwrap_or_else(num_cpus::get);
     info!("starting runtime with {} threads", threads);
     let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(threads)
@@ -201,7 +201,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
             existing_indexes.len()
         );
 
-        let engine = Engine::new();
+        let engine = Engine::default();
         for index in existing_indexes {
             engine.add_index(index, true).await?;
         }

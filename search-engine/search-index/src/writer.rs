@@ -219,7 +219,7 @@ impl IndexWriterWorker {
                 let _ = waiter.send(());
             }
 
-            if self.auto_commit == 0 | !op_since_last_commit {
+            if (self.auto_commit == 0) | !op_since_last_commit {
                 if let Ok((op, waker)) = self.rx.recv() {
                     if self.handle_message(op, waker) {
                         break;
@@ -368,6 +368,7 @@ impl IndexWriterWorker {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_writer(
     name: String,
     conn: StorageBackend,
@@ -388,7 +389,7 @@ fn start_writer(
 
     let worker = IndexWriterWorker {
         frequencies: frequency_set,
-        index_name: name.clone(),
+        index_name: name,
         auto_commit: auto_commit as u64,
         waiters,
         using_fast_fuzzy,

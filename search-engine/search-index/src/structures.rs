@@ -99,7 +99,7 @@ pub enum FieldDeclaration {
 fn add_boost_fields(
     schema: &Schema,
     boost_fields: &HashMap<String, Score>,
-    fields: &Vec<Field>,
+    fields: &[Field],
     fields_with_boost: &mut Vec<(Field, Score)>,
 ) {
     for field in fields {
@@ -162,11 +162,11 @@ pub struct IndexDeclaration {
 
 impl Validate for IndexDeclaration {
     fn validate(&self) -> Result<()> {
-        if self.fields.len() == 0 {
+        if self.fields.is_empty() {
             return Err(Error::msg("index must have at least one indexed field."));
         }
 
-        if self.search_fields.len() == 0 {
+        if self.search_fields.is_empty(){
             return Err(Error::msg(
                 "at least one indexed field must be given to search.",
             ));
@@ -268,7 +268,7 @@ impl IndexDeclaration {
             correction_manager: corrections,
             index,
             reader_ctx: self.reader_ctx.clone(),
-            writer_ctx: self.writer_ctx.clone(),
+            writer_ctx: self.writer_ctx,
             query_ctx: query_context,
             fuzzy_search_fields: self.get_fuzzy_search_fields(&schema),
             stop_words: StopWordManager::init()?,
@@ -304,7 +304,7 @@ impl IndexDeclaration {
             }
         }
 
-        if reject.len() == 0 {
+        if reject.is_empty() {
             Ok(())
         } else {
             Err(Error::msg(format!(
@@ -359,11 +359,8 @@ impl IndexDeclaration {
                 continue;
             };
 
-            match entry.field_type() {
-                FieldType::Str(_) => {
-                    search_fields.push(field);
-                },
-                _ => {},
+            if let FieldType::Str(_) = entry.field_type() {
+                search_fields.push(field);
             }
         }
 
@@ -494,11 +491,11 @@ pub enum DocumentValue {
 impl DocumentValue {
     pub fn as_string(&self) -> String {
         match self {
-            Self::I64(v) => format!("{}", v),
-            Self::F64(v) => format!("{}", v),
-            Self::U64(v) => format!("{}", v),
-            Self::Datetime(v) => format!("{}", v),
-            Self::Text(v) => format!("{}", v),
+            Self::I64(v) => v.to_string(),
+            Self::F64(v) => v.to_string(),
+            Self::U64(v) => v.to_string(),
+            Self::Datetime(v) => v.to_string(),
+            Self::Text(v) => v.to_string(),
         }
     }
 }
@@ -692,9 +689,7 @@ impl TryInto<Facet> for DocumentValue {
         let facet: String = self.try_into()?;
 
         let facet = Facet::from_text(&facet).map_err(|e| {
-            let e = match e {
-                FacetParseError::FacetParseError(e) => e,
-            };
+            let FacetParseError::FacetParseError(e) = e;
             Error::msg(e)
         })?;
 
@@ -729,7 +724,7 @@ impl<'de> Deserialize<'de> for DocumentValue {
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                if let Ok(dt) = tantivy::DateTime::from_str(v) {
                     return Ok(DocumentValue::Datetime(dt));
                 }
 
@@ -787,7 +782,7 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                if let Ok(dt) = tantivy::DateTime::from_str(v) {
                     return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(
                         dt,
                     )));
@@ -865,7 +860,7 @@ impl DocumentPayload {
     pub(crate) fn get_text_values(
         &self,
         schema: &Schema,
-        target_fields: &Vec<Field>,
+        target_fields: &[Field],
     ) -> Vec<String> {
         let mut out_fields = vec![];
         for field in target_fields {
@@ -893,7 +888,7 @@ impl DocumentPayload {
     }
 
     fn add_value(
-        key: &String,
+        key: &str,
         field: Field,
         field_type: &FieldType,
         value: DocumentValue,

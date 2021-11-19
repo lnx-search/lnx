@@ -26,7 +26,7 @@ impl SymSpellManager {
     pub(crate) fn correct(&self, sentence: &str) -> String {
         let mut results = { self.sym.load().lookup_compound(sentence, 1) };
 
-        if results.len() == 0 {
+        if results.is_empty() {
             sentence.to_string()
         } else {
             let v = results.remove(0);
@@ -38,7 +38,7 @@ impl SymSpellManager {
     pub(crate) fn get_corrections(&self, sentence: &str) -> Vec<String> {
         let mut results = { self.sym.load().lookup_compound(sentence, 1) };
 
-        if results.len() == 0 {
+        if results.is_empty() {
             vec![sentence.to_string()]
         } else {
             results.drain(..).map(|s| s.term).collect()
@@ -59,7 +59,7 @@ impl SymSpellManager {
 
 impl Debug for SymSpellManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("SymSpellManager"))
+        f.write_str("SymSpellManager")
     }
 }
 

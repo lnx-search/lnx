@@ -31,17 +31,17 @@ pub async fn ensure_index_perms(req: LnxRequest) -> Result<LnxRequest> {
         None => return unauthorized!("missing authorization header"),
     };
 
-    let data = match state.auth.get_token_data(&token) {
+    let data = match state.auth.get_token_data(token) {
         None => return unauthorized!("invalid token provided"),
         Some(v) => v,
     };
 
     let path = req.uri().path();
     let index = {
-        let stop: &str = path.strip_prefix("/indexes/").unwrap_or_else(|| "");
+        let stop: &str = path.strip_prefix("/indexes/").unwrap_or("");
 
-        let mut split = stop.split("/");
-        split.next().unwrap_or_else(|| stop).to_string()
+        let mut split = stop.split('/');
+        split.next().unwrap_or(stop).to_string()
     };
 
     if !data.has_access_to_index(&index) {

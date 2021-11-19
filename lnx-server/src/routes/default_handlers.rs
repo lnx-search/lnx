@@ -12,7 +12,7 @@ pub async fn error_handler(err: routerify::RouteError) -> Response<Body> {
     match handle_casting(err).await {
         Ok(cast) => cast,
         Err(e) => {
-            return json_response(500, &format!("{}", e.to_string()))
+            json_response(500, &e.to_string())
                 .expect("serialize message")
         },
     }
@@ -22,7 +22,7 @@ pub async fn handle_casting(err: routerify::RouteError) -> Result<Response<Body>
     let cast = match err.downcast::<LnxError>() {
         Ok(cast) => cast,
         Err(e) => {
-            return json_response(500, &format!("{}", e.to_string()))
+            return json_response(500, &e.to_string())
                 .map_err(anyhow::Error::from)
         },
     };
