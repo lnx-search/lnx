@@ -166,7 +166,7 @@ impl Validate for IndexDeclaration {
             return Err(Error::msg("index must have at least one indexed field."));
         }
 
-        if self.search_fields.is_empty(){
+        if self.search_fields.is_empty() {
             return Err(Error::msg(
                 "at least one indexed field must be given to search.",
             ));

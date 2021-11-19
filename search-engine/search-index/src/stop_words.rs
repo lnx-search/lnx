@@ -65,9 +65,7 @@ impl StopWordManager {
     /// Checks if the given word is in the list of stop words.
     #[inline]
     pub fn is_stop_word(&self, word: &str) -> bool {
-        self.index_stop_words.load()
-            .iter()
-            .any(|v| v == word)
+        self.index_stop_words.load().iter().any(|v| v == word)
     }
 
     /// Gets all the stop words for the given index.
