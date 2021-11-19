@@ -237,16 +237,16 @@ impl IndexWriterWorker {
                     // We know we wont shutdown.
                     let _ = self.handle_message(WriterOp::Commit, None);
                     op_since_last_commit = false;
-                }
+                },
                 Err(RecvTimeoutError::Disconnected) => {
-                    error!("writer actor channel shutdown unexpectedly, aborting.")
+                    error!("writer actor channel shutdown unexpectedly, aborting.");
                     break;
                 },
                 Ok((op, waker)) => {
                     if self.handle_message(op, waker) {
                         break;
                     }
-                }
+                },
             }
         }
 
@@ -260,7 +260,11 @@ impl IndexWriterWorker {
         info!("[ WRITER @ {} ] shutdown complete!", &self.index_name);
     }
 
-    fn handle_message(&mut self, op: WriterOp, waker: Option<oneshot::Sender<Result<()>>>) -> bool {
+    fn handle_message(
+        &mut self,
+        op: WriterOp,
+        waker: Option<oneshot::Sender<Result<()>>>,
+    ) -> bool {
         match self.handle_op(op) {
             Err(e) => {
                 if let Some(w) = waker {
