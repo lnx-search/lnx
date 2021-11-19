@@ -17,4 +17,4 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Run Lint
-      run: cargo fmt -- --check
+      run: cargo +nightly fmt -- --check
