@@ -1,7 +1,5 @@
-/lnxcli
-/benchmark/datasets
+/search-engine/search-index/_dist
 /assets
-/tests
 /benchmarks
-/demo
-**/target
+/target
+/index
