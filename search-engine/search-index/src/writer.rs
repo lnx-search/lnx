@@ -222,6 +222,7 @@ impl IndexWriterWorker {
             if (self.auto_commit == 0) | !op_since_last_commit {
                 info!("[ WRITER @ {} ] parking writer until new events present", &self.index_name);
                 if let Ok((op, waker)) = self.rx.recv() {
+                    op_since_last_commit = true;
                     if self.handle_message(op, waker) {
                         break;
                     }
