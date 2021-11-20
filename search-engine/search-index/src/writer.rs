@@ -205,7 +205,7 @@ impl IndexWriterWorker {
     /// this means all operations currently in the queue will be processed
     /// first before any waiters are woken up to send more data.
     fn start(mut self) {
-        let mut op_since_last_commit = true;
+        let mut op_since_last_commit = false;
         loop {
             while let Ok((op, waker)) = self.rx.try_recv() {
                 op_since_last_commit = true;
@@ -220,12 +220,13 @@ impl IndexWriterWorker {
             }
 
             if (self.auto_commit == 0) | !op_since_last_commit {
+                info!("[ WRITER @ {} ] parking writer until new events present", &self.index_name);
                 if let Ok((op, waker)) = self.rx.recv() {
                     if self.handle_message(op, waker) {
                         break;
                     }
                 } else {
-                    error!("writer actor channel shutdown unexpectedly, aborting.");
+                    error!("[ WRITER @ {} ] writer actor channel shutdown unexpectedly, aborting...", &self.index_name);
                     break;
                 }
 
@@ -234,12 +235,14 @@ impl IndexWriterWorker {
 
             match self.rx.recv_timeout(Duration::from_secs(self.auto_commit)) {
                 Err(RecvTimeoutError::Timeout) => {
+                    info!("[ WRITER @ {} ] running auto commit", &self.index_name);
+
                     // We know we wont shutdown.
                     let _ = self.handle_message(WriterOp::Commit, None);
                     op_since_last_commit = false;
                 },
                 Err(RecvTimeoutError::Disconnected) => {
-                    error!("writer actor channel shutdown unexpectedly, aborting.");
+                    error!("[ WRITER @ {} ] writer actor channel shutdown unexpectedly, aborting...", &self.index_name);
                     break;
                 },
                 Ok((op, waker)) => {
