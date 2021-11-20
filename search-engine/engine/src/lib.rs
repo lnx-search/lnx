@@ -21,15 +21,17 @@ pub struct Engine {
     indexes: Arc<ArcSwap<HashMap<String, Index>>>,
 }
 
-impl Engine {
-    /// Creates a new unpopulated engine.
-    pub fn new() -> Self {
+/// Creates a new unpopulated engine.
+impl Default for Engine {
+    fn default() -> Self {
         Self {
             declarations: Arc::new(Mutex::new(HashMap::new())),
             indexes: Arc::new(ArcSwap::from_pointee(HashMap::new())),
         }
     }
+}
 
+impl Engine {
     /// Adds an index to the index from a given declaration.
     ///
     /// This duplicates the current indexes and swaps the clone, in general
@@ -104,7 +106,7 @@ impl Engine {
 
     pub fn get_all_indexes(&self) -> Vec<IndexDeclaration> {
         let guard = self.declarations.lock();
-        guard.values().map(|v| v.clone()).collect()
+        guard.values().cloned().collect()
     }
 
     pub async fn shutdown(&self) -> Result<()> {

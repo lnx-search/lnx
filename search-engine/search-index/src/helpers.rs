@@ -106,7 +106,7 @@ impl FrequencyCounter for FrequencySet {
     }
 
     fn get_count(&self, k: &str) -> u32 {
-        self.inner.get(k).map(|v| *v).unwrap_or(0u32)
+        self.inner.get(k).copied().unwrap_or(0u32)
     }
 
     fn counts(&self) -> &HashMap<String, u32> {

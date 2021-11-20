@@ -121,6 +121,11 @@ impl QueryResults {
     pub fn len(&self) -> usize {
         self.hits.len()
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.hits.len() == 0
+    }
 }
 
 /// Attaches an order by clause to the collector.
@@ -186,23 +191,23 @@ fn order_or_sort(
         return match field_type {
             FieldType::I64(_) => {
                 let out: (Vec<(i64, DocAddress)>, usize) =
-                    order_and_search(&searcher, field, query, collector, executor)?;
-                Ok((process_search(&searcher, schema, out.0)?, out.1))
+                    order_and_search(searcher, field, query, collector, executor)?;
+                Ok((process_search(searcher, schema, out.0)?, out.1))
             },
             FieldType::U64(_) => {
                 let out: (Vec<(u64, DocAddress)>, usize) =
-                    order_and_search(&searcher, field, query, collector, executor)?;
-                Ok((process_search(&searcher, schema, out.0)?, out.1))
+                    order_and_search(searcher, field, query, collector, executor)?;
+                Ok((process_search(searcher, schema, out.0)?, out.1))
             },
             FieldType::F64(_) => {
                 let out: (Vec<(f64, DocAddress)>, usize) =
-                    order_and_search(&searcher, field, query, collector, executor)?;
-                Ok((process_search(&searcher, schema, out.0)?, out.1))
+                    order_and_search(searcher, field, query, collector, executor)?;
+                Ok((process_search(searcher, schema, out.0)?, out.1))
             },
             FieldType::Date(_) => {
                 let out: (Vec<(DateTime, DocAddress)>, usize) =
-                    order_and_search(&searcher, field, query, collector, executor)?;
-                Ok((process_search(&searcher, schema, out.0)?, out.1))
+                    order_and_search(searcher, field, query, collector, executor)?;
+                Ok((process_search(searcher, schema, out.0)?, out.1))
             },
             _ => Err(Error::msg("field is not a fast field")),
         };
@@ -226,7 +231,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<i64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(&searcher, schema, out.0)?, out.1)
+            (process_search(searcher, schema, out.0)?, out.1)
         },
         FieldType::U64(_) => {
             let collector =
@@ -245,7 +250,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<u64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(&searcher, schema, out.0)?, out.1)
+            (process_search(searcher, schema, out.0)?, out.1)
         },
         FieldType::F64(_) => {
             let collector =
@@ -264,7 +269,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<f64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(&searcher, schema, out.0)?, out.1)
+            (process_search(searcher, schema, out.0)?, out.1)
         },
         FieldType::Date(_) => {
             let collector =
@@ -283,12 +288,12 @@ fn order_or_sort(
             let out: (Vec<(Reverse<DateTime>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(&searcher, schema, out.0)?, out.1)
+            (process_search(searcher, schema, out.0)?, out.1)
         },
         _ => return Err(Error::msg("field is not a fast field")),
     };
 
-    return Ok(out);
+    Ok(out)
 }
 
 /// The reader of the given index.
@@ -380,7 +385,7 @@ impl Reader {
                     &TopDocs::with_limit(1),
                     executor,
                 )?;
-                if results.len() == 0 {
+                if results.is_empty() {
                     return Err(Error::msg(format!(
                         "no document exists with id: '{}'",
                         id

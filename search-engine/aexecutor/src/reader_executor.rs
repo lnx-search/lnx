@@ -69,7 +69,7 @@ impl Borrow<Executor> for ExecutorHandle {
 impl Drop for ExecutorHandle {
     fn drop(&mut self) {
         if let Some(inner) = self.inner.take() {
-            if let Err(_) = self.returner.try_send(inner) {
+            if self.returner.try_send(inner).is_err() {
                 panic!("failed to return executor to pool")
             }
         }
