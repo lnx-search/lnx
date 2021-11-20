@@ -27,10 +27,7 @@ impl StorageBackend {
             conn = Arc::new(RamDirectory::create());
         }
 
-        Ok(Self {
-            fp,
-            conn,
-        })
+        Ok(Self { fp, conn })
     }
 
     pub fn store_structure<T: Serialize>(
