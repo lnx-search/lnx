@@ -32,14 +32,14 @@ pub async fn handle_casting(err: routerify::RouteError) -> Result<Response<Body>
         },
         LnxError::AbortRequest(resp) => resp,
         LnxError::Other(ref e) if e.source().is_some() => {
-            json_response(500, &format!("error handling request: {}", e.to_string()))
+            json_response(500, &format!("error handling request: {}", e))
                 .map_err(anyhow::Error::from)?
         },
         LnxError::Other(e) => {
             json_response(400, &e.to_string()).map_err(anyhow::Error::from)?
         },
         LnxError::ServerError(e) => {
-            json_response(500, &format!("error handling request: {}", e.to_string()))
+            json_response(500, &format!("error handling request: {}", e))
                 .map_err(anyhow::Error::from)?
         },
         LnxError::SerializationError(e) => {
