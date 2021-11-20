@@ -1,3 +1,4 @@
+use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,7 +17,6 @@ use crate::helpers::{FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
-use std::mem;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -227,7 +227,10 @@ impl IndexWriterWorker {
                     op_since_last_commit = true;
                     self.handle_message(op, waker);
                 } else {
-                    info!("[ WRITER @ {} ] writer actor channel dropped, shutting down...", &self.index_name);
+                    info!(
+                        "[ WRITER @ {} ] writer actor channel dropped, shutting down...",
+                        &self.index_name
+                    );
                     break;
                 }
 
@@ -243,7 +246,10 @@ impl IndexWriterWorker {
                     op_since_last_commit = false;
                 },
                 Err(RecvTimeoutError::Disconnected) => {
-                    info!("[ WRITER @ {} ] writer actor channel dropped, shutting down...", &self.index_name);
+                    info!(
+                        "[ WRITER @ {} ] writer actor channel dropped, shutting down...",
+                        &self.index_name
+                    );
                     break;
                 },
                 Ok((op, waker)) => {
@@ -267,7 +273,10 @@ impl IndexWriterWorker {
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
     ) {
-        debug!("[ WRITER @ {} ] handling operation: {:?}", &self.index_name, op);
+        debug!(
+            "[ WRITER @ {} ] handling operation: {:?}",
+            &self.index_name, op
+        );
         match self.handle_op(op) {
             Err(e) => {
                 if let Some(w) = waker {
@@ -319,7 +328,7 @@ impl IndexWriterWorker {
 
                 let rx = mem::replace(&mut self.rx, rx);
                 drop(rx);
-                return Ok(())
+                return Ok(());
             },
             WriterOp::__Ping => return Ok(()),
             WriterOp::Commit => {
