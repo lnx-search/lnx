@@ -1,32 +1,44 @@
-name: Rust
+name: Lint
 
 on:
   push:
     branches: [ master ]
   pull_request:
-    branches: [ master ]
-
-env:
-  CARGO_TERM_COLOR: always
+    types: [ opened, synchronize, reopened ]
 
 jobs:
-  build:
-
+  fmt:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
-      - name: Install latest nightly
+
+      - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
-            override: true
-            components: rustfmt, clippy
-      
+          toolchain: nightly
+          profile: minimal
+          components: rustfmt
+          override: true
+      - name: Rustfmt Check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v2
-      - name: Run Lint
-        run: cargo +nightly fmt -- --check
-      
-      - uses: actions/checkout@v2
-      - name: Run Clippy
-        run: cargo clippy -- -D warnings
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          components: clippy
+          override: true
+      - name: Clippy Check
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --workspace --all-features --tests --examples --bins -- -Dclippy::todo
