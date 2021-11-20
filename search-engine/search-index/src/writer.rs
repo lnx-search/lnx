@@ -16,6 +16,7 @@ use crate::helpers::{FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
+use std::mem;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -209,9 +210,7 @@ impl IndexWriterWorker {
         loop {
             while let Ok((op, waker)) = self.rx.try_recv() {
                 op_since_last_commit = true;
-                if self.handle_message(op, waker) {
-                    break;
-                }
+                self.handle_message(op, waker);
             }
 
             // Wake up waiters once a message has been removed.
@@ -226,11 +225,9 @@ impl IndexWriterWorker {
                 );
                 if let Ok((op, waker)) = self.rx.recv() {
                     op_since_last_commit = true;
-                    if self.handle_message(op, waker) {
-                        break;
-                    }
+                    self.handle_message(op, waker);
                 } else {
-                    error!("[ WRITER @ {} ] writer actor channel shutdown unexpectedly, aborting...", &self.index_name);
+                    info!("[ WRITER @ {} ] writer actor channel dropped, shutting down...", &self.index_name);
                     break;
                 }
 
@@ -246,13 +243,11 @@ impl IndexWriterWorker {
                     op_since_last_commit = false;
                 },
                 Err(RecvTimeoutError::Disconnected) => {
-                    error!("[ WRITER @ {} ] writer actor channel shutdown unexpectedly, aborting...", &self.index_name);
+                    info!("[ WRITER @ {} ] writer actor channel dropped, shutting down...", &self.index_name);
                     break;
                 },
                 Ok((op, waker)) => {
-                    if self.handle_message(op, waker) {
-                        break;
-                    }
+                    self.handle_message(op, waker);
                 },
             }
         }
@@ -271,18 +266,13 @@ impl IndexWriterWorker {
         &mut self,
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
-    ) -> bool {
+    ) {
+        debug!("[ WRITER @ {} ] handling operation: {:?}", &self.index_name, op);
         match self.handle_op(op) {
             Err(e) => {
                 if let Some(w) = waker {
                     let _ = w.send(Err(e));
                 }
-            },
-            Ok(true) => {
-                if let Some(w) = waker {
-                    let _ = w.send(Ok(()));
-                }
-                return true;
             },
             _ => {
                 if let Some(w) = waker {
@@ -290,8 +280,6 @@ impl IndexWriterWorker {
                 }
             },
         }
-
-        false
     }
 
     /// Handles adding a document to the writer and returning it's
@@ -321,10 +309,19 @@ impl IndexWriterWorker {
         Ok((self.writer.add_document(doc), "ADD-DOCUMENT"))
     }
 
-    fn handle_op(&mut self, op: WriterOp) -> Result<bool> {
+    fn handle_op(&mut self, op: WriterOp) -> Result<()> {
         let (transaction_id, type_) = match op {
-            WriterOp::__Shutdown => return Ok(true),
-            WriterOp::__Ping => return Ok(false),
+            WriterOp::__Shutdown => {
+                // This is a bit of a hack but for consistency we follow
+                // the same drop behaviour.
+                let (tx, rx) = channel::bounded(0);
+                drop(tx);
+
+                let rx = mem::replace(&mut self.rx, rx);
+                drop(rx);
+                return Ok(())
+            },
+            WriterOp::__Ping => return Ok(()),
             WriterOp::Commit => {
                 self.frequencies.commit()?;
                 self.corrections.adjust_index_frequencies(&self.frequencies);
@@ -341,7 +338,7 @@ impl IndexWriterWorker {
                     );
                 }
 
-                return Ok(false);
+                return Ok(());
             },
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
             WriterOp::DeleteAll => {
@@ -352,17 +349,17 @@ impl IndexWriterWorker {
             WriterOp::AddStopWords(words) => {
                 self.stop_words.add_stop_words(words);
                 self.stop_words.commit()?;
-                return Ok(false);
+                return Ok(());
             },
             WriterOp::RemoveStopWords(words) => {
                 self.stop_words.remove_stop_words(words);
                 self.stop_words.commit()?;
-                return Ok(false);
+                return Ok(());
             },
             WriterOp::ClearStopWords => {
                 self.stop_words.clear_stop_words();
                 self.stop_words.commit()?;
-                return Ok(false);
+                return Ok(());
             },
         };
 
@@ -371,7 +368,7 @@ impl IndexWriterWorker {
             &self.index_name, transaction_id, type_
         );
 
-        Ok(false)
+        Ok(())
     }
 }
 

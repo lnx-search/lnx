@@ -129,6 +129,7 @@ fn setup_logger(
             ))
         })
         .level(level)
+        .level_for("compress", LevelFilter::Off)
         .chain(std::io::stdout());
 
     if let Some(file) = log_file {
