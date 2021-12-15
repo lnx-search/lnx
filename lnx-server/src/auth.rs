@@ -72,9 +72,9 @@ impl TokenData {
         self.permissions & flags != 0
     }
 
-    pub fn has_access_to_index(&self, index: &String) -> bool {
+    pub fn has_access_to_index(&self, index: &str) -> bool {
         if let Some(ref indexes) = self.allowed_indexes {
-            indexes.contains(index)
+            indexes.iter().any(|v| v == index)
         } else {
             true
         }
@@ -217,7 +217,7 @@ impl AuthManager {
     /// Gets a specific access token's metadata.
     pub fn get_token_data(&self, token: &str) -> Option<Arc<TokenData>> {
         let guard = self.keys.load();
-        guard.get(token).map(|v| v.clone())
+        guard.get(token).cloned()
     }
 
     /// Revoke a given access token.

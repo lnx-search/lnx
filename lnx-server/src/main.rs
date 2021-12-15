@@ -16,13 +16,12 @@ use engine::{Engine, StorageBackend};
 use fern::colors::{Color, ColoredLevelConfig};
 use hyper::Server;
 use log::LevelFilter;
+use mimalloc::MiMalloc;
 use routerify::RouterService;
 use structopt::StructOpt;
-use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-
 
 use crate::auth::AuthManager;
 use crate::state::State;
@@ -83,7 +82,7 @@ fn main() {
         },
     };
 
-    let threads = settings.runtime_threads.unwrap_or_else(|| num_cpus::get());
+    let threads = settings.runtime_threads.unwrap_or_else(num_cpus::get);
     info!("starting runtime with {} threads", threads);
     let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(threads)
@@ -130,6 +129,7 @@ fn setup_logger(
             ))
         })
         .level(level)
+        .level_for("compress", LevelFilter::Off)
         .chain(std::io::stdout());
 
     if let Some(file) = log_file {
@@ -202,7 +202,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
             existing_indexes.len()
         );
 
-        let engine = Engine::new();
+        let engine = Engine::default();
         for index in existing_indexes {
             engine.add_index(index, true).await?;
         }
