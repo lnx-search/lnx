@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use symspell::{SymSpell, AsciiStringStrategy};
+use symspell::{AsciiStringStrategy, SymSpell};
 
 use crate::helpers::FrequencyCounter;
 
@@ -34,10 +34,11 @@ impl SymSpellManager {
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &impl FrequencyCounter) {
         let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
         symspell.using_dictionary_frequencies(
-            frequencies.counts()
+            frequencies
+                .counts()
                 .into_iter()
                 .map(|(k, v)| (k.clone(), *v as i64))
-                .collect()
+                .collect(),
         );
 
         self.sym.store(Arc::from(symspell))
