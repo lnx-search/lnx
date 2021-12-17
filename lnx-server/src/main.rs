@@ -189,7 +189,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
     let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
     let engine = {
         info!("loading existing indexes...");
-        let raw_structure= storage.load_structure(INDEX_KEYSPACE)?;
+        let raw_structure = storage.load_structure(INDEX_KEYSPACE)?;
         let existing_indexes: Vec<IndexDeclaration> = if let Some(buff) = raw_structure {
             let buffer: Vec<u8> = bincode::deserialize(&buff)?;
             serde_json::from_slice(&buffer)?
