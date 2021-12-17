@@ -24,7 +24,7 @@ impl SymSpellManager {
     ///
     /// If the index does not have a set of frequencies this returns the original string.
     pub(crate) fn correct(&self, sentence: &str) -> String {
-        return self.sym.load().lookup_compound(sentence, 2);
+        self.sym.load().lookup_compound(sentence, 2)
     }
 
     /// Sets a custom symspell handler for the given index.

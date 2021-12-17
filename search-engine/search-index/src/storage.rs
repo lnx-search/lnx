@@ -19,13 +19,12 @@ pub struct StorageBackend {
 impl StorageBackend {
     /// Connects to the sqlite DB.
     pub fn connect(fp: Option<String>) -> Result<Self> {
-        let conn: Arc<dyn Directory>;
-        if let Some(ref fp) = fp {
+        let conn: Arc<dyn Directory> = if let Some(ref fp) = fp {
             std::fs::create_dir_all(fp)?;
-            conn = Arc::new(MmapDirectory::open(fp)?)
+            Arc::new(MmapDirectory::open(fp)?)
         } else {
-            conn = Arc::new(RamDirectory::create());
-        }
+            Arc::new(RamDirectory::create())
+        };
 
         Ok(Self { fp, conn })
     }

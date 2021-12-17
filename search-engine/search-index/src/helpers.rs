@@ -136,11 +136,11 @@ impl PersistentFrequencySet {
     fn load_frequencies_from_store(&mut self) -> Result<()> {
         info!("[ FREQUENCY-COUNTER ] loading frequencies from persistent backend.");
 
-        let frequencies: HashMap<String, u32>;
-        if let Some(buff) = self.conn.load_structure(Self::KEYSPACE)? {
-            frequencies = deserialize(&buff)?;
+        let raw_structure = self.conn.load_structure(Self::KEYSPACE)?;
+        let frequencies: HashMap<String, u32> = if let Some(buff) = raw_structure {
+            deserialize(&buff)?
         } else {
-            frequencies = HashMap::new();
+            HashMap::new()
         };
 
         for (word, count) in frequencies {
