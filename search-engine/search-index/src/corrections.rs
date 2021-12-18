@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use symspell::{SymSpell, UnicodeiStringStrategy};
+use symspell::{AsciiStringStrategy, SymSpell};
 
 use crate::helpers::FrequencyCounter;
 
@@ -10,7 +10,7 @@ pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
 /// The manager around the sym spell fuzzy searching system.
 pub(crate) struct SymSpellManager {
-    sym: Arc<ArcSwap<SymSpell<UnicodeiStringStrategy>>>,
+    sym: Arc<ArcSwap<SymSpell<AsciiStringStrategy>>>,
 }
 
 impl SymSpellManager {
@@ -24,25 +24,7 @@ impl SymSpellManager {
     ///
     /// If the index does not have a set of frequencies this returns the original string.
     pub(crate) fn correct(&self, sentence: &str) -> String {
-        let mut results = { self.sym.load().lookup_compound(sentence, 1) };
-
-        if results.is_empty() {
-            sentence.to_string()
-        } else {
-            let v = results.remove(0);
-            v.term
-        }
-    }
-
-    /// Gets all predicted corrections for a given sentence.
-    pub(crate) fn get_corrections(&self, sentence: &str) -> Vec<String> {
-        let mut results = { self.sym.load().lookup_compound(sentence, 1) };
-
-        if results.is_empty() {
-            vec![sentence.to_string()]
-        } else {
-            results.drain(..).map(|s| s.term).collect()
-        }
+        self.sym.load().lookup_compound(sentence, 2)
     }
 
     /// Sets a custom symspell handler for the given index.
@@ -50,8 +32,14 @@ impl SymSpellManager {
     /// This means when something is next set to be corrected for the index, the
     /// custom frequencies will be used instead of the default.
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &impl FrequencyCounter) {
-        let mut symspell: SymSpell<UnicodeiStringStrategy> = SymSpell::default();
-        symspell.load_dictionary_from_map(frequencies.counts().clone());
+        let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
+        symspell.using_dictionary_frequencies(
+            frequencies
+                .counts()
+                .into_iter()
+                .map(|(k, v)| (k.clone(), *v as i64))
+                .collect(),
+        );
 
         self.sym.store(Arc::from(symspell))
     }

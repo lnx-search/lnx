@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 hashbrown = { version = "0.11", features = ["serde"] }
-symspell = { git = "https://github.com/ChillFish8/symspell", branch = "0.6.0" }
+symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
 compress = { version = "0.2.1", default-features=false, features = ["lz4"] }

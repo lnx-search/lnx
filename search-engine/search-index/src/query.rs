@@ -296,7 +296,8 @@ impl QueryBuilder {
 
     /// Gets a list of suggested corrections based off of the index corpus.
     pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.corrections.get_corrections(query)
+        // TODO: reflect single output changes
+        vec![self.corrections.correct(query)]
     }
 
     /// Gets the unique document id field.

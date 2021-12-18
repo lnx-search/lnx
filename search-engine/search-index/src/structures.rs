@@ -254,12 +254,12 @@ impl IndexDeclaration {
 
         let corrections = Arc::new(SymSpellManager::new());
 
-        let fp;
-        if let StorageType::FileSystem = self.storage_type {
-            fp = Some(format!("{}/{}", INDEX_METADATA_PATH, &self.name))
+        let fp = if let StorageType::FileSystem = self.storage_type {
+            Some(format!("{}/{}", INDEX_METADATA_PATH, &self.name))
         } else {
-            fp = None;
-        }
+            None
+        };
+
         let storage = StorageBackend::connect(fp)?;
 
         Ok(IndexContext {

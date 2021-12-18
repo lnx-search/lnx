@@ -99,7 +99,7 @@ impl StopWordManager {
 
     /// Removes a set of stop words from the index's specific set if it exists.
     pub fn remove_stop_words(&self, mut words: Vec<String>) {
-        words = words.drain(..).map(|v| v.to_lowercase()).collect();
+        words = words.into_iter().map(|v| v.to_lowercase()).collect();
 
         let new_words: Vec<String> = {
             let guard = self.index_stop_words.load();
@@ -140,12 +140,13 @@ impl PersistentStopWordManager {
     /// Creates a new `PersistentStopWordManager`.
     pub(crate) fn new(conn: StorageBackend, manager: StopWordManager) -> Result<Self> {
         debug!("[ STOP-WORDS ] loading stop words from persistent store");
-        let words: Vec<String>;
-        if let Some(buff) = conn.load_structure(Self::KEYSPACE)? {
-            words = deserialize(&buff)?;
+
+        let raw_structure = conn.load_structure(Self::KEYSPACE)?;
+        let words: Vec<String> = if let Some(buff) = raw_structure {
+            deserialize(&buff)?
         } else {
-            words = vec![];
-        }
+            vec![]
+        };
 
         let count = words.len();
         manager.add_stop_words(words);
