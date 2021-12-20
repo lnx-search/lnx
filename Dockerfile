@@ -15,4 +15,4 @@ FROM scratch
 WORKDIR /etc/lnx
 
 COPY --from=builder /home/rust/target/x86_64-unknown-linux-musl/release/lnx .
-ENTRYPOINT ["./lnx"]
+ENTRYPOINT ["./lnx", "--host", "0.0.0.0"]
