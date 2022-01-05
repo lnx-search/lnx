@@ -4,10 +4,12 @@ use std::sync::Arc;
 use anyhow::{Error, Result};
 use bincode::serialize;
 use compress::lz4;
+use rusqlite::OpenFlags;
 use serde::Serialize;
 use tantivy::directory::error::OpenReadError;
 use tantivy::directory::{MmapDirectory, RamDirectory};
 use tantivy::Directory;
+
 
 /// A wrapper around a SQLite connection that manages the index state.
 #[derive(Clone)]
@@ -63,6 +65,29 @@ impl Debug for StorageBackend {
     }
 }
 
+
+fn run_sqlite_worker(db_path: Option<String>) -> anyhow::Result<()> {
+    let conn = match db_path {
+        None => rusqlite::Connection::open_in_memory()?,
+        Some(fp) => rusqlite::Connection::open(fp)?,
+    };
+
+    let set: String = conn.query_row(
+        "PRAGMA journal_mode=WAL;",
+        [],
+        |r| r.get(0),
+    )?;
+
+    if set == "wal" {
+        info!("Persistent store using SQLite WAL mode.")
+    } else {
+        warn!("Failed to set store to use SQLite WAL mode, performance may be degraded.")
+    }
+
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +104,10 @@ mod tests {
         };
 
         Ok(())
+    }
+
+    #[test]
+    fn test_sqlite_worker() -> Result<()> {
+        run_sqlite_worker(None)
     }
 }

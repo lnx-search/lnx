@@ -31,4 +31,4 @@ rand = "0.8.4"
 # allocator
 mimalloc = { version = "*", default-features = false }
 
-engine = { path = "../search-engine/engine" }
+engine = { path = "../lnx-engine/engine" }
