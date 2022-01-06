@@ -273,7 +273,7 @@ impl IndexWriterWorker {
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
     ) {
-        debug!(
+        trace!(
             "[ WRITER @ {} ] handling operation: {:?}",
             &self.index_name, op
         );
