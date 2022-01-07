@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use bincode::serialize;
@@ -19,7 +20,7 @@ use tantivy::directory::{
 };
 use tantivy::Directory;
 
-use crate::helpers::hash;
+use crate::helpers::cr32_hash;
 
 
 static WATCHED_MANAGED_FILE: &str = "managed.json";
@@ -112,7 +113,7 @@ impl Directory for SledBackedDirectory {
             }
         }
 
-        let value = self.conn.get(hash(path).to_string())
+        let value = self.conn.get(cr32_hash(path).to_string())
             .map_err(|e| {
                 match e {
                     sled::Error::CollectionNotFound(_) =>
@@ -158,7 +159,7 @@ impl Directory for SledBackedDirectory {
             }
         }
 
-        let id = hash(path).to_string();
+        let id = cr32_hash(path).to_string();
         self.conn.insert(id, data)?;
 
         Ok(())
