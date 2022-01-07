@@ -33,11 +33,11 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::Validate;
+use crate::helpers::{hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
 use crate::stop_words::StopWordManager;
-use crate::storage::StorageBackend;
+use crate::storage::{SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 
 pub static INDEX_STORAGE_PATH: &str = "./index/index-storage";
@@ -189,7 +189,7 @@ impl IndexDeclaration {
         self.writer_ctx.validate()?;
         self.reader_ctx.validate()?;
 
-        let path = &format!("{}/{}", INDEX_STORAGE_PATH, &self.name);
+        let path = &format!("{}/{}", INDEX_STORAGE_PATH, hash(&self.name));
         let index = {
             if Path::new(&format!("{}/meta.json", &path)).exists() {
                 info!(
@@ -260,7 +260,7 @@ impl IndexDeclaration {
             None
         };
 
-        let storage = StorageBackend::connect(fp)?;
+        let storage = StorageBackend::using_conn(fp)?;
 
         Ok(IndexContext {
             name: self.name.clone(),
@@ -448,6 +448,10 @@ pub struct IndexContext {
     ///
     /// This is only TEXT / STRING fields.
     pub(crate) fuzzy_search_fields: Vec<Field>,
+
+    /// The storage directory interface for storing all data related to
+    /// the index.
+    pub(crate) directory: SledBackedDirectory,
 }
 
 impl IndexContext {

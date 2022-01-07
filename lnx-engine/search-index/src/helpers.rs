@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
 use bincode::deserialize;
@@ -184,6 +185,14 @@ impl FrequencyCounter for PersistentFrequencySet {
     fn counts(&self) -> &HashMap<String, u32> {
         self.set.counts()
     }
+}
+
+pub fn hash(v: impl Hash) -> u64 {
+    let mut hasher = ahash::AHasher::default();
+
+    v.hash(&mut hasher);
+
+    hasher.finish()
 }
 
 #[cfg(test)]

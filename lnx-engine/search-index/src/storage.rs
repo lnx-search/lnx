@@ -1,15 +1,26 @@
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
+use bincode::config::BigEndian;
 use bincode::serialize;
-use compress::lz4;
 use serde::Serialize;
-use sled::{DiskPtr, Mode};
-use tantivy::directory::error::{DeleteError, Incompatibility, OpenReadError, OpenWriteError};
-use tantivy::directory::{DirectoryClone, FileHandle, MmapDirectory, RamDirectory, WatchCallback, WatchCallbackList, WatchHandle, WritePtr};
+use tantivy::directory::error::{
+    DeleteError,
+    OpenReadError,
+    OpenWriteError,
+};
+use tantivy::directory::{
+    FileHandle,
+    MmapDirectory,
+    WatchCallback,
+    WatchCallbackList,
+    WatchHandle,
+    WritePtr,
+};
 use tantivy::Directory;
 
 
@@ -22,55 +33,42 @@ static DATA_INNER_ROOT: &str = "data";
 pub enum OpenType<'a> {
     Dir(&'a Path),
     TempFile,
-    Memory,
 }
 
 
 #[derive(Clone)]
 pub struct SledBackedDirectory {
-    inner: Arc<dyn Directory>,
-    watched_files: WatchCallbackList,
+    inner: MmapDirectory,
+    watched_files: Arc<WatchCallbackList>,
     conn: sled::Db,
 }
 
 impl SledBackedDirectory {
     pub fn new_with_root(path: &OpenType) -> anyhow::Result<Self> {
-        std::fs::create_dir_all(path)?;
-
         let (conn, inner) = match path {
-            OpenType::Dir(path) => (
-                sled::Config::new()
-                    .use_compression(true)
-                    .mode(Mode::HighThroughput)
-                    .path(path.join(METASTORE_INNER_ROOT))
-                    .open()?,
-                Arc::<dyn Directory>::new(
+            OpenType::Dir(path) => {
+                std::fs::create_dir_all(path)?;
+
+                (
+                    sled::Config::new()
+                        .use_compression(true)
+                        .mode(sled::Mode::HighThroughput)
+                        .path(path.join(METASTORE_INNER_ROOT))
+                        .open()?,
                     MmapDirectory::open(path.join(DATA_INNER_ROOT))?,
-                ),
-            ),
+                )
+            },
             OpenType::TempFile => (
                 sled::Config::new()
                     .use_compression(true)
-                    .mode(Mode::HighThroughput)
+                    .mode(sled::Mode::HighThroughput)
                     .temporary(true)
                     .open()?,
-                Arc::<dyn Directory>::new(
-                    MmapDirectory::create_from_tempdir()?,
-                ),
-            ),
-            OpenType::Memory => (
-                sled::Config::new()
-                    .use_compression(true)
-                    .mode(Mode::LowSpace)
-                    .temporary(true)
-                    .open()?,
-                Arc::<dyn Directory>::new(
-                    RamDirectory::create(),
-                ),
+                MmapDirectory::create_from_tempdir()?,
             ),
         };
 
-        let watched_files = WatchCallbackList::default();
+        let watched_files = Arc::new(WatchCallbackList::default());
 
         Ok(Self {
             inner,
@@ -83,12 +81,6 @@ impl SledBackedDirectory {
 impl Debug for SledBackedDirectory {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("SledBackedDirectory")
-    }
-}
-
-impl DirectoryClone for SledBackedDirectory {
-    fn box_clone(&self) -> Box<dyn Directory> {
-        Box::new(self.clone())
     }
 }
 
@@ -110,7 +102,9 @@ impl Directory for SledBackedDirectory {
     }
 
     fn atomic_read(&self, path: &Path) ->  core::result::Result<Vec<u8>, OpenReadError> {
-        let value = self.conn.get(path.as_ref())
+        let id = hash(path).to_string();
+
+        let value = self.conn.get(id)
             .map_err(|e| {
                 match e {
                     sled::Error::CollectionNotFound(_) =>
@@ -158,7 +152,9 @@ impl Directory for SledBackedDirectory {
     }
 
     fn atomic_write(&self, path: &Path, data: &[u8]) -> std::io::Result<()> {
-        self.conn.insert(path.as_ref(), data)?;
+        let id = hash(path).to_string();
+
+        self.conn.insert(id, data)?;
 
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
@@ -210,7 +206,7 @@ impl StorageBackend {
 
 impl Debug for StorageBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("StorageBackend(fp={:?})", self.fp))
+        f.write_str("StorageBackend")
     }
 }
 
