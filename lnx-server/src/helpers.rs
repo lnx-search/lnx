@@ -1,3 +1,4 @@
+use anyhow::Context;
 use hyper::{Body, Request, Response};
 use serde::Serialize;
 
@@ -57,13 +58,14 @@ macro_rules! get_or_400 {
 
 
 #[inline]
-pub async fn atomic_store(
+pub async fn atomic_store<T: Serialize + Sync + Send + 'static + Sized>(
     db: sled::Db,
     keyspace: &'static str,
-    v: impl Serialize + Sync + Send + 'static + Sized,
+    v: T,
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-        db.insert(keyspace, bincode::serialize(&v)?)?;
+        let buff = bincode::serialize(&v).context("failed to serialize base type")?;
+        db.insert(keyspace, buff).context("failed to serialize into sled")?;
         db.flush()?;
 
         Ok(())
