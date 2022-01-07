@@ -1,4 +1,3 @@
-use std::os::linux::raw::stat;
 use engine::structures::IndexDeclaration;
 use routerify::ext::RequestExt;
 use serde::Deserialize;
@@ -8,7 +7,6 @@ use crate::helpers::{atomic_store, LnxRequest, LnxResponse};
 use crate::responders::json_response;
 use crate::state::State;
 use crate::{get_or_400, json, INDEX_KEYSPACE};
-use crate::error::LnxError;
 
 #[derive(Deserialize)]
 struct IndexCreationPayload {
@@ -32,9 +30,10 @@ pub async fn create_index(mut req: LnxRequest) -> LnxResponse {
     let indexes = state.engine.get_all_indexes();
     let storage = state.storage.clone();
 
-    let res = atomic_store(storage, INDEX_KEYSPACE, indexes)
-        .await
-        .context("attempting to persist index settings");
+    // This kinda sucks that we have to do this due to Bincode not enjoying
+    // the IndexDeclaration struct.
+    let buffer = serde_json::to_vec(&indexes)?;
+    let res = atomic_store(storage, INDEX_KEYSPACE, buffer).await;
 
     if res.is_err() {
         state.engine.remove_index(&name).await?;
@@ -56,9 +55,11 @@ pub async fn delete_index(req: LnxRequest) -> LnxResponse {
 
     let storage = state.storage.clone();
 
-    atomic_store(storage, INDEX_KEYSPACE, indexes)
-        .await
-        .context("attempting to persist index settings")?;
+    // This kinda sucks that we have to do this due to Bincode not enjoying
+    // the IndexDeclaration struct.
+    let buffer = serde_json::to_vec(&indexes)?;
+    atomic_store(storage, INDEX_KEYSPACE, buffer)
+        .await?;
 
     state.engine.remove_index(index).await?;
 
