@@ -17,7 +17,7 @@ use engine::Engine;
 use hyper::Server;
 use mimalloc::MiMalloc;
 use routerify::RouterService;
-use structopt::StructOpt;
+use clap::Parser;
 use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
@@ -31,27 +31,27 @@ use crate::state::State;
 static STORAGE_PATH: &str = "./index/engine-storage";
 static INDEX_KEYSPACE: &str = "persistent_indexes";
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "lnx", about = "A ultra-fast, adaptable search engine.")]
+#[derive(Debug, Parser)]
+#[clap(name = "lnx", about, version)]
 struct Settings {
     /// The log level filter, any logs that are above this level won't
     /// be displayed.
     ///
     /// For more detailed control you can use the `RUST_LOG` env var.
-    #[structopt(long, default_value = "info", env)]
+    #[clap(long, default_value = "info", env)]
     log_level: Level,
 
-    /// An optional bool to use ASNI colours and pretty formatting for logs.
+    /// An optional bool to disable ASNI colours and pretty formatting for logs.
     /// You probably want to disable this if using file-based logging.
-    #[structopt(long, env)]
-    pretty_logs: bool,
+    #[clap(long, env)]
+    disable_pretty_logs: bool,
 
     /// The host to bind to (normally: '127.0.0.1' or '0.0.0.0'.)
-    #[structopt(long, short, default_value = "127.0.0.1", env)]
+    #[clap(long, short, default_value = "127.0.0.1", env)]
     host: String,
 
     /// The port to bind the server to.
-    #[structopt(long, short, default_value = "8000", env)]
+    #[clap(long, short, default_value = "8000", env)]
     port: u16,
 
     /// The super user key.
@@ -60,21 +60,21 @@ struct Settings {
     /// bearer on every endpoint.
     ///
     /// The super user key is used to make tokens with given permissions.
-    #[structopt(long, short = "auth", env, hide_env_values = true)]
+    #[clap(long, env, hide_env_values = true)]
     super_user_key: Option<String>,
 
     /// The number of threads to use for the tokio runtime.
     ///
     /// If this is not set, the number of logical cores on the machine is used.
-    #[structopt(long, short = "threads", env)]
+    #[clap(long, short = 't', env)]
     runtime_threads: Option<usize>,
 
     /// A optional file to send persistent logs.
-    #[structopt(long, env)]
+    #[clap(long, env)]
     log_file: Option<String>,
 
     /// If enabled each search request wont be logged.
-    #[structopt(long, env)]
+    #[clap(long, env)]
     silent_search: bool,
 }
 
@@ -90,7 +90,7 @@ fn main() {
     let _guard = setup_logger(
         settings.log_level,
         &settings.log_file,
-        settings.pretty_logs,
+        !settings.disable_pretty_logs,
     );
 
     let threads = settings.runtime_threads.unwrap_or_else(num_cpus::get);
@@ -156,7 +156,7 @@ fn setup_logger(
 
 /// Parses the config and sets up logging
 fn setup() -> Result<Settings> {
-    let config: Settings = Settings::from_args();
+    let config: Settings = Settings::parse();
     Ok(config)
 }
 
