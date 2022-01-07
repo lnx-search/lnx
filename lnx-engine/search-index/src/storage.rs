@@ -28,6 +28,7 @@ static METASTORE_INNER_ROOT: &str = "metadata";
 /// This maintains compatibility with any Tantivy directory.
 static DATA_INNER_ROOT: &str = "data";
 
+#[derive(Debug)]
 pub enum OpenType {
     Dir(PathBuf),
     TempFile,

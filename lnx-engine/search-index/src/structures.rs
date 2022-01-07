@@ -5,7 +5,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{Error, Result, Context};
 use chrono::{NaiveDateTime, Utc};
 use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
@@ -201,9 +201,14 @@ impl IndexDeclaration {
         };
 
         let dir = SledBackedDirectory::new_with_root(&open)?;
+        let does_exist = Index::exists(&dir)
+            .with_context(|| format!("failed to check for existing index {:?}", &open))?;
 
-        let schema = self.schema_from_fields();
-        let index = Index::open_or_create(dir.clone(), schema)?;
+        let index = if does_exist {
+            Index::open(dir.clone())
+        } else {
+            Index::open_or_create(dir.clone(), self.schema_from_fields())
+        }?;
 
         let schema = index.schema();
         self.verify_search_fields(&schema)?;
