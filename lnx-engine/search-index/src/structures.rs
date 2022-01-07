@@ -183,6 +183,7 @@ impl IndexDeclaration {
 
     /// Builds IndexContext from the declaration, applying any validation in
     /// the process.
+    #[instrument(name = "index-setup", skip(self), fields(index = %self.name))]
     pub fn create_context(&self) -> Result<IndexContext> {
         self.validate()?;
         self.writer_ctx.validate()?;
@@ -358,6 +359,7 @@ impl IndexDeclaration {
 
         for (field, details) in self.fields.iter() {
             if field == PRIMARY_KEY {
+                warn!("{} is a reserved field name due to being a primary key", PRIMARY_KEY);
                 continue;
             }
 

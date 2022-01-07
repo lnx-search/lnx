@@ -132,7 +132,8 @@ fn setup_logger(
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         let fmt = tracing_subscriber::fmt()
-            .with_writer(std::io::stdout.and(non_blocking));
+            .with_writer(std::io::stdout.and(non_blocking))
+            .with_thread_names(true);
 
         if pretty {
             fmt.pretty()
@@ -145,7 +146,8 @@ fn setup_logger(
 
         Some(guard)
     } else {
-        let fmt = tracing_subscriber::fmt();
+        let fmt = tracing_subscriber::fmt()
+            .with_thread_names(true);
 
         if pretty {
             fmt.pretty().with_ansi(true).init();
@@ -193,7 +195,6 @@ async fn start(settings: Settings) -> Result<()> {
     Ok(())
 }
 
-#[instrument(name = "state-management", skip(settings))]
 async fn create_state(settings: &Settings) -> Result<State> {
     let db = sled::Config::new()
         .path(STORAGE_PATH)
@@ -201,34 +202,44 @@ async fn create_state(settings: &Settings) -> Result<State> {
         .use_compression(true)
         .open()?;
 
-    let engine = {
-        info!("loading existing indexes...");
+    let engine = load_existing_indexes(&db).await?;
+    let auth = setup_authentication(&db, settings)?;
 
-        let existing_indexes: Vec<IndexDeclaration> =
-            if let Some(buff) = db.get(INDEX_KEYSPACE)? {
-                let buff: Vec<u8> = bincode::options()
-                    .with_big_endian()
-                    .deserialize(&buff)
-                    .context("failed to deserialize index payload from persisted values.")?;
+    Ok(State::new(engine, db, auth, !settings.silent_search))
+}
 
-                serde_json::from_slice(&buff)?
-            } else {
-                vec![]
-            };
 
-        info!(
-            " {} existing indexes discovered, recreating state...",
-            existing_indexes.len()
-        );
+#[instrument(name = "setup-existing-indexes", level = "info", skip(db))]
+async fn load_existing_indexes(db: &sled::Db) -> Result<Engine> {
+    info!("loading existing indexes...");
 
-        let engine = Engine::default();
-        for index in existing_indexes {
-            engine.add_index(index, true).await?;
-        }
+    let existing_indexes: Vec<IndexDeclaration> =
+        if let Some(buff) = db.get(INDEX_KEYSPACE)? {
+            let buff: Vec<u8> = bincode::options()
+                .with_big_endian()
+                .deserialize(&buff)
+                .context("failed to deserialize index payload from persisted values.")?;
 
-        engine
-    };
+            serde_json::from_slice(&buff)?
+        } else {
+            vec![]
+        };
 
+    info!(
+        " {} existing indexes discovered, recreating state...",
+        existing_indexes.len()
+    );
+
+    let engine = Engine::default();
+    for index in existing_indexes {
+        engine.add_index(index, true).await?;
+    }
+
+    Ok(engine)
+}
+
+#[instrument(name = "setup-authentication", level = "info", skip(db, settings))]
+fn setup_authentication(db: &sled::Db, settings: &Settings) -> Result<AuthManager> {
     let (enabled, key) = if let Some(ref key) = settings.super_user_key {
         (true, key.to_string())
     } else {
@@ -237,5 +248,5 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
     let auth = AuthManager::new(enabled, key, &db)?;
 
-    Ok(State::new(engine, db, auth, !settings.silent_search))
+    Ok(auth)
 }
