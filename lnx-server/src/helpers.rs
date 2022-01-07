@@ -57,7 +57,11 @@ macro_rules! get_or_400 {
 
 
 #[inline]
-pub async fn atomic_store(db: sled::Db, keyspace: &'static str, v: impl Serialize + Sync + Send + 'static) -> Result<()> {
+pub async fn atomic_store(
+    db: sled::Db,
+    keyspace: &'static str,
+    v: impl Serialize + Sync + Send + 'static + Sized,
+) -> Result<()> {
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         db.insert(keyspace, bincode::serialize(&v)?)?;
         db.flush()?;
