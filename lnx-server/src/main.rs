@@ -113,7 +113,6 @@ fn main() {
     }
 }
 
-#[instrument(name = "logger", level = "info")]
 fn setup_logger(
     level: Level,
     log_dir: &Option<String>,
@@ -134,7 +133,9 @@ fn setup_logger(
             .with_writer(std::io::stdout.and(non_blocking));
 
         if pretty {
-            fmt.pretty().with_ansi(true).init();
+            fmt.pretty()
+                .with_ansi(true)
+                .init();
         } else {
             fmt.with_ansi(false)
                 .init();
@@ -190,6 +191,7 @@ async fn start(settings: Settings) -> Result<()> {
     Ok(())
 }
 
+#[instrument(name = "state-management", skip(settings))]
 async fn create_state(settings: &Settings) -> Result<State> {
     let db = sled::Config::new()
         .path(STORAGE_PATH)
