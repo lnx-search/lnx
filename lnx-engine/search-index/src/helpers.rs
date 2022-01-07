@@ -187,8 +187,8 @@ impl FrequencyCounter for PersistentFrequencySet {
     }
 }
 
-pub fn hash(v: impl Hash) -> u64 {
-    let mut hasher = ahash::AHasher::default();
+pub fn cr32_hash(v: impl Hash) -> u64 {
+    let mut hasher = crc32fast::Hasher::default();
 
     v.hash(&mut hasher);
 
