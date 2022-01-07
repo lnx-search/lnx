@@ -19,5 +19,6 @@ pub use index::Index;
 pub use query::DocumentId;
 pub use reader::{QueryPayload, QueryResults};
 pub use storage::StorageBackend;
+pub use helpers::cr32_hash;
 
 pub(crate) type ReaderExecutor = Arc<SearcherExecutorPool>;
