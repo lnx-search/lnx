@@ -197,6 +197,7 @@ pub fn hash(v: impl Hash) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::storage::{OpenType, SledBackedDirectory};
     use super::*;
 
     static TEST_FILE: &str = "./test";
@@ -221,7 +222,8 @@ mod tests {
     fn test_storage_mem_backed_processing() -> Result<()> {
         let sentence = "The quick brown fox, jumped over the quick brown dogg.";
 
-        let storage = StorageBackend::connect(None)?;
+        let dir = SledBackedDirectory::new_with_root(&OpenType::TempFile)?;
+        let storage = StorageBackend::using_conn(dir);
         let mut freq_dict = PersistentFrequencySet::new(storage)?;
         freq_dict.process_sentence(sentence);
         freq_dict.commit()?;
@@ -244,7 +246,8 @@ mod tests {
 
         let sentence = "The quick brown fox, jumped over the quick brown dogg.";
 
-        let storage = StorageBackend::connect(None)?;
+        let dir = SledBackedDirectory::new_with_root(&OpenType::TempFile)?;
+        let storage = StorageBackend::using_conn(dir);
 
         {
             let mut freq_dict = PersistentFrequencySet::new(storage.clone())?;

@@ -1,11 +1,8 @@
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Error, Result};
-use bincode::config::BigEndian;
 use bincode::serialize;
 use serde::Serialize;
 use tantivy::directory::error::{
@@ -17,11 +14,12 @@ use tantivy::directory::{
     FileHandle,
     MmapDirectory,
     WatchCallback,
-    WatchCallbackList,
     WatchHandle,
     WritePtr,
 };
 use tantivy::Directory;
+
+use crate::helpers::hash;
 
 
 static WATCHED_MANAGED_FILE: &str = "managed.json";
@@ -30,16 +28,23 @@ static METASTORE_INNER_ROOT: &str = "metadata";
 static DATA_INNER_ROOT: &str = "data";
 
 
-pub enum OpenType<'a> {
-    Dir(&'a Path),
+pub enum OpenType {
+    Dir(PathBuf),
     TempFile,
 }
 
+impl OpenType {
+    pub fn exists(&self) -> bool {
+        match self {
+            Self::TempFile => true,
+            Self::Dir(path) => path.exists()
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct SledBackedDirectory {
     inner: MmapDirectory,
-    watched_files: Arc<WatchCallbackList>,
     conn: sled::Db,
 }
 
@@ -68,11 +73,8 @@ impl SledBackedDirectory {
             ),
         };
 
-        let watched_files = Arc::new(WatchCallbackList::default());
-
         Ok(Self {
             inner,
-            watched_files,
             conn,
         })
     }
@@ -102,9 +104,14 @@ impl Directory for SledBackedDirectory {
     }
 
     fn atomic_read(&self, path: &Path) ->  core::result::Result<Vec<u8>, OpenReadError> {
-        let id = hash(path).to_string();
+        // Special case handling for Tantivy's file watchlist.
+        if let Some(name) = path.file_name() {
+            if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
+                return self.inner.atomic_read(path)
+            }
+        }
 
-        let value = self.conn.get(id)
+        let value = self.conn.get(hash(path).to_string())
             .map_err(|e| {
                 match e {
                     sled::Error::CollectionNotFound(_) =>
@@ -132,17 +139,8 @@ impl Directory for SledBackedDirectory {
                             ),
                             filepath: path.to_path_buf(),
                         },
-                    other =>
-                        OpenReadError::IoError {
-                            io_error: std::io::Error::new(
-                                ErrorKind::Other,
-                                format!(
-                                    "Unknown error: {}",
-                                    other,
-                                )
-                            ),
-                            filepath: path.to_path_buf(),
-                        },
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!(),
                 }
             })?;
 
@@ -152,24 +150,21 @@ impl Directory for SledBackedDirectory {
     }
 
     fn atomic_write(&self, path: &Path, data: &[u8]) -> std::io::Result<()> {
-        let id = hash(path).to_string();
-
-        self.conn.insert(id, data)?;
-
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
             if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
-                // For now we assume the reader and writer are both the same process
-                // so we wont worry about waiting for elapsed callbacks.
-                let _ = self.watched_files.broadcast();
+                return self.inner.atomic_write(path, data)
             }
         }
+
+        let id = hash(path).to_string();
+        self.conn.insert(id, data)?;
 
         Ok(())
     }
 
     fn watch(&self, watch_callback: WatchCallback) -> tantivy::Result<WatchHandle> {
-        Ok(self.watched_files.subscribe(watch_callback))
+        self.inner.watch(watch_callback)
     }
 }
 
@@ -219,7 +214,8 @@ mod tests {
     fn test_loading_and_unloading() -> Result<()> {
         let test_structure = vec!["foo", "bar"];
 
-        let storage = StorageBackend::connect(None)?;
+        let dir = SledBackedDirectory::new_with_root(&OpenType::TempFile)?;
+        let storage = StorageBackend::using_conn(dir);
         storage.store_structure("test", &test_structure)?;
         if let Some(buffer) = storage.load_structure("test")? {
             let test_res: Vec<&str> = bincode::deserialize(&buffer)?;
