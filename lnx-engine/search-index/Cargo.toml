@@ -12,7 +12,6 @@ hashbrown = { version = "0.11", features = ["serde"] }
 symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
-compress = { version = "0.2.1", default-features = false, features = ["lz4"] }
 sled = { version = "0.34.7", features = ["compression"] }
 
 crc32fast = "1.3.0"
