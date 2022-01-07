@@ -14,7 +14,12 @@ chrono = { version = "0.4", features = ["serde"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 sled = { version = "0.34.7", features = ["compression"] }
+tracing-subscriber = { version = "0.3.5", features = ["tracing-log", "parking_lot"] }
 
+tracing-appender = "0.2.0"
+tracing-opentelemetry = "0.16.0"
+tracing = "0.1.29"
+tracing-futures = "0.2.5"
 thiserror = "1.0.30"
 routerify = "2.2.0"
 arc-swap = "1.4.0"
