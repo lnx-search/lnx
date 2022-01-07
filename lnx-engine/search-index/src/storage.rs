@@ -19,7 +19,13 @@ use crate::helpers::cr32_hash;
 
 static WATCHED_MANAGED_FILE: &str = "managed.json";
 static WATCHED_META_FILE: &str = "meta.json";
+
+/// The sub-directory where any lnx-metadata is stored for the index.
 static METASTORE_INNER_ROOT: &str = "metadata";
+
+/// The sub-directory where Tantivy's data is stored.
+///
+/// This maintains compatibility with any Tantivy directory.
 static DATA_INNER_ROOT: &str = "data";
 
 pub enum OpenType {
@@ -36,6 +42,13 @@ impl OpenType {
     }
 }
 
+/// A wrapper around a MmapDirectory but using sled to provide
+/// the atomic write/read interface.
+///
+/// The only difference is Tantivy's special `meta.json` and `managed.json` is
+/// ignored and kept mount to the mmap directory.
+/// This same logic is applied to watching files, only those aformentioned files
+/// are watched.
 #[derive(Clone)]
 pub struct SledBackedDirectory {
     inner: MmapDirectory,
@@ -43,6 +56,13 @@ pub struct SledBackedDirectory {
 }
 
 impl SledBackedDirectory {
+    /// Creates or opens the given path.
+    ///
+    /// If OpenType::Dir(p) is set the system will ensure the directories are
+    /// created and ensured.
+    ///
+    /// If OpenType::TempFile is set the system will create a temporary structure,
+    /// normally for testing.
     pub fn new_with_root(path: &OpenType) -> anyhow::Result<Self> {
         let (conn, inner) = match path {
             OpenType::Dir(path) => {
@@ -163,6 +183,10 @@ impl Directory for SledBackedDirectory {
     }
 }
 
+/// A wrapper around the SledBackedDirectory providing serializer and loading
+/// interfaces.
+///
+/// This is mostly just a sugar wrapper.
 #[derive(Clone)]
 pub struct StorageBackend {
     conn: SledBackedDirectory,
