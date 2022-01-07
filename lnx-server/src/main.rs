@@ -69,9 +69,11 @@ struct Settings {
     #[clap(long, short = 't', env)]
     runtime_threads: Option<usize>,
 
-    /// A optional file to send persistent logs.
+    /// A optional directory to send persistent logs.
+    ///
+    /// Logs are split into hourly chunks.
     #[clap(long, env)]
-    log_file: Option<String>,
+    log_dir: Option<String>,
 
     /// If enabled each search request wont be logged.
     #[clap(long, env)]
@@ -89,7 +91,7 @@ fn main() {
 
     let _guard = setup_logger(
         settings.log_level,
-        &settings.log_file,
+        &settings.log_dir,
         !settings.disable_pretty_logs,
     );
 
