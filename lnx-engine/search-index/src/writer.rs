@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sysinfo::SystemExt;
 use tantivy::schema::{Field, Schema};
 use tantivy::{IndexWriter, Opstamp, Term};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
@@ -140,6 +140,14 @@ impl Validate for WriterContext {
         Ok(())
     }
 }
+
+
+pub struct MetaStore {
+    key: String,
+    value: Vec<u8>,
+    responder: mpsc::Sender<Result<()>>,
+}
+
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
