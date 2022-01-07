@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
-use crate::helpers::{FrequencyCounter, PersistentFrequencySet, Validate};
+use crate::helpers::{cr32_hash, FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
@@ -273,9 +273,10 @@ impl IndexWriterWorker {
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
     ) {
-        debug!(
+        trace!(
             "[ WRITER @ {} ] handling operation: {:?}",
-            &self.index_name, op
+            &self.index_name,
+            op
         );
         match self.handle_op(op) {
             Err(e) => {
@@ -562,10 +563,9 @@ impl Writer {
     pub(crate) async fn destroy(&self) -> anyhow::Result<()> {
         self.shutdown().await?;
 
-        let dir = format!("{}/{}", INDEX_STORAGE_PATH, &self.index_name);
-        let index_dir = Path::new(&dir);
-        if index_dir.exists() {
-            tokio::fs::remove_dir_all(index_dir).await?;
+        let dir = format!("{}/{}", INDEX_STORAGE_PATH, cr32_hash(&self.index_name));
+        if Path::new(&dir).exists() {
+            tokio::fs::remove_dir_all(dir).await?;
         }
 
         Ok(())

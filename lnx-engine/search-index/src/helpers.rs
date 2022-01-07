@@ -1,7 +1,8 @@
 use std::cmp::Reverse;
+use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
-use bincode::deserialize;
+use bincode::Options;
 use hashbrown::HashMap;
 use tantivy::schema::Schema;
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
@@ -138,7 +139,7 @@ impl PersistentFrequencySet {
 
         let raw_structure = self.conn.load_structure(Self::KEYSPACE)?;
         let frequencies: HashMap<String, u32> = if let Some(buff) = raw_structure {
-            deserialize(&buff)?
+            bincode::options().with_big_endian().deserialize(&buff)?
         } else {
             HashMap::new()
         };
@@ -186,9 +187,18 @@ impl FrequencyCounter for PersistentFrequencySet {
     }
 }
 
+pub fn cr32_hash(v: impl Hash) -> u64 {
+    let mut hasher = crc32fast::Hasher::default();
+
+    v.hash(&mut hasher);
+
+    hasher.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::{OpenType, SledBackedDirectory};
 
     static TEST_FILE: &str = "./test";
 
@@ -212,7 +222,8 @@ mod tests {
     fn test_storage_mem_backed_processing() -> Result<()> {
         let sentence = "The quick brown fox, jumped over the quick brown dogg.";
 
-        let storage = StorageBackend::connect(None)?;
+        let dir = SledBackedDirectory::new_with_root(&OpenType::TempFile)?;
+        let storage = StorageBackend::using_conn(dir);
         let mut freq_dict = PersistentFrequencySet::new(storage)?;
         freq_dict.process_sentence(sentence);
         freq_dict.commit()?;
@@ -235,7 +246,8 @@ mod tests {
 
         let sentence = "The quick brown fox, jumped over the quick brown dogg.";
 
-        let storage = StorageBackend::connect(None)?;
+        let dir = SledBackedDirectory::new_with_root(&OpenType::TempFile)?;
+        let storage = StorageBackend::using_conn(dir);
 
         {
             let mut freq_dict = PersistentFrequencySet::new(storage.clone())?;

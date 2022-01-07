@@ -11,7 +11,6 @@ use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use tantivy::directory::MmapDirectory;
 use tantivy::fastfield::FastValue;
 use tantivy::schema::{
     Facet,
@@ -33,11 +32,11 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::Validate;
+use crate::helpers::{cr32_hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
 use crate::stop_words::StopWordManager;
-use crate::storage::StorageBackend;
+use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 
 pub static INDEX_STORAGE_PATH: &str = "./index/index-storage";
@@ -189,35 +188,22 @@ impl IndexDeclaration {
         self.writer_ctx.validate()?;
         self.reader_ctx.validate()?;
 
-        let path = &format!("{}/{}", INDEX_STORAGE_PATH, &self.name);
-        let index = {
-            if Path::new(&format!("{}/meta.json", &path)).exists() {
-                info!(
-                    "[ INDEX-BUILDER ] using existing data for index {}",
-                    &self.name
-                );
-                let dir = MmapDirectory::open(path)?;
-                Index::open(dir)?
-            } else {
-                info!(
-                    "[ INDEX-BUILDER ] using blank storage setup for index {}",
-                    &self.name
-                );
-                let schema = self.schema_from_fields();
-                match self.storage_type {
-                    StorageType::FileSystem => {
-                        info!(
-                            "[ INDEX-BUILDER ] ensuring directory exists for path: {}",
-                            &path
-                        );
-                        std::fs::create_dir_all(&path)?;
-                        Index::create_in_dir(path, schema)?
-                    },
-                    StorageType::TempDir => Index::create_from_tempdir(schema)?,
-                    StorageType::Memory => Index::create_in_ram(schema),
-                }
-            }
+        let open = match self.storage_type {
+            StorageType::Memory => {
+                // TODO: Remove in next major version.
+                warn!("Memory mode is depreciated, this now defaults to TempFile and will be removed in future versions");
+                OpenType::TempFile
+            },
+            StorageType::TempDir => OpenType::TempFile,
+            StorageType::FileSystem => OpenType::Dir(
+                Path::new(INDEX_STORAGE_PATH).join(cr32_hash(&self.name).to_string()),
+            ),
         };
+
+        let dir = SledBackedDirectory::new_with_root(&open)?;
+
+        let schema = self.schema_from_fields();
+        let index = Index::open_or_create(dir.clone(), schema)?;
 
         let schema = index.schema();
         self.verify_search_fields(&schema)?;
@@ -253,14 +239,7 @@ impl IndexDeclaration {
         };
 
         let corrections = Arc::new(SymSpellManager::new());
-
-        let fp = if let StorageType::FileSystem = self.storage_type {
-            Some(format!("{}/{}", INDEX_METADATA_PATH, &self.name))
-        } else {
-            None
-        };
-
-        let storage = StorageBackend::connect(fp)?;
+        let storage = StorageBackend::using_conn(dir);
 
         Ok(IndexContext {
             name: self.name.clone(),

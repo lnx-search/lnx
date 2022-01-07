@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "search-engine/engine",
-    "search-engine/aexecutor",
-    "search-engine/search-index",
+    "lnx-engine/engine",
+    "lnx-engine/aexecutor",
+    "lnx-engine/search-index",
     "lnx-server",
 ]
 

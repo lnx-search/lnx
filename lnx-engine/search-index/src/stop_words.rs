@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
-use bincode::deserialize;
+use bincode::Options;
 use flate2::write::GzDecoder;
 use once_cell::sync::OnceCell;
 
@@ -143,7 +143,7 @@ impl PersistentStopWordManager {
 
         let raw_structure = conn.load_structure(Self::KEYSPACE)?;
         let words: Vec<String> = if let Some(buff) = raw_structure {
-            deserialize(&buff)?
+            bincode::options().with_big_endian().deserialize(&buff)?
         } else {
             vec![]
         };

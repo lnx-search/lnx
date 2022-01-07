@@ -7,17 +7,18 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-hashbrown = { version = "0.11", features = ["serde"] }
-symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
+crossbeam = { version = "0.8.1", default-features = false, features = ["crossbeam-channel", "crossbeam-queue"] }
 chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+sled = { version = "0.34.7", features = ["compression"] }
+symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
+hashbrown = { version = "0.11", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
-compress = { version = "0.2.1", default-features=false, features = ["lz4"] }
 
+crc32fast = "1.3.0"
 bincode = "1.3"
 rand = "0.8.4"
 async-channel = "1.6.1"
-crossbeam = "0.8.1"
 once_cell = "1.8"
 anyhow = "1"
 tantivy = "0.16"

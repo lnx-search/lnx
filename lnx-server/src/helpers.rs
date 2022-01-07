@@ -1,4 +1,7 @@
+use anyhow::Context;
+use bincode::Options;
 use hyper::{Body, Request, Response};
+use serde::Serialize;
 
 use crate::error::Result;
 
@@ -52,4 +55,28 @@ macro_rules! get_or_400 {
             Some(v) => v,
         }
     }};
+}
+
+#[inline]
+pub async fn atomic_store<T: Serialize + Sync + Send + 'static + Sized>(
+    db: sled::Db,
+    keyspace: &'static str,
+    v: T,
+) -> Result<()> {
+    tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let buff = bincode::options()
+            .with_big_endian()
+            .serialize(&v)
+            .context("failed to serialize base type")?;
+
+        db.insert(keyspace, buff)
+            .context("failed to serialize into sled")?;
+        db.flush()?;
+
+        Ok(())
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
+
+    Ok(())
 }

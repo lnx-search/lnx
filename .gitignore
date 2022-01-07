@@ -1,8 +1,8 @@
 **/target
 **/Cargo.lock
 **/_dist
-search-engine/search-index/test
-search-engine/search-index/index
+lnx-engine/search-index/test
+lnx-engine/search-index/index
 .idea
 /meta
 /index/

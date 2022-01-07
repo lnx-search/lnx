@@ -1,6 +1,6 @@
 [package]
 name = "lnx"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["Harrison Burt <57491488+ChillFish8@users.noreply.github.com>"]
 edition = "2018"
 
@@ -13,6 +13,7 @@ fern = { version = "0.6", features = ["colored"] }
 chrono = { version = "0.4", features = ["serde"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
+sled = { version = "0.34.7", features = ["compression"] }
 
 thiserror = "1.0.30"
 routerify = "2.2.0"
@@ -31,4 +32,4 @@ rand = "0.8.4"
 # allocator
 mimalloc = { version = "*", default-features = false }
 
-engine = { path = "../search-engine/engine" }
+engine = { path = "../lnx-engine/engine" }
