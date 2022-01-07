@@ -1,4 +1,3 @@
-use anyhow::Context;
 use engine::structures::IndexDeclaration;
 use routerify::ext::RequestExt;
 use serde::Deserialize;

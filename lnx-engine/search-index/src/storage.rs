@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use bincode::serialize;
