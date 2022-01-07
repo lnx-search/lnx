@@ -138,8 +138,9 @@ impl PersistentStopWordManager {
     const KEYSPACE: &'static str = "stop_words";
 
     /// Creates a new `PersistentStopWordManager`.
+    #[instrument(name = "stop-words", skip_all)]
     pub(crate) fn new(conn: StorageBackend, manager: StopWordManager) -> Result<Self> {
-        debug!("[ STOP-WORDS ] loading stop words from persistent store");
+        debug!("loading stop words from persistent store");
 
         let raw_structure = conn.load_structure(Self::KEYSPACE)?;
         let words: Vec<String> = if let Some(buff) = raw_structure {
@@ -150,7 +151,7 @@ impl PersistentStopWordManager {
 
         let count = words.len();
         manager.add_stop_words(words);
-        debug!("[ STOP-WORDS ] {} new words successfully loaded", count);
+        debug!("{} new words successfully loaded", count);
 
         Ok(Self { conn, manager })
     }
@@ -175,6 +176,7 @@ impl PersistentStopWordManager {
     }
 
     /// Saves any changes to the stop words to the persistent disk.
+    #[instrument(name = "stop-words", skip_all)]
     pub fn commit(&self) -> Result<()> {
         let words = self.manager.get_stop_words();
         self.conn.store_structure(Self::KEYSPACE, &words)?;
