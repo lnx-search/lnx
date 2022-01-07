@@ -1,7 +1,7 @@
+use anyhow::Context;
 use engine::structures::IndexDeclaration;
 use routerify::ext::RequestExt;
 use serde::Deserialize;
-use anyhow::Context;
 
 use crate::helpers::{atomic_store, LnxRequest, LnxResponse};
 use crate::responders::json_response;
@@ -47,7 +47,8 @@ pub async fn delete_index(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");
     let index = get_or_400!(req.param("index"));
 
-    let indexes: Vec<IndexDeclaration> = state.engine
+    let indexes: Vec<IndexDeclaration> = state
+        .engine
         .get_all_indexes()
         .into_iter()
         .filter(|v| v.name() != index)
@@ -58,8 +59,7 @@ pub async fn delete_index(req: LnxRequest) -> LnxResponse {
     // This kinda sucks that we have to do this due to Bincode not enjoying
     // the IndexDeclaration struct.
     let buffer = serde_json::to_vec(&indexes)?;
-    atomic_store(storage, INDEX_KEYSPACE, buffer)
-        .await?;
+    atomic_store(storage, INDEX_KEYSPACE, buffer).await?;
 
     state.engine.remove_index(index).await?;
 

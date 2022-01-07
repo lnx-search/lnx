@@ -245,9 +245,8 @@ impl AuthManager {
     /// Saves and changes to the token state to persistent storage.
     pub async fn commit(&self, storage: sled::Db) -> Result<()> {
         let tokens = self.get_all_tokens();
-        let ref_tokens: Vec<TokenData> = tokens.into_iter()
-            .map(|v| v.as_ref().clone())
-            .collect();
+        let ref_tokens: Vec<TokenData> =
+            tokens.into_iter().map(|v| v.as_ref().clone()).collect();
 
         atomic_store(storage, KEYSPACE, ref_tokens).await?;
 

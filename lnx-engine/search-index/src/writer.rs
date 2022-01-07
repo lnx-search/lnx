@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
-use crate::helpers::{FrequencyCounter, cr32_hash, PersistentFrequencySet, Validate};
+use crate::helpers::{cr32_hash, FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
@@ -140,7 +140,6 @@ impl Validate for WriterContext {
         Ok(())
     }
 }
-
 
 /// A writing operation to be sent to the `IndexWriterWorker`.
 #[derive(Debug)]
@@ -276,7 +275,8 @@ impl IndexWriterWorker {
     ) {
         trace!(
             "[ WRITER @ {} ] handling operation: {:?}",
-            &self.index_name, op
+            &self.index_name,
+            op
         );
         match self.handle_op(op) {
             Err(e) => {

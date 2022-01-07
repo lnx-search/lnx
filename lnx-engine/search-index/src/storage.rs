@@ -6,11 +6,7 @@ use std::sync::Arc;
 use anyhow::{Error, Result};
 use bincode::serialize;
 use serde::Serialize;
-use tantivy::directory::error::{
-    DeleteError,
-    OpenReadError,
-    OpenWriteError,
-};
+use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     FileHandle,
     MmapDirectory,
@@ -22,12 +18,10 @@ use tantivy::Directory;
 
 use crate::helpers::cr32_hash;
 
-
 static WATCHED_MANAGED_FILE: &str = "managed.json";
 static WATCHED_META_FILE: &str = "meta.json";
 static METASTORE_INNER_ROOT: &str = "metadata";
 static DATA_INNER_ROOT: &str = "data";
-
 
 pub enum OpenType {
     Dir(PathBuf),
@@ -38,7 +32,7 @@ impl OpenType {
     pub fn exists(&self) -> bool {
         match self {
             Self::TempFile => true,
-            Self::Dir(path) => path.exists()
+            Self::Dir(path) => path.exists(),
         }
     }
 }
@@ -75,10 +69,7 @@ impl SledBackedDirectory {
             ),
         };
 
-        Ok(Self {
-            inner,
-            conn,
-        })
+        Ok(Self { inner, conn })
     }
 }
 
@@ -89,7 +80,10 @@ impl Debug for SledBackedDirectory {
 }
 
 impl Directory for SledBackedDirectory {
-    fn get_file_handle(&self, path: &Path) -> core::result::Result<Box<dyn FileHandle>, OpenReadError> {
+    fn get_file_handle(
+        &self,
+        path: &Path,
+    ) -> core::result::Result<Box<dyn FileHandle>, OpenReadError> {
         self.inner.get_file_handle(path)
     }
 
@@ -101,15 +95,15 @@ impl Directory for SledBackedDirectory {
         self.inner.exists(path)
     }
 
-    fn open_write(&self, path: &Path) ->  core::result::Result<WritePtr, OpenWriteError> {
+    fn open_write(&self, path: &Path) -> core::result::Result<WritePtr, OpenWriteError> {
         self.inner.open_write(path)
     }
 
-    fn atomic_read(&self, path: &Path) ->  core::result::Result<Vec<u8>, OpenReadError> {
+    fn atomic_read(&self, path: &Path) -> core::result::Result<Vec<u8>, OpenReadError> {
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
             if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
-                return self.inner.atomic_read(path)
+                return self.inner.atomic_read(path);
             }
         }
 
@@ -155,7 +149,7 @@ impl Directory for SledBackedDirectory {
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
             if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
-                return self.inner.atomic_write(path, data)
+                return self.inner.atomic_write(path, data);
             }
         }
 
@@ -206,7 +200,6 @@ impl Debug for StorageBackend {
         f.write_str("StorageBackend")
     }
 }
-
 
 #[cfg(test)]
 mod tests {

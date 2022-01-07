@@ -195,11 +195,9 @@ impl IndexDeclaration {
                 OpenType::TempFile
             },
             StorageType::TempDir => OpenType::TempFile,
-            StorageType::FileSystem =>
-                OpenType::Dir(
-                    Path::new(INDEX_STORAGE_PATH)
-                        .join(cr32_hash(&self.name).to_string())
-                ),
+            StorageType::FileSystem => OpenType::Dir(
+                Path::new(INDEX_STORAGE_PATH).join(cr32_hash(&self.name).to_string()),
+            ),
         };
 
         let dir = SledBackedDirectory::new_with_root(&open)?;

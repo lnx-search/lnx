@@ -195,11 +195,12 @@ async fn create_state(settings: &Settings) -> Result<State> {
     let engine = {
         info!("loading existing indexes...");
 
-        let existing_indexes: Vec<IndexDeclaration> = if let Some(buff) = db.get(INDEX_KEYSPACE)? {
-            serde_json::from_slice(&buff)?
-        } else {
-            vec![]
-        };
+        let existing_indexes: Vec<IndexDeclaration> =
+            if let Some(buff) = db.get(INDEX_KEYSPACE)? {
+                serde_json::from_slice(&buff)?
+            } else {
+                vec![]
+            };
 
         info!(
             " {} existing indexes discovered, recreating state...",

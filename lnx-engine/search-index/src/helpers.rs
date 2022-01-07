@@ -197,8 +197,8 @@ pub fn cr32_hash(v: impl Hash) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::storage::{OpenType, SledBackedDirectory};
     use super::*;
+    use crate::storage::{OpenType, SledBackedDirectory};
 
     static TEST_FILE: &str = "./test";
 

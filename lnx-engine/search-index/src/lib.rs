@@ -15,10 +15,10 @@ mod storage;
 pub mod structures;
 mod writer;
 
+pub use helpers::cr32_hash;
 pub use index::Index;
 pub use query::DocumentId;
 pub use reader::{QueryPayload, QueryResults};
 pub use storage::StorageBackend;
-pub use helpers::cr32_hash;
 
 pub(crate) type ReaderExecutor = Arc<SearcherExecutorPool>;

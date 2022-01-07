@@ -56,7 +56,6 @@ macro_rules! get_or_400 {
     }};
 }
 
-
 #[inline]
 pub async fn atomic_store<T: Serialize + Sync + Send + 'static + Sized>(
     db: sled::Db,
@@ -65,11 +64,14 @@ pub async fn atomic_store<T: Serialize + Sync + Send + 'static + Sized>(
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         let buff = bincode::serialize(&v).context("failed to serialize base type")?;
-        db.insert(keyspace, buff).context("failed to serialize into sled")?;
+        db.insert(keyspace, buff)
+            .context("failed to serialize into sled")?;
         db.flush()?;
 
         Ok(())
-    }).await.map_err(anyhow::Error::from)??;
+    })
+    .await
+    .map_err(anyhow::Error::from)??;
 
     Ok(())
 }
