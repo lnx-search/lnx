@@ -3,11 +3,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
-use engine::StorageBackend;
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+
+use crate::helpers::atomic_store;
 
 static KEYSPACE: &str = "index_tokens";
 
@@ -101,7 +102,7 @@ impl AuthManager {
     pub fn new(
         enabled: bool,
         super_user_key: String,
-        storage: &StorageBackend,
+        storage: &sled::Db,
     ) -> Result<Self> {
         let super_user_data = TokenData {
             token: super_user_key.clone(),
@@ -115,7 +116,7 @@ impl AuthManager {
         };
 
         let mut map = HashMap::new();
-        if let Some(data) = storage.load_structure(KEYSPACE)? {
+        if let Some(data) = storage.get(KEYSPACE)? {
             let tokens: Vec<TokenData> = bincode::deserialize(&data)?;
             for token in tokens {
                 map.insert(token.token.to_string(), Arc::new(token));
@@ -242,14 +243,14 @@ impl AuthManager {
     }
 
     /// Saves and changes to the token state to persistent storage.
-    pub async fn commit(&self, storage: StorageBackend) -> Result<()> {
+    pub async fn commit(&self, storage: sled::Db) -> Result<()> {
         let tokens = self.get_all_tokens();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let ref_tokens: Vec<&TokenData> =
-                tokens.iter().map(|v| v.as_ref()).collect();
+        let ref_tokens: Vec<TokenData> = tokens.into_iter()
+            .map(|v| v.as_ref().clone())
+            .collect();
 
-            storage.store_structure(KEYSPACE, &ref_tokens)
-        })
-        .await?
+        atomic_store(storage, KEYSPACE, ref_tokens).await?;
+
+        Ok(())
     }
 }

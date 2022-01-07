@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use engine::structures::IndexDeclaration;
-use engine::{Engine, StorageBackend};
+use engine::Engine;
 use fern::colors::{Color, ColoredLevelConfig};
 use hyper::Server;
 use log::LevelFilter;
@@ -186,13 +186,17 @@ async fn start(settings: Settings) -> Result<()> {
 }
 
 async fn create_state(settings: &Settings) -> Result<State> {
-    let storage = StorageBackend::connect(Some(STORAGE_PATH.to_string()))?;
+    let db = sled::Config::new()
+        .path(STORAGE_PATH)
+        .mode(sled::Mode::HighThroughput)
+        .use_compression(true)
+        .open()?;
+
     let engine = {
         info!("loading existing indexes...");
-        let raw_structure = storage.load_structure(INDEX_KEYSPACE)?;
-        let existing_indexes: Vec<IndexDeclaration> = if let Some(buff) = raw_structure {
-            let buffer: Vec<u8> = bincode::deserialize(&buff)?;
-            serde_json::from_slice(&buffer)?
+
+        let existing_indexes: Vec<IndexDeclaration> = if let Some(buff) = db.get(INDEX_KEYSPACE)? {
+            serde_json::from_slice(&buff)?
         } else {
             vec![]
         };
@@ -216,7 +220,7 @@ async fn create_state(settings: &Settings) -> Result<State> {
         (false, String::new())
     };
 
-    let auth = AuthManager::new(enabled, key, &storage)?;
+    let auth = AuthManager::new(enabled, key, &db)?;
 
-    Ok(State::new(engine, storage, auth, !settings.silent_search))
+    Ok(State::new(engine, db, auth, !settings.silent_search))
 }
