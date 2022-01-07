@@ -150,7 +150,7 @@ impl PersistentFrequencySet {
         }
 
         info!(
-            "[ FREQUENCY-COUNTER ] loaded frequencies new item count: {}",
+            "loaded frequencies new item count: {}",
             self.set.inner.len()
         );
 
