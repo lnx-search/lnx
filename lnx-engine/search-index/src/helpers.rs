@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
-use bincode::deserialize;
+use bincode::Options;
 use hashbrown::HashMap;
 use tantivy::schema::Schema;
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
@@ -139,7 +139,7 @@ impl PersistentFrequencySet {
 
         let raw_structure = self.conn.load_structure(Self::KEYSPACE)?;
         let frequencies: HashMap<String, u32> = if let Some(buff) = raw_structure {
-            deserialize(&buff)?
+            bincode::options().with_big_endian().deserialize(&buff)?
         } else {
             HashMap::new()
         };

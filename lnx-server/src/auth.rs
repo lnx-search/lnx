@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use arc_swap::ArcSwap;
+use bincode::Options;
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
@@ -117,7 +118,9 @@ impl AuthManager {
 
         let mut map = HashMap::new();
         if let Some(data) = storage.get(KEYSPACE)? {
-            let tokens: Vec<TokenData> = bincode::deserialize(&data)?;
+            let tokens: Vec<TokenData> =
+                bincode::options().with_big_endian().deserialize(&data)?;
+
             for token in tokens {
                 map.insert(token.token.to_string(), Arc::new(token));
             }

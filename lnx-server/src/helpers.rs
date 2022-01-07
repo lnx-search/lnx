@@ -1,4 +1,5 @@
 use anyhow::Context;
+use bincode::Options;
 use hyper::{Body, Request, Response};
 use serde::Serialize;
 
@@ -63,7 +64,11 @@ pub async fn atomic_store<T: Serialize + Sync + Send + 'static + Sized>(
     v: T,
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-        let buff = bincode::serialize(&v).context("failed to serialize base type")?;
+        let buff = bincode::options()
+            .with_big_endian()
+            .serialize(&v)
+            .context("failed to serialize base type")?;
+
         db.insert(keyspace, buff)
             .context("failed to serialize into sled")?;
         db.flush()?;

@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Error, Result};
-use bincode::serialize;
+use bincode::Options;
 use serde::Serialize;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
@@ -202,7 +202,8 @@ impl StorageBackend {
         keyspace: &str,
         value: &T,
     ) -> Result<()> {
-        let data = serialize(value)?;
+        let data = bincode::options().with_big_endian().serialize(value)?;
+
         self.conn.atomic_write(keyspace.as_ref(), &data)?;
         Ok(())
     }
@@ -226,6 +227,9 @@ impl Debug for StorageBackend {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
+    use bincode::Options;
+
     use super::*;
 
     #[test]
@@ -236,7 +240,11 @@ mod tests {
         let storage = StorageBackend::using_conn(dir);
         storage.store_structure("test", &test_structure)?;
         if let Some(buffer) = storage.load_structure("test")? {
-            let test_res: Vec<&str> = bincode::deserialize(&buffer)?;
+            let test_res: Vec<&str> = bincode::options()
+                .with_big_endian()
+                .deserialize(&buffer)
+                .context("failed to deserialize base type")?;
+
             assert_eq!(test_structure, test_res);
         };
 
