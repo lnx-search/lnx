@@ -32,7 +32,7 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::{hash, Validate};
+use crate::helpers::{cr32_hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
 use crate::stop_words::StopWordManager;
@@ -198,7 +198,7 @@ impl IndexDeclaration {
             StorageType::FileSystem =>
                 OpenType::Dir(
                     Path::new(INDEX_STORAGE_PATH)
-                        .join(hash(&self.name).to_string())
+                        .join(cr32_hash(&self.name).to_string())
                 ),
         };
 
