@@ -53,6 +53,7 @@ impl SledBackedDirectory {
         let (conn, inner) = match path {
             OpenType::Dir(path) => {
                 std::fs::create_dir_all(path)?;
+                std::fs::create_dir_all(path.join(DATA_INNER_ROOT))?;
 
                 (
                     sled::Config::new()

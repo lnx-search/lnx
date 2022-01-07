@@ -1,6 +1,7 @@
 use engine::structures::IndexDeclaration;
 use routerify::ext::RequestExt;
 use serde::Deserialize;
+use anyhow::Context;
 
 use crate::helpers::{atomic_store, LnxRequest, LnxResponse};
 use crate::responders::json_response;
@@ -26,7 +27,9 @@ pub async fn create_index(mut req: LnxRequest) -> LnxResponse {
     let indexes = state.engine.get_all_indexes();
     let storage = state.storage.clone();
 
-    atomic_store(storage, INDEX_KEYSPACE, indexes).await?;
+    atomic_store(storage, INDEX_KEYSPACE, indexes)
+        .await
+        .context("Attempting to persist settings")?;
 
     json_response(200, "index created.")
 }
