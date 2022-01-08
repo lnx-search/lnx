@@ -6,6 +6,7 @@ use anyhow::{Error, Result};
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use tantivy::collector::TopDocs;
 use tantivy::query::{
     BooleanQuery,
@@ -40,7 +41,6 @@ pub(crate) struct QueryContext {
     pub(crate) set_conjunction_by_default: bool,
     pub(crate) use_fast_fuzzy: bool,
     pub(crate) strip_stop_words: bool,
-
     pub(crate) id_field: Field,
     pub(crate) default_search_fields: Vec<(Field, Score)>,
     pub(crate) fuzzy_search_fields: Vec<(Field, Score)>,
@@ -54,6 +54,13 @@ pub(crate) struct QueryContext {
 pub struct QueryData {
     /// The actual value to feed into the engine.
     value: DocumentValue,
+
+    /// Additional context for the given query.
+    ///
+    /// This is used just for Term queries as of now however,
+    /// we want to reserve this style to prevent a breaking change
+    /// further down the line.
+    context:  Value,
 
     /// Defines the kind of query to perform.
     /// (Normal, Fuzzy (Default) or More-Like-This)
@@ -90,7 +97,7 @@ pub enum QueryKind {
     MoreLikeThis,
 
     /// Get results matching the given term for the given field.
-    Term(FieldSelector),
+    Term,
 }
 
 impl Default for QueryKind {
@@ -193,6 +200,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v.to_string()),
+                    context: Default::default(),
                     kind: QueryKind::default(),
                     occur: Occur::default(),
                 }))
@@ -201,6 +209,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v),
+                    context: Default::default(),
                     kind: QueryKind::default(),
                     occur: Occur::default(),
                 }))
@@ -313,7 +322,7 @@ impl QueryBuilder {
             QueryKind::Fuzzy => self.make_fuzzy_query(qry.value),
             QueryKind::Normal => self.make_normal_query(qry.value),
             QueryKind::MoreLikeThis => self.make_more_like_this_query(qry.value).await,
-            QueryKind::Term(field) => self.make_term_query(qry.value, field),
+            QueryKind::Term => self.make_term_query(qry.value, field),
         }
     }
 
@@ -464,8 +473,10 @@ impl QueryBuilder {
     fn make_term_query(
         &self,
         value: DocumentValue,
-        field: FieldSelector,
+        context: Value,
     ) -> Result<Box<dyn Query>> {
+        let field: FieldSelector = serde_json::from_value(context)?;
+
         use tantivy::query::Occur;
 
         let fields = {
