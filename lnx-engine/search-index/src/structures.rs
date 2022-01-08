@@ -39,8 +39,8 @@ use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 
-pub static INDEX_STORAGE_PATH: &str = "./index/index-storage";
-pub static INDEX_METADATA_PATH: &str = "./index/index-metas";
+pub static ROOT_PATH: &str = "./index";
+pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
 pub static PRIMARY_KEY: &str = "_id";
 
 /// The possible index storage backends.
@@ -197,7 +197,9 @@ impl IndexDeclaration {
             },
             StorageType::TempDir => OpenType::TempFile,
             StorageType::FileSystem => OpenType::Dir(
-                Path::new(INDEX_STORAGE_PATH).join(cr32_hash(&self.name).to_string()),
+                Path::new(ROOT_PATH)
+                    .join(INDEX_STORAGE_SUB_PATH)
+                    .join(cr32_hash(&self.name).to_string()),
             ),
         };
 
@@ -1014,7 +1016,7 @@ mod document_id_serializer {
     where
         S: Serializer,
     {
-        let s = format!("{}", document_id);
+        let s = document_id.to_string();
         serializer.serialize_str(&s)
     }
 }
@@ -1040,10 +1042,10 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
-        let sample = DocumentValue::Text(format!("{}", Utc::now().timestamp()));
+        let sample = DocumentValue::Text(Utc::now().timestamp().to_string());
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 
@@ -1056,7 +1058,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
         Ok(())
@@ -1077,7 +1079,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_err());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
         Ok(())
     }
@@ -1097,7 +1099,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
 
         Ok(())
@@ -1118,7 +1120,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
 
         Ok(())
@@ -1139,7 +1141,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
         Ok(())

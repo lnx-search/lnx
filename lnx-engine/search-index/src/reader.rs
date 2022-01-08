@@ -356,7 +356,7 @@ impl Reader {
         );
 
         Ok(Self {
-            index_name: Arc::new(ctx.name().to_string()),
+            index_name: Arc::new(ctx.name()),
             pool,
             query_handler,
         })

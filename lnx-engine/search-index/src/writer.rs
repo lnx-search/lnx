@@ -16,7 +16,12 @@ use crate::corrections::SymSpellCorrectionManager;
 use crate::helpers::{cr32_hash, FrequencyCounter, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
-use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_PATH};
+use crate::structures::{
+    DocumentPayload,
+    IndexContext,
+    INDEX_STORAGE_SUB_PATH,
+    ROOT_PATH,
+};
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -552,7 +557,12 @@ impl Writer {
     pub(crate) async fn destroy(&self) -> anyhow::Result<()> {
         self.shutdown().await?;
 
-        let dir = format!("{}/{}", INDEX_STORAGE_PATH, cr32_hash(&self.index_name));
+        let dir = format!(
+            "{}/{}/{}",
+            ROOT_PATH,
+            INDEX_STORAGE_SUB_PATH,
+            cr32_hash(&self.index_name)
+        );
         if Path::new(&dir).exists() {
             tokio::fs::remove_dir_all(dir).await?;
         }

@@ -3,17 +3,20 @@ mod error;
 mod helpers;
 mod responders;
 mod routes;
+mod snapshot;
 mod state;
 
 #[macro_use]
 extern crate tracing;
 
 use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use bincode::Options;
 use clap::Parser;
-use engine::structures::IndexDeclaration;
+use engine::structures::{IndexDeclaration, ROOT_PATH};
 use engine::Engine;
 use hyper::Server;
 use mimalloc::MiMalloc;
@@ -27,9 +30,10 @@ use tracing_subscriber::fmt::writer::MakeWriterExt;
 static GLOBAL: MiMalloc = MiMalloc;
 
 use crate::auth::AuthManager;
+use crate::snapshot::{create_snapshot, load_snapshot};
 use crate::state::State;
 
-static STORAGE_PATH: &str = "./index/engine-storage";
+pub static STORAGE_SUB_ROOT_PATH: &str = "engine-storage";
 static INDEX_KEYSPACE: &str = "persistent_indexes";
 
 #[derive(Debug, Parser)]
@@ -101,6 +105,35 @@ struct Settings {
     /// If this is not set, the number of logical cores on the machine is used.
     #[clap(long, short = 't', env)]
     runtime_threads: Option<usize>,
+
+    /// Load a past snapshot and use it's data.
+    ///
+    /// This expects `./index` not to have any existing data or exist.
+    ///
+    /// This is technically a separate sub command.
+    #[clap(long)]
+    load_snapshot: Option<String>,
+
+    /// The interval time in hours to take an automatic snapshot.
+    ///
+    /// The limits are between 1 and 255 hours.
+    ///
+    /// This is quite a heavy process at larger index sizes so anything less
+    /// than 24 hours is generally recommended against.
+    ///
+    /// The extracted snapshot will be saved in the directory provided by `--snapshot-directory`.
+    #[clap(long, env)]
+    snapshot_interval: Option<u8>,
+
+    /// Generates a snapshot of the current server setup.
+    ///
+    /// The extracted snapshot will be saved in the directory provided by `--snapshot-directory`.
+    #[clap(long)]
+    snapshot: bool,
+
+    /// The output directory where snapshots should be extracted to.
+    #[clap(long, default_value = "./snapshots", env)]
+    snapshot_directory: String,
 }
 
 fn main() {
@@ -121,6 +154,18 @@ fn main() {
         settings.verbose_logs,
     );
 
+    if let Some(snapshot) = settings.load_snapshot {
+        if let Err(e) = load_snapshot(Path::new(&snapshot)) {
+            error!("error during snapshot extraction: {}", e);
+        } else {
+            info!(
+                "snapshot successfully extracted, restart the server without \
+                the `--load-snapshot` flag to start normally."
+            );
+        }
+        return;
+    }
+
     let threads = settings.runtime_threads.unwrap_or_else(num_cpus::get);
     info!("starting runtime with {} threads", threads);
     let maybe_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -137,7 +182,7 @@ fn main() {
     };
 
     if let Err(e) = result {
-        error!("error during server runtime: {:?}", e);
+        error!("error during lnx runtime: {:?}", e);
     }
 }
 
@@ -195,6 +240,25 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
+    tokio::fs::create_dir_all(Path::new(ROOT_PATH).join(STORAGE_SUB_ROOT_PATH)).await?;
+
+    if settings.snapshot {
+        info!("beginning snapshot process, this may take a while...");
+        create_snapshot(Path::new(&settings.snapshot_directory)).await?;
+        info!("snapshot process completed!");
+        return Ok(());
+    }
+
+    if let Some(hours) = settings.snapshot_interval {
+        if hours >= 1 {
+            let output_dir = PathBuf::from(settings.snapshot_directory.clone());
+            let interval_period = Duration::from_secs(hours as u64 * 60 * 60);
+            tokio::spawn(
+                async move { snapshot_loop(interval_period, output_dir).await },
+            );
+        }
+    }
+
     let state = create_state(&settings).await?;
     let router = routes::get_router(state.clone());
     let service = RouterService::new(router).unwrap();
@@ -233,13 +297,17 @@ async fn start(settings: Settings) -> Result<()> {
 
 async fn create_state(settings: &Settings) -> Result<State> {
     let db = sled::Config::new()
-        .path(STORAGE_PATH)
+        .path(Path::new(ROOT_PATH).join(STORAGE_SUB_ROOT_PATH))
         .mode(sled::Mode::HighThroughput)
         .use_compression(true)
-        .open()?;
+        .open()
+        .map_err(|e| anyhow!("failed to open database due to error {}", e))?;
 
-    let engine = load_existing_indexes(&db).await?;
-    let auth = setup_authentication(&db, settings)?;
+    let engine = load_existing_indexes(&db)
+        .await
+        .map_err(|e| anyhow!("failed to load existing indexes due to error {}", e))?;
+    let auth = setup_authentication(&db, settings)
+        .map_err(|e| anyhow!("failed to load authentication data due to error {}", e))?;
 
     Ok(State::new(engine, db, auth, !settings.silent_search))
 }
@@ -281,7 +349,20 @@ fn setup_authentication(db: &sled::Db, settings: &Settings) -> Result<AuthManage
         (false, String::new())
     };
 
-    let auth = AuthManager::new(enabled, key, &db)?;
+    let auth = AuthManager::new(enabled, key, db)?;
 
     Ok(auth)
+}
+
+#[instrument(name = "snapshot-loop")]
+async fn snapshot_loop(interval_time: Duration, output: PathBuf) {
+    let mut interval = tokio::time::interval(interval_time);
+
+    loop {
+        interval.tick().await;
+
+        if let Err(e) = create_snapshot(&output).await {
+            error!("failed to create snapshot due to error: {}", e);
+        }
+    }
 }
