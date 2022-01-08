@@ -14,7 +14,9 @@ sled = { version = "0.34.7", features = ["compression"] }
 symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
 hashbrown = { version = "0.11", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
+zip = { version = "0.5.13", default-features = false, features = ["time", "deflate"] }
 
+walkdir = "2.3.2"
 tracing = "0.1.29"
 tracing-futures = "0.2.5"
 crc32fast = "1.3.0"
