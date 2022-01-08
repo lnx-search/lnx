@@ -2,17 +2,15 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use anyhow::{anyhow, Result};
-use walkdir::{WalkDir, DirEntry};
-use zip::CompressionMethod;
-use zip::write::FileOptions;
-use zip::read::ZipArchive;
+use chrono::Utc;
 use engine::structures::ROOT_PATH;
+use walkdir::{DirEntry, WalkDir};
+use zip::read::ZipArchive;
+use zip::write::FileOptions;
+use zip::CompressionMethod;
 
-static IGNORE_FILES: [&str; 1] = [
-    ".tantivy-writer.lock",
-];
+static IGNORE_FILES: [&str; 1] = [".tantivy-writer.lock"];
 
 /// Wraps the current storage into a zip file.
 ///
@@ -32,11 +30,12 @@ pub async fn create_snapshot(output_path: &Path) -> Result<()> {
     let output_path = output_path.join(snapshot_name);
 
     let instant = std::time::Instant::now();
-    tokio::task::spawn_blocking(move || {
-        collect_into_snapshot(output_path)
-    }).await??;
+    tokio::task::spawn_blocking(move || collect_into_snapshot(output_path)).await??;
 
-    info!("snapshot took {:?} to build and compress", instant.elapsed());
+    info!(
+        "snapshot took {:?} to build and compress",
+        instant.elapsed()
+    );
 
     Ok(())
 }
@@ -53,20 +52,17 @@ pub fn load_snapshot(snapshot_file: &Path) -> Result<()> {
         return Err(anyhow!("file {:?} is a directory", &snapshot_file));
     }
 
-    let file_name = snapshot_file.file_name()
-        .unwrap()
-        .to_string_lossy();
+    let file_name = snapshot_file.file_name().unwrap().to_string_lossy();
 
     info!("extracting snapshot {}", file_name);
 
     let snapshot_file = snapshot_file.to_path_buf();
     let instant = std::time::Instant::now();
-    extract_snapshot( snapshot_file)?;
+    extract_snapshot(snapshot_file)?;
     info!("snapshot took {:?} to extract", instant.elapsed());
 
     Ok(())
 }
-
 
 #[instrument(name = "wrapper-worker", skip_all)]
 fn collect_into_snapshot(output_file: PathBuf) -> Result<()> {
@@ -81,7 +77,6 @@ fn collect_into_snapshot(output_file: PathBuf) -> Result<()> {
     Ok(())
 }
 
-
 #[instrument(name = "extract-worker", skip_all)]
 fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
     if Path::new(ROOT_PATH).exists() {
@@ -89,7 +84,7 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
             "{} already exists, the root path must not exist before loading a \
             snapshot to prevent accidental corruption.",
             ROOT_PATH
-        ))
+        ));
     }
 
     let reader = std::fs::File::open(&snapshot)?;
@@ -104,7 +99,7 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
                 std::fs::create_dir_all(to_create)?;
             }
 
-            continue
+            continue;
         }
 
         if let Some(to_create) = file.enclosed_name() {
@@ -118,7 +113,10 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
                 use std::os::unix::fs::PermissionsExt;
 
                 if let Some(mode) = file.unix_mode() {
-                    std::fs::set_permissions(target_change, std::fs::Permissions::from_mode(mode))?;
+                    std::fs::set_permissions(
+                        target_change,
+                        std::fs::Permissions::from_mode(mode),
+                    )?;
                 }
             }
         }
@@ -126,7 +124,6 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
 
     Ok(())
 }
-
 
 fn zip_dir(
     it: &mut impl Iterator<Item = DirEntry>,
@@ -145,8 +142,7 @@ fn zip_dir(
 
     #[cfg(not(unix))]
     {
-        options = FileOptions::default()
-            .compression_method(CompressionMethod::Deflated);
+        options = FileOptions::default().compression_method(CompressionMethod::Deflated);
     }
 
     let mut zip = zip::ZipWriter::new(writer);
@@ -157,7 +153,8 @@ fn zip_dir(
         let name = path.strip_prefix(prefix).unwrap();
 
         if path.is_file() {
-            let should_ignore = path.file_name()
+            let should_ignore = path
+                .file_name()
                 .map(|v| IGNORE_FILES.contains(&v.to_str().unwrap_or("")))
                 .unwrap_or(false);
 

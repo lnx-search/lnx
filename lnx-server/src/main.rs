@@ -3,8 +3,8 @@ mod error;
 mod helpers;
 mod responders;
 mod routes;
-mod state;
 mod snapshot;
+mod state;
 
 #[macro_use]
 extern crate tracing;
@@ -246,16 +246,16 @@ async fn start(settings: Settings) -> Result<()> {
         info!("beginning snapshot process, this may take a while...");
         create_snapshot(Path::new(&settings.snapshot_dir)).await?;
         info!("snapshot process completed!");
-        return Ok(())
+        return Ok(());
     }
 
     if let Some(hours) = settings.auto_snapshot_period {
         if hours >= 1 {
             let output_dir = PathBuf::from(settings.snapshot_dir.clone());
             let interval_period = Duration::from_secs(hours as u64 * 60 * 60);
-            tokio::spawn(async move {
-                snapshot_loop(interval_period, output_dir).await
-            });
+            tokio::spawn(
+                async move { snapshot_loop(interval_period, output_dir).await },
+            );
         }
     }
 
@@ -303,7 +303,8 @@ async fn create_state(settings: &Settings) -> Result<State> {
         .open()
         .map_err(|e| anyhow!("failed to open database due to error {}", e))?;
 
-    let engine = load_existing_indexes(&db).await
+    let engine = load_existing_indexes(&db)
+        .await
         .map_err(|e| anyhow!("failed to load existing indexes due to error {}", e))?;
     let auth = setup_authentication(&db, settings)
         .map_err(|e| anyhow!("failed to load authentication data due to error {}", e))?;
@@ -352,7 +353,6 @@ fn setup_authentication(db: &sled::Db, settings: &Settings) -> Result<AuthManage
 
     Ok(auth)
 }
-
 
 #[instrument(name = "snapshot-loop")]
 async fn snapshot_loop(interval_time: Duration, output: PathBuf) {
