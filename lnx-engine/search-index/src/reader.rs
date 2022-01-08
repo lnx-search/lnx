@@ -314,7 +314,7 @@ pub(crate) struct Reader {
 
 impl Reader {
     /// Creates a new reader from the given index context.
-    #[instrument(name = "index-reader", skip_all, fields(name = ctx.name()))]
+    #[instrument(name = "index-reader", skip_all)]
     pub(crate) async fn create(ctx: &IndexContext) -> Result<Self> {
 
         let reader: IndexReader = ctx
@@ -372,7 +372,7 @@ impl Reader {
     /// Gets a singular document from the given id.
     ///
     /// If no document is found an error is raised without context.
-    #[instrument(name = "document-fetcher", skip(self), fields(name = %self.index_name))]
+    #[instrument(name = "document-fetcher", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn get_document(&self, id: DocumentId) -> Result<DocumentHit> {
         let id_field = self.query_handler.id_field();
         let document = self
@@ -415,7 +415,7 @@ impl Reader {
     /// The payload determines the behaviour of the query results.
     /// The actual behaviour of how a query is built is upto the query handler
     /// which will parse and interpret the given data.
-    #[instrument(name = "document-searcher", skip_all, fields(name = %self.index_name))]
+    #[instrument(name = "document-searcher", skip_all, fields(index = %self.index_name))]
     pub(crate) async fn search(&self, qry: QueryPayload) -> Result<QueryResults> {
         let start = std::time::Instant::now();
 

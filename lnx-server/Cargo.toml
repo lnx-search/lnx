@@ -15,7 +15,7 @@ chrono = { version = "0.4", features = ["serde"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 sled = { version = "0.34.7", features = ["compression"] }
-tracing-subscriber = { version = "0.3.5", features = ["tracing-log", "parking_lot"] }
+tracing-subscriber = { version = "0.3.5", features = ["tracing-log", "parking_lot", "env-filter", "json"] }
 clap = { version = "3", features = ["derive", "env"] }
 
 tracing-appender = "0.2.0"

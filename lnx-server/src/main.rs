@@ -21,6 +21,7 @@ use clap::Parser;
 use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
+use tracing_subscriber::filter::EnvFilter;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -121,7 +122,7 @@ fn setup_logger(
     pretty: bool,
 ) -> Option<WorkerGuard> {
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", format!("{},compress=off", level));
+        std::env::set_var("RUST_LOG", format!("{},compress=off,tantivy=info", level));
     }
 
     if let Some(dir) = log_dir {
@@ -132,27 +133,32 @@ fn setup_logger(
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         let fmt = tracing_subscriber::fmt()
+            .with_target(true)
             .with_writer(std::io::stdout.and(non_blocking))
-            .with_thread_names(true);
+            .with_thread_names(true)
+            .with_thread_ids(true);
 
         if pretty {
             fmt.pretty()
                 .with_ansi(true)
                 .init();
         } else {
-            fmt.with_ansi(false)
+            fmt.json()
+                .with_ansi(false)
                 .init();
         }
 
         Some(guard)
     } else {
         let fmt = tracing_subscriber::fmt()
-            .with_thread_names(true);
+            .with_target(false)
+            .with_thread_ids(true)
+            .with_env_filter(EnvFilter::from_default_env());
 
         if pretty {
             fmt.pretty().with_ansi(true).init();
         } else {
-            fmt.init();
+            fmt.compact().with_ansi(false).init();
         }
 
         None

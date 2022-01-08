@@ -206,7 +206,7 @@ impl IndexWriterWorker {
     /// This processes operations in waves before waking up waiters,
     /// this means all operations currently in the queue will be processed
     /// first before any waiters are woken up to send more data.
-    #[instrument(name = "index-writer", skip_all, fields(name = %self.index_name))]
+    #[instrument(name = "index-writer", skip_all, fields(index = %self.index_name))]
     fn start(mut self) {
         let mut op_since_last_commit = false;
         loop {
@@ -433,7 +433,7 @@ impl Writer {
     ///
     /// This creates a bounded queue with a capacity of 20, builds the tantivy index
     /// writer with n threads and spawns a worker in a new thread.
-    #[instrument(name = "index-writer", skip_all, fields(name = %ctx.name))]
+    #[instrument(name = "index-writer", skip_all, fields(index = %ctx.name))]
     pub(crate) fn create(ctx: &IndexContext) -> Result<Self> {
         let index_name = ctx.name.clone();
         let (op_sender, op_receiver) = channel::bounded::<OpPayload>(20);
@@ -512,7 +512,7 @@ impl Writer {
     ///
     /// If there is space in the queue this will complete immediately
     /// otherwise this will wait until it's woken up again.
-    #[instrument(name = "writer-message-emitter", skip(self), fields(name = %self.index_name))]
+    #[instrument(name = "writer-message-emitter", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn send_op(&self, op: WriterOp) -> anyhow::Result<()> {
         let (waker, waker_waiter) = oneshot::channel();
         let mut payload: OpPayload = (op, Some(waker));
@@ -539,7 +539,7 @@ impl Writer {
         Ok(())
     }
 
-    #[instrument(name = "writer-shutdown", skip(self), fields(name = %self.index_name))]
+    #[instrument(name = "writer-shutdown", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
         self.send_op(WriterOp::__Shutdown).await?;
 
@@ -548,7 +548,7 @@ impl Writer {
         Ok(())
     }
 
-    #[instrument(name = "writer-storage-cleanup", skip(self), fields(name = %self.index_name))]
+    #[instrument(name = "writer-storage-cleanup", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn destroy(&self) -> anyhow::Result<()> {
         self.shutdown().await?;
 

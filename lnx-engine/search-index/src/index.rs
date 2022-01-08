@@ -125,7 +125,7 @@ struct InternalIndex {
 
 impl InternalIndex {
     /// Creates a new index handler from the given index context.
-    #[instrument(name = "index-controller", skip(ctx), fields(name = %ctx.name))]
+    #[instrument(name = "index-controller", skip(ctx), fields(index = %ctx.name))]
     async fn create(ctx: IndexContext) -> Result<Self> {
         info!("creating reader...");
         let reader = reader::Reader::create(&ctx).await?;
