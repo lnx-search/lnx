@@ -200,7 +200,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v.to_string()),
-                    context: Default::default(),
+                    context: Value::Null,
                     kind: QueryKind::default(),
                     occur: Occur::default(),
                 }))
@@ -209,7 +209,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
                     value: DocumentValue::Text(v),
-                    context: Default::default(),
+                    context: Value::Null,
                     kind: QueryKind::default(),
                     occur: Occur::default(),
                 }))
@@ -322,7 +322,7 @@ impl QueryBuilder {
             QueryKind::Fuzzy => self.make_fuzzy_query(qry.value),
             QueryKind::Normal => self.make_normal_query(qry.value),
             QueryKind::MoreLikeThis => self.make_more_like_this_query(qry.value).await,
-            QueryKind::Term => self.make_term_query(qry.value, field),
+            QueryKind::Term => self.make_term_query(qry.value, qry.context),
         }
     }
 
