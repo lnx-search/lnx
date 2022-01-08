@@ -169,7 +169,7 @@ fn zip_dir(
             f.read_to_end(&mut buffer)?;
             zip.write_all(&*buffer)?;
             buffer.clear();
-        } else if !name.as_os_str().is_empty(){
+        } else if !name.as_os_str().is_empty() {
             info!("adding dir {:?} as {:?} ...", path, name);
             zip.add_directory(path_to_string(path), options)?;
         }
