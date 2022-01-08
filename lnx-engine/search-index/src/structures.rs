@@ -32,6 +32,7 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
+use crate::DocumentId;
 use crate::helpers::{cr32_hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
@@ -813,10 +814,10 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
 pub struct DocumentPayload(BTreeMap<String, DocumentValueOptions>);
 
 impl DocumentPayload {
-    pub(crate) fn parse_into_document(
+    pub(crate) fn parse_into_document_with_id(
         self,
         schema: &Schema,
-    ) -> Result<InternalDocument> {
+    ) -> Result<(DocumentId, InternalDocument)> {
         let mut doc = InternalDocument::new();
 
         let field = schema.get_field(PRIMARY_KEY).ok_or_else(|| {
@@ -825,7 +826,8 @@ impl DocumentPayload {
             )
         })?;
 
-        doc.add_u64(field, rand::random::<u64>());
+        let id = rand::random::<DocumentId>();
+        doc.add_u64(field, id);
         for (key, values) in self.0 {
             let field = schema.get_field(&key).ok_or_else(|| {
                 Error::msg(format!("field {:?} does not exist in schema", &key))
@@ -846,7 +848,7 @@ impl DocumentPayload {
             };
         }
 
-        Ok(doc)
+        Ok((id, doc))
     }
 
     pub(crate) fn get_text_values(

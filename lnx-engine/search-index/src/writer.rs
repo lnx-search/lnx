@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
+use bincode::Options;
 use crossbeam::channel::{self, RecvTimeoutError};
 use crossbeam::queue::SegQueue;
 use serde::{Deserialize, Serialize};
@@ -13,7 +14,8 @@ use tokio::sync::oneshot;
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
-use crate::helpers::{cr32_hash, FrequencyCounter, PersistentFrequencySet, Validate};
+use crate::DocumentId;
+use crate::helpers::{cr32_hash, FrequencyCounter, FrequencySet, PersistentFrequencySet, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{
@@ -201,6 +203,8 @@ pub struct IndexWriterWorker {
     rx: OpReceiver,
     shutdown: ShutdownWaker,
     frequencies: PersistentFrequencySet,
+    doc_specific_freq_tree: sled::Tree,
+    pending_doc_frequencies: Vec<(DocumentId, FrequencySet)>,
     corrections: SymSpellCorrectionManager,
     stop_words: PersistentStopWordManager,
 }
@@ -299,18 +303,40 @@ impl IndexWriterWorker {
         &mut self,
         document: DocumentPayload,
     ) -> Result<(Opstamp, &'static str)> {
+        let (id, doc) = document.parse_into_document_with_id(&self.schema)?;
+
         if !self.using_fast_fuzzy {
-            let doc = document.parse_into_document(&self.schema)?;
             return Ok((self.writer.add_document(doc), "ADD-DOCUMENT"));
         }
 
         let to_index = document.get_text_values(&self.schema, &self.fuzzy_fields);
+        let mut doc_only_frequency = FrequencySet::new();
         for text in to_index {
+            doc_only_frequency.process_sentence(&text);
             self.frequencies.process_sentence(&text);
         }
 
-        let doc = document.parse_into_document(&self.schema)?;
+        self.pending_doc_frequencies.push((id, doc_only_frequency));
         Ok((self.writer.add_document(doc), "ADD-DOCUMENT"))
+    }
+
+    /// Drains the pending frequency adjustments and stores
+    /// each document's changes to the database.
+    ///
+    /// This is used when deleting documents to adjust the
+    /// frequency set again when deleting the document.
+    fn handle_pending_frequency_changes(&mut self) -> Result<()> {
+        let mut batch = sled::Batch::default();
+        for (id, set) in self.pending_doc_frequencies.drain(..) {
+
+            let id =  bincode::options().with_big_endian().serialize(&id)?;
+            let set =  bincode::options().with_big_endian().serialize(set.counts())?;
+            batch.insert(id, set);
+        }
+
+        self.doc_specific_freq_tree.apply_batch(batch)?;
+
+        Ok(())
     }
 
     #[instrument(name = "writer-op-handler", level = "trace", skip_all)]
@@ -328,11 +354,16 @@ impl IndexWriterWorker {
             },
             WriterOp::__Ping => return Ok(()),
             WriterOp::Commit => {
+                self.handle_pending_frequency_changes()?;
                 self.frequencies.commit()?;
                 self.corrections.adjust_index_frequencies(&self.frequencies);
                 (self.writer.commit()?, "COMMIT")
             },
-            WriterOp::Rollback => (self.writer.rollback()?, "ROLLBACK"),
+            WriterOp::Rollback => {
+                self.pending_doc_frequencies.clear();
+                self.frequencies.rollback();
+                (self.writer.rollback()?, "ROLLBACK")
+            },
             WriterOp::AddDocument(document) => self.handle_add_document(document)?,
             WriterOp::AddManyDocuments(documents) => {
                 for document in documents {
@@ -348,7 +379,7 @@ impl IndexWriterWorker {
             WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
             WriterOp::DeleteAll => {
                 self.frequencies.clear_frequencies();
-                self.frequencies.commit()?;
+                self.pending_doc_frequencies.clear();
                 (self.writer.delete_all_documents()?, "DELETE-ALL")
             },
             WriterOp::AddStopWords(words) => {
@@ -398,11 +429,13 @@ fn start_writer(
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
 ) -> Result<()> {
+    let document_freq_tree = conn.conn().open_tree("document_specific_frequencies")?;
     let stop_words = PersistentStopWordManager::new(conn.clone(), stop_word_manager)?;
     let frequency_set = PersistentFrequencySet::new(conn)?;
     corrections.adjust_index_frequencies(&frequency_set);
 
     let worker = IndexWriterWorker {
+        doc_specific_freq_tree: document_freq_tree,
         frequencies: frequency_set,
         index_name: name,
         auto_commit: auto_commit as u64,
@@ -415,6 +448,7 @@ fn start_writer(
         shutdown,
         corrections,
         stop_words,
+        pending_doc_frequencies: vec![]
     };
 
     worker.start();

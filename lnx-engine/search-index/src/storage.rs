@@ -181,6 +181,7 @@ impl Directory for SledBackedDirectory {
         debug!("using sled backed atomic write");
         let id = cr32_hash(path).to_string();
         self.conn.insert(id, data)?;
+        self.conn.flush()?;
 
         Ok(())
     }
@@ -202,6 +203,11 @@ pub struct StorageBackend {
 impl StorageBackend {
     pub fn using_conn(conn: SledBackedDirectory) -> Self {
         Self { conn }
+    }
+
+    #[inline]
+    pub fn conn(&self) -> &sled::Db {
+        &self.conn.conn
     }
 
     pub fn store_structure<T: Serialize>(
