@@ -44,19 +44,19 @@ impl AsScore for f32 {
 pub(crate) trait FrequencyCounter {
     fn process_sentence(&mut self, sentence: &str);
 
-    fn register(&mut self, k: Box<[u8]>);
+    fn register(&mut self, k: String);
 
     fn clear_frequencies(&mut self);
 
     fn get_count(&self, k: &str) -> u32;
 
-    fn counts(&self) -> &HashMap<Box<[u8]>, u32>;
+    fn counts(&self) -> &HashMap<String, u32>;
 }
 
 #[derive(Clone)]
 pub(crate) struct FrequencySet {
     tokenizer: TextAnalyzer,
-    inner: HashMap<Box<[u8]>, u32>,
+    inner: HashMap<String, u32>,
 }
 
 impl Default for FrequencySet {
@@ -85,11 +85,11 @@ impl FrequencyCounter for FrequencySet {
         let mut tokens = self.tokenizer.token_stream(sentence);
 
         while let Some(token) = tokens.next() {
-            self.register(token.text.into_boxed_str().into_boxed_bytes())
+            self.register(token.text.clone())
         }
     }
 
-    fn register(&mut self, k: Box<[u8]>) {
+    fn register(&mut self, k: String) {
         let v = {
             let exists = self.inner.get(&k);
 
@@ -108,11 +108,10 @@ impl FrequencyCounter for FrequencySet {
     }
 
     fn get_count(&self, k: &str) -> u32 {
-        let key: &[u8] = k.as_ref();
-        self.inner.get(key).copied().unwrap_or(0u32)
+        self.inner.get(k).copied().unwrap_or(0u32)
     }
 
-    fn counts(&self) -> &HashMap<Box<[u8]>, u32> {
+    fn counts(&self) -> &HashMap<String, u32> {
         &self.inner
     }
 }
@@ -124,8 +123,6 @@ pub(crate) struct PersistentFrequencySet {
 }
 
 impl PersistentFrequencySet {
-    const KEYSPACE: &'static str = "frequencies";
-
     pub(crate) fn new(conn: StorageBackend) -> Result<Self> {
         let tree = conn.conn().open_tree("global_frequencies")?;
         let mut inst = Self {
@@ -145,8 +142,10 @@ impl PersistentFrequencySet {
 
         let mut walker = self.tree.iter();
         while let Some(Ok((key, count))) = walker.next() {
-            let count =  bincode::options().with_big_endian().deserialize(&count)?;
-            self.clean_set.inner.insert(key.to_vec().into_boxed_slice(), count);
+            let count = bincode::options().with_big_endian().deserialize(&count)?;
+            self.clean_set
+                .inner
+                .insert(String::from_utf8_lossy(key.as_ref()).to_string(), count);
         }
 
         info!(
@@ -163,8 +162,8 @@ impl PersistentFrequencySet {
 
         let mut batch = sled::Batch::default();
         for (key, count) in self.dirty_set.inner.drain() {
-            let count =  bincode::options().with_big_endian().serialize(&count)?;
-            batch.insert(key, count);
+            let count = bincode::options().with_big_endian().serialize(&count)?;
+            batch.insert(key.as_bytes(), count);
         }
 
         self.tree.apply_batch(batch)?;
@@ -175,14 +174,11 @@ impl PersistentFrequencySet {
     }
 
     #[instrument(name = "frequency-counter", skip_all)]
-    pub(crate) fn rollback(&mut self) -> Result<()> {
+    pub(crate) fn rollback(&mut self) {
         info!("forgetting frequency changes in persistent backend.");
 
         self.dirty_set = self.clean_set.clone();
-
-        Ok(())
     }
-
 }
 
 impl FrequencyCounter for PersistentFrequencySet {
@@ -190,7 +186,7 @@ impl FrequencyCounter for PersistentFrequencySet {
         self.dirty_set.process_sentence(sentence)
     }
 
-    fn register(&mut self, k: Box<[u8]>) {
+    fn register(&mut self, k: String) {
         self.dirty_set.register(k)
     }
 
@@ -202,7 +198,7 @@ impl FrequencyCounter for PersistentFrequencySet {
         self.clean_set.get_count(k)
     }
 
-    fn counts(&self) -> &HashMap<Box<[u8]>, u32> {
+    fn counts(&self) -> &HashMap<String, u32> {
         self.clean_set.counts()
     }
 }

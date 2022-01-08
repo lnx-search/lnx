@@ -14,8 +14,13 @@ use tokio::sync::oneshot;
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
-use crate::DocumentId;
-use crate::helpers::{cr32_hash, FrequencyCounter, FrequencySet, PersistentFrequencySet, Validate};
+use crate::helpers::{
+    cr32_hash,
+    FrequencyCounter,
+    FrequencySet,
+    PersistentFrequencySet,
+    Validate,
+};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{
@@ -24,6 +29,7 @@ use crate::structures::{
     INDEX_STORAGE_SUB_PATH,
     ROOT_PATH,
 };
+use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;
@@ -303,13 +309,14 @@ impl IndexWriterWorker {
         &mut self,
         document: DocumentPayload,
     ) -> Result<(Opstamp, &'static str)> {
-        let (id, doc) = document.parse_into_document_with_id(&self.schema)?;
-
         if !self.using_fast_fuzzy {
+            let (_, doc) = document.parse_into_document_with_id(&self.schema)?;
             return Ok((self.writer.add_document(doc), "ADD-DOCUMENT"));
         }
 
         let to_index = document.get_text_values(&self.schema, &self.fuzzy_fields);
+        let (id, doc) = document.parse_into_document_with_id(&self.schema)?;
+
         let mut doc_only_frequency = FrequencySet::new();
         for text in to_index {
             doc_only_frequency.process_sentence(&text);
@@ -328,9 +335,10 @@ impl IndexWriterWorker {
     fn handle_pending_frequency_changes(&mut self) -> Result<()> {
         let mut batch = sled::Batch::default();
         for (id, set) in self.pending_doc_frequencies.drain(..) {
-
-            let id =  bincode::options().with_big_endian().serialize(&id)?;
-            let set =  bincode::options().with_big_endian().serialize(set.counts())?;
+            let id = bincode::options().with_big_endian().serialize(&id)?;
+            let set = bincode::options()
+                .with_big_endian()
+                .serialize(set.counts())?;
             batch.insert(id, set);
         }
 
@@ -448,7 +456,7 @@ fn start_writer(
         shutdown,
         corrections,
         stop_words,
-        pending_doc_frequencies: vec![]
+        pending_doc_frequencies: vec![],
     };
 
     worker.start();
