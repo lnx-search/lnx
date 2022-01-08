@@ -121,13 +121,13 @@ struct Settings {
     /// This is quite a heavy process at larger index sizes so anything less
     /// than 24 hours is generally recommended against.
     ///
-    /// The extracted snapshot will be saved in the directory provided by `--snapshot-dir`.
+    /// The extracted snapshot will be saved in the directory provided by `--snapshot-directory`.
     #[clap(long, env)]
-    auto_snapshot_period: Option<u8>,
+    snapshot_interval: Option<u8>,
 
     /// Generates a snapshot of the current server setup.
     ///
-    /// The extracted snapshot will be saved in the directory provided by `--snapshot-dir`.
+    /// The extracted snapshot will be saved in the directory provided by `--snapshot-directory`.
     #[clap(long)]
     snapshot: bool,
 
@@ -249,7 +249,7 @@ async fn start(settings: Settings) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(hours) = settings.auto_snapshot_period {
+    if let Some(hours) = settings.snapshot_interval {
         if hours >= 1 {
             let output_dir = PathBuf::from(settings.snapshot_directory.clone());
             let interval_period = Duration::from_secs(hours as u64 * 60 * 60);
