@@ -179,7 +179,6 @@ async fn start(settings: Settings) -> Result<()> {
     let address: SocketAddr = format!("{}:{}", &settings.host, settings.port).parse()?;
     let server = Server::bind(&address).serve(service);
 
-    info!("");
     info!("Lnx has started!");
     info!(
         "serving requests @ http://{}:{}",
