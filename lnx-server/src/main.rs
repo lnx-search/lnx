@@ -45,7 +45,39 @@ struct Settings {
     /// An optional bool to disable ASNI colours and pretty formatting for logs.
     /// You probably want to disable this if using file-based logging.
     #[clap(long, env)]
-    disable_pretty_logs: bool,
+    disable_asni_logs: bool,
+
+    /// An optional bool to enable verbose logging, this includes additional metadata
+    /// like span targets, thread-names, ids, etc... as well as the existing info.
+    ///
+    /// Generally you probably dont need this unless you're debugging.
+    #[clap(long, env)]
+    verbose_logs: bool,
+
+    /// An optional bool to enable pretty formatting logging.
+    ///
+    /// This for most people, this is probably too much pretty formatting however, it
+    /// can make reading the logs easier especially when trying to debug and / or test.
+    #[clap(long, env)]
+    pretty_logs: bool,
+
+    /// An optional bool to enable json formatting logging.
+    ///
+    /// This formats the resulting log data into line-by-line JSON objects.
+    /// This can be useful for log files or automatic log ingestion systems however,
+    /// this can come at the cost for performance at very high loads.
+    #[clap(long, env)]
+    json_logs: bool,
+
+    /// A optional directory to send persistent logs.
+    ///
+    /// Logs are split into hourly chunks.
+    #[clap(long, env)]
+    log_directory: Option<String>,
+
+    /// If enabled each search request wont be logged.
+    #[clap(long, env)]
+    silent_search: bool,
 
     /// The host to bind to (normally: '127.0.0.1' or '0.0.0.0'.)
     #[clap(long, short, default_value = "127.0.0.1", env)]
@@ -69,16 +101,6 @@ struct Settings {
     /// If this is not set, the number of logical cores on the machine is used.
     #[clap(long, short = 't', env)]
     runtime_threads: Option<usize>,
-
-    /// A optional directory to send persistent logs.
-    ///
-    /// Logs are split into hourly chunks.
-    #[clap(long, env)]
-    log_dir: Option<String>,
-
-    /// If enabled each search request wont be logged.
-    #[clap(long, env)]
-    silent_search: bool,
 }
 
 fn main() {
@@ -92,8 +114,11 @@ fn main() {
 
     let _guard = setup_logger(
         settings.log_level,
-        &settings.log_dir,
-        !settings.disable_pretty_logs,
+        &settings.log_directory,
+        !settings.disable_asni_logs,
+        settings.pretty_logs,
+        settings.json_logs,
+        settings.verbose_logs,
     );
 
     let threads = settings.runtime_threads.unwrap_or_else(num_cpus::get);
@@ -119,39 +144,44 @@ fn main() {
 fn setup_logger(
     level: Level,
     log_dir: &Option<String>,
+    asni_colours: bool,
     pretty: bool,
+    json: bool,
+    verbose: bool,
 ) -> Option<WorkerGuard> {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", format!("{},compress=off,tantivy=info", level));
     }
 
+    let fmt = tracing_subscriber::fmt()
+            .with_target(verbose)
+            .with_thread_names(verbose)
+            .with_thread_ids(verbose)
+            .with_ansi(asni_colours)
+            .with_env_filter(EnvFilter::from_default_env());
+
     if let Some(dir) = log_dir {
         let file_appender = tracing_appender::rolling::hourly(dir, "lnx_.log");
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-        let fmt = tracing_subscriber::fmt()
-            .with_target(true)
-            .with_writer(std::io::stdout.and(non_blocking))
-            .with_thread_names(true)
-            .with_thread_ids(true);
+        let fmt = fmt.with_writer(std::io::stdout.and(non_blocking));
 
         if pretty {
-            fmt.pretty().with_ansi(true).init();
+            fmt.pretty().init();
+        } else if json {
+            fmt.json().init();
         } else {
-            fmt.json().with_ansi(false).init();
+            fmt.compact().init();
         }
 
         Some(guard)
     } else {
-        let fmt = tracing_subscriber::fmt()
-            .with_target(false)
-            .with_thread_ids(true)
-            .with_env_filter(EnvFilter::from_default_env());
-
         if pretty {
-            fmt.pretty().with_ansi(true).init();
+            fmt.pretty().init();
+        } else if json {
+            fmt.json().init();
         } else {
-            fmt.compact().with_ansi(false).init();
+            fmt.compact().init();
         }
 
         None
