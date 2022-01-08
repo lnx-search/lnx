@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -108,9 +108,19 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
         }
 
         if let Some(to_create) = file.enclosed_name() {
+            let target_change = to_create.to_path_buf();
             info!("extracting file {}", file.name());
             let mut writer = std::fs::File::create(to_create)?;
             std::io::copy(&mut file, &mut writer)?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                if let Some(mode) = file.unix_mode() {
+                    std::fs::set_permissions(target_change, std::fs::Permissions::from_mode(mode))?;
+                }
+            }
         }
     }
 
@@ -118,17 +128,28 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
 }
 
 
-fn zip_dir<T>(
+fn zip_dir(
     it: &mut impl Iterator<Item = DirEntry>,
     prefix: &Path,
-    writer: T,
-) -> zip::result::ZipResult<()>
-where
-    T: Write + Seek,
-{
+    writer: File,
+) -> zip::result::ZipResult<()> {
+    let options;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = writer.metadata()?.permissions().mode();
+        options = FileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(perms);
+    }
+
+    #[cfg(not(unix))]
+    {
+        options = FileOptions::default()
+            .compression_method(CompressionMethod::Deflated);
+    }
+
     let mut zip = zip::ZipWriter::new(writer);
-    let options = FileOptions::default()
-        .compression_method(CompressionMethod::Deflated);
 
     let mut buffer = Vec::new();
     for entry in it {

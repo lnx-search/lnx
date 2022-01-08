@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use bincode::Options;
 use clap::Parser;
 use engine::structures::{IndexDeclaration, ROOT_PATH};
@@ -113,7 +113,6 @@ struct Settings {
     /// This is technically a separate sub command.
     #[clap(long)]
     load_snapshot: Option<String>,
-
 
     /// The interval time in hours to take an automatic snapshot.
     ///
@@ -241,6 +240,8 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
+    tokio::fs::create_dir_all(ROOT_PATH).await?;
+
     if settings.snapshot {
         info!("beginning snapshot process, this may take a while...");
         create_snapshot(Path::new(&settings.snapshot_dir)).await?;
@@ -299,10 +300,13 @@ async fn create_state(settings: &Settings) -> Result<State> {
         .path(Path::new(ROOT_PATH).join(STORAGE_SUB_ROOT_PATH))
         .mode(sled::Mode::HighThroughput)
         .use_compression(true)
-        .open()?;
+        .open()
+        .map_err(|e| anyhow!("failed to open database due to error {}", e))?;
 
-    let engine = load_existing_indexes(&db).await?;
-    let auth = setup_authentication(&db, settings)?;
+    let engine = load_existing_indexes(&db).await
+        .map_err(|e| anyhow!("failed to load existing indexes due to error {}", e))?;
+    let auth = setup_authentication(&db, settings)
+        .map_err(|e| anyhow!("failed to load authentication data due to error {}", e))?;
 
     Ok(State::new(engine, db, auth, !settings.silent_search))
 }
