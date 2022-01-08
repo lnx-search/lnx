@@ -62,23 +62,23 @@ impl ReaderContext {
 #[derive(Debug, Deserialize)]
 pub struct QueryPayload {
     /// The query(s) itself.
-    query: QuerySelector,
+    pub(crate) query: QuerySelector,
 
     /// The amount of results to limit by.
     #[serde(default = "QueryPayload::default_limit")]
-    limit: usize,
+    pub(crate) limit: usize,
 
     /// The amount of documents to skip before getting the results.
     #[serde(default)]
-    offset: usize,
+    pub(crate) offset: usize,
 
     /// A specified field to order results by, this defaults to the
     /// score of the indexed documents (relevancy).
-    order_by: Option<String>,
+    pub(crate) order_by: Option<String>,
 
     /// How to sort the data (asc/desc).
     #[serde(default)]
-    sort: Sort,
+    pub(crate) sort: Sort,
 }
 
 impl QueryPayload {

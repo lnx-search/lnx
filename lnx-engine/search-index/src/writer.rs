@@ -2,10 +2,11 @@ use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use bincode::Options;
 use crossbeam::channel::{self, RecvTimeoutError};
 use crossbeam::queue::SegQueue;
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use sysinfo::SystemExt;
 use tantivy::schema::{Field, Schema};
@@ -23,12 +24,7 @@ use crate::helpers::{
 };
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
-use crate::structures::{
-    DocumentPayload,
-    IndexContext,
-    INDEX_STORAGE_SUB_PATH,
-    ROOT_PATH,
-};
+use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_SUB_PATH, ROOT_PATH, PRIMARY_KEY};
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
@@ -180,7 +176,7 @@ pub(super) enum WriterOp {
     AddManyDocuments(Vec<DocumentPayload>),
 
     /// Deletes any documents matching the given term.
-    DeleteTerm(Term),
+    DeleteManyDocuments(Vec<DocumentId>),
 
     /// Removes all documents from the index.
     DeleteAll,
@@ -201,6 +197,7 @@ pub(super) enum WriterOp {
 pub struct IndexWriterWorker {
     index_name: String,
     using_fast_fuzzy: bool,
+    pk_field: Field,
     fuzzy_fields: Vec<Field>,
     waiters: WaitersQueue,
     schema: Schema,
@@ -211,6 +208,7 @@ pub struct IndexWriterWorker {
     frequencies: PersistentFrequencySet,
     doc_specific_freq_tree: sled::Tree,
     pending_doc_frequencies: Vec<(DocumentId, FrequencySet)>,
+    pending_removal_frequencies: Vec<DocumentId>,
     corrections: SymSpellCorrectionManager,
     stop_words: PersistentStopWordManager,
 }
@@ -308,10 +306,10 @@ impl IndexWriterWorker {
     fn handle_add_document(
         &mut self,
         document: DocumentPayload,
-    ) -> Result<(Opstamp, &'static str)> {
+    ) -> Result<Opstamp> {
         if !self.using_fast_fuzzy {
             let (_, doc) = document.parse_into_document_with_id(&self.schema)?;
-            return Ok((self.writer.add_document(doc), "ADD-DOCUMENT"));
+            return Ok(self.writer.add_document(doc));
         }
 
         let to_index = document.get_text_values(&self.schema, &self.fuzzy_fields);
@@ -324,7 +322,7 @@ impl IndexWriterWorker {
         }
 
         self.pending_doc_frequencies.push((id, doc_only_frequency));
-        Ok((self.writer.add_document(doc), "ADD-DOCUMENT"))
+        Ok(self.writer.add_document(doc))
     }
 
     /// Drains the pending frequency adjustments and stores
@@ -333,18 +331,34 @@ impl IndexWriterWorker {
     /// This is used when deleting documents to adjust the
     /// frequency set again when deleting the document.
     fn handle_pending_frequency_changes(&mut self) -> Result<()> {
+        let bin = bincode::options().with_big_endian();
+
+        for id in self.pending_removal_frequencies.drain(..) {
+            let id = bin.serialize(&id)?;
+
+            if let Some(data) = self.doc_specific_freq_tree.remove(id)? {
+                let set: HashMap<String, u32> = bin.deserialize(&data)?;
+                self.frequencies.remove_frequencies(set);
+            }
+        }
+
         let mut batch = sled::Batch::default();
         for (id, set) in self.pending_doc_frequencies.drain(..) {
-            let id = bincode::options().with_big_endian().serialize(&id)?;
-            let set = bincode::options()
-                .with_big_endian()
-                .serialize(set.counts())?;
+            let id = bin.serialize(&id)?;
+            let set = bin.serialize(set.counts())?;
             batch.insert(id, set);
         }
 
         self.doc_specific_freq_tree.apply_batch(batch)?;
 
         Ok(())
+    }
+
+    fn handle_remove_doc(&mut self, id: DocumentId) -> Opstamp {
+        let term = Term::from_field_u64(self.pk_field, id);
+
+        self.pending_removal_frequencies.push(id);
+        self.writer.delete_term(term)
     }
 
     #[instrument(name = "writer-op-handler", level = "trace", skip_all)]
@@ -369,22 +383,33 @@ impl IndexWriterWorker {
             },
             WriterOp::Rollback => {
                 self.pending_doc_frequencies.clear();
+                self.pending_removal_frequencies.clear();
                 self.frequencies.rollback();
                 (self.writer.rollback()?, "ROLLBACK")
             },
-            WriterOp::AddDocument(document) => self.handle_add_document(document)?,
+            WriterOp::AddDocument(document) => (self.handle_add_document(document)?, "ADD-DOCUMENT"),
             WriterOp::AddManyDocuments(documents) => {
                 for document in documents {
-                    let (transaction_id, type_) = self.handle_add_document(document)?;
+                    let transaction_id = self.handle_add_document(document)?;
                     debug!(
-                        "[ TRANSACTION {} ] completed operation {}",
-                        transaction_id, type_
+                        "[ TRANSACTION {} ] completed operation ADD-DOCUMENT",
+                        transaction_id
                     );
                 }
 
                 return Ok(());
             },
-            WriterOp::DeleteTerm(term) => (self.writer.delete_term(term), "DELETE-TERM"),
+            WriterOp::DeleteManyDocuments(document_ids) => {
+                for id in document_ids {
+                    let transaction_id = self.handle_remove_doc(id);
+                    debug!(
+                        "[ TRANSACTION {} ] completed operation REMOVE-DOCUMENT",
+                        transaction_id
+                    );
+                }
+
+                return Ok(())
+            },
             WriterOp::DeleteAll => {
                 self.frequencies.clear_frequencies();
                 self.pending_doc_frequencies.clear();
@@ -442,7 +467,11 @@ fn start_writer(
     let frequency_set = PersistentFrequencySet::new(conn)?;
     corrections.adjust_index_frequencies(&frequency_set);
 
+    let pk_field = schema.get_field(PRIMARY_KEY)
+        .ok_or_else(anyhow!("No primary key field in schema. This is a bug."))?;
+
     let worker = IndexWriterWorker {
+        pk_field,
         doc_specific_freq_tree: document_freq_tree,
         frequencies: frequency_set,
         index_name: name,
