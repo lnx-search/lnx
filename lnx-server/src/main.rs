@@ -154,11 +154,11 @@ fn setup_logger(
     }
 
     let fmt = tracing_subscriber::fmt()
-            .with_target(verbose)
-            .with_thread_names(verbose)
-            .with_thread_ids(verbose)
-            .with_ansi(asni_colours)
-            .with_env_filter(EnvFilter::from_default_env());
+        .with_target(verbose)
+        .with_thread_names(verbose)
+        .with_thread_ids(verbose)
+        .with_ansi(asni_colours)
+        .with_env_filter(EnvFilter::from_default_env());
 
     if let Some(dir) = log_dir {
         let file_appender = tracing_appender::rolling::hourly(dir, "lnx_.log");
