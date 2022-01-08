@@ -161,7 +161,7 @@ fn setup_logger(
         .with_env_filter(EnvFilter::from_default_env());
 
     if let Some(dir) = log_dir {
-        let file_appender = tracing_appender::rolling::hourly(dir, "lnx_.log");
+        let file_appender = tracing_appender::rolling::hourly(dir, "lnx.log");
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         let fmt = fmt.with_writer(std::io::stdout.and(non_blocking));
