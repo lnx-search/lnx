@@ -163,15 +163,15 @@ fn zip_dir(
             }
 
             info!("adding file {:?} as {:?} ...", path, name);
-            zip.start_file(path_to_string(&path), options)?;
+            zip.start_file(path_to_string(path), options)?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
             zip.write_all(&*buffer)?;
             buffer.clear();
-        } else if name.as_os_str().len() != 0 {
+        } else if !name.as_os_str().is_empty(){
             info!("adding dir {:?} as {:?} ...", path, name);
-            zip.add_directory(path_to_string(&path), options)?;
+            zip.add_directory(path_to_string(path), options)?;
         }
     }
     zip.finish()?;

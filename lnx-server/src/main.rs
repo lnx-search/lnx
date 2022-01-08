@@ -349,7 +349,7 @@ fn setup_authentication(db: &sled::Db, settings: &Settings) -> Result<AuthManage
         (false, String::new())
     };
 
-    let auth = AuthManager::new(enabled, key, &db)?;
+    let auth = AuthManager::new(enabled, key, db)?;
 
     Ok(auth)
 }
