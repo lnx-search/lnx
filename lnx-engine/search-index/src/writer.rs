@@ -75,8 +75,9 @@ impl WriterContext {
     ///
     /// This tries to allocate 10% of the total memory of the system
     /// otherwise defaulting to the minimum required buffer size should it
-    /// be bellow the minimum or above the amount of free memory.
-    fn with_safe_buffer(&self) -> Result<WriterContext> {
+    /// be bellow the minimum or above the amount of free memory
+    #[instrument(name = "buffer-calculator")]
+    fn calculate_with_safe_buffer(&self) -> Result<WriterContext> {
         let mut sys = sysinfo::System::new();
         sys.refresh_memory();
 
@@ -205,6 +206,7 @@ impl IndexWriterWorker {
     /// This processes operations in waves before waking up waiters,
     /// this means all operations currently in the queue will be processed
     /// first before any waiters are woken up to send more data.
+    #[instrument(name = "index-writer", skip_all, fields(index = %self.index_name))]
     fn start(mut self) {
         let mut op_since_last_commit = false;
         loop {
@@ -219,18 +221,12 @@ impl IndexWriterWorker {
             }
 
             if (self.auto_commit == 0) | !op_since_last_commit {
-                info!(
-                    "[ WRITER @ {} ] parking writer until new events present",
-                    &self.index_name
-                );
+                info!("parking writer until new events present");
                 if let Ok((op, waker)) = self.rx.recv() {
                     op_since_last_commit = true;
                     self.handle_message(op, waker);
                 } else {
-                    info!(
-                        "[ WRITER @ {} ] writer actor channel dropped, shutting down...",
-                        &self.index_name
-                    );
+                    info!("writer actor channel dropped, shutting down...");
                     break;
                 }
 
@@ -239,17 +235,14 @@ impl IndexWriterWorker {
 
             match self.rx.recv_timeout(Duration::from_secs(self.auto_commit)) {
                 Err(RecvTimeoutError::Timeout) => {
-                    info!("[ WRITER @ {} ] running auto commit", &self.index_name);
+                    info!("running auto commit");
 
                     // We know we wont shutdown.
                     let _ = self.handle_message(WriterOp::Commit, None);
                     op_since_last_commit = false;
                 },
                 Err(RecvTimeoutError::Disconnected) => {
-                    info!(
-                        "[ WRITER @ {} ] writer actor channel dropped, shutting down...",
-                        &self.index_name
-                    );
+                    info!("writer actor channel dropped, shutting down...");
                     break;
                 },
                 Ok((op, waker)) => {
@@ -265,19 +258,15 @@ impl IndexWriterWorker {
 
         let _ = self.writer.wait_merging_threads();
         let _ = self.shutdown.try_send(());
-        info!("[ WRITER @ {} ] shutdown complete!", &self.index_name);
+        info!("shutdown complete!");
     }
 
+    #[instrument(name = "writer-message-handler", level = "trace", skip(self, waker))]
     fn handle_message(
         &mut self,
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
     ) {
-        trace!(
-            "[ WRITER @ {} ] handling operation: {:?}",
-            &self.index_name,
-            op
-        );
         match self.handle_op(op) {
             Err(e) => {
                 if let Some(w) = waker {
@@ -319,6 +308,7 @@ impl IndexWriterWorker {
         Ok((self.writer.add_document(doc), "ADD-DOCUMENT"))
     }
 
+    #[instrument(name = "writer-op-handler", level = "trace", skip_all)]
     fn handle_op(&mut self, op: WriterOp) -> Result<()> {
         let (transaction_id, type_) = match op {
             WriterOp::__Shutdown => {
@@ -343,8 +333,8 @@ impl IndexWriterWorker {
                 for document in documents {
                     let (transaction_id, type_) = self.handle_add_document(document)?;
                     debug!(
-                        "[ WRITER @ {} ][ TRANSACTION {} ] completed operation {}",
-                        &self.index_name, transaction_id, type_
+                        "[ TRANSACTION {} ] completed operation {}",
+                        transaction_id, type_
                     );
                 }
 
@@ -374,8 +364,8 @@ impl IndexWriterWorker {
         };
 
         debug!(
-            "[ WRITER @ {} ][ TRANSACTION {} ] completed operation {}",
-            &self.index_name, transaction_id, type_
+            "[ TRANSACTION {} ] completed operation {}",
+            transaction_id, type_
         );
 
         Ok(())
@@ -383,6 +373,12 @@ impl IndexWriterWorker {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[instrument(
+    name = "writer-actor",
+    level = "trace",
+    skip_all,
+    fields(name = %name, auto_commit = auto_commit, fast_fuzzy = using_fast_fuzzy)
+)]
 fn start_writer(
     name: String,
     conn: StorageBackend,
@@ -437,17 +433,18 @@ impl Writer {
     ///
     /// This creates a bounded queue with a capacity of 20, builds the tantivy index
     /// writer with n threads and spawns a worker in a new thread.
+    #[instrument(name = "index-writer", skip_all, fields(index = %ctx.name))]
     pub(crate) fn create(ctx: &IndexContext) -> Result<Self> {
         let index_name = ctx.name.clone();
         let (op_sender, op_receiver) = channel::bounded::<OpPayload>(20);
         let (shutdown, shutdown_waiter) = async_channel::bounded(1);
 
         let writer = {
-            let writer_ctx = ctx.writer_ctx.with_safe_buffer()?;
+            let writer_ctx = ctx.writer_ctx.calculate_with_safe_buffer()?;
 
             debug!(
-                "[ WRITER @ {} ] index writer setup threads={}, heap={}B ",
-                &ctx.name, writer_ctx.writer_threads, writer_ctx.writer_buffer,
+                "index writer setup threads={}, heap={}B ",
+                writer_ctx.writer_threads, writer_ctx.writer_buffer,
             );
 
             ctx.index.writer_with_num_threads(
@@ -486,7 +483,7 @@ impl Writer {
             }
         };
 
-        info!("[ WRITER @ {} ] starting writer worker.", &ctx.name);
+        info!("starting writer worker.");
         let handle = std::thread::Builder::new()
             .name(format!("{}-writer-worker", &ctx.name))
             .spawn(task)
@@ -500,10 +497,7 @@ impl Writer {
         if op_sender.send((WriterOp::__Ping, None)).is_err() {
             handle.join().expect("join worker")?;
 
-            info!(
-                "[ WRITER @ {} ] worker is okay, startup successful!",
-                &ctx.name
-            );
+            info!("worker is okay, startup successful!");
         }
 
         Ok(Self {
@@ -518,6 +512,7 @@ impl Writer {
     ///
     /// If there is space in the queue this will complete immediately
     /// otherwise this will wait until it's woken up again.
+    #[instrument(name = "writer-message-emitter", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn send_op(&self, op: WriterOp) -> anyhow::Result<()> {
         let (waker, waker_waiter) = oneshot::channel();
         let mut payload: OpPayload = (op, Some(waker));
@@ -532,10 +527,7 @@ impl Writer {
                 Err(channel::TrySendError::Full(v)) => v,
             };
 
-            debug!(
-                "[ WRITER @ {} ] operation queue full, waiting for wakeup",
-                &self.index_name
-            );
+            debug!("operation queue full, waiting for wakeup");
 
             let (resolve, waiter) = oneshot::channel();
             self.writer_waiters.push(resolve);
@@ -544,14 +536,10 @@ impl Writer {
 
         waker_waiter.await??;
 
-        debug!(
-            "[ WRITER @ {} ] operation queue full, waiting for wakeup",
-            &self.index_name
-        );
-
         Ok(())
     }
 
+    #[instrument(name = "writer-shutdown", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
         self.send_op(WriterOp::__Shutdown).await?;
 
@@ -560,6 +548,7 @@ impl Writer {
         Ok(())
     }
 
+    #[instrument(name = "writer-storage-cleanup", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn destroy(&self) -> anyhow::Result<()> {
         self.shutdown().await?;
 

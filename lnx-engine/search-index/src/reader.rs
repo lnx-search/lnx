@@ -303,6 +303,8 @@ fn order_or_sort(
 ///
 /// Each index should only have on `Reader` instance.
 pub(crate) struct Reader {
+    index_name: Arc<String>,
+
     /// The executor pool.
     pool: crate::ReaderExecutor,
 
@@ -312,6 +314,7 @@ pub(crate) struct Reader {
 
 impl Reader {
     /// Creates a new reader from the given index context.
+    #[instrument(name = "index-reader", skip_all)]
     pub(crate) async fn create(ctx: &IndexContext) -> Result<Self> {
         let reader: IndexReader = ctx
             .index
@@ -320,8 +323,7 @@ impl Reader {
             .num_searchers(ctx.reader_ctx.max_concurrency)
             .try_into()?;
         info!(
-            "[ READER @ {} ] index reader created with reload policy=OnCommit, num_searchers={}",
-            &ctx.name,
+            "index reader created with reload policy=OnCommit, num_searchers={}",
             ctx.reader_ctx.max_concurrency,
         );
 
@@ -335,8 +337,7 @@ impl Reader {
             Arc::new(pool)
         };
         info!(
-            "[ READER @ {} ] executor pool has successfully started! max_concurrency={}, total_threads={}",
-            &ctx.name,
+            "executor pool has successfully started! max_concurrency={}, total_threads={}",
             ctx.reader_ctx.max_concurrency,
             ctx.reader_ctx.max_concurrency * ctx.reader_ctx.reader_threads
         );
@@ -350,13 +351,12 @@ impl Reader {
             pool.clone(),
         );
         info!(
-            "[ QUERY-BUILDER @ {} ] query builder constructed with config: fast-fuzzy={} strip-stop-words={}.",
-            &ctx.name,
-            ctx.query_ctx.use_fast_fuzzy,
-            ctx.query_ctx.strip_stop_words,
+            "query builder constructed with config: fast-fuzzy={} strip-stop-words={}.",
+            ctx.query_ctx.use_fast_fuzzy, ctx.query_ctx.strip_stop_words,
         );
 
         Ok(Self {
+            index_name: Arc::new(ctx.name().to_string()),
             pool,
             query_handler,
         })
@@ -370,6 +370,7 @@ impl Reader {
     /// Gets a singular document from the given id.
     ///
     /// If no document is found an error is raised without context.
+    #[instrument(name = "document-fetcher", skip(self), fields(index = %self.index_name))]
     pub(crate) async fn get_document(&self, id: DocumentId) -> Result<DocumentHit> {
         let id_field = self.query_handler.id_field();
         let document = self
@@ -412,6 +413,7 @@ impl Reader {
     /// The payload determines the behaviour of the query results.
     /// The actual behaviour of how a query is built is upto the query handler
     /// which will parse and interpret the given data.
+    #[instrument(name = "document-searcher", skip_all, fields(index = %self.index_name))]
     pub(crate) async fn search(&self, qry: QueryPayload) -> Result<QueryResults> {
         let start = std::time::Instant::now();
 

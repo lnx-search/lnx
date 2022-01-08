@@ -31,7 +31,10 @@ impl SymSpellManager {
     ///
     /// This means when something is next set to be corrected for the index, the
     /// custom frequencies will be used instead of the default.
+    #[instrument(name = "fast-fuzzy", skip_all, fields(unique_words = frequencies.counts().len()))]
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &impl FrequencyCounter) {
+        info!("adjusting spell correction system to new frequency count");
+
         let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
         symspell.using_dictionary_frequencies(
             frequencies

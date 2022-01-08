@@ -134,8 +134,9 @@ impl PersistentFrequencySet {
         Ok(inst)
     }
 
+    #[instrument(name = "frequency-counter", skip_all)]
     fn load_frequencies_from_store(&mut self) -> Result<()> {
-        info!("[ FREQUENCY-COUNTER ] loading frequencies from persistent backend.");
+        info!("loading frequencies from persistent backend.");
 
         let raw_structure = self.conn.load_structure(Self::KEYSPACE)?;
         let frequencies: HashMap<String, u32> = if let Some(buff) = raw_structure {
@@ -149,15 +150,16 @@ impl PersistentFrequencySet {
         }
 
         info!(
-            "[ FREQUENCY-COUNTER ] loaded frequencies new item count: {}",
+            "loaded frequencies new item count: {}",
             self.set.inner.len()
         );
 
         Ok(())
     }
 
+    #[instrument(name = "frequency-counter", skip_all)]
     pub(crate) fn commit(&self) -> Result<()> {
-        info!("[ FREQUENCY-COUNTER ] storing frequencies in persistent backend.");
+        info!("storing frequencies in persistent backend.");
 
         let frequencies = self.set.counts();
         self.conn.store_structure(Self::KEYSPACE, frequencies)?;

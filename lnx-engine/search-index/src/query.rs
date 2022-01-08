@@ -277,6 +277,7 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query selector.
+    // TODO add-back #[instrument(name = "query-builder", level = "trace", skip_all)]
     pub(crate) async fn build_query(
         &self,
         selector: QuerySelector,
@@ -322,6 +323,7 @@ impl QueryBuilder {
     /// If `use_fast_fuzzy` is enabled both on server and index this will
     /// produce a fast-fuzzy query. Otherwise this will produce a feature
     /// fuzzy search.
+    // TODO add-back #[instrument(name = "fuzzy-query", level = "trace", skip_all)]
     fn make_fuzzy_query(&self, value: DocumentValue) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
@@ -390,6 +392,7 @@ impl QueryBuilder {
     }
 
     /// Makes a new query by feeding the value into the tantivy QueryParser.
+    // TODO add-back #[instrument(name = "normal-query", level = "trace", skip_all)]
     fn make_normal_query(&self, value: DocumentValue) -> Result<Box<dyn Query>> {
         let value = value.as_string();
 
@@ -405,6 +408,7 @@ impl QueryBuilder {
     /// given reference document.
     ///
     /// The reference document should be referenced by it's id.
+    // TODO add-back #[instrument(name = "more-like-this-query", level = "trace", skip_all)]
     async fn make_more_like_this_query(
         &self,
         value: DocumentValue,
@@ -456,6 +460,7 @@ impl QueryBuilder {
     /// This expects the value to match exactly with the term.
     ///
     /// This is useful for things like facet searches.
+    // TODO add-back #[instrument(name = "term-query", level = "trace", skip_all)]
     fn make_term_query(
         &self,
         value: DocumentValue,

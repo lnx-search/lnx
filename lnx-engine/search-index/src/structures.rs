@@ -5,7 +5,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use chrono::{NaiveDateTime, Utc};
 use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
@@ -183,6 +183,7 @@ impl IndexDeclaration {
 
     /// Builds IndexContext from the declaration, applying any validation in
     /// the process.
+    #[instrument(name = "index-setup", skip(self), fields(index = %self.name))]
     pub fn create_context(&self) -> Result<IndexContext> {
         self.validate()?;
         self.writer_ctx.validate()?;
@@ -201,9 +202,15 @@ impl IndexDeclaration {
         };
 
         let dir = SledBackedDirectory::new_with_root(&open)?;
+        let does_exist = Index::exists(&dir).with_context(|| {
+            format!("failed to check for existing index {:?}", &open)
+        })?;
 
-        let schema = self.schema_from_fields();
-        let index = Index::open_or_create(dir.clone(), schema)?;
+        let index = if does_exist {
+            Index::open(dir.clone())
+        } else {
+            Index::open_or_create(dir.clone(), self.schema_from_fields())
+        }?;
 
         let schema = index.schema();
         self.verify_search_fields(&schema)?;
@@ -353,6 +360,10 @@ impl IndexDeclaration {
 
         for (field, details) in self.fields.iter() {
             if field == PRIMARY_KEY {
+                warn!(
+                    "{} is a reserved field name due to being a primary key",
+                    PRIMARY_KEY
+                );
                 continue;
             }
 
