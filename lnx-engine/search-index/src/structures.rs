@@ -40,7 +40,7 @@ use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 
 pub static ROOT_PATH: &str = "./index";
-pub static INDEX_STORAGE_SUB_PATH: &str = "/index-storage";
+pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
 pub static PRIMARY_KEY: &str = "_id";
 
 /// The possible index storage backends.

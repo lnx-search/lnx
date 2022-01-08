@@ -33,7 +33,7 @@ use crate::auth::AuthManager;
 use crate::snapshot::{create_snapshot, load_snapshot};
 use crate::state::State;
 
-pub static STORAGE_SUB_ROOT_PATH: &str = "/engine-storage";
+pub static STORAGE_SUB_ROOT_PATH: &str = "engine-storage";
 static INDEX_KEYSPACE: &str = "persistent_indexes";
 
 #[derive(Debug, Parser)]
@@ -240,7 +240,7 @@ fn setup() -> Result<Settings> {
 }
 
 async fn start(settings: Settings) -> Result<()> {
-    tokio::fs::create_dir_all(ROOT_PATH).await?;
+    tokio::fs::create_dir_all(Path::new(ROOT_PATH).join(STORAGE_SUB_ROOT_PATH)).await?;
 
     if settings.snapshot {
         info!("beginning snapshot process, this may take a while...");
