@@ -72,21 +72,21 @@ pub enum QueryKind {
     /// within reason will be corrected and not invalidate all the results.
     ///
     /// Things like `trueman show` will match `the truman show`.
-    Fuzzy { query: DocumentValue },
+    Fuzzy { ctx: DocumentValue },
 
     /// The normal query search using the tantivy query parser.
     ///
     /// This will expect the given value to follow the query specification
     /// as defined in the tantivy docs.
-    Normal { query: DocumentValue },
+    Normal { ctx: DocumentValue },
 
     /// Gets similar documents based on the reference document.
     ///
     /// This expects a document id as the value, anything else will be rejected.
-    MoreLikeThis { query: DocumentValue },
+    MoreLikeThis { ctx: DocumentValue },
 
     /// Get results matching the given term for the given field.
-    Term { query: DocumentValue, fields: FieldSelector },
+    Term { ctx: DocumentValue, fields: FieldSelector },
 }
 
 
@@ -183,14 +183,14 @@ impl<'de> Deserialize<'de> for QuerySelector {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    kind: QueryKind::Fuzzy { query: DocumentValue::Text(v.to_string()) },
+                    kind: QueryKind::Fuzzy { ctx: DocumentValue::Text(v.to_string()) },
                     occur: Occur::default(),
                 }))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    kind: QueryKind::Fuzzy { query: DocumentValue::Text(v.to_string()) },
+                    kind: QueryKind::Fuzzy { ctx: DocumentValue::Text(v.to_string()) },
                     occur: Occur::default(),
                 }))
             }
@@ -299,10 +299,10 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy { query } => self.make_fuzzy_query(query),
-            QueryKind::Normal { query } => self.make_normal_query(query),
-            QueryKind::MoreLikeThis { query } => self.make_more_like_this_query(query).await,
-            QueryKind::Term { query, fields }  => self.make_term_query(query, fields),
+            QueryKind::Fuzzy { ctx: query } => self.make_fuzzy_query(query),
+            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
+            QueryKind::MoreLikeThis { ctx: query } => self.make_more_like_this_query(query).await,
+            QueryKind::Term { ctx: query, fields }  => self.make_term_query(query, fields),
         }
     }
 
