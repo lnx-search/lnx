@@ -316,7 +316,6 @@ impl Reader {
     /// Creates a new reader from the given index context.
     #[instrument(name = "index-reader", skip_all)]
     pub(crate) async fn create(ctx: &IndexContext) -> Result<Self> {
-
         let reader: IndexReader = ctx
             .index
             .reader_builder()
@@ -353,8 +352,7 @@ impl Reader {
         );
         info!(
             "query builder constructed with config: fast-fuzzy={} strip-stop-words={}.",
-            ctx.query_ctx.use_fast_fuzzy,
-            ctx.query_ctx.strip_stop_words,
+            ctx.query_ctx.use_fast_fuzzy, ctx.query_ctx.strip_stop_words,
         );
 
         Ok(Self {

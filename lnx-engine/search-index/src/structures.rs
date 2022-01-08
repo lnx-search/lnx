@@ -5,7 +5,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Error, Result, Context};
+use anyhow::{Context, Error, Result};
 use chrono::{NaiveDateTime, Utc};
 use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
@@ -202,8 +202,9 @@ impl IndexDeclaration {
         };
 
         let dir = SledBackedDirectory::new_with_root(&open)?;
-        let does_exist = Index::exists(&dir)
-            .with_context(|| format!("failed to check for existing index {:?}", &open))?;
+        let does_exist = Index::exists(&dir).with_context(|| {
+            format!("failed to check for existing index {:?}", &open)
+        })?;
 
         let index = if does_exist {
             Index::open(dir.clone())
@@ -359,7 +360,10 @@ impl IndexDeclaration {
 
         for (field, details) in self.fields.iter() {
             if field == PRIMARY_KEY {
-                warn!("{} is a reserved field name due to being a primary key", PRIMARY_KEY);
+                warn!(
+                    "{} is a reserved field name due to being a primary key",
+                    PRIMARY_KEY
+                );
                 continue;
             }
 

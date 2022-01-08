@@ -12,16 +12,16 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 use bincode::Options;
+use clap::Parser;
 use engine::structures::IndexDeclaration;
 use engine::Engine;
 use hyper::Server;
 use mimalloc::MiMalloc;
 use routerify::RouterService;
-use clap::Parser;
 use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -126,10 +126,7 @@ fn setup_logger(
     }
 
     if let Some(dir) = log_dir {
-        let file_appender = tracing_appender::rolling::hourly(
-            dir,
-            "lnx_.log",
-        );
+        let file_appender = tracing_appender::rolling::hourly(dir, "lnx_.log");
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
         let fmt = tracing_subscriber::fmt()
@@ -139,13 +136,9 @@ fn setup_logger(
             .with_thread_ids(true);
 
         if pretty {
-            fmt.pretty()
-                .with_ansi(true)
-                .init();
+            fmt.pretty().with_ansi(true).init();
         } else {
-            fmt.json()
-                .with_ansi(false)
-                .init();
+            fmt.json().with_ansi(false).init();
         }
 
         Some(guard)
@@ -212,7 +205,6 @@ async fn create_state(settings: &Settings) -> Result<State> {
 
     Ok(State::new(engine, db, auth, !settings.silent_search))
 }
-
 
 #[instrument(name = "setup-existing-indexes", level = "info", skip(db))]
 async fn load_existing_indexes(db: &sled::Db) -> Result<Engine> {
