@@ -133,7 +133,7 @@ struct Settings {
 
     /// The output directory where snapshots should be extracted to.
     #[clap(long, default_value = "./snapshots", env)]
-    snapshot_dir: String,
+    snapshot_directory: String,
 }
 
 fn main() {
@@ -244,14 +244,14 @@ async fn start(settings: Settings) -> Result<()> {
 
     if settings.snapshot {
         info!("beginning snapshot process, this may take a while...");
-        create_snapshot(Path::new(&settings.snapshot_dir)).await?;
+        create_snapshot(Path::new(&settings.snapshot_directory)).await?;
         info!("snapshot process completed!");
         return Ok(());
     }
 
     if let Some(hours) = settings.auto_snapshot_period {
         if hours >= 1 {
-            let output_dir = PathBuf::from(settings.snapshot_dir.clone());
+            let output_dir = PathBuf::from(settings.snapshot_directory.clone());
             let interval_period = Duration::from_secs(hours as u64 * 60 * 60);
             tokio::spawn(
                 async move { snapshot_loop(interval_period, output_dir).await },
