@@ -32,13 +32,13 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::DocumentId;
 use crate::helpers::{cr32_hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
+use crate::DocumentId;
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
