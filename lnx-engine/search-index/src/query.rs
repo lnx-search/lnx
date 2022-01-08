@@ -86,9 +86,11 @@ pub enum QueryKind {
     MoreLikeThis { ctx: DocumentValue },
 
     /// Get results matching the given term for the given field.
-    Term { ctx: DocumentValue, fields: FieldSelector },
+    Term {
+        ctx: DocumentValue,
+        fields: FieldSelector,
+    },
 }
-
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -183,14 +185,18 @@ impl<'de> Deserialize<'de> for QuerySelector {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    kind: QueryKind::Fuzzy { ctx: DocumentValue::Text(v.to_string()) },
+                    kind: QueryKind::Fuzzy {
+                        ctx: DocumentValue::Text(v.to_string()),
+                    },
                     occur: Occur::default(),
                 }))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    kind: QueryKind::Fuzzy { ctx: DocumentValue::Text(v.to_string()) },
+                    kind: QueryKind::Fuzzy {
+                        ctx: DocumentValue::Text(v),
+                    },
                     occur: Occur::default(),
                 }))
             }
@@ -301,8 +307,12 @@ impl QueryBuilder {
         match qry.kind {
             QueryKind::Fuzzy { ctx: query } => self.make_fuzzy_query(query),
             QueryKind::Normal { ctx: query } => self.make_normal_query(query),
-            QueryKind::MoreLikeThis { ctx: query } => self.make_more_like_this_query(query).await,
-            QueryKind::Term { ctx: query, fields }  => self.make_term_query(query, fields),
+            QueryKind::MoreLikeThis { ctx: query } => {
+                self.make_more_like_this_query(query).await
+            },
+            QueryKind::Term { ctx: query, fields } => {
+                self.make_term_query(query, fields)
+            },
         }
     }
 
