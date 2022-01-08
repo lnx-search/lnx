@@ -6,7 +6,6 @@ use anyhow::{Error, Result};
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
-use serde_json::Value;
 use tantivy::collector::TopDocs;
 use tantivy::query::{
     BooleanQuery,
@@ -52,19 +51,9 @@ pub(crate) struct QueryContext {
 /// including it's occurrence rules, kind and value.
 #[derive(Debug, Deserialize)]
 pub struct QueryData {
-    /// The actual value to feed into the engine.
-    value: DocumentValue,
-
-    /// Additional context for the given query.
-    ///
-    /// This is used just for Term queries as of now however,
-    /// we want to reserve this style to prevent a breaking change
-    /// further down the line.
-    context:  Value,
-
-    /// Defines the kind of query to perform.
-    /// (Normal, Fuzzy (Default) or More-Like-This)
-    #[serde(default)]
+    /// Defines the kind of query additional context for each query is
+    /// contained within the kind.
+    #[serde(flatten)]
     kind: QueryKind,
 
     /// Defines whether the query must be present,
@@ -83,28 +72,23 @@ pub enum QueryKind {
     /// within reason will be corrected and not invalidate all the results.
     ///
     /// Things like `trueman show` will match `the truman show`.
-    Fuzzy,
+    Fuzzy { query: DocumentValue },
 
     /// The normal query search using the tantivy query parser.
     ///
     /// This will expect the given value to follow the query specification
     /// as defined in the tantivy docs.
-    Normal,
+    Normal { query: DocumentValue },
 
     /// Gets similar documents based on the reference document.
     ///
     /// This expects a document id as the value, anything else will be rejected.
-    MoreLikeThis,
+    MoreLikeThis { query: DocumentValue },
 
     /// Get results matching the given term for the given field.
-    Term,
+    Term { query: DocumentValue, fields: FieldSelector },
 }
 
-impl Default for QueryKind {
-    fn default() -> Self {
-        Self::Fuzzy
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -199,18 +183,14 @@ impl<'de> Deserialize<'de> for QuerySelector {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    value: DocumentValue::Text(v.to_string()),
-                    context: Value::Null,
-                    kind: QueryKind::default(),
+                    kind: QueryKind::Fuzzy { query: DocumentValue::Text(v.to_string()) },
                     occur: Occur::default(),
                 }))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    value: DocumentValue::Text(v),
-                    context: Value::Null,
-                    kind: QueryKind::default(),
+                    kind: QueryKind::Fuzzy { query: DocumentValue::Text(v.to_string()) },
                     occur: Occur::default(),
                 }))
             }
@@ -319,10 +299,10 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy => self.make_fuzzy_query(qry.value),
-            QueryKind::Normal => self.make_normal_query(qry.value),
-            QueryKind::MoreLikeThis => self.make_more_like_this_query(qry.value).await,
-            QueryKind::Term => self.make_term_query(qry.value, qry.context),
+            QueryKind::Fuzzy { query } => self.make_fuzzy_query(query),
+            QueryKind::Normal { query } => self.make_normal_query(query),
+            QueryKind::MoreLikeThis { query } => self.make_more_like_this_query(query).await,
+            QueryKind::Term { query, fields }  => self.make_term_query(query, fields),
         }
     }
 
@@ -473,10 +453,8 @@ impl QueryBuilder {
     fn make_term_query(
         &self,
         value: DocumentValue,
-        context: Value,
+        field: FieldSelector,
     ) -> Result<Box<dyn Query>> {
-        let field: FieldSelector = serde_json::from_value(context)?;
-
         use tantivy::query::Occur;
 
         let fields = {
