@@ -213,9 +213,17 @@ async fn start(settings: Settings) -> Result<()> {
         "To get started you can check out the documentation @ http://{}:{}/docs",
         &settings.host, settings.port
     );
-    if let Err(e) = server.await {
-        error!("server error: {:?}", e)
-    };
+
+    tokio::select! {
+        _r = tokio::signal::ctrl_c() => {
+            info!("got shutdown signal, preparing shutdown");
+        },
+        r = server => {
+            if let Err(e) = r {
+                error!("server error: {:?}", e)
+            };
+        }
+    }
 
     info!("shutting down engine...");
     state.engine.shutdown().await?;

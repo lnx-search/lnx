@@ -17,7 +17,7 @@ use tantivy::Directory;
 
 use crate::helpers::cr32_hash;
 
-static WATCHED_MANAGED_FILE: &str = "managed.json";
+static WATCHED_MANAGED_FILE: &str = ".managed.json";
 static WATCHED_META_FILE: &str = "meta.json";
 
 /// The sub-directory where any lnx-metadata is stored for the index.
@@ -119,14 +119,17 @@ impl Directory for SledBackedDirectory {
         self.inner.open_write(path)
     }
 
+    #[instrument(name = "directory-atomic-reader", level = "debug", skip(self))]
     fn atomic_read(&self, path: &Path) -> core::result::Result<Vec<u8>, OpenReadError> {
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
             if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
+                debug!("using inner atomic read due to special file {:?}", &name);
                 return self.inner.atomic_read(path);
             }
         }
 
+        debug!("using sled backed atomic read");
         let value = self.conn.get(cr32_hash(path).to_string())
             .map_err(|e| {
                 match e {
@@ -165,14 +168,17 @@ impl Directory for SledBackedDirectory {
             .ok_or_else(|| OpenReadError::FileDoesNotExist(path.to_path_buf()))
     }
 
+    #[instrument(name = "directory-atomic-writer", level = "debug", skip(self, data))]
     fn atomic_write(&self, path: &Path, data: &[u8]) -> std::io::Result<()> {
         // Special case handling for Tantivy's file watchlist.
         if let Some(name) = path.file_name() {
             if name == WATCHED_MANAGED_FILE || name == WATCHED_META_FILE {
+                debug!("using inner atomic write due to special file {:?}", &name);
                 return self.inner.atomic_write(path, data);
             }
         }
 
+        debug!("using sled backed atomic write");
         let id = cr32_hash(path).to_string();
         self.conn.insert(id, data)?;
 
