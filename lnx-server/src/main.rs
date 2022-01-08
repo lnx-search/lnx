@@ -22,7 +22,6 @@ use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
-use tracing_opentelemetry::
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
