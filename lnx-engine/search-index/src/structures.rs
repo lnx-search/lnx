@@ -1016,7 +1016,7 @@ mod document_id_serializer {
     where
         S: Serializer,
     {
-        let s = format!("{}", document_id);
+        let s = document_id.to_string();
         serializer.serialize_str(&s)
     }
 }
@@ -1042,10 +1042,10 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
-        let sample = DocumentValue::Text(format!("{}", Utc::now().timestamp()));
+        let sample = DocumentValue::Text(Utc::now().timestamp().to_string());
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 
@@ -1058,7 +1058,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
         Ok(())
@@ -1079,7 +1079,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_err());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
         Ok(())
     }
@@ -1099,7 +1099,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
 
         Ok(())
@@ -1120,7 +1120,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_err());
 
         Ok(())
@@ -1141,7 +1141,7 @@ mod test_doc_value {
         let res: Result<i64> = sample.clone().try_into();
         assert!(res.is_ok());
 
-        let res: Result<f64> = sample.clone().try_into();
+        let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
         Ok(())
