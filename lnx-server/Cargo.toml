@@ -17,7 +17,9 @@ hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 sled = { version = "0.34.7", features = ["compression"] }
 tracing-subscriber = { version = "0.3.5", features = ["tracing-log", "parking_lot", "env-filter", "json"] }
 clap = { version = "3", features = ["derive", "env"] }
+zip = { version = "0.5.13", default-features = false, features = ["time", "deflate"] }
 
+walkdir = "2.3.2"
 tracing-appender = "0.2.0"
 tracing = "0.1.29"
 tracing-futures = "0.2.5"

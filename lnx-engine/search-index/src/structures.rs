@@ -39,8 +39,8 @@ use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 
-pub static INDEX_STORAGE_PATH: &str = "./index/index-storage";
-pub static INDEX_METADATA_PATH: &str = "./index/index-metas";
+pub static ROOT_PATH: &str = "./index";
+pub static INDEX_STORAGE_SUB_PATH: &str = "/index-storage";
 pub static PRIMARY_KEY: &str = "_id";
 
 /// The possible index storage backends.
@@ -197,7 +197,9 @@ impl IndexDeclaration {
             },
             StorageType::TempDir => OpenType::TempFile,
             StorageType::FileSystem => OpenType::Dir(
-                Path::new(INDEX_STORAGE_PATH).join(cr32_hash(&self.name).to_string()),
+                Path::new(ROOT_PATH)
+                    .join(INDEX_STORAGE_SUB_PATH)
+                    .join(cr32_hash(&self.name).to_string()),
             ),
         };
 

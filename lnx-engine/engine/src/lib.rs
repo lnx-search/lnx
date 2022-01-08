@@ -5,6 +5,7 @@ use arc_swap::ArcSwap;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
 use search_index::structures::IndexDeclaration;
+
 pub use search_index::{
     structures,
     DocumentId,
