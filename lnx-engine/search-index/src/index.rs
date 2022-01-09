@@ -70,10 +70,7 @@ impl Index {
     }
 
     /// Deletes all documents from the index matching a given term(s).
-    pub async fn delete_documents_by_query(
-        &self,
-        qry: QueryPayload,
-    ) -> Result<usize> {
+    pub async fn delete_documents_by_query(&self, qry: QueryPayload) -> Result<usize> {
         self.0.delete_by_query(qry).await
     }
 
@@ -231,18 +228,19 @@ impl InternalIndex {
                 limit,
                 offset,
                 order_by: None,
-                sort: Default::default()
+                sort: Default::default(),
             };
 
             let results = self.search(query).await?;
-            let docs: Vec<DocumentId> = results.hits.into_iter()
-                .map(|v| v.document_id)
-                .collect();
+            let docs: Vec<DocumentId> =
+                results.hits.into_iter().map(|v| v.document_id).collect();
 
             let should_break = docs.len() < limit;
             total_deleted += docs.len();
 
-            self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await?;
+            self.writer
+                .send_op(WriterOp::DeleteManyDocuments(docs))
+                .await?;
 
             if should_break {
                 break;
@@ -257,13 +255,14 @@ impl InternalIndex {
     /// Deletes all returned documents matching the given query.
     async fn delete_by_query(&self, qry: QueryPayload) -> Result<usize> {
         let results = self.search(qry).await?;
-        let docs: Vec<DocumentId> = results.hits.into_iter()
-            .map(|v| v.document_id)
-            .collect();
+        let docs: Vec<DocumentId> =
+            results.hits.into_iter().map(|v| v.document_id).collect();
 
         let total_deleted = docs.len();
 
-        self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await?;
+        self.writer
+            .send_op(WriterOp::DeleteManyDocuments(docs))
+            .await?;
 
         Ok(total_deleted)
     }
@@ -307,7 +306,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::structures::IndexDeclaration;
+    use crate::structures::{IndexDeclaration, DocumentValue};
 
     fn init_state() {
         let _ = std::env::set_var("RUST_LOG", "debug");

@@ -337,7 +337,7 @@ impl IndexWriterWorker {
     /// If fast fuzzy is disabled, this is a no-op.
     fn handle_pending_frequency_changes(&mut self) -> Result<()> {
         if !self.using_fast_fuzzy {
-            return Ok(())
+            return Ok(());
         }
 
         let bin = bincode::options().with_big_endian();
@@ -507,7 +507,7 @@ fn start_writer(
         corrections,
         stop_words,
         pending_doc_frequencies: vec![],
-        pending_removal_frequencies: vec![]
+        pending_removal_frequencies: vec![],
     };
 
     worker.start();
