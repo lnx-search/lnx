@@ -177,9 +177,28 @@ pub async fn delete_documents(mut req: LnxRequest) -> LnxResponse {
     let index: Index =
         get_or_400!(state.engine.get_index(index), "index does not exist");
 
-    index.delete_documents_where(payload).await?;
+    let num_deleted = index.delete_documents_where(payload).await?;
 
-    json_response(200, "changes registered")
+    json_response(200, json!({
+        "num_removed": num_deleted,
+        "detail": "documents deleted.",
+    }))
+}
+
+pub async fn delete_documents_by_query(mut req: LnxRequest) -> LnxResponse {
+    let payload: QueryPayload = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let num_deleted = index.delete_documents_by_query(payload).await?;
+
+    json_response(200, json!({
+        "num_removed": num_deleted,
+        "detail": "documents deleted.",
+    }))
 }
 
 pub async fn clear_documents(req: LnxRequest) -> LnxResponse {
