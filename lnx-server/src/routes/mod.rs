@@ -33,10 +33,18 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
         .post("/indexes/:index/stopwords", index::add_stop_words)
         .delete("/indexes/:index/stopwords", index::remove_stop_words)
         .delete("/indexes/:index/documents", index::delete_documents)
+        .delete(
+            "/indexes/:index/documents/query",
+            index::delete_documents_by_query,
+        )
         .delete("/indexes/:index/documents/clear", index::clear_documents)
         .get(
             "/indexes/:index/documents/:document_id",
             index::get_document,
+        )
+        .delete(
+            "/indexes/:index/documents/:document_id",
+            index::delete_document,
         )
         .err_handler(default_handlers::error_handler)
         .any(default_handlers::handle_404)

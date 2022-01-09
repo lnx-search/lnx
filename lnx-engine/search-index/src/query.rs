@@ -49,7 +49,7 @@ pub(crate) struct QueryContext {
 ///
 /// This defines everything for a individual query
 /// including it's occurrence rules, kind and value.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct QueryData {
     /// Defines the kind of query additional context for each query is
     /// contained within the kind.
@@ -60,6 +60,18 @@ pub struct QueryData {
     /// should be present or must be not present.
     #[serde(default)]
     occur: Occur,
+}
+
+impl QueryData {
+    pub fn make_term_query(field: String, term: DocumentValue, occur: Occur) -> Self {
+        Self {
+            kind: QueryKind::Term {
+                ctx: term,
+                fields: FieldSelector::Single(field),
+            },
+            occur,
+        }
+    }
 }
 
 /// The kind of query to perform.

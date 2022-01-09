@@ -53,6 +53,7 @@ pub(crate) trait FrequencyCounter {
     fn counts(&self) -> &HashMap<String, u32>;
 }
 
+#[derive(Clone)]
 pub(crate) struct FrequencySet {
     tokenizer: TextAnalyzer,
     inner: HashMap<String, u32>,
@@ -116,17 +117,18 @@ impl FrequencyCounter for FrequencySet {
 }
 
 pub(crate) struct PersistentFrequencySet {
-    conn: StorageBackend,
-    set: FrequencySet,
+    tree: sled::Tree,
+    clean_set: FrequencySet,
+    dirty_set: FrequencySet,
 }
 
 impl PersistentFrequencySet {
-    const KEYSPACE: &'static str = "frequencies";
-
     pub(crate) fn new(conn: StorageBackend) -> Result<Self> {
+        let tree = conn.conn().open_tree("global_frequencies")?;
         let mut inst = Self {
-            conn,
-            set: FrequencySet::new(),
+            tree,
+            clean_set: FrequencySet::new(),
+            dirty_set: FrequencySet::new(),
         };
 
         inst.load_frequencies_from_store()?;
@@ -138,54 +140,85 @@ impl PersistentFrequencySet {
     fn load_frequencies_from_store(&mut self) -> Result<()> {
         info!("loading frequencies from persistent backend.");
 
-        let raw_structure = self.conn.load_structure(Self::KEYSPACE)?;
-        let frequencies: HashMap<String, u32> = if let Some(buff) = raw_structure {
-            bincode::options().with_big_endian().deserialize(&buff)?
-        } else {
-            HashMap::new()
-        };
-
-        for (word, count) in frequencies {
-            self.set.inner.insert(word, count);
+        let mut walker = self.tree.iter();
+        while let Some(Ok((key, count))) = walker.next() {
+            let count = bincode::options().with_big_endian().deserialize(&count)?;
+            self.clean_set
+                .inner
+                .insert(String::from_utf8_lossy(key.as_ref()).to_string(), count);
         }
 
         info!(
             "loaded frequencies new item count: {}",
-            self.set.inner.len()
+            self.clean_set.inner.len()
         );
 
         Ok(())
     }
 
+    #[inline]
     #[instrument(name = "frequency-counter", skip_all)]
-    pub(crate) fn commit(&self) -> Result<()> {
+    pub(crate) fn remove_frequencies(&mut self, set: HashMap<String, u32>) {
+        for (key, count) in set {
+            self.dirty_set
+                .inner
+                .entry(key)
+                .and_replace_entry_with(|_k, v| {
+                    let new_count = v.saturating_sub(count);
+
+                    if new_count == 0 {
+                        None
+                    } else {
+                        Some(new_count)
+                    }
+                });
+        }
+    }
+
+    #[instrument(name = "frequency-counter", skip_all)]
+    pub(crate) fn commit(&mut self) -> Result<()> {
         info!("storing frequencies in persistent backend.");
 
-        let frequencies = self.set.counts();
-        self.conn.store_structure(Self::KEYSPACE, frequencies)?;
+        let mut batch = sled::Batch::default();
+        for (key, count) in self.dirty_set.inner.iter() {
+            let count = bincode::options().with_big_endian().serialize(count)?;
+            batch.insert(key.as_bytes(), count);
+        }
+
+        self.tree.apply_batch(batch)?;
+
+        self.clean_set = self.dirty_set.clone();
+
         Ok(())
+    }
+
+    #[instrument(name = "frequency-counter", skip_all)]
+    pub(crate) fn rollback(&mut self) {
+        info!("forgetting frequency changes in persistent backend.");
+
+        self.dirty_set = self.clean_set.clone();
     }
 }
 
 impl FrequencyCounter for PersistentFrequencySet {
     fn process_sentence(&mut self, sentence: &str) {
-        self.set.process_sentence(sentence)
+        self.dirty_set.process_sentence(sentence)
     }
 
     fn register(&mut self, k: String) {
-        self.set.register(k)
+        self.dirty_set.register(k)
     }
 
     fn clear_frequencies(&mut self) {
-        self.set.clear_frequencies();
+        self.dirty_set.clear_frequencies();
     }
 
     fn get_count(&self, k: &str) -> u32 {
-        self.set.get_count(k)
+        self.clean_set.get_count(k)
     }
 
     fn counts(&self) -> &HashMap<String, u32> {
-        self.set.counts()
+        self.clean_set.counts()
     }
 }
 

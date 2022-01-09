@@ -1,17 +1,13 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
-use tantivy::schema::{Facet, Field, FieldType};
-use tantivy::{DateTime, Term};
+use anyhow::Result;
 
-use crate::query::DocumentId;
+use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
     DocumentHit,
     DocumentOptions,
-    DocumentValue,
     DocumentValueOptions,
     IndexContext,
 };
@@ -69,8 +65,18 @@ impl Index {
     pub async fn delete_documents_where(
         &self,
         fields: BTreeMap<String, DocumentValueOptions>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         self.0.delete_documents_where(fields).await
+    }
+
+    /// Deletes a specific document
+    pub async fn delete_document(&self, document_id: DocumentId) -> Result<()> {
+        self.0.delete_document(document_id).await
+    }
+
+    /// Deletes all documents from the index matching a given term(s).
+    pub async fn delete_documents_by_query(&self, qry: QueryPayload) -> Result<usize> {
+        self.0.delete_by_query(qry).await
     }
 
     /// Deletes all documents from the index.
@@ -114,7 +120,7 @@ impl Index {
 
 struct InternalIndex {
     /// The name of the index.
-    ctx: IndexContext,
+    _ctx: IndexContext,
 
     /// The index reader handler
     reader: reader::Reader,
@@ -134,7 +140,7 @@ impl InternalIndex {
         let writer = writer::Writer::create(&ctx)?;
 
         Ok(Self {
-            ctx,
+            _ctx: ctx,
             reader,
             writer,
         })
@@ -191,41 +197,86 @@ impl InternalIndex {
         self.writer.send_op(WriterOp::DeleteAll).await
     }
 
+    /// Deletes a specific document
+    pub async fn delete_document(&self, document_id: DocumentId) -> Result<()> {
+        self.writer
+            .send_op(WriterOp::DeleteManyDocuments(vec![document_id]))
+            .await
+    }
+
     /// Deletes all documents from the index matching a given term(s).
     async fn delete_documents_where(
         &self,
         fields: BTreeMap<String, DocumentValueOptions>,
-    ) -> Result<()> {
-        let schema = self.ctx.schema();
+    ) -> Result<usize> {
+        let mut query_payload = vec![];
         for (field, opts) in fields {
-            let field = match schema.get_field(&field) {
-                None => continue,
-                Some(f) => f,
-            };
-
             match opts {
                 DocumentValueOptions::Single(value) => {
-                    self.delete_document_with_value(field, value).await?
+                    query_payload.push(QueryData::make_term_query(
+                        field,
+                        value,
+                        Occur::Should,
+                    ));
                 },
                 DocumentValueOptions::Many(values) => {
                     for value in values {
-                        self.delete_document_with_value(field, value).await?;
+                        query_payload.push(QueryData::make_term_query(
+                            field.clone(),
+                            value,
+                            Occur::Should,
+                        ));
                     }
                 },
             }
         }
 
-        Ok(())
+        let limit = 10_000;
+        let mut total_deleted = 0;
+        let mut offset = 0;
+        loop {
+            let query = QueryPayload {
+                query: QuerySelector::Multi(query_payload.clone()),
+                limit,
+                offset,
+                order_by: None,
+                sort: Default::default(),
+            };
+
+            let results = self.search(query).await?;
+            let docs: Vec<DocumentId> =
+                results.hits.into_iter().map(|v| v.document_id).collect();
+
+            let should_break = docs.len() < limit;
+            total_deleted += docs.len();
+
+            self.writer
+                .send_op(WriterOp::DeleteManyDocuments(docs))
+                .await?;
+
+            if should_break {
+                break;
+            }
+
+            offset += limit;
+        }
+
+        Ok(total_deleted)
     }
 
-    /// Deletes a document with a given value for a given field.
-    async fn delete_document_with_value(
-        &self,
-        field: Field,
-        value: DocumentValue,
-    ) -> Result<()> {
-        let field = self.get_term_from_value(field, value)?;
-        self.writer.send_op(WriterOp::DeleteTerm(field)).await
+    /// Deletes all returned documents matching the given query.
+    async fn delete_by_query(&self, qry: QueryPayload) -> Result<usize> {
+        let results = self.search(qry).await?;
+        let docs: Vec<DocumentId> =
+            results.hits.into_iter().map(|v| v.document_id).collect();
+
+        let total_deleted = docs.len();
+
+        self.writer
+            .send_op(WriterOp::DeleteManyDocuments(docs))
+            .await?;
+
+        Ok(total_deleted)
     }
 
     /// Adds a set of stop words to the indexes' stop word manager.
@@ -260,42 +311,6 @@ impl InternalIndex {
     async fn destroy(&self) -> Result<()> {
         self.writer.destroy().await
     }
-
-    fn get_term_from_value(&self, field: Field, value: DocumentValue) -> Result<Term> {
-        let schema = self.ctx.schema();
-        let field_type = schema.get_field_entry(field);
-        let field = match field_type.field_type() {
-            FieldType::Str(_) => {
-                let v: String = value.try_into()?;
-                Term::from_field_text(field, &v)
-            },
-            FieldType::U64(_) => {
-                let v: u64 = value.try_into()?;
-                Term::from_field_u64(field, v)
-            },
-            FieldType::I64(_) => {
-                let v: i64 = value.try_into()?;
-                Term::from_field_i64(field, v)
-            },
-            FieldType::F64(_) => {
-                let v: f64 = value.try_into()?;
-                Term::from_field_f64(field, v)
-            },
-            FieldType::Date(_) => {
-                let v: DateTime = value.try_into()?;
-                Term::from_field_date(field, &v)
-            },
-            FieldType::HierarchicalFacet(_) => {
-                let v: Facet = value.try_into()?;
-                Term::from_facet(field, &v)
-            },
-            FieldType::Bytes(_) => {
-                return Err(Error::msg("bytes fields are not supported"));
-            },
-        };
-
-        Ok(field)
-    }
 }
 
 #[cfg(test)]
@@ -303,7 +318,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::structures::IndexDeclaration;
+    use crate::structures::{DocumentValue, IndexDeclaration};
 
     fn init_state() {
         let _ = std::env::set_var("RUST_LOG", "debug");
@@ -1438,6 +1453,29 @@ mod tests {
 
         let res = index.delete_documents_where(mapping).await;
         assert!(res.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn remove_docs_with_normal_query_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "normal": {"ctx": "*"},
+            },
+        }))?;
+
+        let results = index.delete_documents_by_query(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.unwrap(), NUM_DOCS);
 
         Ok(())
     }
