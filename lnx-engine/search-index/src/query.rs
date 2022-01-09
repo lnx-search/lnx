@@ -65,8 +65,11 @@ pub struct QueryData {
 impl QueryData {
     pub fn make_term_query(field: String, term: DocumentValue, occur: Occur) -> Self {
         Self {
-            kind: QueryKind::Term { ctx: term, fields: FieldSelector::Single(field) },
-            occur
+            kind: QueryKind::Term {
+                ctx: term,
+                fields: FieldSelector::Single(field),
+            },
+            occur,
         }
     }
 }
