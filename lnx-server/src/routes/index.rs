@@ -179,7 +179,7 @@ pub async fn delete_documents(mut req: LnxRequest) -> LnxResponse {
 
     let num_deleted = index.delete_documents_where(payload).await?;
 
-    json_response(200, json!({
+    json_response(200, &serde_json::json!({
         "num_removed": num_deleted,
         "detail": "documents deleted.",
     }))
@@ -195,7 +195,7 @@ pub async fn delete_documents_by_query(mut req: LnxRequest) -> LnxResponse {
 
     let num_deleted = index.delete_documents_by_query(payload).await?;
 
-    json_response(200, json!({
+    json_response(200, &serde_json::json!({
         "num_removed": num_deleted,
         "detail": "documents deleted.",
     }))
