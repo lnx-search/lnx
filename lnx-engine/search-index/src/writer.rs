@@ -333,7 +333,13 @@ impl IndexWriterWorker {
     ///
     /// This is used when deleting documents to adjust the
     /// frequency set again when deleting the document.
+    ///
+    /// If fast fuzzy is disabled, this is a no-op.
     fn handle_pending_frequency_changes(&mut self) -> Result<()> {
+        if !self.using_fast_fuzzy {
+            return Ok(())
+        }
+
         let bin = bincode::options().with_big_endian();
 
         for id in self.pending_removal_frequencies.drain(..) {
@@ -360,7 +366,10 @@ impl IndexWriterWorker {
     fn handle_remove_doc(&mut self, id: DocumentId) -> Opstamp {
         let term = Term::from_field_u64(self.pk_field, id);
 
-        self.pending_removal_frequencies.push(id);
+        if self.using_fast_fuzzy {
+            self.pending_removal_frequencies.push(id);
+        }
+
         self.writer.delete_term(term)
     }
 
@@ -379,15 +388,19 @@ impl IndexWriterWorker {
             },
             WriterOp::__Ping => return Ok(()),
             WriterOp::Commit => {
-                self.handle_pending_frequency_changes()?;
-                self.frequencies.commit()?;
-                self.corrections.adjust_index_frequencies(&self.frequencies);
+                if self.using_fast_fuzzy {
+                    self.handle_pending_frequency_changes()?;
+                    self.frequencies.commit()?;
+                    self.corrections.adjust_index_frequencies(&self.frequencies);
+                }
                 (self.writer.commit()?, "COMMIT")
             },
             WriterOp::Rollback => {
-                self.pending_doc_frequencies.clear();
-                self.pending_removal_frequencies.clear();
-                self.frequencies.rollback();
+                if self.using_fast_fuzzy {
+                    self.pending_doc_frequencies.clear();
+                    self.pending_removal_frequencies.clear();
+                    self.frequencies.rollback();
+                }
                 (self.writer.rollback()?, "ROLLBACK")
             },
             WriterOp::AddDocument(document) => {
@@ -416,8 +429,10 @@ impl IndexWriterWorker {
                 return Ok(());
             },
             WriterOp::DeleteAll => {
-                self.frequencies.clear_frequencies();
-                self.pending_doc_frequencies.clear();
+                if self.using_fast_fuzzy {
+                    self.frequencies.clear_frequencies();
+                    self.pending_doc_frequencies.clear();
+                }
                 (self.writer.delete_all_documents()?, "DELETE-ALL")
             },
             WriterOp::AddStopWords(words) => {
@@ -492,6 +507,7 @@ fn start_writer(
         corrections,
         stop_words,
         pending_doc_frequencies: vec![],
+        pending_removal_frequencies: vec![]
     };
 
     worker.start();

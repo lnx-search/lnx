@@ -6,7 +6,7 @@ use anyhow::{Error, Result};
 use tantivy::schema::{Facet, Field, FieldType};
 use tantivy::{DateTime, Term};
 
-use crate::query::{DocumentId, QueryData, QuerySelector};
+use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
     DocumentHit,
@@ -69,7 +69,7 @@ impl Index {
     pub async fn delete_documents_where(
         &self,
         fields: BTreeMap<String, DocumentValueOptions>,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         self.0.delete_documents_where(fields).await
     }
 
@@ -195,51 +195,73 @@ impl InternalIndex {
     async fn delete_documents_where(
         &self,
         fields: BTreeMap<String, DocumentValueOptions>,
-    ) -> Result<()> {
-        let schema = self.ctx.schema();
-        let mut offset = 0;
-
-        let query = QueryPayload {
-            query: QuerySelector::Multi(vec![
-
-            ]),
-            limit: 10_000,
-            offset,
-            order_by: None,
-            sort: Default::default()
-        };
-
+    ) -> Result<usize> {
+        let mut query_payload = vec![];
         for (field, opts) in fields {
-            let field = match schema.get_field(&field) {
-                None => continue,
-                Some(f) => f,
-            };
-
             match opts {
                 DocumentValueOptions::Single(value) => {
-                    self.delete_document_with_value(field, value).await?
+                    query_payload.push(QueryData::make_term_query(
+                        field,
+                        value,
+                        Occur::Should,
+                    ));
                 },
                 DocumentValueOptions::Many(values) => {
                     for value in values {
-                        self.delete_document_with_value(field, value).await?;
+                        query_payload.push(QueryData::make_term_query(
+                            field.clone(),
+                            value,
+                            Occur::Should,
+                        ));
                     }
                 },
             }
         }
 
-        Ok(())
+        let limit = 10_000;
+        let mut total_deleted = 0;
+        let mut offset = 0;
+        loop {
+            let query = QueryPayload {
+                query: QuerySelector::Multi(query_payload.clone()),
+                limit,
+                offset,
+                order_by: None,
+                sort: Default::default()
+            };
+
+            let results = self.search(query).await?;
+            let docs: Vec<DocumentId> = results.hits.into_iter()
+                .map(|v| v.document_id)
+                .collect();
+
+            let should_break = docs.len() < limit;
+            total_deleted += docs.len();
+
+            self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await;
+
+            if should_break {
+                break;
+            }
+
+            offset += limit;
+        }
+
+        Ok(total_deleted)
     }
 
-    /// Deletes a document with a given value for a given field.
-    async fn delete_document_with_value(
-        &self,
-        field: Field,
-        value: DocumentValue,
-    ) -> Result<()> {
+    /// Deletes all returned documents matching the given query.
+    async fn delete_by_query(&self, qry: QueryPayload) -> Result<usize> {
+        let results = self.search(qry).await?;
+        let docs: Vec<DocumentId> = results.hits.into_iter()
+            .map(|v| v.document_id)
+            .collect();
 
+        let total_deleted = docs.len();
 
-        let field = self.get_term_from_value(field, value)?;
-        self.writer.send_op(WriterOp::DeleteTerm(field)).await
+        self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await;
+
+        Ok(total_deleted)
     }
 
     /// Adds a set of stop words to the indexes' stop word manager.
