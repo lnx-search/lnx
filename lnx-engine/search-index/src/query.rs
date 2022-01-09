@@ -40,7 +40,6 @@ pub(crate) struct QueryContext {
     pub(crate) set_conjunction_by_default: bool,
     pub(crate) use_fast_fuzzy: bool,
     pub(crate) strip_stop_words: bool,
-
     pub(crate) id_field: Field,
     pub(crate) default_search_fields: Vec<(Field, Score)>,
     pub(crate) fuzzy_search_fields: Vec<(Field, Score)>,
@@ -52,12 +51,9 @@ pub(crate) struct QueryContext {
 /// including it's occurrence rules, kind and value.
 #[derive(Debug, Deserialize)]
 pub struct QueryData {
-    /// The actual value to feed into the engine.
-    value: DocumentValue,
-
-    /// Defines the kind of query to perform.
-    /// (Normal, Fuzzy (Default) or More-Like-This)
-    #[serde(default)]
+    /// Defines the kind of query additional context for each query is
+    /// contained within the kind.
+    #[serde(flatten)]
     kind: QueryKind,
 
     /// Defines whether the query must be present,
@@ -76,27 +72,24 @@ pub enum QueryKind {
     /// within reason will be corrected and not invalidate all the results.
     ///
     /// Things like `trueman show` will match `the truman show`.
-    Fuzzy,
+    Fuzzy { ctx: DocumentValue },
 
     /// The normal query search using the tantivy query parser.
     ///
     /// This will expect the given value to follow the query specification
     /// as defined in the tantivy docs.
-    Normal,
+    Normal { ctx: DocumentValue },
 
     /// Gets similar documents based on the reference document.
     ///
     /// This expects a document id as the value, anything else will be rejected.
-    MoreLikeThis,
+    MoreLikeThis { ctx: DocumentValue },
 
     /// Get results matching the given term for the given field.
-    Term(FieldSelector),
-}
-
-impl Default for QueryKind {
-    fn default() -> Self {
-        Self::Fuzzy
-    }
+    Term {
+        ctx: DocumentValue,
+        fields: FieldSelector,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -192,16 +185,18 @@ impl<'de> Deserialize<'de> for QuerySelector {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    value: DocumentValue::Text(v.to_string()),
-                    kind: QueryKind::default(),
+                    kind: QueryKind::Fuzzy {
+                        ctx: DocumentValue::Text(v.to_string()),
+                    },
                     occur: Occur::default(),
                 }))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 Ok(QuerySelector::Single(QueryData {
-                    value: DocumentValue::Text(v),
-                    kind: QueryKind::default(),
+                    kind: QueryKind::Fuzzy {
+                        ctx: DocumentValue::Text(v),
+                    },
                     occur: Occur::default(),
                 }))
             }
@@ -310,10 +305,14 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy => self.make_fuzzy_query(qry.value),
-            QueryKind::Normal => self.make_normal_query(qry.value),
-            QueryKind::MoreLikeThis => self.make_more_like_this_query(qry.value).await,
-            QueryKind::Term(field) => self.make_term_query(qry.value, field),
+            QueryKind::Fuzzy { ctx: query } => self.make_fuzzy_query(query),
+            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
+            QueryKind::MoreLikeThis { ctx: query } => {
+                self.make_more_like_this_query(query).await
+            },
+            QueryKind::Term { ctx: query, fields } => {
+                self.make_term_query(query, fields)
+            },
         }
     }
 
