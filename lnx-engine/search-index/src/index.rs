@@ -306,7 +306,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::structures::{IndexDeclaration, DocumentValue};
+    use crate::structures::{DocumentValue, IndexDeclaration};
 
     fn init_state() {
         let _ = std::env::set_var("RUST_LOG", "debug");
