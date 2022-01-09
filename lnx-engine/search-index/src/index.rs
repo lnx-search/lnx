@@ -6,7 +6,7 @@ use anyhow::{Error, Result};
 use tantivy::schema::{Facet, Field, FieldType};
 use tantivy::{DateTime, Term};
 
-use crate::query::DocumentId;
+use crate::query::{DocumentId, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
     DocumentHit,
@@ -197,6 +197,18 @@ impl InternalIndex {
         fields: BTreeMap<String, DocumentValueOptions>,
     ) -> Result<()> {
         let schema = self.ctx.schema();
+        let mut offset = 0;
+
+        let query = QueryPayload {
+            query: QuerySelector::Multi(vec![
+
+            ]),
+            limit: 10_000,
+            offset,
+            order_by: None,
+            sort: Default::default()
+        };
+
         for (field, opts) in fields {
             let field = match schema.get_field(&field) {
                 None => continue,
@@ -224,6 +236,8 @@ impl InternalIndex {
         field: Field,
         value: DocumentValue,
     ) -> Result<()> {
+
+
         let field = self.get_term_from_value(field, value)?;
         self.writer.send_op(WriterOp::DeleteTerm(field)).await
     }
