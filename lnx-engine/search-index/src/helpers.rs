@@ -180,8 +180,8 @@ impl PersistentFrequencySet {
         info!("storing frequencies in persistent backend.");
 
         let mut batch = sled::Batch::default();
-        for (key, count) in self.dirty_set.inner.drain() {
-            let count = bincode::options().with_big_endian().serialize(&count)?;
+        for (key, count) in self.dirty_set.inner.iter() {
+            let count = bincode::options().with_big_endian().serialize(count)?;
             batch.insert(key.as_bytes(), count);
         }
 
