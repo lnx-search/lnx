@@ -24,7 +24,13 @@ use crate::helpers::{
 };
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
-use crate::structures::{DocumentPayload, IndexContext, INDEX_STORAGE_SUB_PATH, ROOT_PATH, PRIMARY_KEY};
+use crate::structures::{
+    DocumentPayload,
+    IndexContext,
+    INDEX_STORAGE_SUB_PATH,
+    PRIMARY_KEY,
+    ROOT_PATH,
+};
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
@@ -303,10 +309,7 @@ impl IndexWriterWorker {
     /// If fast fuzzy is set to `true` this also performs
     /// the the relevant word frequency adjustments for the
     /// corrections manager.
-    fn handle_add_document(
-        &mut self,
-        document: DocumentPayload,
-    ) -> Result<Opstamp> {
+    fn handle_add_document(&mut self, document: DocumentPayload) -> Result<Opstamp> {
         if !self.using_fast_fuzzy {
             let (_, doc) = document.parse_into_document_with_id(&self.schema)?;
             return Ok(self.writer.add_document(doc));
@@ -387,7 +390,9 @@ impl IndexWriterWorker {
                 self.frequencies.rollback();
                 (self.writer.rollback()?, "ROLLBACK")
             },
-            WriterOp::AddDocument(document) => (self.handle_add_document(document)?, "ADD-DOCUMENT"),
+            WriterOp::AddDocument(document) => {
+                (self.handle_add_document(document)?, "ADD-DOCUMENT")
+            },
             WriterOp::AddManyDocuments(documents) => {
                 for document in documents {
                     let transaction_id = self.handle_add_document(document)?;
@@ -408,7 +413,7 @@ impl IndexWriterWorker {
                     );
                 }
 
-                return Ok(())
+                return Ok(());
             },
             WriterOp::DeleteAll => {
                 self.frequencies.clear_frequencies();
@@ -467,7 +472,8 @@ fn start_writer(
     let frequency_set = PersistentFrequencySet::new(conn)?;
     corrections.adjust_index_frequencies(&frequency_set);
 
-    let pk_field = schema.get_field(PRIMARY_KEY)
+    let pk_field = schema
+        .get_field(PRIMARY_KEY)
         .ok_or_else(anyhow!("No primary key field in schema. This is a bug."))?;
 
     let worker = IndexWriterWorker {

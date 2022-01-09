@@ -160,7 +160,9 @@ impl PersistentFrequencySet {
     #[instrument(name = "frequency-counter", skip_all)]
     pub(crate) fn remove_frequencies(&mut self, set: HashMap<String, u32>) {
         for (key, count) in set {
-            self.dirty_set.inner.entry(key)
+            self.dirty_set
+                .inner
+                .entry(key)
                 .and_replace_entry_with(|k, v| {
                     let new_count = v.saturating_sub(count);
 
