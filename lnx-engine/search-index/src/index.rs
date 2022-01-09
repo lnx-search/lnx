@@ -1446,6 +1446,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remove_docs_with_normal_query_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "normal": {"ctx": "*"},
+            },
+        }))?;
+
+        let results = index.delete_documents_by_query(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.unwrap(), NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn remove_docs_wrong_type_expect_err() -> Result<()> {
         init_state();
 
