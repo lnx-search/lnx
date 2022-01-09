@@ -1531,8 +1531,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "ol man",
-                "kind": "fuzzy"
+                "fuzzy": {"ctx": "ol man"},
             },
         }))?;
 
@@ -1566,8 +1565,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "ol",
-                "kind": "fuzzy"
+                "fuzzy": {"ctx": "ol"},
             },
         }))?;
 
@@ -1590,8 +1588,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "*",
-                "kind": "normal"
+                "normal": {"ctx": "*"},
             },
         }))?;
 
@@ -1614,8 +1611,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "man",
-                "kind": "normal"
+                "normal": {"ctx": "man"},
             },
         }))?;
 
@@ -1631,8 +1627,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": doc_id,
-                "kind": "more-like-this"
+                "more-like-this": {"ctx": doc_id},
             },
         }))?;
         let results = index.search(query).await.map_err(|e| {
@@ -1654,10 +1649,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "man",
-                "kind": {
-                    "term": "title"
-                }
+                "term": {"ctx": "man", "fields": "title"},
             },
         }))?;
 
@@ -1680,10 +1672,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "/tools",
-                "kind": {
-                    "term": "category"
-                }
+                "term": {"ctx": "/tools", "fields": "category"},
             },
         }))?;
 
@@ -1696,10 +1685,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "value": "/tools/hammers",
-                "kind": {
-                    "term": "category"
-                }
+                "term": {"ctx": "/tools/hammers", "fields": "category"},
             },
         }))?;
 
@@ -1723,15 +1709,11 @@ mod tests {
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": [
                 {
-                     "value": "extra",
-                     "kind": "normal",
+                    "normal": {"ctx": "extra"},
                     "occur": "must",
                 },
                 {
-                    "value": "3",
-                    "kind": {
-                        "term": "count"
-                    },
+                    "term": {"ctx": "3", "fields": "count"},
                     "occur": "must",
                 },
             ],
