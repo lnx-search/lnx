@@ -266,6 +266,10 @@ async fn start(settings: Settings) -> Result<()> {
     let address: SocketAddr = format!("{}:{}", &settings.host, settings.port).parse()?;
     let server = Server::bind(&address).serve(service);
 
+    let (major_minor_version, _) = env!("CARGO_PKG_VERSION")
+        .rsplit_once(".")
+        .unwrap_or_else(|| ("0.0", ""));
+
     info!("Lnx has started!");
     info!(
         "serving requests @ http://{}:{}",
@@ -274,8 +278,8 @@ async fn start(settings: Settings) -> Result<()> {
     info!("GitHub: https://github.com/lnx-search/lnx");
     info!("To ask questions visit: https://github.com/lnx-search/lnx/discussions");
     info!(
-        "To get started you can check out the documentation @ http://{}:{}/docs",
-        &settings.host, settings.port
+        "To get started you can check out the documentation @ https://docs.lnx.rs?version={}",
+        major_minor_version
     );
 
     tokio::select! {
