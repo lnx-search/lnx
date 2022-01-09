@@ -69,6 +69,14 @@ impl Index {
         self.0.delete_documents_where(fields).await
     }
 
+    /// Deletes a specific document
+    pub async fn delete_document(
+        &self,
+        document_id: DocumentId,
+    ) -> Result<()> {
+        self.0.delete_document(document_id).await
+    }
+
     /// Deletes all documents from the index matching a given term(s).
     pub async fn delete_documents_by_query(&self, qry: QueryPayload) -> Result<usize> {
         self.0.delete_by_query(qry).await
@@ -190,6 +198,14 @@ impl InternalIndex {
     /// Deletes all documents from the index.
     async fn clear_documents(&self) -> Result<()> {
         self.writer.send_op(WriterOp::DeleteAll).await
+    }
+
+    /// Deletes a specific document
+    pub async fn delete_document(
+        &self,
+        document_id: DocumentId,
+    ) -> Result<()> {
+        self.writer.send_op(WriterOp::DeleteManyDocuments(vec![document_id])).await
     }
 
     /// Deletes all documents from the index matching a given term(s).

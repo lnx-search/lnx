@@ -42,6 +42,10 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
             "/indexes/:index/documents/:document_id",
             index::get_document,
         )
+        .delete(
+            "/indexes/:index/documents/:document_id",
+            index::delete_document,
+        )
         .err_handler(default_handlers::error_handler)
         .any(default_handlers::handle_404)
         .build()
