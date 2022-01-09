@@ -70,10 +70,7 @@ impl Index {
     }
 
     /// Deletes a specific document
-    pub async fn delete_document(
-        &self,
-        document_id: DocumentId,
-    ) -> Result<()> {
+    pub async fn delete_document(&self, document_id: DocumentId) -> Result<()> {
         self.0.delete_document(document_id).await
     }
 
@@ -201,11 +198,10 @@ impl InternalIndex {
     }
 
     /// Deletes a specific document
-    pub async fn delete_document(
-        &self,
-        document_id: DocumentId,
-    ) -> Result<()> {
-        self.writer.send_op(WriterOp::DeleteManyDocuments(vec![document_id])).await
+    pub async fn delete_document(&self, document_id: DocumentId) -> Result<()> {
+        self.writer
+            .send_op(WriterOp::DeleteManyDocuments(vec![document_id]))
+            .await
     }
 
     /// Deletes all documents from the index matching a given term(s).

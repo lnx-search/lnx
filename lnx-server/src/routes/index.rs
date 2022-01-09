@@ -188,14 +188,17 @@ pub async fn delete_documents(mut req: LnxRequest) -> LnxResponse {
     )
 }
 
-pub async fn delete_document(mut req: LnxRequest) -> LnxResponse {
+pub async fn delete_document(req: LnxRequest) -> LnxResponse {
     let state = req.data::<State>().expect("get state");
     let index = get_or_400!(req.param("index"));
     let index: Index =
         get_or_400!(state.engine.get_index(index), "index does not exist");
 
     let document_id = get_or_400!(req.param("document_id"));
-    let document_id = get_or_400!(document_id.parse::<DocumentId>().ok(), "validate document id");
+    let document_id = get_or_400!(
+        document_id.parse::<DocumentId>().ok(),
+        "validate document id"
+    );
 
     index.delete_document(document_id).await?;
 
