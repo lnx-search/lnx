@@ -1,17 +1,13 @@
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
-use tantivy::schema::{Facet, Field, FieldType};
-use tantivy::{DateTime, Term};
+use anyhow::Result;
 
 use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
     DocumentHit,
     DocumentOptions,
-    DocumentValue,
     DocumentValueOptions,
     IndexContext,
 };
@@ -73,6 +69,14 @@ impl Index {
         self.0.delete_documents_where(fields).await
     }
 
+    /// Deletes all documents from the index matching a given term(s).
+    pub async fn delete_documents_by_query(
+        &self,
+        qry: QueryPayload,
+    ) -> Result<usize> {
+        self.0.delete_by_query(qry).await
+    }
+
     /// Deletes all documents from the index.
     pub async fn clear_documents(&self) -> Result<()> {
         self.0.clear_documents().await
@@ -114,7 +118,7 @@ impl Index {
 
 struct InternalIndex {
     /// The name of the index.
-    ctx: IndexContext,
+    _ctx: IndexContext,
 
     /// The index reader handler
     reader: reader::Reader,
@@ -134,7 +138,7 @@ impl InternalIndex {
         let writer = writer::Writer::create(&ctx)?;
 
         Ok(Self {
-            ctx,
+            _ctx: ctx,
             reader,
             writer,
         })
@@ -238,7 +242,7 @@ impl InternalIndex {
             let should_break = docs.len() < limit;
             total_deleted += docs.len();
 
-            self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await;
+            self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await?;
 
             if should_break {
                 break;
@@ -259,7 +263,7 @@ impl InternalIndex {
 
         let total_deleted = docs.len();
 
-        self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await;
+        self.writer.send_op(WriterOp::DeleteManyDocuments(docs)).await?;
 
         Ok(total_deleted)
     }
@@ -295,42 +299,6 @@ impl InternalIndex {
     /// Shuts the index down removing any persistent data along with it.
     async fn destroy(&self) -> Result<()> {
         self.writer.destroy().await
-    }
-
-    fn get_term_from_value(&self, field: Field, value: DocumentValue) -> Result<Term> {
-        let schema = self.ctx.schema();
-        let field_type = schema.get_field_entry(field);
-        let field = match field_type.field_type() {
-            FieldType::Str(_) => {
-                let v: String = value.try_into()?;
-                Term::from_field_text(field, &v)
-            },
-            FieldType::U64(_) => {
-                let v: u64 = value.try_into()?;
-                Term::from_field_u64(field, v)
-            },
-            FieldType::I64(_) => {
-                let v: i64 = value.try_into()?;
-                Term::from_field_i64(field, v)
-            },
-            FieldType::F64(_) => {
-                let v: f64 = value.try_into()?;
-                Term::from_field_f64(field, v)
-            },
-            FieldType::Date(_) => {
-                let v: DateTime = value.try_into()?;
-                Term::from_field_date(field, &v)
-            },
-            FieldType::HierarchicalFacet(_) => {
-                let v: Facet = value.try_into()?;
-                Term::from_facet(field, &v)
-            },
-            FieldType::Bytes(_) => {
-                return Err(Error::msg("bytes fields are not supported"));
-            },
-        };
-
-        Ok(field)
     }
 }
 

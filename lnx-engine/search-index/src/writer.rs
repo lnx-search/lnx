@@ -489,7 +489,7 @@ fn start_writer(
 
     let pk_field = schema
         .get_field(PRIMARY_KEY)
-        .ok_or_else(anyhow!("No primary key field in schema. This is a bug."))?;
+        .ok_or_else(|| anyhow!("No primary key field in schema. This is a bug."))?;
 
     let worker = IndexWriterWorker {
         pk_field,

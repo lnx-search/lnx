@@ -49,7 +49,7 @@ pub(crate) struct QueryContext {
 ///
 /// This defines everything for a individual query
 /// including it's occurrence rules, kind and value.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct QueryData {
     /// Defines the kind of query additional context for each query is
     /// contained within the kind.

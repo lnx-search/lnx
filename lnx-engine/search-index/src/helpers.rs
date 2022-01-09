@@ -163,7 +163,7 @@ impl PersistentFrequencySet {
             self.dirty_set
                 .inner
                 .entry(key)
-                .and_replace_entry_with(|k, v| {
+                .and_replace_entry_with(|_k, v| {
                     let new_count = v.saturating_sub(count);
 
                     if new_count == 0 {
@@ -171,7 +171,7 @@ impl PersistentFrequencySet {
                     } else {
                         Some(new_count)
                     }
-                })
+                });
         }
     }
 
