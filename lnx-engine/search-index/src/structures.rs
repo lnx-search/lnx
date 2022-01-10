@@ -851,36 +851,6 @@ impl DocumentPayload {
         Ok(doc)
     }
 
-    pub(crate) fn get_text_values(
-        &self,
-        schema: &Schema,
-        target_fields: &[Field],
-    ) -> Vec<String> {
-        let mut out_fields = vec![];
-        for field in target_fields {
-            let field_name = schema.get_field_name(*field);
-
-            if let Some(v) = self.0.get(field_name) {
-                match v {
-                    DocumentValueOptions::Single(value) => {
-                        if let Ok(v) = value.clone().try_into() {
-                            out_fields.push(v)
-                        }
-                    },
-                    DocumentValueOptions::Many(values) => {
-                        for value in values.clone() {
-                            if let Ok(v) = value.try_into() {
-                                out_fields.push(v)
-                            }
-                        }
-                    },
-                };
-            }
-        }
-
-        out_fields
-    }
-
     fn add_value(
         key: &str,
         field: Field,

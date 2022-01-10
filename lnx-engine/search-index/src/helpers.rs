@@ -2,13 +2,9 @@ use std::cmp::Reverse;
 use std::hash::{Hash, Hasher};
 
 use anyhow::Result;
-use bincode::Options;
-use hashbrown::HashMap;
 use tantivy::schema::Schema;
-use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::DateTime;
 
-use crate::storage::StorageBackend;
 
 pub(crate) trait Validate {
     fn validate(&self) -> Result<()> {
