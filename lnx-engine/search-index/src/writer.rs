@@ -385,7 +385,10 @@ impl IndexWriterWorker {
     fn calculate_frequency_dictionary(&mut self) -> Result<()> {
         info!("generating frequency dictionary from committed documents...");
 
-        // We base our systems off of the currently comitted docs.
+        // We need to ensure a reload
+        self.reader.force_reload()?;
+
+        // We base our systems off of the currently committed docs.
         let searcher = self.reader.get_searcher();
 
         let mut map: HashMap<String, u32> = HashMap::new();

@@ -448,6 +448,10 @@ impl Reader {
         })
     }
 
+    /// This forces the reader to reload after a commit.
+    pub(crate) fn force_reload(&self) -> Result<()> {
+        self.pool.reload()
+    }
 
     /// This should not be used for general things.
     ///
