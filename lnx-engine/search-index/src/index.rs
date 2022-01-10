@@ -137,7 +137,7 @@ impl InternalIndex {
         let reader = reader::Reader::create(&ctx).await?;
 
         info!("creating writer...");
-        let writer = writer::Writer::create(&ctx)?;
+        let writer = writer::Writer::create(&ctx, reader.clone())?;
 
         Ok(Self {
             _ctx: ctx,

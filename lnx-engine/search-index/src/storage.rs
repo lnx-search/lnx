@@ -186,6 +186,10 @@ impl Directory for SledBackedDirectory {
         Ok(())
     }
 
+    fn sync_directory(&self) -> std::io::Result<()> {
+        self.inner.sync_directory()
+    }
+
     fn watch(&self, watch_callback: WatchCallback) -> tantivy::Result<WatchHandle> {
         self.inner.watch(watch_callback)
     }

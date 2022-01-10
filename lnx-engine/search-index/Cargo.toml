@@ -14,6 +14,7 @@ sled = { version = "0.34.7", features = ["compression"] }
 symspell = { git = "https://github.com/lnx-search/symspell", branch = "master" }
 hashbrown = { version = "0.11", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "main" }
 
 tracing = "0.1.29"
 tracing-futures = "0.2.5"
@@ -23,7 +24,6 @@ rand = "0.8.4"
 async-channel = "1.6.1"
 once_cell = "1.8"
 anyhow = "1"
-tantivy = "0.16"
 flate2 = "1.0.20"
 arc-swap = "1.4.0"
 num_cpus = "1"

@@ -814,10 +814,10 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
 pub struct DocumentPayload(BTreeMap<String, DocumentValueOptions>);
 
 impl DocumentPayload {
-    pub(crate) fn parse_into_document_with_id(
+    pub(crate) fn parse_into_document(
         self,
         schema: &Schema,
-    ) -> Result<(DocumentId, InternalDocument)> {
+    ) -> Result<InternalDocument> {
         let mut doc = InternalDocument::new();
 
         let field = schema.get_field(PRIMARY_KEY).ok_or_else(|| {
@@ -848,7 +848,7 @@ impl DocumentPayload {
             };
         }
 
-        Ok((id, doc))
+        Ok(doc)
     }
 
     pub(crate) fn get_text_values(
@@ -900,7 +900,7 @@ impl DocumentPayload {
                 let value: String = value.try_into()?;
                 doc.add_text(field, &value)
             },
-            FieldType::HierarchicalFacet(_) => {
+            FieldType::Facet(_) => {
                 let facet: Facet = value.try_into()?;
                 let val = FieldValue::new(field, Value::Facet(facet));
                 doc.add(val)

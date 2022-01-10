@@ -267,8 +267,8 @@ async fn start(settings: Settings) -> Result<()> {
     let server = Server::bind(&address).serve(service);
 
     let (major_minor_version, _) = env!("CARGO_PKG_VERSION")
-        .rsplit_once(".")
-        .unwrap_or_else(|| ("0.0", ""));
+        .rsplit_once('.')
+        .unwrap_or(("0.0", ""));
 
     info!("Lnx has started!");
     info!(

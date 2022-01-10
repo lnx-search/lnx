@@ -2,9 +2,9 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use hashbrown::HashMap;
 use symspell::{AsciiStringStrategy, SymSpell};
 
-use crate::helpers::FrequencyCounter;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
@@ -31,14 +31,13 @@ impl SymSpellManager {
     ///
     /// This means when something is next set to be corrected for the index, the
     /// custom frequencies will be used instead of the default.
-    #[instrument(name = "fast-fuzzy", skip_all, fields(unique_words = frequencies.counts().len()))]
-    pub(crate) fn adjust_index_frequencies(&self, frequencies: &impl FrequencyCounter) {
+    #[instrument(name = "fast-fuzzy", skip_all, fields(unique_words = frequencies.len()))]
+    pub(crate) fn adjust_index_frequencies(&self, frequencies: &HashMap<String, u32>) {
         info!("adjusting spell correction system to new frequency count");
 
         let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
         symspell.using_dictionary_frequencies(
             frequencies
-                .counts()
                 .into_iter()
                 .map(|(k, v)| (k.clone(), *v as i64))
                 .collect(),

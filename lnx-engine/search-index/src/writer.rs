@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
-use bincode::Options;
 use crossbeam::channel::{self, RecvTimeoutError};
 use crossbeam::queue::SegQueue;
 use hashbrown::HashMap;
@@ -15,13 +14,7 @@ use tokio::sync::oneshot;
 use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
-use crate::helpers::{
-    cr32_hash,
-    FrequencyCounter,
-    FrequencySet,
-    PersistentFrequencySet,
-    Validate,
-};
+use crate::helpers::{cr32_hash, Validate};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{
@@ -202,6 +195,7 @@ pub(super) enum WriterOp {
 /// Messages are ran in a new thread.
 pub struct IndexWriterWorker {
     index_name: String,
+    reader: crate::reader::Reader,
     using_fast_fuzzy: bool,
     pk_field: Field,
     fuzzy_fields: Vec<Field>,
@@ -211,10 +205,6 @@ pub struct IndexWriterWorker {
     auto_commit: u64,
     rx: OpReceiver,
     shutdown: ShutdownWaker,
-    frequencies: PersistentFrequencySet,
-    doc_specific_freq_tree: sled::Tree,
-    pending_doc_frequencies: Vec<(DocumentId, FrequencySet)>,
-    pending_removal_frequencies: Vec<DocumentId>,
     corrections: SymSpellCorrectionManager,
     stop_words: PersistentStopWordManager,
 }
@@ -300,77 +290,14 @@ impl IndexWriterWorker {
         }
     }
 
-    /// Handles adding a document to the writer and returning it's
-    /// transaction operation and id.
-    ///
-    /// This simply parses the payload into a document after checking
-    /// if the system is using fast fuzzy or not.
-    ///
-    /// If fast fuzzy is set to `true` this also performs
-    /// the the relevant word frequency adjustments for the
-    /// corrections manager.
-    fn handle_add_document(&mut self, document: DocumentPayload) -> Result<Opstamp> {
-        if !self.using_fast_fuzzy {
-            let (_, doc) = document.parse_into_document_with_id(&self.schema)?;
-            return Ok(self.writer.add_document(doc));
-        }
-
-        let to_index = document.get_text_values(&self.schema, &self.fuzzy_fields);
-        let (id, doc) = document.parse_into_document_with_id(&self.schema)?;
-
-        let mut doc_only_frequency = FrequencySet::new();
-        for text in to_index {
-            doc_only_frequency.process_sentence(&text);
-            self.frequencies.process_sentence(&text);
-        }
-
-        self.pending_doc_frequencies.push((id, doc_only_frequency));
-        Ok(self.writer.add_document(doc))
-    }
-
-    /// Drains the pending frequency adjustments and stores
-    /// each document's changes to the database.
-    ///
-    /// This is used when deleting documents to adjust the
-    /// frequency set again when deleting the document.
-    ///
-    /// If fast fuzzy is disabled, this is a no-op.
-    fn handle_pending_frequency_changes(&mut self) -> Result<()> {
-        if !self.using_fast_fuzzy {
-            return Ok(());
-        }
-
-        let bin = bincode::options().with_big_endian();
-
-        for id in self.pending_removal_frequencies.drain(..) {
-            let id = bin.serialize(&id)?;
-
-            if let Some(data) = self.doc_specific_freq_tree.remove(id)? {
-                let set: HashMap<String, u32> = bin.deserialize(&data)?;
-                self.frequencies.remove_frequencies(set);
-            }
-        }
-
-        let mut batch = sled::Batch::default();
-        for (id, set) in self.pending_doc_frequencies.drain(..) {
-            let id = bin.serialize(&id)?;
-            let set = bin.serialize(set.counts())?;
-            batch.insert(id, set);
-        }
-
-        self.doc_specific_freq_tree.apply_batch(batch)?;
-
-        Ok(())
-    }
-
     fn handle_remove_doc(&mut self, id: DocumentId) -> Opstamp {
         let term = Term::from_field_u64(self.pk_field, id);
-
-        if self.using_fast_fuzzy {
-            self.pending_removal_frequencies.push(id);
-        }
-
         self.writer.delete_term(term)
+    }
+
+    fn handle_add_document(&mut self, document: DocumentPayload) -> Result<Opstamp> {
+        let document = document.parse_into_document(&self.schema)?;
+        self.writer.add_document(document).map_err(Error::from)
     }
 
     #[instrument(name = "writer-op-handler", level = "trace", skip_all)]
@@ -387,20 +314,8 @@ impl IndexWriterWorker {
                 return Ok(());
             },
             WriterOp::__Ping => return Ok(()),
-            WriterOp::Commit => {
-                if self.using_fast_fuzzy {
-                    self.handle_pending_frequency_changes()?;
-                    self.frequencies.commit()?;
-                    self.corrections.adjust_index_frequencies(&self.frequencies);
-                }
-                (self.writer.commit()?, "COMMIT")
-            },
+            WriterOp::Commit => (self.commit()?, "COMMIT"),
             WriterOp::Rollback => {
-                if self.using_fast_fuzzy {
-                    self.pending_doc_frequencies.clear();
-                    self.pending_removal_frequencies.clear();
-                    self.frequencies.rollback();
-                }
                 (self.writer.rollback()?, "ROLLBACK")
             },
             WriterOp::AddDocument(document) => {
@@ -429,10 +344,6 @@ impl IndexWriterWorker {
                 return Ok(());
             },
             WriterOp::DeleteAll => {
-                if self.using_fast_fuzzy {
-                    self.frequencies.clear_frequencies();
-                    self.pending_doc_frequencies.clear();
-                }
                 (self.writer.delete_all_documents()?, "DELETE-ALL")
             },
             WriterOp::AddStopWords(words) => {
@@ -459,6 +370,47 @@ impl IndexWriterWorker {
 
         Ok(())
     }
+
+    fn commit(&mut self) -> Result<Opstamp> {
+        let op = self.writer.commit()?;
+
+        if self.using_fast_fuzzy {
+            self.calculate_frequency_dictionary()?;
+        }
+
+        Ok(op)
+    }
+
+    #[instrument(name = "fast-fuzzy-frequencies", level = "info", skip_all)]
+    fn calculate_frequency_dictionary(&mut self) -> Result<()> {
+        info!("generating frequency dictionary from committed documents...");
+
+        // We base our systems off of the currently comitted docs.
+        let searcher = self.reader.get_searcher();
+
+        let mut map: HashMap<String, u32> = HashMap::new();
+        for reader in searcher.segment_readers() {
+            for field in self.fuzzy_fields.iter() {
+                let dict = reader.term_dict(*field)?;
+                let mut stream = dict.stream()?;
+
+                // We assume every term is a string, it wouldn't make sense for fuzzy fields
+                // to be non-text based fields.
+                while let Some((term, info)) = stream.next() {
+                    let word = String::from_utf8_lossy(term);
+                    map.entry(word.to_string())
+                        .and_modify(|v| *v = v.saturating_add(info.doc_freq))
+                        .or_insert_with(|| info.doc_freq);
+                }
+            }
+        }
+
+        self.corrections.adjust_index_frequencies(&map);
+
+        info!("generated frequencies applied. {} unique words registered.", map.len());
+
+        Ok(())
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -471,6 +423,7 @@ impl IndexWriterWorker {
 fn start_writer(
     name: String,
     conn: StorageBackend,
+    reader: crate::reader::Reader,
     stop_word_manager: StopWordManager,
     waiters: WaitersQueue,
     schema: Schema,
@@ -482,19 +435,15 @@ fn start_writer(
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
 ) -> Result<()> {
-    let document_freq_tree = conn.conn().open_tree("document_specific_frequencies")?;
-    let stop_words = PersistentStopWordManager::new(conn.clone(), stop_word_manager)?;
-    let frequency_set = PersistentFrequencySet::new(conn)?;
-    corrections.adjust_index_frequencies(&frequency_set);
+    let stop_words = PersistentStopWordManager::new(conn, stop_word_manager)?;
 
     let pk_field = schema
         .get_field(PRIMARY_KEY)
         .ok_or_else(|| anyhow!("No primary key field in schema. This is a bug."))?;
 
-    let worker = IndexWriterWorker {
+    let mut worker = IndexWriterWorker {
+        reader,
         pk_field,
-        doc_specific_freq_tree: document_freq_tree,
-        frequencies: frequency_set,
         index_name: name,
         auto_commit: auto_commit as u64,
         waiters,
@@ -506,9 +455,11 @@ fn start_writer(
         shutdown,
         corrections,
         stop_words,
-        pending_doc_frequencies: vec![],
-        pending_removal_frequencies: vec![],
     };
+
+    if using_fast_fuzzy {
+        worker.calculate_frequency_dictionary()?;
+    }
 
     worker.start();
 
@@ -532,7 +483,7 @@ impl Writer {
     /// This creates a bounded queue with a capacity of 20, builds the tantivy index
     /// writer with n threads and spawns a worker in a new thread.
     #[instrument(name = "index-writer", skip_all, fields(index = %ctx.name))]
-    pub(crate) fn create(ctx: &IndexContext) -> Result<Self> {
+    pub(crate) fn create(ctx: &IndexContext, reader: crate::reader::Reader) -> Result<Self> {
         let index_name = ctx.name.clone();
         let (op_sender, op_receiver) = channel::bounded::<OpPayload>(20);
         let (shutdown, shutdown_waiter) = async_channel::bounded(1);
@@ -567,6 +518,7 @@ impl Writer {
                 start_writer(
                     name,
                     conn,
+                    reader,
                     stop_word_manager,
                     waiter_queue,
                     schema,

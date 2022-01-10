@@ -110,4 +110,9 @@ impl SearcherExecutorPool {
 
         Ok(rx.await?)
     }
+
+    #[inline]
+    pub fn searcher(&self) -> LeasedItem<Searcher> {
+        self.reader.searcher()
+    }
 }
