@@ -8,7 +8,18 @@ use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;
 use tantivy::query::{Query, TermQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, Schema, Value};
-use tantivy::{DateTime, DocAddress, DocId, Executor, IndexReader, LeasedItem, ReloadPolicy, Searcher, SegmentReader, Term};
+use tantivy::{
+    DateTime,
+    DocAddress,
+    DocId,
+    Executor,
+    IndexReader,
+    LeasedItem,
+    ReloadPolicy,
+    Searcher,
+    SegmentReader,
+    Term,
+};
 
 use crate::helpers::{AsScore, Validate};
 use crate::query::{DocumentId, QueryBuilder, QuerySelector};

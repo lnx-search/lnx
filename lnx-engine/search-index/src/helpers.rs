@@ -5,7 +5,6 @@ use anyhow::Result;
 use tantivy::schema::Schema;
 use tantivy::DateTime;
 
-
 pub(crate) trait Validate {
     fn validate(&self) -> Result<()> {
         Ok(())
@@ -44,4 +43,3 @@ pub fn cr32_hash(v: impl Hash) -> u64 {
 
     hasher.finish()
 }
-

@@ -316,9 +316,7 @@ impl IndexWriterWorker {
             },
             WriterOp::__Ping => return Ok(()),
             WriterOp::Commit => (self.commit()?, "COMMIT"),
-            WriterOp::Rollback => {
-                (self.writer.rollback()?, "ROLLBACK")
-            },
+            WriterOp::Rollback => (self.writer.rollback()?, "ROLLBACK"),
             WriterOp::AddDocument(document) => {
                 (self.handle_add_document(document)?, "ADD-DOCUMENT")
             },
@@ -344,9 +342,7 @@ impl IndexWriterWorker {
 
                 return Ok(());
             },
-            WriterOp::DeleteAll => {
-                (self.writer.delete_all_documents()?, "DELETE-ALL")
-            },
+            WriterOp::DeleteAll => (self.writer.delete_all_documents()?, "DELETE-ALL"),
             WriterOp::AddStopWords(words) => {
                 self.stop_words.add_stop_words(words);
                 self.stop_words.commit()?;
@@ -411,7 +407,10 @@ impl IndexWriterWorker {
 
         self.corrections.adjust_index_frequencies(&map);
 
-        info!("generated frequencies applied. {} unique words registered.", map.len());
+        info!(
+            "generated frequencies applied. {} unique words registered.",
+            map.len()
+        );
 
         Ok(())
     }
@@ -487,7 +486,10 @@ impl Writer {
     /// This creates a bounded queue with a capacity of 20, builds the tantivy index
     /// writer with n threads and spawns a worker in a new thread.
     #[instrument(name = "index-writer", skip_all, fields(index = %ctx.name))]
-    pub(crate) fn create(ctx: &IndexContext, reader: crate::reader::Reader) -> Result<Self> {
+    pub(crate) fn create(
+        ctx: &IndexContext,
+        reader: crate::reader::Reader,
+    ) -> Result<Self> {
         let index_name = ctx.name.clone();
         let (op_sender, op_receiver) = channel::bounded::<OpPayload>(20);
         let (shutdown, shutdown_waiter) = async_channel::bounded(1);

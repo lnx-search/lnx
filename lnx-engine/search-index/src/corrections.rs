@@ -5,7 +5,6 @@ use arc_swap::ArcSwap;
 use hashbrown::HashMap;
 use symspell::{AsciiStringStrategy, SymSpell};
 
-
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
 /// The manager around the sym spell fuzzy searching system.
