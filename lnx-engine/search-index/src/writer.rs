@@ -276,6 +276,7 @@ impl IndexWriterWorker {
         op: WriterOp,
         waker: Option<oneshot::Sender<Result<()>>>,
     ) {
+        info!("ready to handling operations!");
         match self.handle_op(op) {
             Err(e) => {
                 if let Some(w) = waker {
