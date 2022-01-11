@@ -2,9 +2,8 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use hashbrown::HashMap;
 use symspell::{AsciiStringStrategy, SymSpell};
-
-use crate::helpers::FrequencyCounter;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
@@ -31,14 +30,13 @@ impl SymSpellManager {
     ///
     /// This means when something is next set to be corrected for the index, the
     /// custom frequencies will be used instead of the default.
-    #[instrument(name = "fast-fuzzy", skip_all, fields(unique_words = frequencies.counts().len()))]
-    pub(crate) fn adjust_index_frequencies(&self, frequencies: &impl FrequencyCounter) {
-        info!("adjusting spell correction system to new frequency count");
+    #[instrument(name = "fast-fuzzy", skip_all, fields(unique_words = frequencies.len()))]
+    pub(crate) fn adjust_index_frequencies(&self, frequencies: &HashMap<String, u32>) {
+        info!("adjusting spell correction system to new frequency count, this may take a while...");
 
         let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
         symspell.using_dictionary_frequencies(
             frequencies
-                .counts()
                 .into_iter()
                 .map(|(k, v)| (k.clone(), *v as i64))
                 .collect(),
@@ -51,30 +49,5 @@ impl SymSpellManager {
 impl Debug for SymSpellManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("SymSpellManager")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::helpers::FrequencySet;
-
-    #[test]
-    fn test_text_correction() {
-        let sentence = "The quick brown fox, jumped over the quick brown dogg.";
-
-        let mut freq_dict = FrequencySet::new();
-        freq_dict.process_sentence(sentence);
-
-        let manager = SymSpellManager::new();
-        manager.adjust_index_frequencies(&freq_dict);
-
-        let test_sentence = "teh quick broown fox jumpedd ove the quic bruwn dog";
-        let corrected_sentence = manager.correct(test_sentence);
-
-        assert_eq!(
-            corrected_sentence,
-            "the quick brown fox jumped over the quick brown dogg"
-        );
     }
 }

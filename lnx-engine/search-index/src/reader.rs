@@ -14,6 +14,7 @@ use tantivy::{
     DocId,
     Executor,
     IndexReader,
+    LeasedItem,
     ReloadPolicy,
     Searcher,
     SegmentReader,
@@ -302,6 +303,7 @@ fn order_or_sort(
 /// limiters and thread pool execution.
 ///
 /// Each index should only have on `Reader` instance.
+#[derive(Clone)]
 pub(crate) struct Reader {
     index_name: Arc<String>,
 
@@ -309,7 +311,7 @@ pub(crate) struct Reader {
     pool: crate::ReaderExecutor,
 
     /// The query factory system.
-    query_handler: QueryBuilder,
+    query_handler: Arc<QueryBuilder>,
 }
 
 impl Reader {
@@ -358,7 +360,7 @@ impl Reader {
         Ok(Self {
             index_name: Arc::new(ctx.name()),
             pool,
-            query_handler,
+            query_handler: Arc::new(query_handler),
         })
     }
 
@@ -455,5 +457,18 @@ impl Reader {
             hits,
             count,
         })
+    }
+
+    /// This forces the reader to reload after a commit.
+    pub(crate) fn force_reload(&self) -> Result<()> {
+        self.pool.reload()
+    }
+
+    /// This should not be used for general things.
+    ///
+    /// This is an internal export to allow the writer
+    /// to have access to the segment reader information.
+    pub(crate) fn get_searcher(&self) -> LeasedItem<Searcher> {
+        self.pool.searcher()
     }
 }

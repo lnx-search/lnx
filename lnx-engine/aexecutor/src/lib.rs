@@ -2,7 +2,7 @@ mod reader_executor;
 
 use std::borrow::Borrow;
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use tantivy::{LeasedItem, Searcher};
 use tokio::sync::{oneshot, Semaphore};
 
@@ -109,5 +109,15 @@ impl SearcherExecutorPool {
         });
 
         Ok(rx.await?)
+    }
+
+    #[inline]
+    pub fn reload(&self) -> Result<()> {
+        self.reader.reload().map_err(Error::from)
+    }
+
+    #[inline]
+    pub fn searcher(&self) -> LeasedItem<Searcher> {
+        self.reader.searcher()
     }
 }

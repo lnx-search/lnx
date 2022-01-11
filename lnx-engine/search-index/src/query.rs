@@ -557,7 +557,7 @@ fn convert_to_term(
             let value: String = value.try_into()?;
             Term::from_field_text(field, &value)
         },
-        FieldType::HierarchicalFacet(_) => {
+        FieldType::Facet(_) => {
             let facet: String = value.try_into()?;
 
             let facet = Facet::from_text(&facet).map_err(|e| {
