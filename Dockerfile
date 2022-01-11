@@ -1,18 +1,15 @@
-FROM chillfish8/rust-builder:latest as builder
+FROM rust:slim-buster as build
 
-WORKDIR /home/rust/
+WORKDIR /code
 
-# Avoid having to install/build all dependencies by copying
-# the Cargo files and making a dummy src/main.rs
-COPY . .
-RUN cargo build --release --target x86_64-unknown-linux-musl
+COPY . /code
 
-# Size optimization
-RUN strip target/x86_64-unknown-linux-musl/release/lnx
+RUN cargo build --release
 
-# Start building the final image
-FROM scratch
-WORKDIR /etc/lnx
+# Copy the binary into a new container for a smaller docker image
+FROM debian:buster-slim
 
-COPY --from=builder /home/rust/target/x86_64-unknown-linux-musl/release/lnx .
+COPY --from=build /code/target/release/lnx /
+USER root
+
 ENTRYPOINT ["./lnx", "--host", "0.0.0.0"]
