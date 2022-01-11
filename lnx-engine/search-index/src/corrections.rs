@@ -51,28 +51,3 @@ impl Debug for SymSpellManager {
         f.write_str("SymSpellManager")
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::helpers::FrequencySet;
-
-    #[test]
-    fn test_text_correction() {
-        let sentence = "The quick brown fox, jumped over the quick brown dogg.";
-
-        let mut freq_dict = FrequencySet::new();
-        freq_dict.process_sentence(sentence);
-
-        let manager = SymSpellManager::new();
-        manager.adjust_index_frequencies(&freq_dict);
-
-        let test_sentence = "teh quick broown fox jumpedd ove the quic bruwn dog";
-        let corrected_sentence = manager.correct(test_sentence);
-
-        assert_eq!(
-            corrected_sentence,
-            "the quick brown fox jumped over the quick brown dogg"
-        );
-    }
-}
