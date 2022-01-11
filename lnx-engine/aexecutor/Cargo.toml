@@ -10,6 +10,6 @@ edition = "2018"
 async-channel = "1.6.1"
 anyhow = "1"
 rayon = "1.5.1"
-tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "main" }
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", tag = "0.16.3" }
 crossbeam = "0.8"
 tokio = { version = "1.11", features = ["sync"] }
