@@ -45,6 +45,7 @@ This gives you the ability to control in detail where your computing resources a
 threads in exchange for lower max concurrency.
 
 The bellow figures were taken by our `lnx-cli` on the small `movies.json` dataset, we didn't try any higher as Meilisearch takes an incredibly long time to index millions of docs although the new Meilisearch engine has improved this somewhat.
+
 <img width="48%" src="https://user-images.githubusercontent.com/57491488/149216271-6d30eae4-bb42-4121-a734-9fbd1bac2902.png"/>
 <img width="48%" src="https://user-images.githubusercontent.com/57491488/149216285-705d4700-e10f-4ffe-a0f2-2fb325ba3004.png"/>
 
