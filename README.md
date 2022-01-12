@@ -35,7 +35,7 @@ lnx although very new offers a wide range of features thanks to the ecosystem it
   <img src="https://i.imgur.com/QovtWlc.gif" alt="Demo video"/>
 </p>
 
-*Here you can see lnx doing search as you type on a 27 million document dataset coming in at reasonable 18GB once indexed, ran on my i7-8700k using ~4GB of RAM with our fast-fuzzy system*
+*Here you can see lnx doing search as you type on a 27 million document dataset coming in at reasonable 18GB once indexed, ran on my i7-8700k using ~3GB of RAM with our fast-fuzzy system*
 Got a bigger dataset for us to try? Open an issue!
 
 ### Performance
