@@ -45,44 +45,8 @@ This gives you the ability to control in detail where your computing resources a
 threads in exchange for lower max concurrency.
 
 The bellow figures were taken by our `lnx-cli` on the small `movies.json` dataset, we didn't try any higher as Meilisearch takes an incredibly long time to index millions of docs although the new Meilisearch engine has improved this somewhat.
-
-#### MeiliSearch
-```
- INFO  lnxcli > starting benchmark system
- INFO  benchmark > starting runtime with 12 threads
- INFO  benchmark::meilisearch > MeiliSearch took 17.177s to process submitted documents
- INFO  benchmark              > Service ready! Beginning benchmark.
- INFO  benchmark              >      Concurrency @ 200 clients
- INFO  benchmark              >      Searching @ 10 sentences
- INFO  benchmark              >      Mode @ Typing
- INFO  benchmark::sampler     > General benchmark results:
- INFO  benchmark::sampler     >      Total Requests Sent: 67633
- INFO  benchmark::sampler     >      Average Requests/sec: 532.88
- INFO  benchmark::sampler     >      Average Latency: 374.254422ms
- INFO  benchmark::sampler     >      Max Latency: 3.924168s
- INFO  benchmark::sampler     >      Min Latency: 1.9643ms
- WARN  benchmark::sampler     >      Got status 500: 767
- INFO  lnxcli                 > commands complete!
-```
-
-#### lnx (fast-fuzzy search)
-```
-INFO  lnxcli > starting benchmark system
- INFO  benchmark > starting runtime with 12 threads
- INFO  benchmark::lnx > lnx took 1.3684143s to process submitted documents
- INFO  benchmark      > Service ready! Beginning benchmark.
- INFO  benchmark      >      Concurrency @ 200 clients
- INFO  benchmark      >      Searching @ 10 sentences
- INFO  benchmark      >      Mode @ Typing
- INFO  benchmark::sampler > General benchmark results:
- INFO  benchmark::sampler >      Total Requests Sent: 68400
- INFO  benchmark::sampler >      Average Requests/sec: 5237.24
- INFO  benchmark::sampler >      Average Latency: 38.18735ms
- INFO  benchmark::sampler >      Max Latency: 3.0432477s
- INFO  benchmark::sampler >      Min Latency: 758µs
- INFO  lnxcli             > commands complete!
-```
-
+<img width="48%" src="https://user-images.githubusercontent.com/57491488/149216271-6d30eae4-bb42-4121-a734-9fbd1bac2902.png"/>
+<img width="48%" src="https://user-images.githubusercontent.com/57491488/149216285-705d4700-e10f-4ffe-a0f2-2fb325ba3004.png"/>
 
 
 
