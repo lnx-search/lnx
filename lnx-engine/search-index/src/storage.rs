@@ -48,7 +48,7 @@ impl OpenType {
 ///
 /// The only difference is Tantivy's special `meta.json` and `managed.json` is
 /// ignored and kept mount to the mmap directory.
-/// This same logic is applied to watching files, only those aformentioned files
+/// This same logic is applied to watching files, only those aforementioned files
 /// are watched.
 #[derive(Clone)]
 pub struct SledBackedDirectory {

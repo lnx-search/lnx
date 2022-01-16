@@ -283,7 +283,7 @@ async fn start(settings: Settings) -> Result<()> {
     );
 
     tokio::select! {
-        _r = tokio::signal::ctrl_c() => {
+        _r = wait_for_signal() => {
             info!("got shutdown signal, preparing shutdown");
         },
         r = server => {
@@ -295,6 +295,30 @@ async fn start(settings: Settings) -> Result<()> {
 
     info!("shutting down engine...");
     state.engine.shutdown().await?;
+
+    Ok(())
+}
+
+async fn wait_for_signal() -> Result<()> {
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await?;
+    }
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut stream_quit = signal(SignalKind::quit())?;
+        let mut stream_interupt = signal(SignalKind::interrupt())?;
+        let mut stream_term = signal(SignalKind::terminate())?;
+
+        tokio::select! {
+            _ = stream_quit.recv() => {},
+            _ = stream_interupt.recv() => {},
+            _ = stream_term.recv() => {},
+        }
+    }
 
     Ok(())
 }
