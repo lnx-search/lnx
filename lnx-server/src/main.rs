@@ -307,8 +307,7 @@ async fn wait_for_signal() -> Result<()> {
 
     #[cfg(unix)]
     {
-        use tokio::signal::unix::SignalKind;
-        use tokio::signal::unix::signal;
+        use tokio::signal::unix::{signal, SignalKind};
 
         let mut stream_quit = signal(SignalKind::quit())?;
         let mut stream_interupt = signal(SignalKind::interrupt())?;
@@ -323,7 +322,6 @@ async fn wait_for_signal() -> Result<()> {
 
     Ok(())
 }
-
 
 async fn create_state(settings: &Settings) -> Result<State> {
     let db = sled::Config::new()
