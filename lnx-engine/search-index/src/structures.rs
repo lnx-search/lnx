@@ -5,7 +5,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use chrono::{NaiveDateTime, Utc};
 use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
@@ -170,6 +170,40 @@ impl Validate for IndexDeclaration {
             return Err(Error::msg(
                 "at least one indexed field must be given to search.",
             ));
+        }
+
+        {
+            let mut rejected_fields = vec![];
+            for field_name in self.boost_fields.keys() {
+                if !self.fields.contains_key(field_name) {
+                    rejected_fields.push(field_name.to_string());
+                }
+            }
+
+            if !rejected_fields.is_empty() {
+                return Err(anyhow!(
+                "key 'boost_fields' contain {} fields that are not defined in the schema: {}",
+                rejected_fields.len(),
+                rejected_fields.join(", "),
+            ));
+            }
+        }
+
+        {
+            let mut rejected_fields = vec![];
+            for field_name in self.search_fields.iter() {
+                if !self.fields.contains_key(field_name) {
+                    rejected_fields.push(field_name.to_string());
+                }
+            }
+
+            if !rejected_fields.is_empty() {
+                return Err(anyhow!(
+                "key 'search_fields' contain {} fields that are not defined in the schema: {}",
+                rejected_fields.len(),
+                rejected_fields.join(", "),
+            ));
+            }
         }
 
         Ok(())
