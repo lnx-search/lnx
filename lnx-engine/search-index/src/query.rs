@@ -95,13 +95,67 @@ pub enum QueryKind {
     /// Gets similar documents based on the reference document.
     ///
     /// This expects a document id as the value, anything else will be rejected.
-    MoreLikeThis { ctx: DocumentValue },
+    MoreLikeThis {
+        ctx: DocumentValue,
+
+        #[serde(default = "query_mlt_defaults::min_doc_frequency")]
+        min_doc_frequency: u64,
+
+        #[serde(default = "query_mlt_defaults::max_doc_frequency")]
+        max_doc_frequency: u64,
+
+        #[serde(default = "query_mlt_defaults::min_term_frequency")]
+        min_term_frequency: usize,
+
+        #[serde(default = "query_mlt_defaults::min_word_length")]
+        min_word_length: usize,
+
+        #[serde(default = "query_mlt_defaults::max_word_length")]
+        max_word_length: usize,
+
+        #[serde(default = "query_mlt_defaults::boost_factor")]
+        boost_factor: f32,
+
+        max_query_terms: Option<usize>,
+    },
 
     /// Get results matching the given term for the given field.
     Term {
         ctx: DocumentValue,
         fields: FieldSelector,
     },
+}
+
+mod query_mlt_defaults {
+    #[inline]
+    pub fn min_doc_frequency() -> u64 {
+        1
+    }
+
+    #[inline]
+    pub fn max_doc_frequency() -> u64 {
+        10
+    }
+
+    #[inline]
+    pub fn min_term_frequency() -> usize {
+        1
+    }
+
+    #[inline]
+    pub fn min_word_length() -> usize {
+        2
+    }
+
+    #[inline]
+    pub fn max_word_length() -> usize {
+        18
+    }
+
+    #[inline]
+    pub fn boost_factor() -> f32 {
+        1.0
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -319,8 +373,26 @@ impl QueryBuilder {
         match qry.kind {
             QueryKind::Fuzzy { ctx: query } => self.make_fuzzy_query(query),
             QueryKind::Normal { ctx: query } => self.make_normal_query(query),
-            QueryKind::MoreLikeThis { ctx: query } => {
-                self.make_more_like_this_query(query).await
+            QueryKind::MoreLikeThis {
+                ctx: query,
+                min_doc_frequency,
+                max_doc_frequency,
+                min_term_frequency,
+                min_word_length,
+                max_word_length,
+                boost_factor,
+                max_query_terms,
+            } => {
+                self.make_more_like_this_query(
+                    query,
+                    min_doc_frequency,
+                    max_doc_frequency,
+                    min_term_frequency,
+                    min_word_length,
+                    max_word_length,
+                    boost_factor,
+                    max_query_terms,
+                ).await
             },
             QueryKind::Term { ctx: query, fields } => {
                 self.make_term_query(query, fields)
@@ -415,6 +487,7 @@ impl QueryBuilder {
         Ok(query)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Makes a new query that matches documents that are similar to a
     /// given reference document.
     ///
@@ -423,6 +496,13 @@ impl QueryBuilder {
     async fn make_more_like_this_query(
         &self,
         value: DocumentValue,
+        min_doc_frequency: u64,
+        max_doc_frequency: u64,
+        min_term_frequency: usize,
+        min_word_length: usize,
+        max_word_length: usize,
+        boost_factor: f32,
+        max_query_terms: Option<usize>,
     ) -> Result<Box<dyn Query>> {
         let id: DocumentId = value.try_into()?;
 
@@ -453,15 +533,20 @@ impl QueryBuilder {
             })
             .await??;
 
-        let query = MoreLikeThisQuery::builder()
-            .with_min_doc_frequency(1)
-            .with_max_doc_frequency(10)
-            .with_min_term_frequency(1)
-            .with_min_word_length(2)
-            .with_max_word_length(18)
-            .with_boost_factor(1.0)
-            .with_stop_words(self.stop_words.get_stop_words())
-            .with_document(address);
+        let mut query = MoreLikeThisQuery::builder()
+            .with_min_doc_frequency(min_doc_frequency)
+            .with_max_doc_frequency(max_doc_frequency)
+            .with_min_term_frequency(min_term_frequency)
+            .with_min_word_length(min_word_length)
+            .with_max_word_length(max_word_length)
+            .with_boost_factor(boost_factor)
+            .with_stop_words(self.stop_words.get_stop_words());
+
+        if let Some(limit) = max_query_terms {
+            query = query.with_max_query_terms(limit);
+        }
+
+        let query = query.with_document(address);
 
         Ok(Box::new(query))
     }
