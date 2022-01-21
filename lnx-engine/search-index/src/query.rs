@@ -74,6 +74,32 @@ impl QueryData {
     }
 }
 
+
+/// A customisable set of edit distance limitations.
+///
+/// This changes the minimum required word length for a edit distance of 1 and 2.
+/// If a word is bellow this threshold it defaults to `0`.
+///
+/// Defaults to:
+/// - max edit distance 2 if word is >= 8
+/// - max edit distance 1 if word is >= 5
+/// - else defaults to 0
+#[derive(Debug, Copy, Clone, Deserialize)]
+pub struct EditDistances {
+    d1: usize,
+    d2: usize,
+}
+
+impl Default for EditDistances {
+    fn default() -> Self {
+        Self {
+            d1: 8,
+            d2: 5
+        }
+    }
+}
+
+
 /// The kind of query to perform.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -84,7 +110,15 @@ pub enum QueryKind {
     /// within reason will be corrected and not invalidate all the results.
     ///
     /// Things like `trueman show` will match `the truman show`.
-    Fuzzy { ctx: DocumentValue },
+    Fuzzy {
+        ctx: DocumentValue,
+
+        #[serde(default)]
+        edit_distances: EditDistances,
+
+        #[serde(default)]
+        transposition_costs_two: bool,
+    },
 
     /// The normal query search using the tantivy query parser.
     ///
@@ -253,6 +287,8 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 Ok(QuerySelector::Single(QueryData {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v.to_string()),
+                        edit_distances: Default::default(),
+                        transposition_costs_two: false
                     },
                     occur: Occur::default(),
                 }))
@@ -262,6 +298,8 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 Ok(QuerySelector::Single(QueryData {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v),
+                        edit_distances: Default::default(),
+                        transposition_costs_two: false
                     },
                     occur: Occur::default(),
                 }))
@@ -371,7 +409,11 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy { ctx: query } => self.make_fuzzy_query(query),
+            QueryKind::Fuzzy {
+                ctx: query,
+                edit_distances,
+                transposition_costs_two,
+            } => self.make_fuzzy_query(query, edit_distances, transposition_costs_two),
             QueryKind::Normal { ctx: query } => self.make_normal_query(query),
             QueryKind::MoreLikeThis {
                 ctx: query,
@@ -407,7 +449,12 @@ impl QueryBuilder {
     /// produce a fast-fuzzy query. Otherwise this will produce a feature
     /// fuzzy search.
     // TODO add-back #[instrument(name = "fuzzy-query", level = "trace", skip_all)]
-    fn make_fuzzy_query(&self, value: DocumentValue) -> Result<Box<dyn Query>> {
+    fn make_fuzzy_query(
+        &self,
+        value: DocumentValue,
+        edit_distances: EditDistances,
+        transposition_costs_two: bool,
+    ) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
         let mut query = value.as_string();
@@ -450,15 +497,15 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    let edit_distance = if search_term.len() < 5 {
-                        0
-                    } else if search_term.len() < 9 {
+                    let edit_distance = if search_term.len() >= edit_distances.d2 {
+                        2
+                    } else if search_term.len() >= edit_distances.d1 {
                         1
                     } else {
-                        2
+                        0
                     };
 
-                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, true))
+                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, !transposition_costs_two))
                 };
 
                 if *boost > 0.0f32 {
