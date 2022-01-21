@@ -90,8 +90,8 @@ impl QueryData {
 /// user.
 #[derive(Debug, Copy, Clone, Deserialize)]
 pub struct FuzzyConfig {
-    d1: usize,
-    d2: usize,
+    min_length_distance1: usize,
+    min_length_distance2: usize,
 
     #[serde(default)]
     transposition_costs_two: bool,
@@ -100,8 +100,8 @@ pub struct FuzzyConfig {
 impl Default for FuzzyConfig {
     fn default() -> Self {
         Self {
-            d1: 8,
-            d2: 5,
+            min_length_distance1: 8,
+            min_length_distance2: 5,
             transposition_costs_two: false,
         }
     }
@@ -499,9 +499,9 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    let edit_distance = if search_term.len() >= cfg.d2 {
+                    let edit_distance = if search_term.len() >= cfg.min_length_distance2 {
                         2
-                    } else if search_term.len() >= cfg.d1 {
+                    } else if search_term.len() >= cfg.min_length_distance1 {
                         1
                     } else {
                         0
