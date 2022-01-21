@@ -84,83 +84,68 @@ impl QueryData {
 /// - max edit distance 2 if word is >= 8
 /// - max edit distance 1 if word is >= 5
 /// - else defaults to 0
+///
+/// This is only applicable to the non-fast-fuzzy variant of the system.
+/// Due to the nature of fast-fuzzy this is a non-issue/not something we want to leave to the
+/// user.
 #[derive(Debug, Copy, Clone, Deserialize)]
-pub struct EditDistances {
+pub struct FuzzyConfig {
     d1: usize,
     d2: usize,
+
+    #[serde(default)]
+    transposition_costs_two: bool,
 }
 
-impl Default for EditDistances {
+impl Default for FuzzyConfig {
     fn default() -> Self {
         Self {
             d1: 8,
-            d2: 5
+            d2: 5,
+            transposition_costs_two: false,
         }
     }
 }
 
 
-/// The kind of query to perform.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QueryKind {
-    /// This is a fuzzy search.
-    ///
-    /// This will give a typo-tolerant aspect to the query; spelling mistakes
-    /// within reason will be corrected and not invalidate all the results.
-    ///
-    /// Things like `trueman show` will match `the truman show`.
-    Fuzzy {
-        ctx: DocumentValue,
+#[derive(Debug, Copy, Clone, Deserialize)]
+pub struct MoreLikeThisConfig {
+    #[serde(default = "MoreLikeThisConfig::min_doc_frequency")]
+    min_doc_frequency: u64,
 
-        #[serde(default)]
-        edit_distances: EditDistances,
+    #[serde(default = "MoreLikeThisConfig::max_doc_frequency")]
+    max_doc_frequency: u64,
 
-        #[serde(default)]
-        transposition_costs_two: bool,
-    },
+    #[serde(default = "MoreLikeThisConfig::min_term_frequency")]
+    min_term_frequency: usize,
 
-    /// The normal query search using the tantivy query parser.
-    ///
-    /// This will expect the given value to follow the query specification
-    /// as defined in the tantivy docs.
-    Normal { ctx: DocumentValue },
+    #[serde(default = "MoreLikeThisConfig::min_word_length")]
+    min_word_length: usize,
 
-    /// Gets similar documents based on the reference document.
-    ///
-    /// This expects a document id as the value, anything else will be rejected.
-    MoreLikeThis {
-        ctx: DocumentValue,
+    #[serde(default = "MoreLikeThisConfig::max_word_length")]
+    max_word_length: usize,
 
-        #[serde(default = "query_mlt_defaults::min_doc_frequency")]
-        min_doc_frequency: u64,
+    #[serde(default = "MoreLikeThisConfig::boost_factor")]
+    boost_factor: f32,
 
-        #[serde(default = "query_mlt_defaults::max_doc_frequency")]
-        max_doc_frequency: u64,
-
-        #[serde(default = "query_mlt_defaults::min_term_frequency")]
-        min_term_frequency: usize,
-
-        #[serde(default = "query_mlt_defaults::min_word_length")]
-        min_word_length: usize,
-
-        #[serde(default = "query_mlt_defaults::max_word_length")]
-        max_word_length: usize,
-
-        #[serde(default = "query_mlt_defaults::boost_factor")]
-        boost_factor: f32,
-
-        max_query_terms: Option<usize>,
-    },
-
-    /// Get results matching the given term for the given field.
-    Term {
-        ctx: DocumentValue,
-        fields: FieldSelector,
-    },
+    max_query_terms: Option<usize>,
 }
 
-mod query_mlt_defaults {
+impl Default for MoreLikeThisConfig {
+    fn default() -> Self {
+        Self {
+            min_doc_frequency: Self::min_doc_frequency(),
+            max_doc_frequency: Self::max_doc_frequency(),
+            min_term_frequency: Self::min_term_frequency(),
+            min_word_length: Self::min_word_length(),
+            max_word_length: Self::max_word_length(),
+            boost_factor: Self::boost_factor(),
+            max_query_terms: None
+        }
+    }
+}
+
+impl MoreLikeThisConfig {
     #[inline]
     pub fn min_doc_frequency() -> u64 {
         1
@@ -191,6 +176,47 @@ mod query_mlt_defaults {
         1.0
     }
 }
+
+/// The kind of query to perform.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QueryKind {
+    /// This is a fuzzy search.
+    ///
+    /// This will give a typo-tolerant aspect to the query; spelling mistakes
+    /// within reason will be corrected and not invalidate all the results.
+    ///
+    /// Things like `trueman show` will match `the truman show`.
+    Fuzzy {
+        ctx: DocumentValue,
+
+        #[serde(flatten, default)]
+        cfg: FuzzyConfig,
+    },
+
+    /// The normal query search using the tantivy query parser.
+    ///
+    /// This will expect the given value to follow the query specification
+    /// as defined in the tantivy docs.
+    Normal { ctx: DocumentValue },
+
+    /// Gets similar documents based on the reference document.
+    ///
+    /// This expects a document id as the value, anything else will be rejected.
+    MoreLikeThis {
+        ctx: DocumentValue,
+
+        #[serde(flatten, default)]
+        cfg: MoreLikeThisConfig,
+    },
+
+    /// Get results matching the given term for the given field.
+    Term {
+        ctx: DocumentValue,
+        fields: FieldSelector,
+    },
+}
+
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -287,8 +313,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 Ok(QuerySelector::Single(QueryData {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v.to_string()),
-                        edit_distances: Default::default(),
-                        transposition_costs_two: false
+                        cfg: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -298,8 +323,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 Ok(QuerySelector::Single(QueryData {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v),
-                        edit_distances: Default::default(),
-                        transposition_costs_two: false
+                        cfg: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -409,33 +433,12 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy {
-                ctx: query,
-                edit_distances,
-                transposition_costs_two,
-            } => self.make_fuzzy_query(query, edit_distances, transposition_costs_two),
-            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
-            QueryKind::MoreLikeThis {
-                ctx: query,
-                min_doc_frequency,
-                max_doc_frequency,
-                min_term_frequency,
-                min_word_length,
-                max_word_length,
-                boost_factor,
-                max_query_terms,
-            } => {
-                self.make_more_like_this_query(
-                    query,
-                    min_doc_frequency,
-                    max_doc_frequency,
-                    min_term_frequency,
-                    min_word_length,
-                    max_word_length,
-                    boost_factor,
-                    max_query_terms,
-                ).await
-            },
+            QueryKind::Fuzzy { ctx: query, cfg} =>
+                self.make_fuzzy_query(query, cfg),
+            QueryKind::Normal { ctx: query } =>
+                self.make_normal_query(query),
+            QueryKind::MoreLikeThis { ctx: query, cfg } =>
+                self.make_more_like_this_query(query,cfg, ).await,
             QueryKind::Term { ctx: query, fields } => {
                 self.make_term_query(query, fields)
             },
@@ -452,8 +455,7 @@ impl QueryBuilder {
     fn make_fuzzy_query(
         &self,
         value: DocumentValue,
-        edit_distances: EditDistances,
-        transposition_costs_two: bool,
+        cfg: FuzzyConfig,
     ) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
@@ -497,15 +499,15 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    let edit_distance = if search_term.len() >= edit_distances.d2 {
+                    let edit_distance = if search_term.len() >= cfg.d2 {
                         2
-                    } else if search_term.len() >= edit_distances.d1 {
+                    } else if search_term.len() >= cfg.d1 {
                         1
                     } else {
                         0
                     };
 
-                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, !transposition_costs_two))
+                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, !cfg.transposition_costs_two))
                 };
 
                 if *boost > 0.0f32 {
@@ -543,13 +545,7 @@ impl QueryBuilder {
     async fn make_more_like_this_query(
         &self,
         value: DocumentValue,
-        min_doc_frequency: u64,
-        max_doc_frequency: u64,
-        min_term_frequency: usize,
-        min_word_length: usize,
-        max_word_length: usize,
-        boost_factor: f32,
-        max_query_terms: Option<usize>,
+        cfg: MoreLikeThisConfig,
     ) -> Result<Box<dyn Query>> {
         let id: DocumentId = value.try_into()?;
 
@@ -581,15 +577,15 @@ impl QueryBuilder {
             .await??;
 
         let mut query = MoreLikeThisQuery::builder()
-            .with_min_doc_frequency(min_doc_frequency)
-            .with_max_doc_frequency(max_doc_frequency)
-            .with_min_term_frequency(min_term_frequency)
-            .with_min_word_length(min_word_length)
-            .with_max_word_length(max_word_length)
-            .with_boost_factor(boost_factor)
+            .with_min_doc_frequency(cfg.min_doc_frequency)
+            .with_max_doc_frequency(cfg.max_doc_frequency)
+            .with_min_term_frequency(cfg.min_term_frequency)
+            .with_min_word_length(cfg.min_word_length)
+            .with_max_word_length(cfg.max_word_length)
+            .with_boost_factor(cfg.boost_factor)
             .with_stop_words(self.stop_words.get_stop_words());
 
-        if let Some(limit) = max_query_terms {
+        if let Some(limit) = cfg.max_query_terms {
             query = query.with_max_query_terms(limit);
         }
 
