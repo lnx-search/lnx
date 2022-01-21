@@ -74,7 +74,6 @@ impl QueryData {
     }
 }
 
-
 /// A customisable set of edit distance limitations.
 ///
 /// This changes the minimum required word length for a edit distance of 1 and 2.
@@ -106,7 +105,6 @@ impl Default for FuzzyConfig {
         }
     }
 }
-
 
 #[derive(Debug, Copy, Clone, Deserialize)]
 pub struct MoreLikeThisConfig {
@@ -140,7 +138,7 @@ impl Default for MoreLikeThisConfig {
             min_word_length: Self::min_word_length(),
             max_word_length: Self::max_word_length(),
             boost_factor: Self::boost_factor(),
-            max_query_terms: None
+            max_query_terms: None,
         }
     }
 }
@@ -216,7 +214,6 @@ pub enum QueryKind {
         fields: FieldSelector,
     },
 }
-
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -433,12 +430,11 @@ impl QueryBuilder {
     /// Builds a query from the given query payload.
     async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
-            QueryKind::Fuzzy { ctx: query, cfg} =>
-                self.make_fuzzy_query(query, cfg),
-            QueryKind::Normal { ctx: query } =>
-                self.make_normal_query(query),
-            QueryKind::MoreLikeThis { ctx: query, cfg } =>
-                self.make_more_like_this_query(query,cfg, ).await,
+            QueryKind::Fuzzy { ctx: query, cfg } => self.make_fuzzy_query(query, cfg),
+            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
+            QueryKind::MoreLikeThis { ctx: query, cfg } => {
+                self.make_more_like_this_query(query, cfg).await
+            },
             QueryKind::Term { ctx: query, fields } => {
                 self.make_term_query(query, fields)
             },
@@ -499,7 +495,8 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    let edit_distance = if search_term.len() >= cfg.min_length_distance2 {
+                    let edit_distance = if search_term.len() >= cfg.min_length_distance2
+                    {
                         2
                     } else if search_term.len() >= cfg.min_length_distance1 {
                         1
@@ -507,7 +504,11 @@ impl QueryBuilder {
                         0
                     };
 
-                    Box::new(FuzzyTermQuery::new_prefix(term, edit_distance, !cfg.transposition_costs_two))
+                    Box::new(FuzzyTermQuery::new_prefix(
+                        term,
+                        edit_distance,
+                        !cfg.transposition_costs_two,
+                    ))
                 };
 
                 if *boost > 0.0f32 {
