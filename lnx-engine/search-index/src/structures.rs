@@ -13,21 +13,23 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tantivy::fastfield::FastValue;
 use tantivy::schema::{
+    Cardinality,
     Facet,
     FacetOptions,
     FacetParseError,
     Field,
     FieldType,
     FieldValue,
+    IndexRecordOption,
     IntOptions,
     Schema,
     SchemaBuilder,
+    TextFieldIndexing,
+    TextOptions,
     Value,
     FAST,
     INDEXED,
     STORED,
-    STRING,
-    TEXT,
 };
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
@@ -44,6 +46,10 @@ pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
 pub static PRIMARY_KEY: &str = "_id";
 
+fn default_to_true() -> bool {
+    true
+}
+
 /// The possible index storage backends.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -58,6 +64,127 @@ pub enum StorageType {
     FileSystem,
 }
 
+/// The base options every field can have.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct BaseFieldOptions {
+    /// If the value should be compressed and stored.
+    ///
+    /// Any value that has stored set to true will have the field
+    /// value returned when searching.
+    ///
+    /// Defaults to true.
+    #[serde(default = "default_to_true")]
+    stored: bool,
+
+    /// If the field is multi-value.
+    #[serde(default)]
+    multi: bool,
+}
+
+impl Into<FacetOptions> for BaseFieldOptions {
+    fn into(self) -> FacetOptions {
+        let mut opts = FacetOptions::default();
+
+        if self.stored {
+            opts = opts.set_stored();
+        }
+
+        opts
+    }
+}
+
+impl BaseFieldOptions {
+    fn as_raw_opts(&self) -> TextOptions {
+        let mut opts = TextOptions::default();
+
+        if self.stored {
+            opts = opts.set_stored();
+        }
+
+        opts
+    }
+
+    fn opts_as_text(&self) -> TextOptions {
+        let raw = self.as_raw_opts();
+        raw.set_indexing_options(TextFieldIndexing::default().set_tokenizer("raw"))
+    }
+
+    fn opts_as_string(&self) -> TextOptions {
+        let raw = self.as_raw_opts();
+        raw.set_indexing_options(
+            TextFieldIndexing::default()
+                .set_tokenizer("default")
+                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+        )
+    }
+}
+
+impl Into<TextOptions> for BaseFieldOptions {
+    fn into(self) -> TextOptions {
+        let mut opts = TextOptions::default();
+
+        if self.stored {
+            opts = opts.set_stored();
+        }
+
+        opts
+    }
+}
+
+/// A set of field options that takes into account if a field is
+/// multi-value or not in order to determine the fast-field cardinality.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct CalculatedIntOptions {
+    /// Should the integer be indexed to be searched?
+    #[serde(default)]
+    indexed: bool,
+
+    /// Should fieldnorms be used?
+    ///
+    /// This is only relevant if `indexed = true`.
+    /// By default this is `indexed` if left empty.
+    fieldnorms: Option<bool>,
+
+    /// Is the field a fast field?.
+    ///
+    /// Fast fields have a similar lookup time to an array.
+    #[serde(default)]
+    fast: bool,
+
+    #[serde(flatten)]
+    base: BaseFieldOptions,
+}
+
+impl Into<IntOptions> for CalculatedIntOptions {
+    fn into(self) -> IntOptions {
+        let mut opts = IntOptions::default();
+
+        if self.indexed {
+            opts = opts.set_indexed();
+        }
+
+        if self.base.stored {
+            opts = opts.set_stored();
+        }
+
+        if self.fieldnorms.unwrap_or(self.indexed) {
+            opts = opts.set_fieldnorm();
+        }
+
+        if self.fast {
+            let cardinality = if self.base.multi {
+                Cardinality::MultiValues
+            } else {
+                Cardinality::SingleValue
+            };
+
+            opts = opts.set_fast(cardinality);
+        }
+
+        opts
+    }
+}
+
 /// A declared schema field type.
 ///
 /// Each field has a set of relevant options as specified
@@ -67,33 +194,54 @@ pub enum StorageType {
 #[serde(tag = "type")]
 pub enum FieldDeclaration {
     /// A f64 field with given options
-    F64(IntOptions),
+    F64 {
+        #[serde(flatten)]
+        opts: CalculatedIntOptions,
+    },
 
     /// A u64 field with given options.
-    U64(IntOptions),
+    U64 {
+        #[serde(flatten)]
+        opts: CalculatedIntOptions,
+    },
 
     /// A I64 field with given options.
-    I64(IntOptions),
+    I64 {
+        #[serde(flatten)]
+        opts: CalculatedIntOptions,
+    },
 
     /// A Datetime<Utc> field with given options.
     ///
     /// This is treated as a u64 integer timestamp.
-    Date(IntOptions),
+    Date {
+        #[serde(flatten)]
+        opts: CalculatedIntOptions,
+    },
 
     /// A string field with given options.
     ///
     /// This will be tokenized.
-    Text { stored: bool },
+    Text {
+        #[serde(flatten)]
+        opts: BaseFieldOptions,
+    },
 
     /// A string field with given options.
     ///
     /// This wont be tokenized.
-    String { stored: bool },
+    String {
+        #[serde(flatten)]
+        opts: BaseFieldOptions,
+    },
 
     /// A facet field.
     ///
     /// This is typically represented as a path e.g. `videos/moves/ironman`
-    Facet(FacetOptions),
+    Facet {
+        #[serde(flatten)]
+        opts: BaseFieldOptions,
+    },
 }
 
 fn add_boost_fields(
@@ -405,38 +553,26 @@ impl IndexDeclaration {
             }
 
             match details {
-                FieldDeclaration::U64(opts) => {
+                FieldDeclaration::U64 { opts } => {
                     schema.add_u64_field(field, opts.clone());
                 },
-                FieldDeclaration::I64(opts) => {
+                FieldDeclaration::I64 { opts } => {
                     schema.add_i64_field(field, opts.clone());
                 },
-                FieldDeclaration::F64(opts) => {
+                FieldDeclaration::F64 { opts } => {
                     schema.add_f64_field(field, opts.clone());
                 },
-                FieldDeclaration::Date(opts) => {
+                FieldDeclaration::Date { opts } => {
                     schema.add_date_field(field, opts.clone());
                 },
-                FieldDeclaration::Facet(opts) => {
+                FieldDeclaration::Facet { opts } => {
                     schema.add_facet_field(field, opts.clone());
                 },
-                FieldDeclaration::Text { stored } => {
-                    let mut opts = TEXT;
-
-                    if *stored {
-                        opts = opts | STORED;
-                    }
-
-                    schema.add_text_field(field, opts);
+                FieldDeclaration::Text { opts } => {
+                    schema.add_text_field(field, opts.opts_as_text());
                 },
-                FieldDeclaration::String { stored } => {
-                    let mut opts = STRING;
-
-                    if *stored {
-                        opts = opts | STORED;
-                    }
-
-                    schema.add_text_field(field, opts);
+                FieldDeclaration::String { opts } => {
+                    schema.add_text_field(field, opts.opts_as_string());
                 },
             }
         }
