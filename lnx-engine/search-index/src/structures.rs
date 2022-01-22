@@ -999,9 +999,9 @@ impl DocumentPayload {
         let id = rand::random::<DocumentId>();
         doc.add_u64(field, id);
         for (key, values) in self.0 {
-            let field = schema.get_field(&key).ok_or_else(|| {
-                Error::msg(format!("field {:?} does not exist in schema", &key))
-            })?;
+            let field = schema.get_field(&key).ok_or_else(||
+                anyhow!("field {:?} does not exist in schema", &key)
+            )?;
 
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
@@ -1046,10 +1046,10 @@ impl DocumentPayload {
                 doc.add(val)
             },
             _ => {
-                return Err(Error::msg(format!(
+                return Err(anyhow!(
                     "byte fields (field: {}) are not supported for document insertion",
                     key,
-                )))
+                ))
             },
         }
 
