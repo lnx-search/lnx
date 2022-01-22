@@ -89,7 +89,10 @@ impl QueryData {
 /// user.
 #[derive(Debug, Copy, Clone, Deserialize)]
 pub struct FuzzyConfig {
+    #[serde(default = "FuzzyConfig::default_min_length_d1")]
     min_length_distance1: usize,
+
+    #[serde(default = "FuzzyConfig::default_min_length_d2")]
     min_length_distance2: usize,
 
     #[serde(default)]
@@ -99,10 +102,20 @@ pub struct FuzzyConfig {
 impl Default for FuzzyConfig {
     fn default() -> Self {
         Self {
-            min_length_distance1: 8,
-            min_length_distance2: 5,
+            min_length_distance1: Self::default_min_length_d1(),
+            min_length_distance2: Self::default_min_length_d2(),
             transposition_costs_two: false,
         }
+    }
+}
+
+impl FuzzyConfig {
+    pub fn default_min_length_d1() -> usize {
+        5
+    }
+
+    pub fn default_min_length_d2() -> usize {
+        8
     }
 }
 
@@ -188,7 +201,7 @@ pub enum QueryKind {
     Fuzzy {
         ctx: DocumentValue,
 
-        #[serde(flatten, default)]
+        #[serde(flatten)]
         cfg: FuzzyConfig,
     },
 
@@ -204,7 +217,7 @@ pub enum QueryKind {
     MoreLikeThis {
         ctx: DocumentValue,
 
-        #[serde(flatten, default)]
+        #[serde(flatten)]
         cfg: MoreLikeThisConfig,
     },
 
