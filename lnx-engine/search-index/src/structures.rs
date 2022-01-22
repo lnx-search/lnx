@@ -191,6 +191,7 @@ impl IndexDeclaration {
             storage,
             correction_manager: corrections,
             index,
+            schema_ctx: self.schema_ctx.clone(),
             reader_ctx: self.reader_ctx.clone(),
             writer_ctx: self.writer_ctx,
             query_ctx: query_context,
@@ -217,6 +218,9 @@ pub struct IndexContext {
 
     /// The tantivy Index.
     pub(crate) index: Index,
+
+    /// The context for the readers.
+    pub(crate) schema_ctx: SchemaContext,
 
     /// The context for the readers.
     pub(crate) reader_ctx: ReaderContext,
@@ -605,8 +609,9 @@ pub struct DocumentPayload(BTreeMap<String, DocumentValueOptions>);
 
 impl DocumentPayload {
     pub(crate) fn parse_into_document(
-        self,
+        mut self,
         schema: &Schema,
+        ctx: &SchemaContext,
     ) -> Result<InternalDocument> {
         let mut doc = InternalDocument::new();
 
@@ -618,21 +623,30 @@ impl DocumentPayload {
 
         let id = rand::random::<DocumentId>();
         doc.add_u64(field, id);
-        for (key, values) in self.0 {
-            let field = schema.get_field(&key).ok_or_else(||
-                anyhow!("field {:?} does not exist in schema", &key)
-            )?;
+
+        for (field_name, info) in ctx.fields() {
+            let data = match self.0.remove(field_name) {
+                Some(data) => data,
+                None => if info.required() {
+                    return Err(anyhow!("missing a required field {:?}", field_name))
+                } else {
+                    continue;
+                }
+            };
+
+            let field = schema.get_field(field_name)
+                .expect("get field");   // should never happen as `ctx.fields` is inline with schema.
 
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
 
-            match values {
+            match data {
                 DocumentValueOptions::Single(value) => {
-                    Self::add_value(&key, field, field_type, value, &mut doc)?
+                    Self::add_value(field_name, field, field_type, value, &mut doc)?
                 },
                 DocumentValueOptions::Many(values) => {
                     for value in values {
-                        Self::add_value(&key, field, field_type, value, &mut doc)?;
+                        Self::add_value(field_name, field, field_type, value, &mut doc)?;
                     }
                 },
             };

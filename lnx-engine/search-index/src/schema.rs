@@ -1,8 +1,11 @@
+use std::iter::FromIterator;
+
 use anyhow::{anyhow, Error, Result};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
 use tantivy::schema::{Cardinality, FacetOptions, FAST, Field, FieldType, INDEXED, IndexRecordOption, IntOptions, Schema, SchemaBuilder, STORED, TextFieldIndexing, TextOptions};
 use tantivy::Score;
+
 use crate::helpers::Validate;
 
 pub static PRIMARY_KEY: &str = "_id";
@@ -84,6 +87,47 @@ impl SchemaContext {
     #[inline]
     pub fn boost_fields(&self) -> &HashMap<String, Score> {
         &self.boost_fields
+    }
+
+    #[inline]
+    pub fn fields(&self) -> &HashMap<String, FieldDeclaration> {
+        &self.fields
+    }
+
+    /// Checks and asserts that the fields defined by Tantivy are also the same set of fields
+    /// defined in the schema.
+    ///
+    /// These should never be off unless someone has manually modified the data.
+    pub fn assert_existing_schema_matched(&self, existing: &Schema) -> Result<()> {
+        let defined = self.as_tantivy_schema();
+        let defined_fields: Vec<&str> = defined
+            .fields()
+            .map(|(f, _)| defined.get_field_name(f))
+            .collect();
+
+        let existing_fields: Vec<&str> = existing
+            .fields()
+            .map(|(f, _)| existing.get_field_name(f))
+            .collect();
+
+        let defined_fields_set: HashSet<&str> = HashSet::from_iter(defined_fields.into_iter());
+        let existing_fields_set: HashSet<&str> = HashSet::from_iter(existing_fields.into_iter());
+
+        let union: Vec<&str> = defined_fields_set
+            .difference(&existing_fields_set)
+            .map(|v| *v)
+            .collect();
+
+        if !union.is_empty() {
+            Err(anyhow!(
+                "expected existing schema fields to be inline with defined schema from last save. \
+                If you have *not* manually edited the index data then his is a bug and should be reported. \
+                Got the following miss-aligned fields: {}",
+                union.join(", ")
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Validates all search fields so that they're all indexed.
@@ -236,6 +280,10 @@ pub struct BaseFieldOptions {
     /// If the field is multi-value.
     #[serde(default)]
     multi: bool,
+
+    /// Is the field required to exist for a document to be valid.
+    #[serde(default)]
+    required: bool,
 }
 
 impl Into<FacetOptions> for BaseFieldOptions {
@@ -399,4 +447,19 @@ pub enum FieldDeclaration {
         #[serde(flatten)]
         opts: BaseFieldOptions,
     },
+}
+
+impl FieldDeclaration {
+    #[inline]
+    pub fn required(&self) -> bool {
+        match self {
+            FieldDeclaration::F64 { opts } => opts.base.required,
+            FieldDeclaration::U64 { opts } => opts.base.required,
+            FieldDeclaration::I64 { opts } => opts.base.required,
+            FieldDeclaration::Date { opts } => opts.base.required,
+            FieldDeclaration::Text { opts } => opts.required,
+            FieldDeclaration::String { opts } => opts.required,
+            FieldDeclaration::Facet { opts } => opts.required,
+        }
+    }
 }

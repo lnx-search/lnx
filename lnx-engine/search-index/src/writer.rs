@@ -23,7 +23,7 @@ use crate::structures::{
     INDEX_STORAGE_SUB_PATH,
     ROOT_PATH,
 };
-use crate::schema::PRIMARY_KEY;
+use crate::schema::{PRIMARY_KEY, SchemaContext};
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
@@ -201,6 +201,7 @@ pub struct IndexWriterWorker {
     fuzzy_fields: Vec<Field>,
     waiters: WaitersQueue,
     schema: Schema,
+    schema_ctx: SchemaContext,
     writer: IndexWriter,
     auto_commit: u64,
     rx: OpReceiver,
@@ -297,7 +298,7 @@ impl IndexWriterWorker {
     }
 
     fn handle_add_document(&mut self, document: DocumentPayload) -> Result<Opstamp> {
-        let document = document.parse_into_document(&self.schema)?;
+        let document = document.parse_into_document(&self.schema, &self.schema_ctx)?;
         self.writer.add_document(document).map_err(Error::from)
     }
 
@@ -430,6 +431,7 @@ fn start_writer(
     stop_word_manager: StopWordManager,
     waiters: WaitersQueue,
     schema: Schema,
+    schema_ctx: SchemaContext,
     auto_commit: usize,
     using_fast_fuzzy: bool,
     fuzzy_fields: Vec<Field>,
@@ -453,6 +455,7 @@ fn start_writer(
         using_fast_fuzzy,
         fuzzy_fields,
         schema,
+        schema_ctx,
         writer,
         rx: op_receiver,
         shutdown,
@@ -516,6 +519,7 @@ impl Writer {
             let corrections = ctx.correction_manager.clone();
             let waiter_queue = waiters.clone();
             let schema = ctx.schema();
+            let schema_ctx = ctx.schema_ctx.clone();
             let using_fast_fuzzy = ctx.query_ctx.use_fast_fuzzy;
             let fuzzy_fields = ctx.fuzzy_search_fields().clone();
             let auto_commit = ctx.writer_ctx.auto_commit;
@@ -528,6 +532,7 @@ impl Writer {
                     stop_word_manager,
                     waiter_queue,
                     schema,
+                    schema_ctx,
                     auto_commit,
                     using_fast_fuzzy,
                     fuzzy_fields,
