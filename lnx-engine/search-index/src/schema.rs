@@ -5,6 +5,7 @@ use hashbrown::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
 use tantivy::schema::{Cardinality, FacetOptions, FAST, Field, FieldType, INDEXED, IndexRecordOption, IntOptions, Schema, SchemaBuilder, STORED, TextFieldIndexing, TextOptions};
 use tantivy::Score;
+use once_cell::sync::OnceCell;
 
 use crate::helpers::Validate;
 
@@ -31,6 +32,12 @@ pub struct SchemaContext {
     /// A set of fields to boost by a given factor.
     #[serde(default)]
     boost_fields: HashMap<String, Score>,
+
+    #[serde(skip)]
+    required_fields: OnceCell<HashSet<String>>,
+
+    #[serde(skip)]
+    multi_value_fields: OnceCell<HashSet<String>>,
 }
 
 impl Validate for SchemaContext {
@@ -75,6 +82,33 @@ impl Validate for SchemaContext {
             }
         }
 
+        let required_fields: HashSet<String> = HashSet::from_iter(
+            self.fields.iter()
+                .filter_map(|(name, info)|
+                    if info.is_required() {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                )
+                .cloned()
+        );
+
+        let multi_fields: HashSet<String> = HashSet::from_iter(
+            self.fields.iter()
+                .filter_map(|(name, info)|
+                    if info.is_multi() {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                )
+                .cloned()
+        );
+
+        let _ = self.required_fields.set(required_fields);
+        let _ = self.multi_value_fields.set(multi_fields);
+
         Ok(())
     }
 }
@@ -98,7 +132,7 @@ impl SchemaContext {
     /// defined in the schema.
     ///
     /// These should never be off unless someone has manually modified the data.
-    pub fn assert_existing_schema_matched(&self, existing: &Schema) -> Result<()> {
+    pub fn assert_existing_schema_matches(&self, existing: &Schema) -> Result<()> {
         let defined = self.as_tantivy_schema();
         let defined_fields: Vec<&str> = defined
             .fields()
@@ -451,7 +485,7 @@ pub enum FieldDeclaration {
 
 impl FieldDeclaration {
     #[inline]
-    pub fn required(&self) -> bool {
+    pub fn is_required(&self) -> bool {
         match self {
             FieldDeclaration::F64 { opts } => opts.base.required,
             FieldDeclaration::U64 { opts } => opts.base.required,
@@ -460,6 +494,19 @@ impl FieldDeclaration {
             FieldDeclaration::Text { opts } => opts.required,
             FieldDeclaration::String { opts } => opts.required,
             FieldDeclaration::Facet { opts } => opts.required,
+        }
+    }
+
+    #[inline]
+    pub fn is_multi(&self) -> bool {
+        match self {
+            FieldDeclaration::F64 { opts } => opts.base.multi,
+            FieldDeclaration::U64 { opts } => opts.base.multi,
+            FieldDeclaration::I64 { opts } => opts.base.multi,
+            FieldDeclaration::Date { opts } => opts.base.multi,
+            FieldDeclaration::Text { opts } => opts.multi,
+            FieldDeclaration::String { opts } => opts.multi,
+            FieldDeclaration::Facet { opts } => opts.multi,
         }
     }
 }

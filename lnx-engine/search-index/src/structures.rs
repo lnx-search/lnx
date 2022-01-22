@@ -151,6 +151,7 @@ impl IndexDeclaration {
         }?;
 
         let schema = index.schema();
+        self.schema_ctx.assert_existing_schema_matches(&schema)?;
         self.schema_ctx.verify_search_fields(&schema)?;
 
         let query_context = {
@@ -627,7 +628,7 @@ impl DocumentPayload {
         for (field_name, info) in ctx.fields() {
             let data = match self.0.remove(field_name) {
                 Some(data) => data,
-                None => if info.required() {
+                None => if info.is_required() {
                     return Err(anyhow!("missing a required field {:?}", field_name))
                 } else {
                     continue;
