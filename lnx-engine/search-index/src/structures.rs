@@ -24,7 +24,7 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::{cr32_hash, Validate};
+use crate::helpers::{Calculated, cr32_hash, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
 use crate::stop_words::StopWordManager;
@@ -107,7 +107,21 @@ pub struct IndexDeclaration {
 
 impl Validate for IndexDeclaration {
     fn validate(&self) -> Result<()> {
-        self.schema_ctx.validate()
+        self.writer_ctx.validate()?;
+        self.reader_ctx.validate()?;
+        self.schema_ctx.validate()?;
+
+        Ok(())
+    }
+}
+
+impl Calculated for IndexDeclaration {
+    fn calculate_once(&mut self) -> Result<()> {
+        self.validate()?;
+
+        self.schema_ctx.calculate_once()?;
+
+        Ok(())
     }
 }
 
@@ -121,10 +135,6 @@ impl IndexDeclaration {
     /// the process.
     #[instrument(name = "index-setup", skip(self), fields(index = %self.name))]
     pub fn create_context(&self) -> Result<IndexContext> {
-        self.validate()?;
-        self.writer_ctx.validate()?;
-        self.reader_ctx.validate()?;
-
         let open = match self.storage_type {
             StorageType::Memory => {
                 // TODO: Remove in next major version.
@@ -932,8 +942,8 @@ mod test_context_builder {
     use super::*;
 
     #[test]
-    fn test_build_context_expect_err() -> Result<()> {
-        let dec: IndexDeclaration = serde_json::from_value(serde_json::json!({
+    fn test_build_context_expect_ok() -> Result<()> {
+        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -958,27 +968,26 @@ mod test_context_builder {
                    "type": "u64",
                    "stored": true,
                    "indexed": false,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
             // The query context
             "search_fields": [
                 "title",
-                "description",
-                "count"
+                "description"
             ],
         }))?;
 
-        let res = dec.create_context();
-        assert!(res.is_err());
+        dec.calculate_once()?;
+        let _ctx = dec.create_context()?;
 
         Ok(())
     }
 
     #[test]
-    fn test_build_context_expect_ok() -> Result<()> {
-        let dec: IndexDeclaration = serde_json::from_value(serde_json::json!({
+    fn test_non_string_search_fields_expect_err() -> Result<()> {
+        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1002,8 +1011,8 @@ mod test_context_builder {
                 "count": {
                    "type": "u64",
                    "stored": true,
-                   "indexed": true,
-                   "fast": "single"
+                   "indexed": false,
+                   "fast": true
                 },
             },
 
@@ -1011,11 +1020,108 @@ mod test_context_builder {
             "search_fields": [
                 "title",
                 "description",
+                "count"
             ],
         }))?;
 
-        let res = dec.create_context();
-        assert!(res.is_ok());
+        dec.calculate_once()?;
+        let r = dec.create_context();
+        assert!(r.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unknown_search_fields_expect_err() -> Result<()> {
+        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+            "name": "test",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 64_000_000,
+            "writer_threads": 12,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": false,
+                   "fast": true
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+                "ahhhhh"
+            ],
+        }))?;
+
+        let r = dec.calculate_once();
+        assert!(r.is_err());
+
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unknown_boost_fields_expect_err() -> Result<()> {
+        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+            "name": "test",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 64_000_000,
+            "writer_threads": 12,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": false,
+                   "fast": true
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+                "count"
+            ],
+
+            "boost_fields": {
+                "ahh": 0.1
+            }
+        }))?;
+
+        let r = dec.calculate_once();
+        assert!(r.is_err());
 
         Ok(())
     }
@@ -1047,7 +1153,7 @@ mod test_context_builder {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -1061,8 +1167,8 @@ mod test_context_builder {
 
         let res = dec.create_context();
         assert!(res.is_ok());
-        let ctx = res.unwrap();
 
+        let ctx = res.unwrap();
         assert_eq!(ctx.fuzzy_search_fields().len(), 2);
 
         Ok(())

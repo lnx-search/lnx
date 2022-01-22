@@ -15,6 +15,12 @@ pub(crate) trait Validate {
     }
 }
 
+pub(crate) trait Calculated {
+    fn calculate_once(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
 pub(crate) trait AsScore {
     fn as_score(&self) -> Option<f32> {
         None

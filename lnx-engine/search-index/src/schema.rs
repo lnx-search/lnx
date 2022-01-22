@@ -5,9 +5,8 @@ use hashbrown::{HashMap, HashSet};
 use serde::{Serialize, Deserialize};
 use tantivy::schema::{Cardinality, FacetOptions, FAST, Field, FieldType, INDEXED, IndexRecordOption, IntOptions, Schema, SchemaBuilder, STORED, TextFieldIndexing, TextOptions};
 use tantivy::Score;
-use once_cell::sync::OnceCell;
 
-use crate::helpers::Validate;
+use crate::helpers::{Calculated, Validate};
 
 pub static PRIMARY_KEY: &str = "_id";
 
@@ -34,10 +33,10 @@ pub struct SchemaContext {
     boost_fields: HashMap<String, Score>,
 
     #[serde(skip)]
-    required_fields: OnceCell<HashSet<String>>,
+    required_fields: HashSet<String>,
 
     #[serde(skip)]
-    multi_value_fields: OnceCell<HashSet<String>>,
+    multi_value_fields: HashSet<String>,
 }
 
 impl Validate for SchemaContext {
@@ -82,7 +81,13 @@ impl Validate for SchemaContext {
             }
         }
 
-        let required_fields: HashSet<String> = HashSet::from_iter(
+        Ok(())
+    }
+}
+
+impl Calculated for SchemaContext {
+    fn calculate_once(&mut self) -> Result<()> {
+        self.required_fields = HashSet::from_iter(
             self.fields.iter()
                 .filter_map(|(name, info)|
                     if info.is_required() {
@@ -94,7 +99,7 @@ impl Validate for SchemaContext {
                 .cloned()
         );
 
-        let multi_fields: HashSet<String> = HashSet::from_iter(
+        self.multi_value_fields = HashSet::from_iter(
             self.fields.iter()
                 .filter_map(|(name, info)|
                     if info.is_multi() {
@@ -105,9 +110,6 @@ impl Validate for SchemaContext {
                 )
                 .cloned()
         );
-
-        let _ = self.required_fields.set(required_fields);
-        let _ = self.multi_value_fields.set(multi_fields);
 
         Ok(())
     }
@@ -127,6 +129,17 @@ impl SchemaContext {
     pub fn fields(&self) -> &HashMap<String, FieldDeclaration> {
         &self.fields
     }
+
+    #[inline]
+    pub fn required_fields(&self) -> &HashSet<String> {
+        &self.required_fields
+    }
+
+    #[inline]
+    pub fn multi_value_fields(&self) -> &HashSet<String> {
+        &self.multi_value_fields
+    }
+
 
     /// Checks and asserts that the fields defined by Tantivy are also the same set of fields
     /// defined in the schema.

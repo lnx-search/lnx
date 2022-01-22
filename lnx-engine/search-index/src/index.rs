@@ -316,6 +316,7 @@ impl InternalIndex {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
+    use crate::helpers::Calculated;
 
     use super::*;
     use crate::structures::{DocumentValue, IndexDeclaration};
@@ -326,7 +327,8 @@ mod tests {
     }
 
     async fn get_index_with(value: serde_json::Value) -> Result<Index> {
-        let dec: IndexDeclaration = serde_json::from_value(value)?;
+        let mut dec: IndexDeclaration = serde_json::from_value(value)?;
+        dec.calculate_once()?;
 
         let res = dec.create_context()?;
         Index::create(res).await
