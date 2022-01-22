@@ -508,7 +508,8 @@ impl QueryBuilder {
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
                 } else {
-                    let edit_distance = if search_term.len() >= cfg.min_length_distance2 {
+                    let edit_distance = if search_term.len() >= cfg.min_length_distance2
+                    {
                         2
                     } else if search_term.len() >= cfg.min_length_distance1 {
                         1
