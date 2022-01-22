@@ -363,7 +363,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -413,7 +413,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -463,7 +463,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -513,7 +513,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -563,7 +563,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -659,7 +659,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -709,7 +709,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -751,7 +751,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -797,7 +797,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -893,7 +893,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -1067,7 +1067,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -1116,7 +1116,54 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
+                },
+                "category": {
+                   "type": "facet",
+                   "stored": true,
+                   "indexed": true
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+            ],
+        }))
+        .await
+    }
+
+    async fn get_index_with_required_title(fast_fuzzy: bool) -> Result<Index> {
+        get_index_with(serde_json::json!({
+            "name": "basic_test_index",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
+
+            "use_fast_fuzzy": fast_fuzzy,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true,
+                    "required": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": true,
+                   "fast": true
                 },
                 "category": {
                    "type": "facet",
@@ -1194,13 +1241,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_docs_expect_err() -> Result<()> {
+    async fn add_docs_with_valid_non_required_field_expect_ok() -> Result<()> {
         init_state();
 
         let index = get_basic_index(false).await?;
 
         let document: DocumentOptions = serde_json::from_value(serde_json::json!({
-            "title-title": 3
+            "title": "hello",
+        }))?;
+
+        let res = index.add_documents(document).await;
+        assert!(res.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_docs_with_required_field_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_index_with_required_title(false).await?;
+
+        let document: DocumentOptions = serde_json::from_value(serde_json::json!({
+            "title": "hello",
+        }))?;
+
+        let res = index.add_documents(document).await;
+        assert!(res.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_docs_valid_doc_missing_required_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_index_with_required_title(false).await?;
+
+        let document: DocumentOptions = serde_json::from_value(serde_json::json!({
+            "description": "hello",
         }))?;
 
         let res = index.add_documents(document).await;
@@ -1243,10 +1322,82 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_bulk_docs_expect_err() -> Result<()> {
+    async fn add_bulk_docs_with_non_required_missing_fields_expect_ok() -> Result<()> {
         init_state();
 
         let index = get_basic_index(false).await?;
+
+        let document: DocumentOptions = serde_json::from_value(serde_json::json!(
+            [
+                {
+                    "title": "The Old Man and the Sea",
+                    "description": "He was an old man who fished alone in a skiff in \
+                    the Gulf Stream and he had gone eighty-four days \
+                    now without taking a fish.",
+                },
+                {
+                    "title-title": "The Old Man and the Sea 2",
+                    "descriptio": "He was an old man who fished alone in a skiff in \
+                    the Gulf Stream and he had gone eighty-four days \
+                    now without taking a fish.",
+                    "count": 3
+                },
+                {
+                    "titled": "The Old Man and the Sea 3",
+                },
+            ]
+        ))?;
+
+        let res = index.add_documents(document).await;
+        assert!(res.is_ok());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn add_bulk_docs_with_required_field_expect_err() -> Result<()> {
+        init_state();
+
+        let index = get_index_with(serde_json::json!({
+            "name": "basic_test_index",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 3_000_000,
+            "writer_threads": 1,
+
+            "use_fast_fuzzy": false,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true,
+                    "required": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false,
+                    "required": true
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": true,
+                   "fast": true
+                }
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+            ],
+        }))
+        .await?;
 
         let document: DocumentOptions = serde_json::from_value(serde_json::json!(
             [
@@ -1759,10 +1910,11 @@ mod tests {
             ],
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
+        let results = index.search(query).await
+            .map_err(|e| {
+                eprintln!("{:?}", e);
+                e
+            });
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), 1);
 
