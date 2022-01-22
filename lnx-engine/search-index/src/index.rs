@@ -316,7 +316,6 @@ impl InternalIndex {
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
-    use crate::helpers::Calculated;
 
     use super::*;
     use crate::structures::{DocumentValue, IndexDeclaration};
@@ -327,8 +326,7 @@ mod tests {
     }
 
     async fn get_index_with(value: serde_json::Value) -> Result<Index> {
-        let mut dec: IndexDeclaration = serde_json::from_value(value)?;
-        dec.calculate_once()?;
+        let dec: IndexDeclaration = serde_json::from_value(value)?;
 
         let res = dec.create_context()?;
         Index::create(res).await
@@ -987,7 +985,7 @@ mod tests {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -1764,6 +1762,8 @@ mod tests {
             eprintln!("{:?}", e);
             e
         });
+
+        println!("{:?}", &results);
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
 
@@ -1787,6 +1787,7 @@ mod tests {
             eprintln!("{:?}", e);
             e
         });
+        println!("{:?}", &results);
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
 
@@ -1910,11 +1911,12 @@ mod tests {
             ],
         }))?;
 
-        let results = index.search(query).await
-            .map_err(|e| {
-                eprintln!("{:?}", e);
-                e
-            });
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+
+        println!("{:?}", &results);
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), 1);
 

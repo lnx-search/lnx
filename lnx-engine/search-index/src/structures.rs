@@ -24,14 +24,14 @@ use tantivy::schema::{
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::{Calculated, cr32_hash, Validate};
+use crate::helpers::{cr32_hash, Calculated, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
+use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 use crate::DocumentId;
-use crate::schema::{PRIMARY_KEY, SchemaContext};
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
@@ -115,16 +115,6 @@ impl Validate for IndexDeclaration {
     }
 }
 
-impl Calculated for IndexDeclaration {
-    fn calculate_once(&mut self) -> Result<()> {
-        self.validate()?;
-
-        self.schema_ctx.calculate_once()?;
-
-        Ok(())
-    }
-}
-
 impl IndexDeclaration {
     #[inline]
     pub fn name(&self) -> &str {
@@ -135,6 +125,11 @@ impl IndexDeclaration {
     /// the process.
     #[instrument(name = "index-setup", skip(self), fields(index = %self.name))]
     pub fn create_context(&self) -> Result<IndexContext> {
+        self.validate()?;
+
+        let mut schema_ctx = self.schema_ctx.clone();
+        schema_ctx.calculate_once()?;
+
         let open = match self.storage_type {
             StorageType::Memory => {
                 // TODO: Remove in next major version.
@@ -157,21 +152,21 @@ impl IndexDeclaration {
         let index = if does_exist {
             Index::open(dir.clone())
         } else {
-            Index::open_or_create(dir.clone(), self.schema_ctx.as_tantivy_schema())
+            Index::open_or_create(dir.clone(), schema_ctx.as_tantivy_schema())
         }?;
 
         let schema = index.schema();
-        self.schema_ctx.assert_existing_schema_matches(&schema)?;
-        self.schema_ctx.verify_search_fields(&schema)?;
+        schema_ctx.assert_existing_schema_matches(&schema)?;
+        schema_ctx.verify_search_fields(&schema)?;
 
         let query_context = {
-            let default_fields = self.schema_ctx.get_search_fields(&schema);
-            let fuzzy_fields = self.schema_ctx.get_fuzzy_search_fields(&schema);
+            let default_fields = schema_ctx.get_search_fields(&schema);
+            let fuzzy_fields = schema_ctx.get_fuzzy_search_fields(&schema);
 
             let mut default_fields_with_boost = Vec::with_capacity(default_fields.len());
             add_boost_fields(
                 &schema,
-                self.schema_ctx.boost_fields(),
+                schema_ctx.boost_fields(),
                 &default_fields,
                 &mut default_fields_with_boost,
             );
@@ -179,7 +174,7 @@ impl IndexDeclaration {
             let mut fuzzy_fields_with_boost = Vec::with_capacity(fuzzy_fields.len());
             add_boost_fields(
                 &schema,
-                self.schema_ctx.boost_fields(),
+                schema_ctx.boost_fields(),
                 &fuzzy_fields,
                 &mut fuzzy_fields_with_boost,
             );
@@ -202,15 +197,14 @@ impl IndexDeclaration {
             storage,
             correction_manager: corrections,
             index,
-            schema_ctx: self.schema_ctx.clone(),
+            schema_ctx: schema_ctx.clone(),
             reader_ctx: self.reader_ctx.clone(),
             writer_ctx: self.writer_ctx,
             query_ctx: query_context,
-            fuzzy_search_fields: self.schema_ctx.get_fuzzy_search_fields(&schema),
+            fuzzy_search_fields: schema_ctx.get_fuzzy_search_fields(&schema),
             stop_words: StopWordManager::init()?,
         })
     }
-
 }
 
 #[derive(Debug)]
@@ -638,15 +632,16 @@ impl DocumentPayload {
         for (field_name, info) in ctx.fields() {
             let data = match self.0.remove(field_name) {
                 Some(data) => data,
-                None => if info.is_required() {
-                    return Err(anyhow!("missing a required field {:?}", field_name))
-                } else {
-                    continue;
-                }
+                None => {
+                    if info.is_required() {
+                        return Err(anyhow!("missing a required field {:?}", field_name));
+                    } else {
+                        continue;
+                    }
+                },
             };
 
-            let field = schema.get_field(field_name)
-                .expect("get field");   // should never happen as `ctx.fields` is inline with schema.
+            let field = schema.get_field(field_name).expect("get field"); // should never happen as `ctx.fields` is inline with schema.
 
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
@@ -943,7 +938,7 @@ mod test_context_builder {
 
     #[test]
     fn test_build_context_expect_ok() -> Result<()> {
-        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -979,7 +974,6 @@ mod test_context_builder {
             ],
         }))?;
 
-        dec.calculate_once()?;
         let _ctx = dec.create_context()?;
 
         Ok(())
@@ -987,7 +981,7 @@ mod test_context_builder {
 
     #[test]
     fn test_non_string_search_fields_expect_err() -> Result<()> {
-        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1024,7 +1018,6 @@ mod test_context_builder {
             ],
         }))?;
 
-        dec.calculate_once()?;
         let r = dec.create_context();
         assert!(r.is_err());
 
@@ -1033,7 +1026,7 @@ mod test_context_builder {
 
     #[test]
     fn test_unknown_search_fields_expect_err() -> Result<()> {
-        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1070,16 +1063,15 @@ mod test_context_builder {
             ],
         }))?;
 
-        let r = dec.calculate_once();
+        let r = dec.create_context();
         assert!(r.is_err());
-
 
         Ok(())
     }
 
     #[test]
     fn test_unknown_boost_fields_expect_err() -> Result<()> {
-        let mut dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1120,7 +1112,7 @@ mod test_context_builder {
             }
         }))?;
 
-        let r = dec.calculate_once();
+        let r = dec.create_context();
         assert!(r.is_err());
 
         Ok(())

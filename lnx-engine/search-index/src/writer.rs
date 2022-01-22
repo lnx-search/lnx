@@ -15,6 +15,7 @@ use tokio::time::Duration;
 
 use crate::corrections::SymSpellCorrectionManager;
 use crate::helpers::{cr32_hash, Validate};
+use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::{PersistentStopWordManager, StopWordManager};
 use crate::storage::StorageBackend;
 use crate::structures::{
@@ -23,7 +24,6 @@ use crate::structures::{
     INDEX_STORAGE_SUB_PATH,
     ROOT_PATH,
 };
-use crate::schema::{PRIMARY_KEY, SchemaContext};
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);

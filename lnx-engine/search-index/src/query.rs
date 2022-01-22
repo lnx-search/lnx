@@ -506,7 +506,10 @@ impl QueryBuilder {
                 let term = Term::from_field_text(*field, search_term);
 
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
-                    Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
+                    Box::new(TermQuery::new(
+                        term,
+                        IndexRecordOption::WithFreqsAndPositions,
+                    ))
                 } else {
                     let edit_distance = if search_term.len() >= cfg.min_length_distance2
                     {
@@ -517,6 +520,10 @@ impl QueryBuilder {
                         0
                     };
 
+                    println!(
+                        "{} - d{} - {}",
+                        search_term, edit_distance, !cfg.transposition_costs_two
+                    );
                     Box::new(FuzzyTermQuery::new_prefix(
                         term,
                         edit_distance,

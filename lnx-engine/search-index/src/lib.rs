@@ -10,11 +10,11 @@ mod helpers;
 mod index;
 mod query;
 mod reader;
+mod schema;
 mod stop_words;
 mod storage;
 pub mod structures;
 mod writer;
-mod schema;
 
 pub use helpers::cr32_hash;
 pub use index::Index;

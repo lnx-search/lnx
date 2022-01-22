@@ -2,8 +2,22 @@ use std::iter::FromIterator;
 
 use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
-use serde::{Serialize, Deserialize};
-use tantivy::schema::{Cardinality, FacetOptions, FAST, Field, FieldType, INDEXED, IndexRecordOption, IntOptions, Schema, SchemaBuilder, STORED, TextFieldIndexing, TextOptions};
+use serde::{Deserialize, Serialize};
+use tantivy::schema::{
+    Cardinality,
+    FacetOptions,
+    Field,
+    FieldType,
+    IndexRecordOption,
+    IntOptions,
+    Schema,
+    SchemaBuilder,
+    TextFieldIndexing,
+    TextOptions,
+    FAST,
+    INDEXED,
+    STORED,
+};
 use tantivy::Score;
 
 use crate::helpers::{Calculated, Validate};
@@ -13,7 +27,6 @@ pub static PRIMARY_KEY: &str = "_id";
 fn default_to_true() -> bool {
     true
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaContext {
@@ -88,27 +101,21 @@ impl Validate for SchemaContext {
 impl Calculated for SchemaContext {
     fn calculate_once(&mut self) -> Result<()> {
         self.required_fields = HashSet::from_iter(
-            self.fields.iter()
-                .filter_map(|(name, info)|
-                    if info.is_required() {
-                        Some(name)
-                    } else {
-                        None
-                    }
+            self.fields
+                .iter()
+                .filter_map(
+                    |(name, info)| if info.is_required() { Some(name) } else { None },
                 )
-                .cloned()
+                .cloned(),
         );
 
         self.multi_value_fields = HashSet::from_iter(
-            self.fields.iter()
-                .filter_map(|(name, info)|
-                    if info.is_multi() {
-                        Some(name)
-                    } else {
-                        None
-                    }
+            self.fields
+                .iter()
+                .filter_map(
+                    |(name, info)| if info.is_multi() { Some(name) } else { None },
                 )
-                .cloned()
+                .cloned(),
         );
 
         Ok(())
@@ -140,7 +147,6 @@ impl SchemaContext {
         &self.multi_value_fields
     }
 
-
     /// Checks and asserts that the fields defined by Tantivy are also the same set of fields
     /// defined in the schema.
     ///
@@ -157,8 +163,10 @@ impl SchemaContext {
             .map(|(f, _)| existing.get_field_name(f))
             .collect();
 
-        let defined_fields_set: HashSet<&str> = HashSet::from_iter(defined_fields.into_iter());
-        let existing_fields_set: HashSet<&str> = HashSet::from_iter(existing_fields.into_iter());
+        let defined_fields_set: HashSet<&str> =
+            HashSet::from_iter(defined_fields.into_iter());
+        let existing_fields_set: HashSet<&str> =
+            HashSet::from_iter(existing_fields.into_iter());
 
         let union: Vec<&str> = defined_fields_set
             .difference(&existing_fields_set)
@@ -358,7 +366,11 @@ impl BaseFieldOptions {
 
     fn opts_as_text(&self) -> TextOptions {
         let raw = self.as_raw_opts();
-        raw.set_indexing_options(TextFieldIndexing::default().set_tokenizer("raw"))
+        raw.set_indexing_options(
+            TextFieldIndexing::default()
+                .set_fieldnorms(true)
+                .set_tokenizer("raw"),
+        )
     }
 
     fn opts_as_string(&self) -> TextOptions {
@@ -366,6 +378,7 @@ impl BaseFieldOptions {
         raw.set_indexing_options(
             TextFieldIndexing::default()
                 .set_tokenizer("default")
+                .set_fieldnorms(true)
                 .set_index_option(IndexRecordOption::WithFreqsAndPositions),
         )
     }
