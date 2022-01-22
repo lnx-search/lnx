@@ -21,9 +21,9 @@ use crate::structures::{
     DocumentPayload,
     IndexContext,
     INDEX_STORAGE_SUB_PATH,
-    PRIMARY_KEY,
     ROOT_PATH,
 };
+use crate::schema::PRIMARY_KEY;
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);

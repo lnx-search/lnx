@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::sync::Arc;
 
@@ -305,7 +306,7 @@ fn order_or_sort(
 /// Each index should only have on `Reader` instance.
 #[derive(Clone)]
 pub(crate) struct Reader {
-    index_name: Arc<String>,
+    index_name: Cow<'static, str>,
 
     /// The executor pool.
     pool: crate::ReaderExecutor,
@@ -358,7 +359,7 @@ impl Reader {
         );
 
         Ok(Self {
-            index_name: Arc::new(ctx.name()),
+            index_name: Cow::Owned(ctx.name()),
             pool,
             query_handler: Arc::new(query_handler),
         })
