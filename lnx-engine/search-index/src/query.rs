@@ -449,7 +449,7 @@ impl QueryBuilder {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
+    pub(crate) fn get_corrected_query_hint(&self, query: &str) -> Vec<String> {
         // TODO: reflect single output changes
         vec![self.corrections.correct(query)]
     }
