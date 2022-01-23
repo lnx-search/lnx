@@ -367,6 +367,7 @@ impl Reader {
             query_ctx,
             ctx.stop_words.clone(),
             ctx.correction_manager.clone(),
+            ctx.synonyms.clone(),
             &ctx.index,
             pool.clone(),
         );

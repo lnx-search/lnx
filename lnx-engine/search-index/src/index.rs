@@ -107,6 +107,29 @@ impl Index {
         self.0.clear_stop_words().await
     }
 
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    pub async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
+        self.0.add_synonyms(relations).await
+    }
+
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    pub async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
+        self.0.remove_synonyms(words).await
+    }
+
+    /// Removes all synonyms from the index.
+    pub async fn clear_synonyms(&self) -> Result<()> {
+        self.0.clear_synonyms().await
+    }
+
     /// Shuts the index down waiting for all writer threads to finish.
     pub async fn shutdown(&self) -> Result<()> {
         self.0.shutdown().await
@@ -267,8 +290,10 @@ impl InternalIndex {
     /// Deletes all returned documents matching the given query.
     async fn delete_by_query(&self, qry: QueryPayload) -> Result<usize> {
         let results = self.search(qry).await?;
-        let docs: Vec<DocumentId> =
-            results.hits.into_iter().map(|v| v.document_id).collect();
+        let docs: Vec<DocumentId> = results.hits
+                .into_iter()
+                .map(|v| v.document_id)
+                .collect();
 
         let total_deleted = docs.len();
 
@@ -300,6 +325,29 @@ impl InternalIndex {
     /// Removes all stop words from the index.
     async fn clear_stop_words(&self) -> Result<()> {
         self.writer.send_op(WriterOp::ClearStopWords).await
+    }
+
+    /// Adds a set of synonyms to the indexes' synonym manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
+        self.writer.send_op(WriterOp::AddSynonyms(relations)).await
+    }
+
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
+        self.writer.send_op(WriterOp::RemoveSynonyms(words)).await
+    }
+
+    /// Removes all synonyms from the index.
+    async fn clear_synonyms(&self) -> Result<()> {
+        self.writer.send_op(WriterOp::ClearSynonyms).await
     }
 
     /// Shuts the index down waiting for all writer threads to finish.

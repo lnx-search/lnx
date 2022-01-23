@@ -156,6 +156,54 @@ pub async fn remove_stop_words(mut req: LnxRequest) -> LnxResponse {
     json_response(200, "stop words added")
 }
 
+pub async fn clear_stop_words(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.clear_stop_words().await?;
+
+    json_response(200, "synonyms added")
+}
+
+pub async fn add_synonyms(mut req: LnxRequest) -> LnxResponse {
+    let payload: Vec<String> = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.add_synonyms(payload).await?;
+
+    json_response(200, "synonyms added")
+}
+
+pub async fn remove_synonyms(mut req: LnxRequest) -> LnxResponse {
+    let payload: Vec<String> = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.remove_synonyms(payload).await?;
+
+    json_response(200, "synonyms added")
+}
+
+pub async fn clear_synonyms(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.clear_synonyms().await?;
+
+    json_response(200, "synonyms added")
+}
+
 pub async fn add_documents(mut req: LnxRequest) -> LnxResponse {
     let payload: DocumentOptions = json!(req.body_mut());
 
