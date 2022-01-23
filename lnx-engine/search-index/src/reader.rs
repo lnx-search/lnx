@@ -423,7 +423,7 @@ impl Reader {
             .await??;
 
         Ok(DocumentHit::from_tantivy_document(
-            &self.schema_ctx,
+            self.schema_ctx.as_ref(),
             id,
             document,
             Some(1.0),

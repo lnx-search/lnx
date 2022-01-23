@@ -822,6 +822,14 @@ pub struct DocumentHit {
     /// Any STORED fields will be returned.
     pub(crate) doc: HashMap<String, Option<CompliantDocumentValue>>,
 
+    /// The string that was actually searched for.
+    ///
+    /// The reason why this isn't just the input query is because things like
+    /// the fast-fuzzy system pre-apply it's corrections.
+    ///
+    /// This allows you to do the "searching for *hello world*" affects.
+    pub(crate) searched_query: String,
+
     /// The document id.
     ///
     /// This is a unique 64 bit integer that can be used
@@ -850,12 +858,10 @@ impl DocumentHit {
                 Some(mut val) => {
                     if info.is_multi() {
                         Some(CompliantDocumentValue::Multi(val))
+                    } else if let Some(first) = val.pop() {
+                        Some(CompliantDocumentValue::Single(first))
                     } else {
-                        if let Some(first) = val.pop() {
-                            Some(CompliantDocumentValue::Single(first))
-                        } else {
-                            None
-                        }
+                        None
                     }
                 },
                 None => {
