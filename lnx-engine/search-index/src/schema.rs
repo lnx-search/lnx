@@ -30,7 +30,8 @@ pub struct SchemaContext {
 
     /// A set of fields to boost by a given factor.
     ///
-    /// TODO: Add better docs
+    /// The score of each field is adjusted so that it is the score of the original
+    /// query multiplied by the boost factor.
     #[serde(default)]
     boost_fields: HashMap<String, Score>,
 
@@ -43,9 +44,9 @@ pub struct SchemaContext {
 
 impl Validate for SchemaContext {
     fn validate(&self) -> Result<()> {
-        if self.search_fields.is_empty() {
+        if self.fields.is_empty() {
             return Err(Error::msg(
-                "at least one indexed field must be given to search.",
+                "at least one indexed field must be defined.",
             ));
         }
 
@@ -66,7 +67,9 @@ impl Validate for SchemaContext {
             }
         }
 
-        {
+        // If it is empty we default to the indexed field.
+        // So we know they are valid.
+        if !self.search_fields.is_empty() {
             let mut rejected_fields = vec![];
             for field_name in self.search_fields.iter() {
                 if !self.has_field(field_name) {
@@ -89,6 +92,20 @@ impl Validate for SchemaContext {
 
 impl Calculated for SchemaContext {
     fn calculate_once(&mut self) -> Result<()> {
+        if self.search_fields.is_empty() {
+            self.search_fields = self.fields
+                .iter()
+                .filter_map(|(name, info)|
+                    if info.is_indexed() {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                )
+                .cloned()
+                .collect();
+        }
+
         self.required_fields = HashSet::from_iter(
             self.fields
                 .iter()
@@ -188,16 +205,6 @@ impl SchemaContext {
                 continue;
             }
 
-            match entry.field_type() {
-                FieldType::Str(_) => {},
-                _ => {
-                    return Err(anyhow!(
-                        "search field '{}' is not a text / string field type.",
-                        &name,
-                    ))
-                },
-            }
-
             if !entry.is_indexed() {
                 reject.push(name)
             }
@@ -208,7 +215,7 @@ impl SchemaContext {
         } else {
             Err(anyhow!(
                 "the given search fields contain non-indexed fields, \
-                 fields cannot be searched without being index. Invalid fields: {}",
+                 fields cannot be searched without being indexed. Invalid fields: {}",
                 reject.join(", ")
             ))
         }
@@ -233,9 +240,7 @@ impl SchemaContext {
                 continue;
             }
 
-            if let FieldType::Str(_) = entry.field_type() {
-                search_fields.push(field);
-            }
+            search_fields.push(field);
         }
 
         search_fields
@@ -523,6 +528,19 @@ impl FieldDeclaration {
             FieldDeclaration::Text { opts } => opts.multi,
             FieldDeclaration::String { opts } => opts.multi,
             FieldDeclaration::Facet { opts } => opts.multi,
+        }
+    }
+
+    #[inline]
+    pub fn is_indexed(&self) -> bool {
+        match self {
+            FieldDeclaration::F64 { opts } => opts.indexed,
+            FieldDeclaration::U64 { opts } => opts.indexed,
+            FieldDeclaration::I64 { opts } => opts.indexed,
+            FieldDeclaration::Date { opts } => opts.indexed,
+            FieldDeclaration::Text { .. } => true,
+            FieldDeclaration::String { .. } => true,
+            FieldDeclaration::Facet { .. } => true,
         }
     }
 }
