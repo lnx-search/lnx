@@ -197,7 +197,9 @@ fn order_and_sort(
         .contains(schema.get_field_name(field));
 
     if is_multi_value {
-        return Err(anyhow!("multi-value fields cannot be used to sort results see issue #70"));
+        return Err(anyhow!(
+            "multi-value fields cannot be used to sort results see issue #70"
+        ));
     }
 
     let field_type = schema.get_field_entry(field).field_type();
