@@ -490,7 +490,7 @@ impl QueryBuilder {
             return Err(anyhow!(
                 "no string/text fields have been marked as search fields, \
                 because of this fuzzy search has been disabled"
-            ))
+            ));
         }
 
         use tantivy::query::Occur;
