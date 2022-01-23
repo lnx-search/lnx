@@ -30,9 +30,9 @@ use crate::reader::ReaderContext;
 use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
+use crate::synonyms::SynonymsManager;
 use crate::writer::WriterContext;
 use crate::DocumentId;
-use crate::synonyms::SynonymsManager;
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";

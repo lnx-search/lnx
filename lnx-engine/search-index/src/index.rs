@@ -301,10 +301,8 @@ impl InternalIndex {
     /// Deletes all returned documents matching the given query.
     async fn delete_by_query(&self, qry: QueryPayload) -> Result<usize> {
         let results = self.search(qry).await?;
-        let docs: Vec<DocumentId> = results.hits
-                .into_iter()
-                .map(|v| v.document_id)
-                .collect();
+        let docs: Vec<DocumentId> =
+            results.hits.into_iter().map(|v| v.document_id).collect();
 
         let total_deleted = docs.len();
 

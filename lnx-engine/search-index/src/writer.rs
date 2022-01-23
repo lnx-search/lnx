@@ -24,8 +24,8 @@ use crate::structures::{
     INDEX_STORAGE_SUB_PATH,
     ROOT_PATH,
 };
-use crate::DocumentId;
 use crate::synonyms::{PersistentSynonymsManager, SynonymsManager};
+use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
 type OpReceiver = channel::Receiver<OpPayload>;

@@ -1,10 +1,11 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
 use bincode::Options;
 use hashbrown::{HashMap, HashSet};
+
 use crate::StorageBackend;
 
 #[derive(Debug, Clone)]
@@ -35,7 +36,10 @@ impl SynonymsManager {
     }
 
     /// Removes a set of words and their synonyms.
-    pub fn remove_many_word_synonyms(&self, words: &[String]) -> HashMap<String, Box<[String]>> {
+    pub fn remove_many_word_synonyms(
+        &self,
+        words: &[String],
+    ) -> HashMap<String, Box<[String]>> {
         let guard = self.synonyms.load();
         let mut current_mapping = guard.as_ref().clone();
 
@@ -50,10 +54,14 @@ impl SynonymsManager {
     /// the changes.
     ///
     /// Parses foo,bar,baz:foo,bar,baz into forming a synonym for each item minus itself.
-    pub fn parse_many_synonyms(&self, relations: &[String]) -> Result<HashMap<String, Box<[String]>>> {
+    pub fn parse_many_synonyms(
+        &self,
+        relations: &[String],
+    ) -> Result<HashMap<String, Box<[String]>>> {
         let guard = self.synonyms.load();
         let current_mapping = guard.as_ref();
-        let mut new_mapping: HashMap<String, HashSet<String>> = HashMap::with_capacity(current_mapping.len());
+        let mut new_mapping: HashMap<String, HashSet<String>> =
+            HashMap::with_capacity(current_mapping.len());
         for (key, relations) in current_mapping {
             new_mapping.insert(
                 key.to_string(),
@@ -62,12 +70,13 @@ impl SynonymsManager {
         }
 
         for relation in relations {
-            let (left, right) = relation.split_once(":")
-                .ok_or_else(|| anyhow!(
+            let (left, right) = relation.split_once(":").ok_or_else(|| {
+                anyhow!(
                     "invalid synonym relation defined. synonyms must follow the \
                     `word(s):related_item(s)` format, Got {:?}",
                     relation,
-                ))?;
+                )
+            })?;
 
             let left = left.to_lowercase();
             let right = right.to_lowercase();
@@ -79,7 +88,8 @@ impl SynonymsManager {
             }
 
             for word in left.split(',') {
-                new_mapping.entry(word.trim().to_string())
+                new_mapping
+                    .entry(word.trim().to_string())
                     .and_modify(|v| {
                         // There is probably a faster way of doing this. However,
                         // This is by far the simplest strategy and
@@ -111,19 +121,13 @@ impl SynonymsManager {
             }
         }
 
-        Ok(HashMap::from_iter(
-            new_mapping
-                .into_iter()
-                .map(|(k, v)| {
-                    let v = Vec::from_iter(v.into_iter())
-                        .into_boxed_slice();
+        Ok(HashMap::from_iter(new_mapping.into_iter().map(|(k, v)| {
+            let v = Vec::from_iter(v.into_iter()).into_boxed_slice();
 
-                    (k, v)
-                })
-        ))
+            (k, v)
+        })))
     }
 }
-
 
 pub(crate) struct PersistentSynonymsManager {
     conn: StorageBackend,
