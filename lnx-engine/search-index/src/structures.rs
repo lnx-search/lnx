@@ -841,23 +841,33 @@ impl DocumentHit {
     pub fn from_tantivy_document(
         ctx: &SchemaContext,
         doc_id: u64,
-        doc: tantivy::schema::NamedFieldDocument,
+        mut doc: tantivy::schema::NamedFieldDocument,
         score: Option<Score>,
     ) -> Self {
-        let multi_fields = ctx.multi_value_fields();
         let mut compliant = HashMap::with_capacity(doc.0.len());
-        for (name, mut val) in doc.0 {
-            let val = if multi_fields.contains(&name) {
-                Some(CompliantDocumentValue::Multi(val))
-            } else {
-                if let Some(first) = val.pop() {
-                    Some(CompliantDocumentValue::Single(first))
-                } else {
-                    None
-                }
+        for (name, info) in ctx.fields() {
+            let val = match doc.0.remove(name) {
+                Some(mut val) => {
+                    if info.is_multi() {
+                        Some(CompliantDocumentValue::Multi(val))
+                    } else {
+                        if let Some(first) = val.pop() {
+                            Some(CompliantDocumentValue::Single(first))
+                        } else {
+                            None
+                        }
+                    }
+                },
+                None => {
+                    if info.is_multi() {
+                        Some(CompliantDocumentValue::Multi(vec![]))
+                    } else {
+                        None
+                    }
+                },
             };
 
-            compliant.insert(name, val);
+            compliant.insert(name.clone(), val);
         }
 
         Self {
