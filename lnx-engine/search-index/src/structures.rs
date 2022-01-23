@@ -784,20 +784,20 @@ impl<'de> Deserialize<'de> for DocumentOptions {
                 )
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                DocumentPayload::deserialize(MapAccessDeserializer::new(map))
-                    .map(DocumentOptions::Single)
-            }
-
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq))
                     .map(DocumentOptions::Many)
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                DocumentPayload::deserialize(MapAccessDeserializer::new(map))
+                    .map(DocumentOptions::Single)
             }
         }
 
@@ -819,14 +819,6 @@ pub struct DocumentHit {
     ///
     /// Any STORED fields will be returned.
     pub(crate) doc: HashMap<String, Option<CompliantDocumentValue>>,
-
-    /// The string that was actually searched for.
-    ///
-    /// The reason why this isn't just the input query is because things like
-    /// the fast-fuzzy system pre-apply it's corrections.
-    ///
-    /// This allows you to do the "searching for *hello world*" affects.
-    pub(crate) searched_query: String,
 
     /// The document id.
     ///
@@ -856,10 +848,9 @@ impl DocumentHit {
                 Some(mut val) => {
                     if info.is_multi() {
                         Some(CompliantDocumentValue::Multi(val))
-                    } else if let Some(first) = val.pop() {
-                        Some(CompliantDocumentValue::Single(first))
                     } else {
-                        None
+                        val.pop()
+                            .map(CompliantDocumentValue::Single)
                     }
                 },
                 None => {
