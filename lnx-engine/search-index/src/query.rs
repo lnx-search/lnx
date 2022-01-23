@@ -359,20 +359,20 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 }))
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                QueryData::deserialize(MapAccessDeserializer::new(map))
-                    .map(QuerySelector::Single)
-            }
-
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq))
                     .map(QuerySelector::Multi)
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                QueryData::deserialize(MapAccessDeserializer::new(map))
+                    .map(QuerySelector::Single)
             }
         }
 
