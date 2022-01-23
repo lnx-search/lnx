@@ -14,27 +14,20 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tantivy::fastfield::FastValue;
 use tantivy::schema::{
     Facet,
-    FacetOptions,
     FacetParseError,
     Field,
     FieldType,
     FieldValue,
-    IntOptions,
     Schema,
-    SchemaBuilder,
     Value,
-    FAST,
-    INDEXED,
-    STORED,
-    STRING,
-    TEXT,
 };
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
-use crate::helpers::{cr32_hash, Validate};
+use crate::helpers::{cr32_hash, Calculated, Validate};
 use crate::query::QueryContext;
 use crate::reader::ReaderContext;
+use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
@@ -42,7 +35,6 @@ use crate::DocumentId;
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
-pub static PRIMARY_KEY: &str = "_id";
 
 /// The possible index storage backends.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -56,44 +48,6 @@ pub enum StorageType {
 
     /// Store the index in a file system store.
     FileSystem,
-}
-
-/// A declared schema field type.
-///
-/// Each field has a set of relevant options as specified
-/// by the tantivy docs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(tag = "type")]
-pub enum FieldDeclaration {
-    /// A f64 field with given options
-    F64(IntOptions),
-
-    /// A u64 field with given options.
-    U64(IntOptions),
-
-    /// A I64 field with given options.
-    I64(IntOptions),
-
-    /// A Datetime<Utc> field with given options.
-    ///
-    /// This is treated as a u64 integer timestamp.
-    Date(IntOptions),
-
-    /// A string field with given options.
-    ///
-    /// This will be tokenized.
-    Text { stored: bool },
-
-    /// A string field with given options.
-    ///
-    /// This wont be tokenized.
-    String { stored: bool },
-
-    /// A facet field.
-    ///
-    /// This is typically represented as a path e.g. `videos/moves/ironman`
-    Facet(FacetOptions),
 }
 
 fn add_boost_fields(
@@ -123,8 +77,8 @@ pub struct IndexDeclaration {
     /// The storage type used to store index data.
     pub(crate) storage_type: StorageType,
 
-    /// The given schema fields.
-    pub(crate) fields: HashMap<String, FieldDeclaration>,
+    #[serde(flatten)]
+    schema_ctx: SchemaContext,
 
     #[serde(flatten)]
     reader_ctx: ReaderContext,
@@ -149,62 +103,13 @@ pub struct IndexDeclaration {
     /// This only applies to the fast-fuzzy query system.
     #[serde(default)]
     pub(crate) strip_stop_words: bool,
-
-    /// The fields what are actually searched via tantivy.
-    ///
-    /// These values need to either be a fast field (ints) or TEXT.
-    pub(crate) search_fields: Vec<String>,
-
-    /// A set of fields to boost by a given factor.
-    #[serde(default)]
-    pub(crate) boost_fields: HashMap<String, Score>,
 }
 
 impl Validate for IndexDeclaration {
     fn validate(&self) -> Result<()> {
-        if self.fields.is_empty() {
-            return Err(Error::msg("index must have at least one indexed field."));
-        }
-
-        if self.search_fields.is_empty() {
-            return Err(Error::msg(
-                "at least one indexed field must be given to search.",
-            ));
-        }
-
-        {
-            let mut rejected_fields = vec![];
-            for field_name in self.boost_fields.keys() {
-                if !self.fields.contains_key(field_name) {
-                    rejected_fields.push(field_name.to_string());
-                }
-            }
-
-            if !rejected_fields.is_empty() {
-                return Err(anyhow!(
-                "key 'boost_fields' contain {} fields that are not defined in the schema: {}",
-                rejected_fields.len(),
-                rejected_fields.join(", "),
-            ));
-            }
-        }
-
-        {
-            let mut rejected_fields = vec![];
-            for field_name in self.search_fields.iter() {
-                if !self.fields.contains_key(field_name) {
-                    rejected_fields.push(field_name.to_string());
-                }
-            }
-
-            if !rejected_fields.is_empty() {
-                return Err(anyhow!(
-                "key 'search_fields' contain {} fields that are not defined in the schema: {}",
-                rejected_fields.len(),
-                rejected_fields.join(", "),
-            ));
-            }
-        }
+        self.writer_ctx.validate()?;
+        self.reader_ctx.validate()?;
+        self.schema_ctx.validate()?;
 
         Ok(())
     }
@@ -221,8 +126,9 @@ impl IndexDeclaration {
     #[instrument(name = "index-setup", skip(self), fields(index = %self.name))]
     pub fn create_context(&self) -> Result<IndexContext> {
         self.validate()?;
-        self.writer_ctx.validate()?;
-        self.reader_ctx.validate()?;
+
+        let mut schema_ctx = self.schema_ctx.clone();
+        schema_ctx.calculate_once()?;
 
         let open = match self.storage_type {
             StorageType::Memory => {
@@ -246,20 +152,20 @@ impl IndexDeclaration {
         let index = if does_exist {
             Index::open(dir.clone())
         } else {
-            Index::open_or_create(dir.clone(), self.schema_from_fields())
+            Index::open_or_create(dir.clone(), schema_ctx.as_tantivy_schema())
         }?;
 
         let schema = index.schema();
-        self.verify_search_fields(&schema)?;
+        schema_ctx.validate_with_schema(&schema)?;
 
         let query_context = {
-            let default_fields = self.get_search_fields(&schema);
-            let fuzzy_fields = self.get_fuzzy_search_fields(&schema);
+            let default_fields = schema_ctx.get_search_fields(&schema);
+            let fuzzy_fields = schema_ctx.get_fuzzy_search_fields(&schema);
 
             let mut default_fields_with_boost = Vec::with_capacity(default_fields.len());
             add_boost_fields(
                 &schema,
-                &self.boost_fields,
+                schema_ctx.boost_fields(),
                 &default_fields,
                 &mut default_fields_with_boost,
             );
@@ -267,7 +173,7 @@ impl IndexDeclaration {
             let mut fuzzy_fields_with_boost = Vec::with_capacity(fuzzy_fields.len());
             add_boost_fields(
                 &schema,
-                &self.boost_fields,
+                schema_ctx.boost_fields(),
                 &fuzzy_fields,
                 &mut fuzzy_fields_with_boost,
             );
@@ -290,158 +196,13 @@ impl IndexDeclaration {
             storage,
             correction_manager: corrections,
             index,
+            schema_ctx: schema_ctx.clone(),
             reader_ctx: self.reader_ctx.clone(),
             writer_ctx: self.writer_ctx,
             query_ctx: query_context,
-            fuzzy_search_fields: self.get_fuzzy_search_fields(&schema),
+            fuzzy_search_fields: schema_ctx.get_fuzzy_search_fields(&schema),
             stop_words: StopWordManager::init()?,
         })
-    }
-
-    /// Validates all search fields so that they're all indexed.
-    ///
-    /// If the search fields contain any fields that are not indexed,
-    /// the system will list all rejected fields in a Error.
-    /// Or if any fields are not text.
-    fn verify_search_fields(&self, schema: &Schema) -> Result<()> {
-        let mut reject = vec![];
-
-        for (_, entry) in schema.fields() {
-            let name = entry.name().to_string();
-            if !self.search_fields.contains(&name) {
-                continue;
-            }
-
-            match entry.field_type() {
-                FieldType::Str(_) => {},
-                _ => {
-                    return Err(Error::msg(format!(
-                        "search field '{}' is not a text / string field type.",
-                        &name,
-                    )))
-                },
-            }
-
-            if !entry.is_indexed() {
-                reject.push(name)
-            }
-        }
-
-        if reject.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::msg(format!(
-                "the given search fields contain non-indexed fields, \
-                 fields cannot be searched without being index. Invalid fields: {}",
-                reject.join(", ")
-            )))
-        }
-    }
-
-    /// Gets all fields that exist in the schema and are marked as search
-    /// fields.
-    fn get_search_fields(&self, schema: &Schema) -> Vec<Field> {
-        let mut search_fields = vec![];
-
-        for (field, entry) in schema.fields() {
-            if entry.name() == PRIMARY_KEY {
-                continue;
-            }
-
-            // if it's not searchable, it's pointless having it be searched.
-            if !entry.is_indexed() {
-                continue;
-            }
-
-            if !self.search_fields.contains(&entry.name().to_string()) {
-                continue;
-            }
-
-            if let FieldType::Str(_) = entry.field_type() {
-                search_fields.push(field);
-            }
-        }
-
-        search_fields
-    }
-
-    /// Gets all TEXT and STRING fields that are marked at search fields.
-    ///
-    /// If the index uses fast-fuzzy this uses the pre-computed fields.
-    fn get_fuzzy_search_fields(&self, schema: &Schema) -> Vec<Field> {
-        let mut search_fields = vec![];
-
-        for (field, entry) in schema.fields() {
-            // if it's not searchable, it's pointless having it be searched.
-            if !entry.is_indexed() {
-                continue;
-            }
-
-            let name = entry.name().to_string();
-            if !self.search_fields.contains(&name) {
-                continue;
-            };
-
-            if let FieldType::Str(_) = entry.field_type() {
-                search_fields.push(field);
-            }
-        }
-
-        search_fields
-    }
-
-    /// Generates a new schema from the given fields.
-    pub(crate) fn schema_from_fields(&self) -> Schema {
-        let mut schema = SchemaBuilder::new();
-        schema.add_u64_field(PRIMARY_KEY, FAST | STORED | INDEXED);
-
-        for (field, details) in self.fields.iter() {
-            if field == PRIMARY_KEY {
-                warn!(
-                    "{} is a reserved field name due to being a primary key",
-                    PRIMARY_KEY
-                );
-                continue;
-            }
-
-            match details {
-                FieldDeclaration::U64(opts) => {
-                    schema.add_u64_field(field, opts.clone());
-                },
-                FieldDeclaration::I64(opts) => {
-                    schema.add_i64_field(field, opts.clone());
-                },
-                FieldDeclaration::F64(opts) => {
-                    schema.add_f64_field(field, opts.clone());
-                },
-                FieldDeclaration::Date(opts) => {
-                    schema.add_date_field(field, opts.clone());
-                },
-                FieldDeclaration::Facet(opts) => {
-                    schema.add_facet_field(field, opts.clone());
-                },
-                FieldDeclaration::Text { stored } => {
-                    let mut opts = TEXT;
-
-                    if *stored {
-                        opts = opts | STORED;
-                    }
-
-                    schema.add_text_field(field, opts);
-                },
-                FieldDeclaration::String { stored } => {
-                    let mut opts = STRING;
-
-                    if *stored {
-                        opts = opts | STORED;
-                    }
-
-                    schema.add_text_field(field, opts);
-                },
-            }
-        }
-
-        schema.build()
     }
 }
 
@@ -461,6 +222,9 @@ pub struct IndexContext {
 
     /// The tantivy Index.
     pub(crate) index: Index,
+
+    /// The context for the readers.
+    pub(crate) schema_ctx: SchemaContext,
 
     /// The context for the readers.
     pub(crate) reader_ctx: ReaderContext,
@@ -780,6 +544,21 @@ pub enum DocumentValueOptions {
     Many(Vec<DocumentValue>),
 }
 
+impl DocumentValueOptions {
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Many(v) => v.len(),
+        }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 impl<'de> Deserialize<'de> for DocumentValueOptions {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -849,8 +628,9 @@ pub struct DocumentPayload(BTreeMap<String, DocumentValueOptions>);
 
 impl DocumentPayload {
     pub(crate) fn parse_into_document(
-        self,
+        mut self,
         schema: &Schema,
+        ctx: &SchemaContext,
     ) -> Result<InternalDocument> {
         let mut doc = InternalDocument::new();
 
@@ -862,21 +642,54 @@ impl DocumentPayload {
 
         let id = rand::random::<DocumentId>();
         doc.add_u64(field, id);
-        for (key, values) in self.0 {
-            let field = schema.get_field(&key).ok_or_else(|| {
-                Error::msg(format!("field {:?} does not exist in schema", &key))
-            })?;
+
+        for (field_name, info) in ctx.fields() {
+            let data = match self.0.remove(field_name) {
+                Some(data) => {
+                    if info.is_required() & data.is_empty() {
+                        return Err(anyhow!(
+                            "a required field ({:?}) must contain at least one value",
+                            field_name
+                        ));
+                    }
+
+                    data
+                },
+                None => {
+                    if info.is_required() {
+                        return Err(anyhow!(
+                            "missing a required field {:?}",
+                            field_name
+                        ));
+                    } else {
+                        continue;
+                    }
+                },
+            };
+
+            // should never panic as `ctx.fields` is inline with schema.
+            let field = schema.get_field(field_name).expect("get field");
 
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
 
-            match values {
+            match data {
                 DocumentValueOptions::Single(value) => {
-                    Self::add_value(&key, field, field_type, value, &mut doc)?
+                    Self::add_value(field_name, field, field_type, value, &mut doc)?
                 },
-                DocumentValueOptions::Many(values) => {
-                    for value in values {
-                        Self::add_value(&key, field, field_type, value, &mut doc)?;
+                DocumentValueOptions::Many(mut values) => {
+                    if ctx.multi_value_fields().contains(field_name) {
+                        for value in values {
+                            Self::add_value(
+                                field_name, field, field_type, value, &mut doc,
+                            )?;
+                        }
+                    } else {
+                        if let Some(value) = values.pop() {
+                            Self::add_value(
+                                field_name, field, field_type, value, &mut doc,
+                            )?;
+                        }
                     }
                 },
             };
@@ -910,10 +723,10 @@ impl DocumentPayload {
                 doc.add(val)
             },
             _ => {
-                return Err(Error::msg(format!(
+                return Err(anyhow!(
                     "byte fields (field: {}) are not supported for document insertion",
                     key,
-                )))
+                ))
             },
         }
 
@@ -994,13 +807,20 @@ impl<'de> Deserialize<'de> for DocumentOptions {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum CompliantDocumentValue {
+    Single(tantivy::schema::Value),
+    Multi(Vec<tantivy::schema::Value>),
+}
+
 /// A individual document returned from the index.
 #[derive(Debug, Serialize)]
 pub struct DocumentHit {
     /// The document data itself.
     ///
     /// Any STORED fields will be returned.
-    pub(crate) doc: tantivy::schema::NamedFieldDocument,
+    pub(crate) doc: HashMap<String, Option<CompliantDocumentValue>>,
 
     /// The document id.
     ///
@@ -1013,6 +833,49 @@ pub struct DocumentHit {
 
     /// The computed score of the documents.
     pub(crate) score: Option<Score>,
+}
+
+impl DocumentHit {
+    /// Converts a tantivy document into a document matching
+    /// the given schema.
+    pub fn from_tantivy_document(
+        ctx: &SchemaContext,
+        doc_id: u64,
+        mut doc: tantivy::schema::NamedFieldDocument,
+        score: Option<Score>,
+    ) -> Self {
+        let mut compliant = HashMap::with_capacity(doc.0.len());
+        for (name, info) in ctx.fields() {
+            let val = match doc.0.remove(name) {
+                Some(mut val) => {
+                    if info.is_multi() {
+                        Some(CompliantDocumentValue::Multi(val))
+                    } else {
+                        if let Some(first) = val.pop() {
+                            Some(CompliantDocumentValue::Single(first))
+                        } else {
+                            None
+                        }
+                    }
+                },
+                None => {
+                    if info.is_multi() {
+                        Some(CompliantDocumentValue::Multi(vec![]))
+                    } else {
+                        None
+                    }
+                },
+            };
+
+            compliant.insert(name.clone(), val);
+        }
+
+        Self {
+            doc: compliant,
+            document_id: doc_id,
+            score,
+        }
+    }
 }
 
 mod document_id_serializer {
@@ -1161,8 +1024,8 @@ mod test_context_builder {
     use super::*;
 
     #[test]
-    fn test_build_context_expect_err() -> Result<()> {
-        let dec: IndexDeclaration = serde_json::from_value(serde_json::json!({
+    fn test_build_context_expect_ok() -> Result<()> {
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1187,27 +1050,25 @@ mod test_context_builder {
                    "type": "u64",
                    "stored": true,
                    "indexed": false,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
             // The query context
             "search_fields": [
                 "title",
-                "description",
-                "count"
+                "description"
             ],
         }))?;
 
-        let res = dec.create_context();
-        assert!(res.is_err());
+        let _ctx = dec.create_context()?;
 
         Ok(())
     }
 
     #[test]
-    fn test_build_context_expect_ok() -> Result<()> {
-        let dec: IndexDeclaration = serde_json::from_value(serde_json::json!({
+    fn test_non_string_search_fields_expect_err() -> Result<()> {
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
             "name": "test",
 
             // Reader context
@@ -1231,8 +1092,8 @@ mod test_context_builder {
                 "count": {
                    "type": "u64",
                    "stored": true,
-                   "indexed": true,
-                   "fast": "single"
+                   "indexed": false,
+                   "fast": true
                 },
             },
 
@@ -1240,11 +1101,106 @@ mod test_context_builder {
             "search_fields": [
                 "title",
                 "description",
+                "count"
             ],
         }))?;
 
-        let res = dec.create_context();
-        assert!(res.is_ok());
+        let r = dec.create_context();
+        assert!(r.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unknown_search_fields_expect_err() -> Result<()> {
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+            "name": "test",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 64_000_000,
+            "writer_threads": 12,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": false,
+                   "fast": true
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+                "ahhhhh"
+            ],
+        }))?;
+
+        let r = dec.create_context();
+        assert!(r.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_unknown_boost_fields_expect_err() -> Result<()> {
+        let dec = serde_json::from_value::<IndexDeclaration>(serde_json::json!({
+            "name": "test",
+
+            // Reader context
+            "reader_threads": 1,
+            "max_concurrency": 1,
+
+            // Writer context
+            "writer_buffer": 64_000_000,
+            "writer_threads": 12,
+
+            "storage_type": "memory",
+            "fields": {
+                "title": {
+                    "type": "text",
+                    "stored": true
+                },
+                "description": {
+                    "type": "string",
+                    "stored": false
+                },
+                "count": {
+                   "type": "u64",
+                   "stored": true,
+                   "indexed": false,
+                   "fast": true
+                },
+            },
+
+            // The query context
+            "search_fields": [
+                "title",
+                "description",
+                "count"
+            ],
+
+            "boost_fields": {
+                "ahh": 0.1
+            }
+        }))?;
+
+        let r = dec.create_context();
+        assert!(r.is_err());
 
         Ok(())
     }
@@ -1276,7 +1232,7 @@ mod test_context_builder {
                    "type": "u64",
                    "stored": true,
                    "indexed": true,
-                   "fast": "single"
+                   "fast": true
                 },
             },
 
@@ -1290,8 +1246,8 @@ mod test_context_builder {
 
         let res = dec.create_context();
         assert!(res.is_ok());
-        let ctx = res.unwrap();
 
+        let ctx = res.unwrap();
         assert_eq!(ctx.fuzzy_search_fields().len(), 2);
 
         Ok(())

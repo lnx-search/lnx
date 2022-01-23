@@ -2,7 +2,8 @@ use core::fmt;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
+use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -224,6 +225,8 @@ pub enum QueryKind {
     /// Get results matching the given term for the given field.
     Term {
         ctx: DocumentValue,
+
+        #[serde(default)]
         fields: FieldSelector,
     },
 }
@@ -231,8 +234,25 @@ pub enum QueryKind {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FieldSelector {
+    /// A single field to search in.
     Single(String),
+
+    /// One or more fields to search in.
     Multi(Vec<String>),
+
+    /// One or more fields to search in each with their own
+    /// applied boost factor.
+    MultiWithBoost(HashMap<String, Score>),
+
+    /// Search in the fields defined by the `search_fields`
+    /// defined by the index declaration.
+    DefaultFields,
+}
+
+impl Default for FieldSelector {
+    fn default() -> Self {
+        Self::DefaultFields
+    }
 }
 
 /// Defines whether a term in a query must be present,
@@ -468,6 +488,13 @@ impl QueryBuilder {
     ) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
+        if self.ctx.fuzzy_search_fields.is_empty() {
+            return Err(anyhow!(
+                "no string/text fields have been marked as search fields, \
+                because of this fuzzy search has been disabled"
+            ));
+        }
+
         let mut query = value.as_string();
         if query.is_empty() {
             return Ok(Box::new(EmptyQuery {}));
@@ -506,7 +533,10 @@ impl QueryBuilder {
                 let term = Term::from_field_text(*field, search_term);
 
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
-                    Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
+                    Box::new(TermQuery::new(
+                        term,
+                        IndexRecordOption::WithFreqsAndPositions,
+                    ))
                 } else {
                     let edit_distance = if search_term.len() >= cfg.min_length_distance2
                     {
@@ -550,7 +580,6 @@ impl QueryBuilder {
         Ok(query)
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Makes a new query that matches documents that are similar to a
     /// given reference document.
     ///
@@ -623,13 +652,36 @@ impl QueryBuilder {
 
         let fields = {
             match field {
+                FieldSelector::DefaultFields => self.ctx.default_search_fields.clone(),
                 FieldSelector::Single(field) => {
-                    vec![self.get_searchable_field(&field)?]
+                    vec![(self.get_searchable_field(&field)?, 1.0)]
                 },
                 FieldSelector::Multi(fields) => {
+                    if fields.is_empty() {
+                        return Err(anyhow!(
+                            "At least one field must be specified, to use the default fields \
+                            leave this field out of the query."
+                        ));
+                    }
+
                     let mut search_fields = Vec::with_capacity(fields.len());
                     for field in fields {
-                        search_fields.push(self.get_searchable_field(&field)?);
+                        search_fields.push((self.get_searchable_field(&field)?, 1.0));
+                    }
+
+                    search_fields
+                },
+                FieldSelector::MultiWithBoost(fields) => {
+                    if fields.is_empty() {
+                        return Err(anyhow!(
+                            "At least one field must be specified, to use the default fields \
+                            leave this field out of the query."
+                        ));
+                    }
+
+                    let mut search_fields = Vec::with_capacity(fields.len());
+                    for (field, score) in fields {
+                        search_fields.push((self.get_searchable_field(&field)?, score));
                     }
 
                     search_fields
@@ -638,12 +690,20 @@ impl QueryBuilder {
         };
 
         let mut queries: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(fields.len());
-        for field in fields {
+        for (field, boost) in fields {
             let entry = self.schema.get_field_entry(field);
             let term = convert_to_term(value.clone(), field, entry)?;
 
             let query = TermQuery::new(term, IndexRecordOption::Basic);
-            queries.push((Occur::Must, Box::new(query)));
+
+            if boost != 1.0 {
+                queries.push((
+                    Occur::Should,
+                    Box::new(BoostQuery::new(Box::new(query), boost)),
+                ));
+            } else {
+                queries.push((Occur::Should, Box::new(query)));
+            }
         }
 
         Ok(Box::new(BooleanQuery::new(queries)))

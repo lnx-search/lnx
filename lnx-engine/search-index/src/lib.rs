@@ -10,6 +10,7 @@ mod helpers;
 mod index;
 mod query;
 mod reader;
+mod schema;
 mod stop_words;
 mod storage;
 pub mod structures;
