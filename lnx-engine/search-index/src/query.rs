@@ -579,7 +579,6 @@ impl QueryBuilder {
         Ok(query)
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Makes a new query that matches documents that are similar to a
     /// given reference document.
     ///
