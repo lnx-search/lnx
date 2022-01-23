@@ -182,6 +182,7 @@ fn process_search<S: AsScore>(
 ///
 /// This function is super messy just because of all the type inference
 /// so any contributions to clean this up would be very appreciated.
+#[allow(clippy::too_many_arguments)]
 fn order_and_sort(
     sort: Sort,
     field: Field,
