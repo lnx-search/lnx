@@ -24,6 +24,7 @@ use tantivy::{
 
 use crate::helpers::{AsScore, Validate};
 use crate::query::{DocumentId, QueryBuilder, QuerySelector};
+use crate::schema::SchemaContext;
 use crate::structures::{DocumentHit, IndexContext};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +150,7 @@ fn order_and_search<R: AsScore + tantivy::fastfield::FastValue>(
 
 /// Performs the search operation and processes the returned results.
 fn process_search<S: AsScore>(
+    ctx: &SchemaContext,
     searcher: &Searcher,
     schema: &Schema,
     top_docs: Vec<(S, DocAddress)>,
@@ -161,12 +163,13 @@ fn process_search<S: AsScore>(
             .remove("_id")
             .ok_or_else(|| Error::msg("document has been missed labeled (missing primary key '_id'), the dataset is invalid"))?;
 
-        if let Value::U64(v) = id[0] {
-            hits.push(DocumentHit {
+        if let Value::U64(doc_id) = id[0] {
+            hits.push(DocumentHit::from_tantivy_document(
+                ctx,
+                doc_id,
                 doc,
-                document_id: v,
-                score: ratio.as_score(),
-            });
+                ratio.as_score()
+            ));
         } else {
             return Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"));
         }
@@ -183,6 +186,7 @@ fn order_or_sort(
     sort: Sort,
     field: Field,
     query: &dyn Query,
+    ctx: &SchemaContext,
     schema: &Schema,
     searcher: &Searcher,
     collector: TopDocs,
@@ -194,22 +198,22 @@ fn order_or_sort(
             FieldType::I64(_) => {
                 let out: (Vec<(i64, DocAddress)>, usize) =
                     order_and_search(searcher, field, query, collector, executor)?;
-                Ok((process_search(searcher, schema, out.0)?, out.1))
+                Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::U64(_) => {
                 let out: (Vec<(u64, DocAddress)>, usize) =
                     order_and_search(searcher, field, query, collector, executor)?;
-                Ok((process_search(searcher, schema, out.0)?, out.1))
+                Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::F64(_) => {
                 let out: (Vec<(f64, DocAddress)>, usize) =
                     order_and_search(searcher, field, query, collector, executor)?;
-                Ok((process_search(searcher, schema, out.0)?, out.1))
+                Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::Date(_) => {
                 let out: (Vec<(DateTime, DocAddress)>, usize) =
                     order_and_search(searcher, field, query, collector, executor)?;
-                Ok((process_search(searcher, schema, out.0)?, out.1))
+                Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             _ => Err(Error::msg("field is not a fast field")),
         };
@@ -233,7 +237,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<i64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(searcher, schema, out.0)?, out.1)
+            (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::U64(_) => {
             let collector =
@@ -252,7 +256,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<u64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(searcher, schema, out.0)?, out.1)
+            (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::F64(_) => {
             let collector =
@@ -271,7 +275,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<f64>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(searcher, schema, out.0)?, out.1)
+            (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::Date(_) => {
             let collector =
@@ -290,7 +294,7 @@ fn order_or_sort(
             let out: (Vec<(Reverse<DateTime>, DocAddress)>, usize) = searcher
                 .search_with_executor(query, &(collector, Count), executor)
                 .map_err(Error::from)?;
-            (process_search(searcher, schema, out.0)?, out.1)
+            (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         _ => return Err(Error::msg("field is not a fast field")),
     };
@@ -307,6 +311,8 @@ fn order_or_sort(
 #[derive(Clone)]
 pub(crate) struct Reader {
     index_name: Cow<'static, str>,
+
+    schema_ctx: Cow<'static, SchemaContext>,
 
     /// The executor pool.
     pool: crate::ReaderExecutor,
@@ -360,6 +366,7 @@ impl Reader {
 
         Ok(Self {
             index_name: Cow::Owned(ctx.name()),
+            schema_ctx: Cow::Owned(ctx.schema_ctx.clone()),
             pool,
             query_handler: Arc::new(query_handler),
         })
@@ -404,11 +411,12 @@ impl Reader {
             })
             .await??;
 
-        Ok(DocumentHit {
-            doc: document,
-            document_id: id,
-            score: Some(1.0),
-        })
+        Ok(DocumentHit::from_tantivy_document(
+            &self.schema_ctx,
+            id,
+            document,
+            Some(1.0)
+        ))
     }
 
     /// Searches the index reader with the given query payload.
@@ -425,6 +433,7 @@ impl Reader {
         let order_by = qry.order_by;
         let offset = qry.offset;
         let query = self.query_handler.build_query(qry.query).await?;
+        let ctx = self.schema_ctx.clone();
 
         let (hits, count) = self
             .pool
@@ -436,7 +445,7 @@ impl Reader {
 
                 let (hits, count) = if let Some(Some(field)) = order_by {
                     order_or_sort(
-                        sort, field, &query, schema, &searcher, collector, executor,
+                        sort, field, &query, ctx.as_ref(), schema, &searcher, collector, executor,
                     )?
                 } else {
                     let (out, count) = searcher.search_with_executor(
@@ -444,7 +453,7 @@ impl Reader {
                         &(collector, Count),
                         executor,
                     )?;
-                    (process_search(&searcher, schema, out)?, count)
+                    (process_search(ctx.as_ref(), &searcher, schema, out)?, count)
                 };
 
                 Ok::<_, Error>((hits, count))

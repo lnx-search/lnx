@@ -544,6 +544,21 @@ pub enum DocumentValueOptions {
     Many(Vec<DocumentValue>),
 }
 
+impl DocumentValueOptions {
+    #[inline]
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Single(_) => 1,
+            Self::Many(v) => v.len()
+        }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 impl<'de> Deserialize<'de> for DocumentValueOptions {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -630,20 +645,24 @@ impl DocumentPayload {
 
         for (field_name, info) in ctx.fields() {
             let data = match self.0.remove(field_name) {
-                Some(data) => data,
+                Some(data) => {
+                     if info.is_required() & data.is_empty() {
+                        return Err(anyhow!("a required field ({:?}) must contain at least one value", field_name));
+                    }
+
+                    data
+                },
                 None => {
                     if info.is_required() {
-                        return Err(anyhow!(
-                            "missing a required field {:?}",
-                            field_name
-                        ));
+                        return Err(anyhow!("missing a required field {:?}", field_name));
                     } else {
                         continue;
                     }
                 },
             };
 
-            let field = schema.get_field(field_name).expect("get field"); // should never happen as `ctx.fields` is inline with schema.
+            // should never panic as `ctx.fields` is inline with schema.
+            let field = schema.get_field(field_name).expect("get field");
 
             let entry = schema.get_field_entry(field);
             let field_type = entry.field_type();
@@ -652,9 +671,15 @@ impl DocumentPayload {
                 DocumentValueOptions::Single(value) => {
                     Self::add_value(field_name, field, field_type, value, &mut doc)?
                 },
-                DocumentValueOptions::Many(values) => {
-                    for value in values {
-                        Self::add_value(field_name, field, field_type, value, &mut doc)?;
+                DocumentValueOptions::Many(mut values) => {
+                    if ctx.multi_value_fields().contains(field_name) {
+                        for value in values {
+                            Self::add_value(field_name, field, field_type, value, &mut doc)?;
+                        }
+                    } else {
+                        if let Some(value) = values.pop() {
+                            Self::add_value(field_name, field, field_type, value, &mut doc)?;
+                        }
                     }
                 },
             };
@@ -772,13 +797,21 @@ impl<'de> Deserialize<'de> for DocumentOptions {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum CompliantDocumentValue {
+    Single(tantivy::schema::Value),
+    Multi(Vec<tantivy::schema::Value>),
+}
+
+
 /// A individual document returned from the index.
 #[derive(Debug, Serialize)]
 pub struct DocumentHit {
     /// The document data itself.
     ///
     /// Any STORED fields will be returned.
-    pub(crate) doc: tantivy::schema::NamedFieldDocument,
+    pub(crate) doc: HashMap<String, Option<CompliantDocumentValue>>,
 
     /// The document id.
     ///
@@ -791,6 +824,39 @@ pub struct DocumentHit {
 
     /// The computed score of the documents.
     pub(crate) score: Option<Score>,
+}
+
+impl DocumentHit {
+    /// Converts a tantivy document into a document matching
+    /// the given schema.
+    pub fn from_tantivy_document(
+        ctx: &SchemaContext,
+        doc_id: u64,
+        doc: tantivy::schema::NamedFieldDocument,
+        score: Option<Score>,
+    ) -> Self {
+        let multi_fields = ctx.multi_value_fields();
+        let mut compliant = HashMap::with_capacity(doc.0.len());
+        for (name, mut val) in doc.0 {
+            let val = if multi_fields.contains(&name) {
+                Some(CompliantDocumentValue::Multi(val))
+            } else {
+                if let Some(first) = val.pop() {
+                    Some(CompliantDocumentValue::Single(first))
+                } else {
+                    None
+                }
+            };
+
+            compliant.insert(name, val);
+        }
+
+        Self {
+            doc: compliant,
+            document_id: doc_id,
+            score,
+        }
+    }
 }
 
 mod document_id_serializer {
