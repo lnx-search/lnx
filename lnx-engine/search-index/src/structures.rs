@@ -684,12 +684,10 @@ impl DocumentPayload {
                                 field_name, field, field_type, value, &mut doc,
                             )?;
                         }
-                    } else {
-                        if let Some(value) = values.pop() {
-                            Self::add_value(
-                                field_name, field, field_type, value, &mut doc,
-                            )?;
-                        }
+                    } else if let Some(value) = values.pop() {
+                        Self::add_value(
+                            field_name, field, field_type, value, &mut doc,
+                        )?;
                     }
                 },
             };
