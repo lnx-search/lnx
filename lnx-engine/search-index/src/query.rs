@@ -649,9 +649,6 @@ impl QueryBuilder {
                 FieldSelector::Single(field) => {
                     vec![(self.get_searchable_field(&field)?, 1.0)]
                 },
-                FieldSelector::SingleWithBoost { field, boost } => {
-                    vec![(self.get_searchable_field(&field)?, boost)]
-                },
                 FieldSelector::Multi(fields) => {
                     if fields.is_empty() {
                         return Err(anyhow!(
