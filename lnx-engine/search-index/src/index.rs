@@ -1843,23 +1843,15 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": "Man",
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -1877,13 +1869,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -1901,13 +1888,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -1925,12 +1907,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         let results = results.unwrap();
         let doc_id = results.hits[0].document_id;
@@ -1940,12 +1918,9 @@ mod tests {
                 "more-like-this": {"ctx": doc_id},
             },
         }))?;
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -1963,12 +1938,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -1986,12 +1957,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -2009,12 +1976,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -2032,12 +1995,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         Ok(())
     }
@@ -2090,13 +2049,8 @@ mod tests {
             ],
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), 1);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), 1);
 
         Ok(())
     }
