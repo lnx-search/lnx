@@ -32,6 +32,7 @@ use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::writer::WriterContext;
 use crate::DocumentId;
+use crate::synonyms::SynonymsManager;
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
@@ -201,6 +202,7 @@ impl IndexDeclaration {
             writer_ctx: self.writer_ctx,
             query_ctx: query_context,
             fuzzy_search_fields: schema_ctx.get_fuzzy_search_fields(&schema),
+            synonyms: SynonymsManager::init(),
             stop_words: StopWordManager::init()?,
         })
     }
@@ -216,6 +218,9 @@ pub struct IndexContext {
 
     /// The index's custom stop words.
     pub(crate) stop_words: StopWordManager,
+
+    /// The index's custom synonym relations.
+    pub(crate) synonyms: SynonymsManager,
 
     /// The index's fast-fuzzy pre-processor.
     pub(crate) correction_manager: SymSpellCorrectionManager,

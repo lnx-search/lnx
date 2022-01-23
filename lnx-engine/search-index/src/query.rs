@@ -33,6 +33,7 @@ use tantivy::{DateTime, Index, Score, Term};
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
 use crate::structures::DocumentValue;
+use crate::synonyms::SynonymsManager;
 
 pub type DocumentId = u64;
 
@@ -393,6 +394,9 @@ pub(crate) struct QueryBuilder {
     /// The wrapping manager over the SymSpell correction system.
     corrections: SymSpellCorrectionManager,
 
+    /// The synonyms manager to allow for similar words to be matched.
+    synonyms: SynonymsManager,
+
     /// The schema of the index the handler belongs to.
     schema: Schema,
 
@@ -412,6 +416,7 @@ impl QueryBuilder {
         ctx: QueryContext,
         stop_words: StopWordManager,
         corrections: SymSpellCorrectionManager,
+        synonyms: SynonymsManager,
         index: &Index,
         pool: crate::ReaderExecutor,
     ) -> Self {
@@ -422,6 +427,7 @@ impl QueryBuilder {
             ctx: Arc::new(ctx),
             corrections,
             stop_words,
+            synonyms,
             query_parser: Arc::new(parser),
             pool,
             schema: index.schema(),
@@ -509,7 +515,11 @@ impl QueryBuilder {
         let mut ignore_stop_words = false;
 
         while let Some(token) = tokens.next() {
-            words.push(token.text.to_string())
+            words.push(token.text.to_string());
+
+            if let Some(synonyms) = self.synonyms.get_synonyms(&token.text) {
+                words.extend_from_slice(&synonyms);
+            }
         }
 
         if self.ctx.strip_stop_words && words.len() > 1 {
