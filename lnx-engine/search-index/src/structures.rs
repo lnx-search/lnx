@@ -685,9 +685,7 @@ impl DocumentPayload {
                             )?;
                         }
                     } else if let Some(value) = values.pop() {
-                        Self::add_value(
-                            field_name, field, field_type, value, &mut doc,
-                        )?;
+                        Self::add_value(field_name, field, field_type, value, &mut doc)?;
                     }
                 },
             };
@@ -849,8 +847,7 @@ impl DocumentHit {
                     if info.is_multi() {
                         Some(CompliantDocumentValue::Multi(val))
                     } else {
-                        val.pop()
-                            .map(CompliantDocumentValue::Single)
+                        val.pop().map(CompliantDocumentValue::Single)
                     }
                 },
                 None => {
