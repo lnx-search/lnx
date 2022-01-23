@@ -102,7 +102,7 @@ struct CorrectionResultPayload {
     hint: String,
 }
 
-pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
+pub async fn get_corrected_query_hint(mut req: LnxRequest) -> LnxResponse {
     let payload: CorrectionPayload = json!(req.body_mut());
 
     let state = req.data::<State>().expect("get state");

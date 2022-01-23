@@ -23,7 +23,7 @@ pub fn get_router(state: State) -> Router<Body, LnxError> {
         .post("/indexes/:index/commit", index::commit)
         .post("/indexes/:index/rollback", index::rollback)
         .post("/indexes/:index/search", index::search_index)
-        .post("/indexes/:index/correct", index::get_corrections)
+        .post("/indexes/:index/hint", index::get_corrected_query_hint)
         .post("/indexes/:index/documents", index::add_documents)
         .post("/indexes/:index/stopwords", index::add_stop_words)
         .delete("/indexes/:index/stopwords", index::remove_stop_words)
