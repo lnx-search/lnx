@@ -24,6 +24,7 @@ use crate::structures::{
     INDEX_STORAGE_SUB_PATH,
     ROOT_PATH,
 };
+use crate::synonyms::{PersistentSynonymsManager, SynonymsManager};
 use crate::DocumentId;
 
 type OpPayload = (WriterOp, Option<oneshot::Sender<Result<()>>>);
@@ -159,14 +160,23 @@ pub(super) enum WriterOp {
     /// Removes any changes since the last commit.
     Rollback,
 
-    /// Adds a set of stopwords
+    /// Adds a set of stopwords.
     AddStopWords(Vec<String>),
 
-    /// Removes a set of stopwords
+    /// Removes a set of stopwords.
     RemoveStopWords(Vec<String>),
 
     /// Removes all stopwords.
     ClearStopWords,
+
+    /// Adds a set of synonyms.
+    AddSynonyms(Vec<String>),
+
+    /// Removes a set of synonyms.
+    RemoveSynonyms(Vec<String>),
+
+    /// Removes all synonyms.
+    ClearSynonyms,
 
     /// Adds a document to the index.
     AddDocument(DocumentPayload),
@@ -208,6 +218,7 @@ pub struct IndexWriterWorker {
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
     stop_words: PersistentStopWordManager,
+    synonyms: PersistentSynonymsManager,
 }
 
 impl IndexWriterWorker {
@@ -359,6 +370,18 @@ impl IndexWriterWorker {
                 self.stop_words.commit()?;
                 return Ok(());
             },
+            WriterOp::RemoveSynonyms(relations) => {
+                self.synonyms.remove_many_word_synonyms(&relations)?;
+                return Ok(());
+            },
+            WriterOp::AddSynonyms(words) => {
+                self.synonyms.parse_many_synonyms(&words)?;
+                return Ok(());
+            },
+            WriterOp::ClearSynonyms => {
+                self.synonyms.clear_all()?;
+                return Ok(());
+            },
         };
 
         debug!(
@@ -429,6 +452,7 @@ fn start_writer(
     conn: StorageBackend,
     reader: crate::reader::Reader,
     stop_word_manager: StopWordManager,
+    synonyms: SynonymsManager,
     waiters: WaitersQueue,
     schema: Schema,
     schema_ctx: SchemaContext,
@@ -440,7 +464,8 @@ fn start_writer(
     shutdown: ShutdownWaker,
     corrections: SymSpellCorrectionManager,
 ) -> Result<()> {
-    let stop_words = PersistentStopWordManager::new(conn, stop_word_manager)?;
+    let stop_words = PersistentStopWordManager::new(conn.clone(), stop_word_manager)?;
+    let synonyms = PersistentSynonymsManager::new(conn, synonyms)?;
 
     let pk_field = schema
         .get_field(PRIMARY_KEY)
@@ -461,6 +486,7 @@ fn start_writer(
         shutdown,
         corrections,
         stop_words,
+        synonyms,
     };
 
     if using_fast_fuzzy {
@@ -517,6 +543,7 @@ impl Writer {
             let conn = ctx.storage.clone();
             let stop_word_manager = ctx.stop_words.clone();
             let corrections = ctx.correction_manager.clone();
+            let synonyms = ctx.synonyms.clone();
             let waiter_queue = waiters.clone();
             let schema = ctx.schema();
             let schema_ctx = ctx.schema_ctx.clone();
@@ -530,6 +557,7 @@ impl Writer {
                     conn,
                     reader,
                     stop_word_manager,
+                    synonyms,
                     waiter_queue,
                     schema,
                     schema_ctx,

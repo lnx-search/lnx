@@ -182,24 +182,16 @@ impl SchemaContext {
     /// These should never be off unless someone has manually modified the data.
     pub fn assert_existing_schema_matches(&self, existing: &Schema) -> Result<()> {
         let defined = self.as_tantivy_schema();
-        let defined_fields: Vec<&str> = defined
-            .fields()
-            .map(|(f, _)| defined.get_field_name(f))
-            .collect();
+        let defined_fields = defined.fields().map(|(f, _)| defined.get_field_name(f));
 
-        let existing_fields: Vec<&str> = existing
-            .fields()
-            .map(|(f, _)| existing.get_field_name(f))
-            .collect();
+        let existing_fields = existing.fields().map(|(f, _)| existing.get_field_name(f));
 
-        let defined_fields_set: HashSet<&str> =
-            HashSet::from_iter(defined_fields.into_iter());
-        let existing_fields_set: HashSet<&str> =
-            HashSet::from_iter(existing_fields.into_iter());
+        let defined_fields_set: HashSet<&str> = HashSet::from_iter(defined_fields);
+        let existing_fields_set: HashSet<&str> = HashSet::from_iter(existing_fields);
 
         let diff: Vec<&str> = defined_fields_set
             .difference(&existing_fields_set)
-            .map(|v| *v)
+            .copied()
             .collect();
 
         if !diff.is_empty() {
@@ -310,19 +302,19 @@ impl SchemaContext {
 
             match details {
                 FieldDeclaration::U64 { opts } => {
-                    schema.add_u64_field(field, opts.clone());
+                    schema.add_u64_field(field, *opts);
                 },
                 FieldDeclaration::I64 { opts } => {
-                    schema.add_i64_field(field, opts.clone());
+                    schema.add_i64_field(field, *opts);
                 },
                 FieldDeclaration::F64 { opts } => {
-                    schema.add_f64_field(field, opts.clone());
+                    schema.add_f64_field(field, *opts);
                 },
                 FieldDeclaration::Date { opts } => {
-                    schema.add_date_field(field, opts.clone());
+                    schema.add_date_field(field, *opts);
                 },
                 FieldDeclaration::Facet { opts } => {
-                    schema.add_facet_field(field, opts.clone());
+                    schema.add_facet_field(field, *opts);
                 },
                 FieldDeclaration::Text { opts } => {
                     schema.add_text_field(field, opts.opts_as_text());
@@ -358,11 +350,11 @@ pub struct BaseFieldOptions {
     required: bool,
 }
 
-impl Into<FacetOptions> for BaseFieldOptions {
-    fn into(self) -> FacetOptions {
+impl From<BaseFieldOptions> for FacetOptions {
+    fn from(v: BaseFieldOptions) -> Self {
         let mut opts = FacetOptions::default();
 
-        if self.stored {
+        if v.stored {
             opts = opts.set_stored();
         }
 
@@ -402,11 +394,11 @@ impl BaseFieldOptions {
     }
 }
 
-impl Into<TextOptions> for BaseFieldOptions {
-    fn into(self) -> TextOptions {
+impl From<BaseFieldOptions> for TextOptions {
+    fn from(v: BaseFieldOptions) -> Self {
         let mut opts = TextOptions::default();
 
-        if self.stored {
+        if v.stored {
             opts = opts.set_stored();
         }
 
@@ -438,24 +430,24 @@ pub struct CalculatedIntOptions {
     base: BaseFieldOptions,
 }
 
-impl Into<IntOptions> for CalculatedIntOptions {
-    fn into(self) -> IntOptions {
+impl From<CalculatedIntOptions> for IntOptions {
+    fn from(v: CalculatedIntOptions) -> Self {
         let mut opts = IntOptions::default();
 
-        if self.indexed {
+        if v.indexed {
             opts = opts.set_indexed();
         }
 
-        if self.base.stored {
+        if v.base.stored {
             opts = opts.set_stored();
         }
 
-        if self.fieldnorms.unwrap_or(self.indexed) {
+        if v.fieldnorms.unwrap_or(v.indexed) {
             opts = opts.set_fieldnorm();
         }
 
-        if self.fast {
-            let cardinality = if self.base.multi {
+        if v.fast {
+            let cardinality = if v.base.multi {
                 Cardinality::MultiValues
             } else {
                 Cardinality::SingleValue

@@ -14,6 +14,7 @@ mod schema;
 mod stop_words;
 mod storage;
 pub mod structures;
+mod synonyms;
 mod writer;
 
 pub use helpers::cr32_hash;

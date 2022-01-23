@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use hashbrown::HashMap;
 
 use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
@@ -35,8 +36,8 @@ impl Index {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.0.get_corrections(query)
+    pub fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.0.get_corrected_query_hint(query)
     }
 
     /// Search the index for the given query.
@@ -93,6 +94,11 @@ impl Index {
         self.0.add_stop_words(words).await
     }
 
+    /// Get the current index stop words.
+    pub fn get_stop_words(&self) -> Vec<String> {
+        self.0.get_stop_words()
+    }
+
     /// Adds a set of stop words to the indexes' stop word manager.
     ///
     /// This function is semi-asynchronous in the sense that there is a buffer of
@@ -105,6 +111,34 @@ impl Index {
     /// Removes all stop words from the index.
     pub async fn clear_stop_words(&self) -> Result<()> {
         self.0.clear_stop_words().await
+    }
+
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    pub async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
+        self.0.add_synonyms(relations).await
+    }
+
+    /// Get the current index synonyms.
+    pub fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.0.get_synonyms()
+    }
+
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    pub async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
+        self.0.remove_synonyms(words).await
+    }
+
+    /// Removes all synonyms from the index.
+    pub async fn clear_synonyms(&self) -> Result<()> {
+        self.0.clear_synonyms().await
     }
 
     /// Shuts the index down waiting for all writer threads to finish.
@@ -157,8 +191,8 @@ impl InternalIndex {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.reader.get_corrections(query)
+    pub(crate) fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.reader.get_corrected_query_hint(query)
     }
 
     /// Search the index for the given query.
@@ -288,6 +322,11 @@ impl InternalIndex {
         self.writer.send_op(WriterOp::AddStopWords(words)).await
     }
 
+    /// Get the current index stop words.
+    pub fn get_stop_words(&self) -> Vec<String> {
+        self.reader.get_stop_words()
+    }
+
     /// Adds a set of stop words to the indexes' stop word manager.
     ///
     /// This function is semi-asynchronous in the sense that there is a buffer of
@@ -300,6 +339,34 @@ impl InternalIndex {
     /// Removes all stop words from the index.
     async fn clear_stop_words(&self) -> Result<()> {
         self.writer.send_op(WriterOp::ClearStopWords).await
+    }
+
+    /// Adds a set of synonyms to the indexes' synonym manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
+        self.writer.send_op(WriterOp::AddSynonyms(relations)).await
+    }
+
+    /// Get the current index stop words.
+    pub fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.reader.get_synonyms()
+    }
+
+    /// Adds a set of synonyms to the indexes' stop word manager.
+    ///
+    /// This function is semi-asynchronous in the sense that there is a buffer of
+    /// 20 tasks that can be submitted to the writer before the extra pending tasks
+    /// must wait in order to then submit their operation to the queue.
+    async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
+        self.writer.send_op(WriterOp::RemoveSynonyms(words)).await
+    }
+
+    /// Removes all synonyms from the index.
+    async fn clear_synonyms(&self) -> Result<()> {
+        self.writer.send_op(WriterOp::ClearSynonyms).await
     }
 
     /// Shuts the index down waiting for all writer threads to finish.

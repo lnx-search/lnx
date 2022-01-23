@@ -99,10 +99,10 @@ struct CorrectionPayload {
 
 #[derive(Serialize)]
 struct CorrectionResultPayload {
-    corrections: Vec<String>,
+    hint: String,
 }
 
-pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
+pub async fn get_corrected_query_hint(mut req: LnxRequest) -> LnxResponse {
     let payload: CorrectionPayload = json!(req.body_mut());
 
     let state = req.data::<State>().expect("get state");
@@ -110,9 +110,9 @@ pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
     let index: Index =
         get_or_400!(state.engine.get_index(index), "index does not exist");
 
-    let corrections = index.get_corrections(&payload.query);
+    let hint = index.get_corrected_query_hint(&payload.query);
 
-    let payload = CorrectionResultPayload { corrections };
+    let payload = CorrectionResultPayload { hint };
 
     json_response(200, &payload)
 }
@@ -143,6 +143,16 @@ pub async fn add_stop_words(mut req: LnxRequest) -> LnxResponse {
     json_response(200, "stop words added")
 }
 
+pub async fn get_stop_words(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let stop_words = index.get_stop_words();
+    json_response(200, &stop_words)
+}
+
 pub async fn remove_stop_words(mut req: LnxRequest) -> LnxResponse {
     let payload: Vec<String> = json!(req.body_mut());
 
@@ -153,7 +163,65 @@ pub async fn remove_stop_words(mut req: LnxRequest) -> LnxResponse {
 
     index.remove_stop_words(payload).await?;
 
-    json_response(200, "stop words added")
+    json_response(200, "stop words removed")
+}
+
+pub async fn clear_stop_words(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.clear_stop_words().await?;
+
+    json_response(200, "synonyms cleared")
+}
+
+pub async fn add_synonyms(mut req: LnxRequest) -> LnxResponse {
+    let payload: Vec<String> = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.add_synonyms(payload).await?;
+
+    json_response(200, "synonyms added")
+}
+
+pub async fn get_synonyms(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let synonyms = index.get_synonyms();
+    json_response(200, &synonyms)
+}
+
+pub async fn remove_synonyms(mut req: LnxRequest) -> LnxResponse {
+    let payload: Vec<String> = json!(req.body_mut());
+
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.remove_synonyms(payload).await?;
+
+    json_response(200, "synonyms removed")
+}
+
+pub async fn clear_synonyms(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    index.clear_synonyms().await?;
+
+    json_response(200, "synonyms cleared")
 }
 
 pub async fn add_documents(mut req: LnxRequest) -> LnxResponse {

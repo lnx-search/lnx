@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use aexecutor::SearcherExecutorPool;
 use anyhow::{anyhow, Error, Result};
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;
@@ -367,6 +368,7 @@ impl Reader {
             query_ctx,
             ctx.stop_words.clone(),
             ctx.correction_manager.clone(),
+            ctx.synonyms.clone(),
             &ctx.index,
             pool.clone(),
         );
@@ -384,8 +386,8 @@ impl Reader {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.query_handler.get_corrections(query)
+    pub fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.query_handler.get_corrected_query_hint(query)
     }
 
     /// Gets a singular document from the given id.
@@ -423,7 +425,7 @@ impl Reader {
             .await??;
 
         Ok(DocumentHit::from_tantivy_document(
-            &self.schema_ctx,
+            self.schema_ctx.as_ref(),
             id,
             document,
             Some(1.0),
@@ -485,6 +487,14 @@ impl Reader {
             hits,
             count,
         })
+    }
+
+    pub(crate) fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.query_handler.synonyms()
+    }
+
+    pub(crate) fn get_stop_words(&self) -> Vec<String> {
+        self.query_handler.stop_words()
     }
 
     /// This forces the reader to reload after a commit.

@@ -30,6 +30,7 @@ use crate::reader::ReaderContext;
 use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
+use crate::synonyms::SynonymsManager;
 use crate::writer::WriterContext;
 use crate::DocumentId;
 
@@ -201,6 +202,7 @@ impl IndexDeclaration {
             writer_ctx: self.writer_ctx,
             query_ctx: query_context,
             fuzzy_search_fields: schema_ctx.get_fuzzy_search_fields(&schema),
+            synonyms: SynonymsManager::init(),
             stop_words: StopWordManager::init()?,
         })
     }
@@ -216,6 +218,9 @@ pub struct IndexContext {
 
     /// The index's custom stop words.
     pub(crate) stop_words: StopWordManager,
+
+    /// The index's custom synonym relations.
+    pub(crate) synonyms: SynonymsManager,
 
     /// The index's fast-fuzzy pre-processor.
     pub(crate) correction_manager: SymSpellCorrectionManager,
@@ -684,12 +689,8 @@ impl DocumentPayload {
                                 field_name, field, field_type, value, &mut doc,
                             )?;
                         }
-                    } else {
-                        if let Some(value) = values.pop() {
-                            Self::add_value(
-                                field_name, field, field_type, value, &mut doc,
-                            )?;
-                        }
+                    } else if let Some(value) = values.pop() {
+                        Self::add_value(field_name, field, field_type, value, &mut doc)?;
                     }
                 },
             };
@@ -786,20 +787,20 @@ impl<'de> Deserialize<'de> for DocumentOptions {
                 )
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                DocumentPayload::deserialize(MapAccessDeserializer::new(map))
-                    .map(DocumentOptions::Single)
-            }
-
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq))
                     .map(DocumentOptions::Many)
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                DocumentPayload::deserialize(MapAccessDeserializer::new(map))
+                    .map(DocumentOptions::Single)
             }
         }
 
@@ -851,11 +852,7 @@ impl DocumentHit {
                     if info.is_multi() {
                         Some(CompliantDocumentValue::Multi(val))
                     } else {
-                        if let Some(first) = val.pop() {
-                            Some(CompliantDocumentValue::Single(first))
-                        } else {
-                            None
-                        }
+                        val.pop().map(CompliantDocumentValue::Single)
                     }
                 },
                 None => {

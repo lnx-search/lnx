@@ -33,6 +33,7 @@ use tantivy::{DateTime, Index, Score, Term};
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
 use crate::structures::DocumentValue;
+use crate::synonyms::SynonymsManager;
 
 pub type DocumentId = u64;
 
@@ -359,20 +360,20 @@ impl<'de> Deserialize<'de> for QuerySelector {
                 }))
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                QueryData::deserialize(MapAccessDeserializer::new(map))
-                    .map(QuerySelector::Single)
-            }
-
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
                 A: SeqAccess<'de>,
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq))
                     .map(QuerySelector::Multi)
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                QueryData::deserialize(MapAccessDeserializer::new(map))
+                    .map(QuerySelector::Single)
             }
         }
 
@@ -393,6 +394,9 @@ pub(crate) struct QueryBuilder {
     /// The wrapping manager over the SymSpell correction system.
     corrections: SymSpellCorrectionManager,
 
+    /// The synonyms manager to allow for similar words to be matched.
+    synonyms: SynonymsManager,
+
     /// The schema of the index the handler belongs to.
     schema: Schema,
 
@@ -412,6 +416,7 @@ impl QueryBuilder {
         ctx: QueryContext,
         stop_words: StopWordManager,
         corrections: SymSpellCorrectionManager,
+        synonyms: SynonymsManager,
         index: &Index,
         pool: crate::ReaderExecutor,
     ) -> Self {
@@ -422,11 +427,22 @@ impl QueryBuilder {
             ctx: Arc::new(ctx),
             corrections,
             stop_words,
+            synonyms,
             query_parser: Arc::new(parser),
             pool,
             schema: index.schema(),
             tokenizer,
         }
+    }
+
+    #[inline]
+    pub(crate) fn stop_words(&self) -> Vec<String> {
+        self.stop_words.get_stop_words()
+    }
+
+    #[inline]
+    pub(crate) fn synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.synonyms.get_all_synonyms()
     }
 
     /// Builds a query from the given query selector.
@@ -449,9 +465,8 @@ impl QueryBuilder {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
-        // TODO: reflect single output changes
-        vec![self.corrections.correct(query)]
+    pub(crate) fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.corrections.correct(query)
     }
 
     /// Gets the unique document id field.
@@ -510,7 +525,11 @@ impl QueryBuilder {
         let mut ignore_stop_words = false;
 
         while let Some(token) = tokens.next() {
-            words.push(token.text.to_string())
+            words.push(token.text.to_string());
+
+            if let Some(synonyms) = self.synonyms.get_synonyms(&token.text) {
+                words.extend_from_slice(&synonyms);
+            }
         }
 
         if self.ctx.strip_stop_words && words.len() > 1 {
@@ -522,13 +541,12 @@ impl QueryBuilder {
             }
         }
 
+        debug!("building fuzzy query {:?}", &words);
         for search_term in words.iter() {
             if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
-                debug!("ignoring stop word {}", search_term);
                 continue;
             }
 
-            debug!("making fuzzy term for {}", search_term);
             for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
                 let term = Term::from_field_text(*field, search_term);
 
