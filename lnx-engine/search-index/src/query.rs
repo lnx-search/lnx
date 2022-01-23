@@ -486,6 +486,13 @@ impl QueryBuilder {
         value: DocumentValue,
         cfg: FuzzyConfig,
     ) -> Result<Box<dyn Query>> {
+        if self.ctx.fuzzy_search_fields.is_empty() {
+            return Err(anyhow!(
+                "no string/text fields have been marked as search fields, \
+                because of this fuzzy search has been disabled"
+            ))
+        }
+
         use tantivy::query::Occur;
 
         let mut query = value.as_string();
