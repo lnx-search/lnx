@@ -1763,7 +1763,6 @@ mod tests {
             e
         });
 
-        println!("{:?}", &results);
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
 
@@ -1787,7 +1786,7 @@ mod tests {
             eprintln!("{:?}", e);
             e
         });
-        println!("{:?}", &results);
+
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
 
@@ -1868,12 +1867,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), NUM_DOCS);
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
@@ -1881,12 +1876,8 @@ mod tests {
             },
         }))?;
 
-        let results = index.search(query).await.map_err(|e| {
-            eprintln!("{:?}", e);
-            e
-        });
-        assert!(results.is_ok());
-        assert_eq!(results.as_ref().unwrap().hits.len(), 2);
+        let results = index.search(query).await?;
+        assert_eq!(results.hits.len(), 2);
 
         Ok(())
     }
@@ -1916,7 +1907,6 @@ mod tests {
             e
         });
 
-        println!("{:?}", &results);
         assert!(results.is_ok());
         assert_eq!(results.as_ref().unwrap().hits.len(), 1);
 

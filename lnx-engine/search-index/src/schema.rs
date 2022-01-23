@@ -3,26 +3,13 @@ use std::iter::FromIterator;
 use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{
-    Cardinality,
-    FacetOptions,
-    Field,
-    FieldType,
-    IndexRecordOption,
-    IntOptions,
-    Schema,
-    SchemaBuilder,
-    TextFieldIndexing,
-    TextOptions,
-    FAST,
-    INDEXED,
-    STORED,
-};
+use tantivy::schema::{Cardinality, FacetOptions, Field, FieldType, IndexRecordOption, IntOptions, Schema, SchemaBuilder, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED};
 use tantivy::Score;
 
 use crate::helpers::{Calculated, Validate};
 
 pub static PRIMARY_KEY: &str = "_id";
+
 
 fn default_to_true() -> bool {
     true
@@ -38,10 +25,12 @@ pub struct SchemaContext {
 
     /// The fields what are actually searched via tantivy.
     ///
-    /// These values need to either be a fast field (ints) or TEXT.
+    /// TODO default to all indexed fields.
     search_fields: Vec<String>,
 
     /// A set of fields to boost by a given factor.
+    ///
+    /// TODO: Add better docs
     #[serde(default)]
     boost_fields: HashMap<String, Score>,
 
@@ -168,17 +157,17 @@ impl SchemaContext {
         let existing_fields_set: HashSet<&str> =
             HashSet::from_iter(existing_fields.into_iter());
 
-        let union: Vec<&str> = defined_fields_set
+        let diff: Vec<&str> = defined_fields_set
             .difference(&existing_fields_set)
             .map(|v| *v)
             .collect();
 
-        if !union.is_empty() {
+        if !diff.is_empty() {
             Err(anyhow!(
                 "expected existing schema fields to be inline with defined schema from last save. \
                 If you have *not* manually edited the index data then his is a bug and should be reported. \
                 Got the following miss-aligned fields: {}",
-                union.join(", ")
+                diff.join(", ")
             ))
         } else {
             Ok(())
@@ -368,8 +357,9 @@ impl BaseFieldOptions {
         let raw = self.as_raw_opts();
         raw.set_indexing_options(
             TextFieldIndexing::default()
+                .set_tokenizer("default")
                 .set_fieldnorms(true)
-                .set_tokenizer("raw"),
+                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
         )
     }
 
@@ -377,9 +367,9 @@ impl BaseFieldOptions {
         let raw = self.as_raw_opts();
         raw.set_indexing_options(
             TextFieldIndexing::default()
-                .set_tokenizer("default")
                 .set_fieldnorms(true)
-                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+                .set_tokenizer("raw")
+                .set_index_option(IndexRecordOption::Basic),
         )
     }
 }

@@ -628,6 +628,8 @@ impl QueryBuilder {
     ) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
+        dbg!(&value, &field);
+
         let fields = {
             match field {
                 FieldSelector::Single(field) => {
@@ -650,7 +652,7 @@ impl QueryBuilder {
             let term = convert_to_term(value.clone(), field, entry)?;
 
             let query = TermQuery::new(term, IndexRecordOption::Basic);
-            queries.push((Occur::Must, Box::new(query)));
+            queries.push((Occur::Should, Box::new(query)));
         }
 
         Ok(Box::new(BooleanQuery::new(queries)))
