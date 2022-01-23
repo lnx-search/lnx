@@ -36,6 +36,8 @@ fn init_default_words() -> Result<()> {
         for word in words.to_lowercase().split('\n') {
             if let Some(word) = word.strip_suffix('\r') {
                 default_words.push(word.to_string());
+            } else {
+                default_words.push(word.to_string());
             }
         }
     }
