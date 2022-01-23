@@ -3,7 +3,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 
 use aexecutor::SearcherExecutorPool;
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;
@@ -192,6 +192,13 @@ fn order_and_sort(
     collector: TopDocs,
     executor: &Executor,
 ) -> Result<(Vec<DocumentHit>, usize)> {
+    if ctx
+        .multi_value_fields()
+        .contains(schema.get_field_name(field))
+    {
+        return Err(anyhow!("multi-value fields cannot be used to sort results"));
+    }
+
     let field_type = schema.get_field_entry(field).field_type();
     if let Sort::Desc = sort {
         return match field_type {
