@@ -1832,7 +1832,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn search_term_expect_ok() -> Result<()> {
+    async fn search_term_with_single_field_expect_ok() -> Result<()> {
         init_state();
 
         let index = get_basic_index(false).await?;
@@ -1841,6 +1841,98 @@ mod tests {
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
                 "term": {"ctx": "man", "fields": "title"},
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_term_with_single_field_and_boost_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "term": {"ctx": "man", "fields": "title", "boost": 1.0},
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_term_with_multi_fields_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "term": {"ctx": "man", "fields": ["title", "description"]},
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_term_with_multi_fields_and_boost_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "term": {"ctx": "man", "fields": {"title": 2.0, "description": 1.0}},
+            },
+        }))?;
+
+        let results = index.search(query).await.map_err(|e| {
+            eprintln!("{:?}", e);
+            e
+        });
+        assert!(results.is_ok());
+        assert_eq!(results.as_ref().unwrap().hits.len(), NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_term_with_default_fields_expect_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "term": {"ctx": "man"},
             },
         }))?;
 

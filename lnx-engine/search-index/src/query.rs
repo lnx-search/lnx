@@ -2,7 +2,8 @@ use core::fmt;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
+use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -224,6 +225,8 @@ pub enum QueryKind {
     /// Get results matching the given term for the given field.
     Term {
         ctx: DocumentValue,
+
+        #[serde(default)]
         fields: FieldSelector,
     },
 }
@@ -231,8 +234,27 @@ pub enum QueryKind {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum FieldSelector {
+    /// A single field to search in.
     Single(String),
+
+    /// One or more fields to search in.
     Multi(Vec<String>),
+
+    /// A single field to search in.
+    SingleWithBoost { field: String, boost: Score },
+
+    /// One or more fields to search in.
+    MultiWithBoost(HashMap<String, Score>),
+
+    /// Search in the fields defined by the `search_fields`
+    /// defined by the index declaration.
+    DefaultFields,
+}
+
+impl Default for FieldSelector {
+    fn default() -> Self {
+        Self::DefaultFields
+    }
 }
 
 /// Defines whether a term in a query must be present,
@@ -628,17 +650,41 @@ impl QueryBuilder {
     ) -> Result<Box<dyn Query>> {
         use tantivy::query::Occur;
 
-        dbg!(&value, &field);
-
         let fields = {
             match field {
+                FieldSelector::DefaultFields => self.ctx.default_search_fields.clone(),
                 FieldSelector::Single(field) => {
-                    vec![self.get_searchable_field(&field)?]
+                    vec![(self.get_searchable_field(&field)?, 1.0)]
+                },
+                FieldSelector::SingleWithBoost { field, boost } => {
+                    vec![(self.get_searchable_field(&field)?, boost)]
                 },
                 FieldSelector::Multi(fields) => {
+                    if fields.is_empty() {
+                        return Err(anyhow!(
+                            "At least one field must be specified, to use the default fields \
+                            leave this field out of the query."
+                        ));
+                    }
+
                     let mut search_fields = Vec::with_capacity(fields.len());
                     for field in fields {
-                        search_fields.push(self.get_searchable_field(&field)?);
+                        search_fields.push((self.get_searchable_field(&field)?, 1.0));
+                    }
+
+                    search_fields
+                },
+                FieldSelector::MultiWithBoost(fields) => {
+                    if fields.is_empty() {
+                        return Err(anyhow!(
+                            "At least one field must be specified, to use the default fields \
+                            leave this field out of the query."
+                        ));
+                    }
+
+                    let mut search_fields = Vec::with_capacity(fields.len());
+                    for (field, score) in fields {
+                        search_fields.push((self.get_searchable_field(&field)?, score));
                     }
 
                     search_fields
@@ -647,12 +693,20 @@ impl QueryBuilder {
         };
 
         let mut queries: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(fields.len());
-        for field in fields {
+        for (field, boost) in fields {
             let entry = self.schema.get_field_entry(field);
             let term = convert_to_term(value.clone(), field, entry)?;
 
             let query = TermQuery::new(term, IndexRecordOption::Basic);
-            queries.push((Occur::Should, Box::new(query)));
+
+            if boost != 1.0 {
+                queries.push((
+                    Occur::Should,
+                    Box::new(BoostQuery::new(Box::new(query), boost)),
+                ));
+            } else {
+                queries.push((Occur::Should, Box::new(query)));
+            }
         }
 
         Ok(Box::new(BooleanQuery::new(queries)))

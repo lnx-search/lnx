@@ -633,7 +633,10 @@ impl DocumentPayload {
                 Some(data) => data,
                 None => {
                     if info.is_required() {
-                        return Err(anyhow!("missing a required field {:?}", field_name));
+                        return Err(anyhow!(
+                            "missing a required field {:?}",
+                            field_name
+                        ));
                     } else {
                         continue;
                     }

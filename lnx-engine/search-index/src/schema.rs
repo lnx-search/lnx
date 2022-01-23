@@ -3,13 +3,26 @@ use std::iter::FromIterator;
 use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Cardinality, FacetOptions, Field, FieldType, IndexRecordOption, IntOptions, Schema, SchemaBuilder, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED};
+use tantivy::schema::{
+    Cardinality,
+    FacetOptions,
+    Field,
+    FieldType,
+    IndexRecordOption,
+    IntOptions,
+    Schema,
+    SchemaBuilder,
+    TextFieldIndexing,
+    TextOptions,
+    FAST,
+    INDEXED,
+    STORED,
+};
 use tantivy::Score;
 
 use crate::helpers::{Calculated, Validate};
 
 pub static PRIMARY_KEY: &str = "_id";
-
 
 fn default_to_true() -> bool {
     true
@@ -25,7 +38,15 @@ pub struct SchemaContext {
 
     /// The fields what are actually searched via tantivy.
     ///
-    /// TODO default to all indexed fields.
+    /// This can be any indexed fields, these are intern passed to the query parser
+    /// as the default set of fields to use. Note that fuzzy search only uses string type
+    /// fields however, which means it will ignore non-string fields in the search.
+    ///
+    /// Term searches are also impervious to this, instead requiring you to explicitly specify
+    /// what field you want to search exactly.
+    ///
+    /// By default this is all indexed fields.
+    #[serde(default)]
     search_fields: Vec<String>,
 
     /// A set of fields to boost by a given factor.
@@ -45,9 +66,7 @@ pub struct SchemaContext {
 impl Validate for SchemaContext {
     fn validate(&self) -> Result<()> {
         if self.fields.is_empty() {
-            return Err(Error::msg(
-                "at least one indexed field must be defined.",
-            ));
+            return Err(Error::msg("at least one indexed field must be defined."));
         }
 
         {
@@ -100,14 +119,11 @@ impl Validate for SchemaContext {
 impl Calculated for SchemaContext {
     fn calculate_once(&mut self) -> Result<()> {
         if self.search_fields.is_empty() {
-            self.search_fields = self.fields
+            self.search_fields = self
+                .fields
                 .iter()
-                .filter_map(|(name, info)|
-                    if info.is_indexed() {
-                        Some(name)
-                    } else {
-                        None
-                    }
+                .filter_map(
+                    |(name, info)| if info.is_indexed() { Some(name) } else { None },
                 )
                 .cloned()
                 .collect();
