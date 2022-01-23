@@ -241,7 +241,7 @@ pub enum FieldSelector {
     Multi(Vec<String>),
 
     /// One or more fields to search in each with their own
-    /// applied boost.
+    /// applied boost factor.
     MultiWithBoost(HashMap<String, Score>),
 
     /// Search in the fields defined by the `search_fields`
