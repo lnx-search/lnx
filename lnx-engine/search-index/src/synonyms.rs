@@ -70,7 +70,7 @@ impl SynonymsManager {
         }
 
         for relation in relations {
-            let (left, right) = relation.split_once(":").ok_or_else(|| {
+            let (left, right) = relation.split_once(':').ok_or_else(|| {
                 anyhow!(
                     "invalid synonym relation defined. synonyms must follow the \
                     `word(s):related_item(s)` format, Got {:?}",
