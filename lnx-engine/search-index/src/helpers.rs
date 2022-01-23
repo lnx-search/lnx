@@ -16,9 +16,7 @@ pub(crate) trait Validate {
 }
 
 pub(crate) trait Calculated {
-    fn calculate_once(&mut self) -> Result<()> {
-        Ok(())
-    }
+    fn calculate_once(&mut self) -> Result<()>;
 }
 
 pub(crate) trait AsScore {
