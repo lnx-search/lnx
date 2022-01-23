@@ -540,10 +540,6 @@ impl QueryBuilder {
                         0
                     };
 
-                    println!(
-                        "{} - d{} - {}",
-                        search_term, edit_distance, !cfg.transposition_costs_two
-                    );
                     Box::new(FuzzyTermQuery::new_prefix(
                         term,
                         edit_distance,
