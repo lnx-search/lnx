@@ -168,7 +168,7 @@ fn process_search<S: AsScore>(
                 ctx,
                 doc_id,
                 doc,
-                ratio.as_score()
+                ratio.as_score(),
             ));
         } else {
             return Err(Error::msg("document has been missed labeled (missing identifier tag), the dataset is invalid"));
@@ -415,7 +415,7 @@ impl Reader {
             &self.schema_ctx,
             id,
             document,
-            Some(1.0)
+            Some(1.0),
         ))
     }
 
@@ -445,7 +445,14 @@ impl Reader {
 
                 let (hits, count) = if let Some(Some(field)) = order_by {
                     order_or_sort(
-                        sort, field, &query, ctx.as_ref(), schema, &searcher, collector, executor,
+                        sort,
+                        field,
+                        &query,
+                        ctx.as_ref(),
+                        schema,
+                        &searcher,
+                        collector,
+                        executor,
                     )?
                 } else {
                     let (out, count) = searcher.search_with_executor(

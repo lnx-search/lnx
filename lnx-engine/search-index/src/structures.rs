@@ -549,7 +549,7 @@ impl DocumentValueOptions {
     pub fn len(&self) -> usize {
         match self {
             Self::Single(_) => 1,
-            Self::Many(v) => v.len()
+            Self::Many(v) => v.len(),
         }
     }
 
@@ -646,15 +646,21 @@ impl DocumentPayload {
         for (field_name, info) in ctx.fields() {
             let data = match self.0.remove(field_name) {
                 Some(data) => {
-                     if info.is_required() & data.is_empty() {
-                        return Err(anyhow!("a required field ({:?}) must contain at least one value", field_name));
+                    if info.is_required() & data.is_empty() {
+                        return Err(anyhow!(
+                            "a required field ({:?}) must contain at least one value",
+                            field_name
+                        ));
                     }
 
                     data
                 },
                 None => {
                     if info.is_required() {
-                        return Err(anyhow!("missing a required field {:?}", field_name));
+                        return Err(anyhow!(
+                            "missing a required field {:?}",
+                            field_name
+                        ));
                     } else {
                         continue;
                     }
@@ -674,11 +680,15 @@ impl DocumentPayload {
                 DocumentValueOptions::Many(mut values) => {
                     if ctx.multi_value_fields().contains(field_name) {
                         for value in values {
-                            Self::add_value(field_name, field, field_type, value, &mut doc)?;
+                            Self::add_value(
+                                field_name, field, field_type, value, &mut doc,
+                            )?;
                         }
                     } else {
                         if let Some(value) = values.pop() {
-                            Self::add_value(field_name, field, field_type, value, &mut doc)?;
+                            Self::add_value(
+                                field_name, field, field_type, value, &mut doc,
+                            )?;
                         }
                     }
                 },
@@ -803,7 +813,6 @@ pub enum CompliantDocumentValue {
     Single(tantivy::schema::Value),
     Multi(Vec<tantivy::schema::Value>),
 }
-
 
 /// A individual document returned from the index.
 #[derive(Debug, Serialize)]
