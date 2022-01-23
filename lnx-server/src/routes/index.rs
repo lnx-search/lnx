@@ -153,7 +153,7 @@ pub async fn remove_stop_words(mut req: LnxRequest) -> LnxResponse {
 
     index.remove_stop_words(payload).await?;
 
-    json_response(200, "stop words added")
+    json_response(200, "stop words removed")
 }
 
 pub async fn clear_stop_words(req: LnxRequest) -> LnxResponse {
@@ -164,7 +164,7 @@ pub async fn clear_stop_words(req: LnxRequest) -> LnxResponse {
 
     index.clear_stop_words().await?;
 
-    json_response(200, "synonyms added")
+    json_response(200, "synonyms cleared")
 }
 
 pub async fn add_synonyms(mut req: LnxRequest) -> LnxResponse {
