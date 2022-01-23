@@ -182,7 +182,7 @@ fn process_search<S: AsScore>(
 ///
 /// This function is super messy just because of all the type inference
 /// so any contributions to clean this up would be very appreciated.
-fn order_or_sort(
+fn order_and_sort(
     sort: Sort,
     field: Field,
     query: &dyn Query,
@@ -444,7 +444,7 @@ impl Reader {
                 let order_by = order_by.map(|v| schema.get_field(&v));
 
                 let (hits, count) = if let Some(Some(field)) = order_by {
-                    order_or_sort(
+                    order_and_sort(
                         sort,
                         field,
                         &query,
