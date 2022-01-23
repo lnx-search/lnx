@@ -99,7 +99,7 @@ struct CorrectionPayload {
 
 #[derive(Serialize)]
 struct CorrectionResultPayload {
-    corrections: Vec<String>,
+    hint: String,
 }
 
 pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
@@ -110,9 +110,9 @@ pub async fn get_corrections(mut req: LnxRequest) -> LnxResponse {
     let index: Index =
         get_or_400!(state.engine.get_index(index), "index does not exist");
 
-    let corrections = index.get_corrections(&payload.query);
+    let hint = index.get_corrected_query_hint(&payload.query);
 
-    let payload = CorrectionResultPayload { corrections };
+    let payload = CorrectionResultPayload { hint };
 
     json_response(200, &payload)
 }

@@ -35,8 +35,8 @@ impl Index {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.0.get_corrections(query)
+    pub fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.0.get_corrected_query_hint(query)
     }
 
     /// Search the index for the given query.
@@ -157,8 +157,8 @@ impl InternalIndex {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub(crate) fn get_corrections(&self, query: &str) -> Vec<String> {
-        self.reader.get_corrections(query)
+    pub(crate) fn get_corrected_query_hint(&self, query: &str) -> String {
+        self.reader.get_corrected_query_hint(query)
     }
 
     /// Search the index for the given query.

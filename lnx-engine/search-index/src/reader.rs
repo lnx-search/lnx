@@ -384,7 +384,7 @@ impl Reader {
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
-    pub fn get_corrections(&self, query: &str) -> Vec<String> {
+    pub fn get_corrected_query_hint(&self, query: &str) -> String {
         self.query_handler.get_corrected_query_hint(query)
     }
 
