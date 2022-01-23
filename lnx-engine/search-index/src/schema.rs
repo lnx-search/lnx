@@ -88,6 +88,13 @@ impl Validate for SchemaContext {
 
         Ok(())
     }
+
+    fn validate_with_schema(&self, schema: &Schema) -> Result<()> {
+        self.verify_search_fields(schema)?;
+        self.assert_existing_schema_matches(schema)?;
+
+        Ok(())
+    }
 }
 
 impl Calculated for SchemaContext {
@@ -196,7 +203,7 @@ impl SchemaContext {
     /// If the search fields contain any fields that are not indexed,
     /// the system will list all rejected fields in a Error.
     /// Or if any fields are not text.
-    pub fn verify_search_fields(&self, schema: &Schema) -> Result<()> {
+    fn verify_search_fields(&self, schema: &Schema) -> Result<()> {
         let mut reject = vec![];
 
         for (_, entry) in schema.fields() {

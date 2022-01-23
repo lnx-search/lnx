@@ -156,8 +156,7 @@ impl IndexDeclaration {
         }?;
 
         let schema = index.schema();
-        schema_ctx.assert_existing_schema_matches(&schema)?;
-        schema_ctx.verify_search_fields(&schema)?;
+        schema_ctx.validate_with_schema(&schema)?;
 
         let query_context = {
             let default_fields = schema_ctx.get_search_fields(&schema);
