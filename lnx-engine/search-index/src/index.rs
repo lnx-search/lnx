@@ -1179,7 +1179,11 @@ mod tests {
         .await
     }
 
-    async fn get_index_with_required_multi_fields(fast_fuzzy: bool, multi_title: bool, multi_description: bool) -> Result<Index> {
+    async fn get_index_with_required_multi_fields(
+        fast_fuzzy: bool,
+        multi_title: bool,
+        multi_description: bool,
+    ) -> Result<Index> {
         get_index_with(serde_json::json!({
             "name": "basic_test_index",
 
