@@ -1910,7 +1910,6 @@ mod tests {
         let results = index.search(query).await?;
         assert_eq!(results.hits.len(), NUM_DOCS);
 
-        let results = results.unwrap();
         let doc_id = results.hits[0].document_id;
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
