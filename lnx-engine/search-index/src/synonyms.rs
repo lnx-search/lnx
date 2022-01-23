@@ -25,6 +25,11 @@ impl SynonymsManager {
     }
 
     #[inline]
+    pub fn get_all_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.synonyms.load().as_ref().clone()
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.synonyms.load().as_ref().len()
     }

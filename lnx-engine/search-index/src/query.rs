@@ -435,6 +435,16 @@ impl QueryBuilder {
         }
     }
 
+    #[inline]
+    pub(crate) fn stop_words(&self) -> Vec<String> {
+        self.stop_words.get_stop_words()
+    }
+
+    #[inline]
+    pub(crate) fn synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.synonyms.get_all_synonyms()
+    }
+
     /// Builds a query from the given query selector.
     // TODO add-back #[instrument(name = "query-builder", level = "trace", skip_all)]
     pub(crate) async fn build_query(
@@ -531,13 +541,12 @@ impl QueryBuilder {
             }
         }
 
+        debug!("building fuzzy query {:?}", &words);
         for search_term in words.iter() {
             if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
-                debug!("ignoring stop word {}", search_term);
                 continue;
             }
 
-            debug!("making fuzzy term for {}", search_term);
             for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
                 let term = Term::from_field_text(*field, search_term);
 

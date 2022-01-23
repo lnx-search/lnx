@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use hashbrown::HashMap;
 
 use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
@@ -93,6 +94,11 @@ impl Index {
         self.0.add_stop_words(words).await
     }
 
+    /// Get the current index stop words.
+    pub fn get_stop_words(&self) -> Vec<String> {
+        self.0.get_stop_words()
+    }
+
     /// Adds a set of stop words to the indexes' stop word manager.
     ///
     /// This function is semi-asynchronous in the sense that there is a buffer of
@@ -114,6 +120,11 @@ impl Index {
     /// must wait in order to then submit their operation to the queue.
     pub async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
         self.0.add_synonyms(relations).await
+    }
+
+    /// Get the current index synonyms.
+    pub fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.0.get_synonyms()
     }
 
     /// Adds a set of synonyms to the indexes' stop word manager.
@@ -313,6 +324,11 @@ impl InternalIndex {
         self.writer.send_op(WriterOp::AddStopWords(words)).await
     }
 
+    /// Get the current index stop words.
+    pub fn get_stop_words(&self) -> Vec<String> {
+        self.reader.get_stop_words()
+    }
+
     /// Adds a set of stop words to the indexes' stop word manager.
     ///
     /// This function is semi-asynchronous in the sense that there is a buffer of
@@ -334,6 +350,11 @@ impl InternalIndex {
     /// must wait in order to then submit their operation to the queue.
     async fn add_synonyms(&self, relations: Vec<String>) -> Result<()> {
         self.writer.send_op(WriterOp::AddSynonyms(relations)).await
+    }
+
+    /// Get the current index stop words.
+    pub fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.reader.get_synonyms()
     }
 
     /// Adds a set of synonyms to the indexes' stop word manager.

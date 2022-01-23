@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use aexecutor::SearcherExecutorPool;
 use anyhow::{anyhow, Error, Result};
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;
@@ -486,6 +487,14 @@ impl Reader {
             hits,
             count,
         })
+    }
+
+    pub(crate) fn get_synonyms(&self) -> HashMap<String, Box<[String]>> {
+        self.query_handler.synonyms()
+    }
+
+    pub(crate) fn get_stop_words(&self) -> Vec<String> {
+        self.query_handler.stop_words()
     }
 
     /// This forces the reader to reload after a commit.
