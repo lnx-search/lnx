@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="20%" src="https://github.com/ChillFish8/lnx/blob/master/assets/logo.png" alt="Lust Logo">
+  <img width="20%" src="https://user-images.githubusercontent.com/57491488/151217716-45bf341b-6664-45d7-800d-4e01857418a6.png" alt="Lust Logo">
 </p>
 
 #
