@@ -418,7 +418,7 @@ impl IndexWriterWorker {
                 let dict = match reader.term_dict(*field) {
                     Ok(dict) => dict,
                     Err(TantivyError::DataCorruption(_)) => continue,
-                    Err(e) => return Err(e.into())
+                    Err(e) => return Err(e.into()),
                 };
                 let mut stream = dict.stream()?;
 
