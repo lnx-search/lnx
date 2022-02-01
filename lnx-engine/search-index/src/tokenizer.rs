@@ -1,5 +1,3 @@
-use std::mem;
-
 use deunicode::deunicode_char;
 use tantivy::tokenizer::{BoxTokenStream, NgramTokenizer, SimpleTokenizer, Token, Tokenizer, TokenStream};
 

@@ -11,7 +11,7 @@ crossbeam = { version = "0.8.1", default-features = false, features = ["crossbea
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 sled = { version = "0.34.7", features = ["compression"] }
-symspell = { git = "https://github.com/lnx-search/symspell", tag = "v0.5.0" }
+symspell = { git = "https://github.com/lnx-search/symspell", branch = "lnx-0.9-compat" }
 hashbrown = { version = "0.11", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
 tantivy = { git = "https://github.com/ChillFish8/tantivy.git", tag = "0.16.3" }
