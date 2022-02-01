@@ -16,6 +16,7 @@ mod storage;
 pub mod structures;
 mod synonyms;
 mod writer;
+mod tokenizer;
 
 pub use helpers::cr32_hash;
 pub use index::Index;

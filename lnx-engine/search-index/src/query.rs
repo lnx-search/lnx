@@ -34,6 +34,7 @@ use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
 use crate::structures::DocumentValue;
 use crate::synonyms::SynonymsManager;
+use crate::tokenizer::CustomTokenizer;
 
 pub type DocumentId = u64;
 
@@ -421,7 +422,8 @@ impl QueryBuilder {
         pool: crate::ReaderExecutor,
     ) -> Self {
         let parser = get_parser(&ctx, index);
-        let tokenizer = TextAnalyzer::from(SimpleTokenizer).filter(LowerCaser);
+        let tokenizer = TextAnalyzer::from(CustomTokenizer::default())
+            .filter(LowerCaser);
 
         Self {
             ctx: Arc::new(ctx),
@@ -541,7 +543,7 @@ impl QueryBuilder {
             }
         }
 
-        debug!("building fuzzy query {:?}", &words);
+        info!("building fuzzy query {:?}", &words);
         for search_term in words.iter() {
             if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
                 continue;

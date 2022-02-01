@@ -192,6 +192,10 @@ impl IndexDeclaration {
         let corrections = Arc::new(SymSpellManager::new());
         let storage = StorageBackend::using_conn(dir);
 
+        index
+            .tokenizers()
+            .register("default", crate::tokenizer::CustomTokenizer::default());
+
         Ok(IndexContext {
             name: self.name.clone(),
             storage,
