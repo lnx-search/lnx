@@ -580,6 +580,10 @@ impl QueryBuilder {
             }
         }
 
+        if phrase_words.len() <= 1 {
+            return Ok(Box::new(BooleanQuery::new(parts)));
+        }
+
         for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
             let terms = phrase_words
                 .iter()
