@@ -536,7 +536,7 @@ impl QueryBuilder {
             }
         }
 
-        info!("building fuzzy query {:?}", &words);
+        debug!("building fuzzy query {:?}", &words);
         for (word_boost, search_term) in words.iter() {
             if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
                 continue;

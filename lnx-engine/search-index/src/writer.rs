@@ -335,7 +335,7 @@ impl IndexWriterWorker {
             WriterOp::AddManyDocuments(documents) => {
                 for document in documents {
                     let transaction_id = self.handle_add_document(document)?;
-                    debug!(
+                    trace!(
                         "[ TRANSACTION {} ] completed operation ADD-DOCUMENT",
                         transaction_id
                     );
@@ -346,7 +346,7 @@ impl IndexWriterWorker {
             WriterOp::DeleteManyDocuments(document_ids) => {
                 for id in document_ids {
                     let transaction_id = self.handle_remove_doc(id);
-                    debug!(
+                    trace!(
                         "[ TRANSACTION {} ] completed operation REMOVE-DOCUMENT",
                         transaction_id
                     );
@@ -384,7 +384,7 @@ impl IndexWriterWorker {
             },
         };
 
-        debug!(
+        trace!(
             "[ TRANSACTION {} ] completed operation {}",
             transaction_id, type_
         );
