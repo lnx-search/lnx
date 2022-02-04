@@ -517,6 +517,7 @@ impl QueryBuilder {
         let mut tokens = self.tokenizer.token_stream(&query);
         let mut ignore_stop_words = false;
 
+        // TODO: Add prefix and suffix search support and improve sorting.
         let mut phrase_words = vec![];
         while let Some(token) = tokens.next() {
             words.push((1.0, token.text.to_string()));

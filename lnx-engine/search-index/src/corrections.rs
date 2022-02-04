@@ -3,20 +3,21 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use hashbrown::HashMap;
-use symspell::{AsciiStringStrategy, SymSpell};
+use compose::SymSpell;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
 /// The manager around the sym spell fuzzy searching system.
 pub(crate) struct SymSpellManager {
-    sym: Arc<ArcSwap<SymSpell<AsciiStringStrategy>>>,
+    sym: Arc<ArcSwap<SymSpell>>,
+    calculate_suffixes: bool,
 }
 
 impl SymSpellManager {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(calculate_suffixes: bool) -> Self {
         let sym = SymSpell::default();
         let sym = Arc::new(ArcSwap::from_pointee(sym));
-        Self { sym }
+        Self { sym, calculate_suffixes }
     }
 
     /// Corrects the sentence with an edit distance of 1.
@@ -34,13 +35,16 @@ impl SymSpellManager {
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &HashMap<String, u32>) {
         info!("adjusting spell correction system to new frequency count, this may take a while...");
 
-        let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
-        symspell.using_dictionary_frequencies(
-            frequencies
-                .into_iter()
-                .map(|(k, v)| (k.clone(), *v as i64))
-                .collect(),
-        );
+        let mut symspell = SymSpell::default();
+        unsafe {
+            symspell.using_dictionary_frequencies(
+                frequencies
+                    .into_iter()
+                    .map(|(k, v)| (k.clone(), *v as i64))
+                    .collect(),
+                self.calculate_suffixes,
+            )
+        };
 
         self.sym.store(Arc::from(symspell))
     }

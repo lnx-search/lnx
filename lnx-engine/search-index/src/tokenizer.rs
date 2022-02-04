@@ -1,5 +1,5 @@
 use deunicode::deunicode_char;
-use tantivy::tokenizer::{BoxTokenStream, NgramTokenizer, SimpleTokenizer, Token, Tokenizer, TokenStream};
+use tantivy::tokenizer::{BoxTokenStream, SimpleTokenizer, Token, Tokenizer, TokenStream};
 
 #[derive(Clone)]
 pub struct SimpleUnicodeTokenizer;

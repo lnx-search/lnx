@@ -425,7 +425,8 @@ impl IndexWriterWorker {
                 // We assume every term is a string, it wouldn't make sense for fuzzy fields
                 // to be non-text based fields.
                 while let Some((term, info)) = stream.next() {
-                    let word = String::from_utf8_lossy(term);
+                    // Safe as we ensure all tokens are ascii encoded at tokenization time.
+                    let word = unsafe { std::str::from_utf8_unchecked(term) };
                     map.entry(word.to_string())
                         .and_modify(|v| *v = v.saturating_add(info.doc_freq))
                         .or_insert_with(|| info.doc_freq);

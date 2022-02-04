@@ -99,6 +99,10 @@ pub struct IndexDeclaration {
     #[serde(default)]
     pub(crate) use_fast_fuzzy: bool,
 
+    /// Whether or not to calculate word suffixes to do suffix search.
+    #[serde(default)]
+    pub(crate) calculate_suffixes: bool,
+
     /// Whether or not to strip out stop words in fuzzy queries.
     ///
     /// This only applies to the fast-fuzzy query system.
@@ -189,7 +193,7 @@ impl IndexDeclaration {
             }
         };
 
-        let corrections = Arc::new(SymSpellManager::new());
+        let corrections = Arc::new(SymSpellManager::new(self.calculate_suffixes));
         let storage = StorageBackend::using_conn(dir);
 
         index
