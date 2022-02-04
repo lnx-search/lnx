@@ -16,6 +16,7 @@ hashbrown = { version = "0.11", features = ["serde"] }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
 tantivy = { git = "https://github.com/ChillFish8/tantivy.git", tag = "0.16.3" }
 
+tokenizers = "0.11.0"
 tracing = "0.1.29"
 tracing-futures = "0.2.5"
 crc32fast = "1.3.0"

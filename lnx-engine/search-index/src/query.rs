@@ -25,7 +25,7 @@ use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
 use crate::structures::DocumentValue;
 use crate::synonyms::SynonymsManager;
-use crate::tokenizer::CustomTokenizer;
+use crate::tokenizer::SimpleUnicodeTokenizer;
 
 pub type DocumentId = u64;
 
@@ -413,7 +413,7 @@ impl QueryBuilder {
         pool: crate::ReaderExecutor,
     ) -> Self {
         let parser = get_parser(&ctx, index);
-        let tokenizer = TextAnalyzer::from(CustomTokenizer::default())
+        let tokenizer = TextAnalyzer::from(SimpleUnicodeTokenizer::default())
             .filter(LowerCaser);
 
         Self {

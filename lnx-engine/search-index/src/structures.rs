@@ -194,7 +194,7 @@ impl IndexDeclaration {
 
         index
             .tokenizers()
-            .register("default", crate::tokenizer::CustomTokenizer::default());
+            .register("default", crate::tokenizer::SimpleUnicodeTokenizer::default());
 
         Ok(IndexContext {
             name: self.name.clone(),
