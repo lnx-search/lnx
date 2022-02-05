@@ -103,13 +103,15 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
         }
 
         if let Some(to_create) = file.enclosed_name() {
+            #[allow(unused)]
+            let target_change = to_create.to_path_buf();
+
             info!("extracting file {}", file.name());
             let mut writer = std::fs::File::create(to_create)?;
             std::io::copy(&mut file, &mut writer)?;
 
             #[cfg(unix)]
             {
-                let target_change = to_create.to_path_buf();
                 use std::os::unix::fs::PermissionsExt;
 
                 if let Some(mode) = file.unix_mode() {
