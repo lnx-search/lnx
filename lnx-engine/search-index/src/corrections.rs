@@ -2,8 +2,8 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use compose::{SymSpell, WordRepr};
 use hashbrown::HashMap;
-use compose::SymSpell;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
@@ -17,7 +17,10 @@ impl SymSpellManager {
     pub(crate) fn new(calculate_suffixes: bool) -> Self {
         let sym = SymSpell::default();
         let sym = Arc::new(ArcSwap::from_pointee(sym));
-        Self { sym, calculate_suffixes }
+        Self {
+            sym,
+            calculate_suffixes,
+        }
     }
 
     /// Corrects the sentence with an edit distance of 1.
@@ -25,6 +28,45 @@ impl SymSpellManager {
     /// If the index does not have a set of frequencies this returns the original string.
     pub(crate) fn correct(&self, sentence: &str) -> String {
         self.sym.load().lookup_compound(sentence, 2)
+    }
+
+    /// Gets the set of dictionary prefixes given a original word.
+    pub(crate) fn get_prefixes(&self, original: &str) -> Vec<String> {
+        let guard = self.sym.load();
+
+        let mut prefixes = vec![];
+        if let Some(words) = guard.deletes.get(original) {
+            for word in words {
+                let word = guard.deletes.word_at(word).as_str();
+                if word.starts_with(original) {
+                    prefixes.push(word.to_string());
+                }
+            }
+        }
+
+        prefixes
+    }
+
+    /// Gets the set of dictionary prefixes given a original word.
+    pub(crate) fn get_suffixes(&self, original: &str) -> Vec<String> {
+        let guard = self.sym.load();
+
+        let suffixes = match guard.big_deletes.as_ref() {
+            None => return vec![],
+            Some(suffixes) => suffixes,
+        };
+
+        let mut word_suffixes = vec![];
+        if let Some(words) = suffixes.get(original) {
+            for word in words {
+                let word = suffixes.word_at(word).as_str();
+                if word.starts_with(original) {
+                    word_suffixes.push(word.to_string());
+                }
+            }
+        }
+
+        word_suffixes
     }
 
     /// Sets a custom symspell handler for the given index.

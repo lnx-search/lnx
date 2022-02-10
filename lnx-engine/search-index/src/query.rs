@@ -8,7 +8,17 @@ use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use tantivy::collector::TopDocs;
-use tantivy::query::{BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, MoreLikeThisQuery, PhraseQuery, Query, QueryParser, TermQuery};
+use tantivy::query::{
+    BooleanQuery,
+    BoostQuery,
+    EmptyQuery,
+    FuzzyTermQuery,
+    MoreLikeThisQuery,
+    PhraseQuery,
+    Query,
+    QueryParser,
+    TermQuery,
+};
 use tantivy::schema::{
     Facet,
     FacetParseError,
@@ -413,8 +423,8 @@ impl QueryBuilder {
         pool: crate::ReaderExecutor,
     ) -> Self {
         let parser = get_parser(&ctx, index);
-        let tokenizer = TextAnalyzer::from(SimpleUnicodeTokenizer::default())
-            .filter(LowerCaser);
+        let tokenizer =
+            TextAnalyzer::from(SimpleUnicodeTokenizer::default()).filter(LowerCaser);
 
         Self {
             ctx: Arc::new(ctx),
@@ -513,23 +523,23 @@ impl QueryBuilder {
         }
 
         let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
-        let mut words = vec![];
+
         let mut tokens = self.tokenizer.token_stream(&query);
         let mut ignore_stop_words = false;
 
-        // TODO: Add prefix and suffix search support and improve sorting.
+        let mut primary_words = vec![];
         let mut phrase_words = vec![];
-        while let Some(token) = tokens.next() {
-            words.push((1.0, token.text.to_string()));
-            phrase_words.push(token.text.to_string());
+        let mut synonym_words = vec![];
+        let mut prefixed_words = vec![];
+        let mut suffixed_words = vec![];
 
-            if let Some(synonyms) = self.synonyms.get_synonyms(&token.text) {
-                words.extend(synonyms.iter().map(|s| (0.5, s.to_string())));
-            }
+        while let Some(token) = tokens.next() {
+            primary_words.push(token.text.to_string());
+            phrase_words.push(token.text.to_string());
         }
 
-        if self.ctx.strip_stop_words && words.len() > 1 {
-            for (_, word) in words.iter() {
+        if self.ctx.strip_stop_words && primary_words.len() > 1 {
+            for word in primary_words.iter() {
                 if !self.stop_words.is_stop_word(word) {
                     ignore_stop_words = true;
                     break;
@@ -537,15 +547,29 @@ impl QueryBuilder {
             }
         }
 
-        debug!("building fuzzy query {:?}", &words);
-        for (word_boost, search_term) in words.iter() {
-            if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
-                continue;
+        let iter = primary_words
+            .iter()
+            .filter(|v| ignore_stop_words && self.stop_words.is_stop_word(v));
+
+        for word in iter {
+            if let Some(synonyms) = self.synonyms.get_synonyms(word) {
+                synonym_words.extend(synonyms.iter().map(|s| s.to_string()));
             }
 
+            if self.ctx.use_fast_fuzzy {
+                prefixed_words.extend(self.corrections.get_prefixes(word));
+                suffixed_words.extend(self.corrections.get_suffixes(word));
+            }
+        }
+
+        debug!("building fuzzy query {:?}", &primary_words);
+
+        let iter = primary_words
+            .into_iter()
+            .filter(|v| ignore_stop_words && self.stop_words.is_stop_word(v));
+        for search_term in iter {
             for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
-                let boost = word_boost + boost;
-                let term = Term::from_field_text(*field, search_term);
+                let term = Term::from_field_text(*field, &search_term);
 
                 let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
                     Box::new(TermQuery::new(
@@ -569,15 +593,43 @@ impl QueryBuilder {
                     ))
                 };
 
-                if boost != 0.0f32 {
-                    parts.push((
-                        Occur::Should,
-                        Box::new(BoostQuery::new(query, boost)),
-                    ));
+                if *boost > 0.0f32 {
+                    parts
+                        .push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
                     continue;
                 }
 
                 parts.push((Occur::Should, query));
+            }
+        }
+
+        if self.ctx.use_fast_fuzzy {
+            for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
+                let boost = if *boost > 0.0f32 {
+                    (boost.abs() + 1.0) * 0.5
+                } else {
+                    0.5
+                };
+
+                for term in prefixed_words.iter() {
+                    let term = Term::from_field_text(*field, term);
+                    let query = Box::new(TermQuery::new(
+                        term,
+                        IndexRecordOption::WithFreqsAndPositions,
+                    ));
+
+                    parts.push((Occur::Should, Box::new(BoostQuery::new(query, boost))));
+                }
+
+                for term in suffixed_words.iter() {
+                    let term = Term::from_field_text(*field, term);
+                    let query = Box::new(TermQuery::new(
+                        term,
+                        IndexRecordOption::WithFreqsAndPositions,
+                    ));
+
+                    parts.push((Occur::Should, Box::new(BoostQuery::new(query, boost))));
+                }
             }
         }
 

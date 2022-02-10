@@ -386,7 +386,8 @@ impl IndexWriterWorker {
 
         trace!(
             "[ TRANSACTION {} ] completed operation {}",
-            transaction_id, type_
+            transaction_id,
+            type_
         );
 
         Ok(())

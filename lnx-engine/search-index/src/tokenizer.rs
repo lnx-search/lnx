@@ -1,5 +1,11 @@
 use deunicode::deunicode_char;
-use tantivy::tokenizer::{BoxTokenStream, SimpleTokenizer, Token, Tokenizer, TokenStream};
+use tantivy::tokenizer::{
+    BoxTokenStream,
+    SimpleTokenizer,
+    Token,
+    TokenStream,
+    Tokenizer,
+};
 
 #[derive(Clone)]
 pub struct SimpleUnicodeTokenizer;
@@ -17,11 +23,11 @@ pub fn produce_tokens(text: &str) -> Vec<Token> {
             if ascii.len() > 1 {
                 characters.push(' ');
             }
-            characters.extend(ascii.to_lowercase().chars())
+            characters.push_str(&ascii.to_lowercase());
         }
     }
 
-    let simple = SimpleTokenizer{};
+    let simple = SimpleTokenizer {};
     let mut stream = simple.token_stream(&characters);
 
     let mut tokens = vec![];
@@ -41,14 +47,11 @@ impl Tokenizer for SimpleUnicodeTokenizer {
     fn token_stream<'a>(&self, text: &'a str) -> BoxTokenStream<'a> {
         let tokens = produce_tokens(text);
 
-        BoxTokenStream::from(SimpleTokenStream {
-            tokens,
-            pointer: 0,
-        })
+        BoxTokenStream::from(SimpleTokenStream { tokens, pointer: 0 })
     }
 }
 
-impl TokenStream for SimpleTokenStream  {
+impl TokenStream for SimpleTokenStream {
     fn advance(&mut self) -> bool {
         if self.pointer < self.tokens.len() {
             self.pointer += 1;
