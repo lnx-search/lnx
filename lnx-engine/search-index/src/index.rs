@@ -1174,7 +1174,7 @@ mod tests {
                     "stored": true
                 },
                 "description": {
-                    "type": "string",
+                    "type": "text",
                     "stored": false
                 },
                 "count": {

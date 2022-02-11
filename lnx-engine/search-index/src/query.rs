@@ -549,7 +549,7 @@ impl QueryBuilder {
 
         let iter = primary_words
             .iter()
-            .filter(|v| ignore_stop_words && self.stop_words.is_stop_word(v));
+            .filter(|v| !(ignore_stop_words && self.stop_words.is_stop_word(v)));
 
         for word in iter {
             if let Some(synonyms) = self.synonyms.get_synonyms(word) {
@@ -566,7 +566,7 @@ impl QueryBuilder {
 
         let iter = primary_words
             .into_iter()
-            .filter(|v| ignore_stop_words && self.stop_words.is_stop_word(v));
+            .filter(|v| !(ignore_stop_words && self.stop_words.is_stop_word(v)));
         for search_term in iter {
             for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
                 let term = Term::from_field_text(*field, &search_term);
