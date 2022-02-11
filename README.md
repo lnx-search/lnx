@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="20%" src="https://raw.githubusercontent.com/ChillFish8/lnx/master/assets/lnx-banner.png" alt="lnx Logo">
+  <img width="100%" src="https://raw.githubusercontent.com/ChillFish8/lnx/master/assets/lnx-banner.png" alt="lnx Logo">
 </p>
 
 #
