@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "lnx"
-version = "0.1.0"
+version = "0.10.0"
 
 [[package]]
 name = "lnx-common"
