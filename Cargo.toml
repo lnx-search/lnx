@@ -8,6 +8,7 @@ members = [
     "lnx-writer",
     "lnx-storage",
     "lnx-metrics",
+    "lnx-utils",
 ]
 
 [profile.release]

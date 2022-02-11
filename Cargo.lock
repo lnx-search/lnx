@@ -31,5 +31,9 @@ name = "lnx-storage"
 version = "0.1.0"
 
 [[package]]
+name = "lnx-utils"
+version = "0.1.0"
+
+[[package]]
 name = "lnx-writer"
 version = "0.1.0"
