@@ -1,9 +1,13 @@
 [workspace]
 members = [
-    "lnx-engine/engine",
-    "lnx-engine/aexecutor",
-    "lnx-engine/search-index",
-    "lnx-server",
+    "lnx",
+    "lnx-common",
+    "lnx-http",
+    "lnx-query",
+    "lnx-reader",
+    "lnx-writer",
+    "lnx-storage",
+    "lnx-metrics",
 ]
 
 [profile.release]
