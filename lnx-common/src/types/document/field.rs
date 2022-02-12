@@ -1,7 +1,9 @@
 use std::fmt;
+use std::str::FromStr;
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use serde::de::{Error, SeqAccess, Visitor};
-use serde::de::value::SeqAccessDeserializer;
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use tantivy::tokenizer::PreTokenizedString;
 
 use crate::types::Value;
 
@@ -22,29 +24,69 @@ impl<'de> Deserialize<'de> for DocField {
         impl<'de> Visitor<'de> for DocFieldVisitor {
             type Value = DocField;
 
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "a string, int, float, map or a list of strings, ints, floats or DateTimes.")
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string, int, float, base64 encoded bytes or a list of those types")
             }
 
-            fn visit_none<E>(self) -> Result<Self::Value, E>
-            where
-                E: Error
-            {
-                Ok(DocField::Empty)
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
+                Ok(DocField::Single(Value::from(v)))
+            }
+            
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+                Ok(DocField::Single(Value::from(v)))
             }
 
-            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error> 
-            where D: Deserializer<'de>
-            {
-                Ok(DocField::Single(Value::deserialize(deserializer)?))
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
+                Ok(DocField::Single(Value::from(v)))
+            }
+
+         
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+                if let Ok(dt) = tantivy::DateTime::from_str(v) {
+                    return Ok(DocField::Single(Value::from(dt)));
+                }
+
+                if let Ok(bytes) = base64::decode(v) {
+                    return Ok(DocField::Single(Value::from(bytes)))
+                }
+
+                Ok(DocField::Single(Value::from(v.to_owned())))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
+                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                    return Ok(DocField::Single(Value::from(dt)));
+                }
+
+                if let Ok(bytes) = base64::decode(&v) {
+                    return Ok(DocField::Single(Value::from(bytes)))
+                }
+
+                Ok(DocField::Single(Value::from(v)))
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> {
+                Ok(DocField::Single(Value::from(v)))
+            }
+
+            fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
+                Ok(DocField::Single(Value::from(v)))
             }
 
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
-                A: SeqAccess<'de>,
+                A: SeqAccess<'de>
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq))
                     .map(DocField::Multi)
+            }
+
+            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let data = PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
+                Ok(DocField::Single(Value::from(data)))
             }
         }
 
@@ -58,7 +100,7 @@ impl Serialize for DocField {
         S: Serializer
     {
         match self {
-            DocField::Empty => None::<()>.serialize(serializer),
+            DocField::Empty => None::<Value>.serialize(serializer),
             DocField::Single(v) => v.serialize(serializer),
             DocField::Multi(v) => v.serialize(serializer),
         }
