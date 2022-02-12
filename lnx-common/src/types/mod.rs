@@ -1,2 +1,5 @@
 pub mod document;
-pub mod value;
+
+mod value;
+
+pub use value::Value;
