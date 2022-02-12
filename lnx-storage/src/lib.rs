@@ -1,8 +1,14 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+mod impls;
+mod base;
+mod error;
+
+pub use error::ChangelogStoreError;
+pub use base::{
+    ChangeKind,
+    DocId,
+    DocStore,
+    Synonyms,
+    ChangeLogStore,
+    MetaStore,
+    EngineStore,
+};
