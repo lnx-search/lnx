@@ -419,8 +419,11 @@ version = "0.10.0"
 name = "lnx-common"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "deunicode",
+ "serde",
  "tantivy",
+ "thiserror",
 ]
 
 [[package]]
