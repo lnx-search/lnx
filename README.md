@@ -4,9 +4,9 @@
 
 #
 <p align="center">
-  <a href="https://github.com/ChillFish8/lnx/stargazers"><img src="https://img.shields.io/github/stars/ChillFish8/lnx"/></a>
-  <a href="hhttps://github.com/ChillFish8/lnx/issues"><img src="https://img.shields.io/github/issues/ChillFish8/lnx"/></a>
-  <a href="https://github.com/ChillFish8/lnx/blob/master/LICENSE"><img src="https://img.shields.io/github/license/ChillFish8/lnx"/></a>
+  <a href="https://github.com/lnx-search/lnx/stargazers"><img src="https://img.shields.io/github/stars/lnx-search/lnx"/></a>
+  <a href="hhttps://github.com/lnx-search/lnx/issues"><img src="https://img.shields.io/github/issues/lnx-search/lnx"/></a>
+  <a href="https://github.com/lnx-search/lnx/blob/master/LICENSE"><img src="https://img.shields.io/github/license/lnx-search/lnx"/></a>
   <a href="https://docs.lnx.rs"><img src="https://img.shields.io/badge/Docs-alive-sucess"/></a>
 </p>
 <p align="center"><a href="https://lnx.rs">✨ Feature Rich | ⚡ Insanely Fast</a></p>
