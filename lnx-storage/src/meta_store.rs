@@ -12,7 +12,7 @@ pub struct Synonyms {
 }
 
 #[async_trait]
-pub trait MetaStore {
+pub trait MetaStore: Send + Sync + 'static {
     /// Add a set of stop words to the existing set of words.
     async fn add_stopwords(&self, words: Vec<String>) -> Result<()>;
 
@@ -59,8 +59,7 @@ pub trait MetaStore {
     /// Load the existing index from the most up to date peer and download it with
     /// the given output directory.
     async fn load_index_from_peer(&self, out_dir: PathBuf) -> Result<()>;
-}
 
-#[async_trait]
-pub trait EngineStore {
+    /// Called in order to mark the node as active still.
+    async fn heartbeat(&self, purge_delta: chrono::Duration) -> Result<()>;
 }

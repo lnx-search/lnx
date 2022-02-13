@@ -8,7 +8,7 @@ use lnx_common::types::document::Document;
 use super::change_log::{ChangeLogStore, DocId};
 
 #[async_trait]
-pub trait DocStore: ChangeLogStore {
+pub trait DocStore: ChangeLogStore + Send + Sync + 'static {
     /// Adds a set of documents to the store.
     async fn add_documents(&self, docs: Vec<(DocId, Document)>) -> Result<()>;
 

@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -8,9 +7,10 @@ use scylla::IntoTypedRows;
 use uuid::Uuid;
 use lnx_utils::{FromBytes, ToBytes};
 
-use super::connection::Session;
-use crate::base_stores::MetaStore;
+use super::connection::keyspace;
+use crate::meta_store::MetaStore;
 use crate::change_log::Timestamp;
+use crate::impls::scylla_backed::connection::session;
 use crate::Synonyms;
 
 
@@ -18,25 +18,43 @@ static STOPWORDS_TABLE: &str = "index_stopwords";
 static SYNONYMS_TABLE: &str = "index_synonyms";
 static NODES_INFO_TABLE: &str = "index_nodes";
 
+static NODE_ID_KEY: &[u8] = b"NODE_ID";
 static LAST_UPDATED_TIMESTAMP_KEY: &[u8] = b"LAST_UPDATED";
 
 
 pub struct ScyllaMetaStore {
+    keyspace: String,
     node_id: Uuid,
     local_store: sled::Tree,
-    session: Arc<Session>
+}
+
+impl ScyllaMetaStore {
+    pub fn load_from_local(index_name: &str, db: sled::Tree) -> Result<Self> {
+        let id = match db.get(NODE_ID_KEY)? {
+            Some(id) => FromBytes::from_bytes(&id)?,
+            None => Uuid::new_v4(),
+        };
+
+        Ok(Self {
+            keyspace: keyspace(index_name),
+            node_id: id,
+            local_store: db,
+        })
+    }
 }
 
 #[async_trait]
 impl MetaStore for ScyllaMetaStore {
     async fn add_stopwords(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
-            "INSERT INTO {table} (word) VALUES (?);",
+            "INSERT INTO {ks}.{table} (word) VALUES (?);",
+            ks = self.keyspace,
             table = STOPWORDS_TABLE,
         );
 
         for word in words {
-            self.session.query_prepared(&query, (word,)).await?;
+            session()
+                .query_prepared(&query, (word,)).await?;
         }
 
         Ok(())
@@ -44,22 +62,25 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn remove_stopwords(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {table} WHERE word = ?;",
+            "DELETE FROM {ks}.{table} WHERE word = ?;",
+            ks = self.keyspace,
             table = STOPWORDS_TABLE,
         );
 
-        self.session.query_prepared(&query, (words,)).await?;
+        session()
+            .query_prepared(&query, (words,)).await?;
 
         Ok(())
     }
 
     async fn fetch_stopwords(&self) -> Result<Vec<String>> {
         let query = format!(
-            "SELECT word FROM {table};",
+            "SELECT word FROM {ks}.{table};",
+            ks = self.keyspace,
             table = STOPWORDS_TABLE,
         );
 
-        let mut iter = self.session
+        let mut iter = session()
             .query_iter(&query, &[])
             .await?
             .into_typed::<(String,)>();
@@ -75,12 +96,15 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn add_synonyms(&self, words: Vec<Synonyms>) -> Result<()> {
         let query = format!(
-            "INSERT INTO {table} (word, synonyms) VALUES (?, ?);",
+            "INSERT INTO {ks}.{table} (word, synonyms) VALUES (?, ?);",
+            ks = self.keyspace,
             table = SYNONYMS_TABLE,
         );
 
         for group in words {
-            self.session.query_prepared(&query, (group.word, group.synonyms)).await?;
+            session()
+                .query_prepared(&query, (group.word, group.synonyms))
+                .await?;
         }
 
         Ok(())
@@ -88,22 +112,25 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {table} WHERE word = ?;",
+            "DELETE FROM {ks}.{table} WHERE word = ?;",
+            ks = self.keyspace,
             table = SYNONYMS_TABLE,
         );
 
-        self.session.query_prepared(&query, (words,)).await?;
+        session()
+            .query_prepared(&query, (words,)).await?;
 
         Ok(())
     }
 
     async fn fetch_synonyms(&self) -> Result<Vec<Synonyms>> {
         let query = format!(
-            "SELECT word, synonyms FROM {table};",
+            "SELECT word, synonyms FROM {ks}.{table};",
+            ks = self.keyspace,
             table = SYNONYMS_TABLE,
         );
 
-        let mut iter = self.session
+        let mut iter = session()
             .query_iter(&query, &[])
             .await?
             .into_typed::<(String, Vec<String>)>();
@@ -124,11 +151,14 @@ impl MetaStore for ScyllaMetaStore {
         self.local_store.insert(LAST_UPDATED_TIMESTAMP_KEY, timestamp.to_bytes()?)?;
 
         let query = format!(
-            "INSERT INTO {table} (node_id, timestamp) VALUES (?, ?);",
+            "INSERT INTO {ks}.{table} (node_id, last_updated, last_heartbeat) VALUES (?, ?, toTimeStamp(now()));",
+            ks = self.keyspace,
             table = NODES_INFO_TABLE,
         );
 
-        self.session.query_prepared(&query, (self.node_id, timestamp)).await?;
+        session()
+            .query_prepared(&query, (self.node_id, timestamp))
+            .await?;
 
         Ok(())
     }
@@ -144,11 +174,12 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn get_earliest_aligned_timestamp(&self) -> Result<Option<Timestamp>> {
         let query = format!(
-            "SELECT MIN (timestamp) FROM {table};",
+            "SELECT MIN (last_updated) FROM {ks}.{table};",
+            ks = self.keyspace,
             table = NODES_INFO_TABLE,
         );
 
-        let result = self.session
+        let result = session()
             .query_prepared(&query, &[])
             .await?
             .rows
@@ -165,5 +196,41 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn load_index_from_peer(&self, _out_dir: PathBuf) -> anyhow::Result<()> {
         Err(anyhow!("Loading from a index is not supported"))
+    }
+
+    async fn heartbeat(&self, purge_delta: chrono::Duration) -> Result<()> {
+        let query = format!(
+            "INSERT INTO {ks}.{table} (node_id, last_heartbeat) VALUES (?, toTimeStamp(now()));",
+            ks = self.keyspace,
+            table = NODES_INFO_TABLE,
+        );
+
+        session()
+            .query_prepared(&query, (self.node_id,))
+            .await?;
+
+        let query = format!(
+            "SELECT node_id, last_heartbeat FROM {ks}.{table};",
+            ks = self.keyspace,
+            table = NODES_INFO_TABLE,
+        );
+
+
+        let mut iter = session()
+            .query_prepared(&query, (self.node_id,))
+            .await?
+            .rows
+            .unwrap_or_default()
+            .into_typed::<(Uuid, chrono::Duration)>();
+
+        let mut purge_nodes = vec![];
+        let now = chrono::Utc::now().timestamp();
+        while let Some(Ok((node_id, last_heartbeat))) = iter.next() {
+            if (now - last_heartbeat.num_seconds()) > purge_delta.num_seconds() {
+                purge_nodes.push(node_id);
+            }
+        }
+
+        Ok(())
     }
 }

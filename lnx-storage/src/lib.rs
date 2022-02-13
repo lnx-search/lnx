@@ -2,11 +2,14 @@
 extern crate tracing;
 
 mod impls;
-mod base_stores;
+mod meta_store;
 mod change_log;
 mod doc_store;
 mod configure;
+mod manager;
+mod engine_store;
 
+pub use manager::{IndexStore, StorageManager, init_with_config, engine};
 pub use configure::BackendSelector;
 pub use change_log::{    
     ChangeKind,
@@ -14,8 +17,8 @@ pub use change_log::{
     ChangeLogStore,
 };
 pub use doc_store::DocStore;
-pub use base_stores::{
+pub use meta_store::{
     Synonyms,
     MetaStore,
-    EngineStore,
 };
+pub use engine_store::EngineStore;

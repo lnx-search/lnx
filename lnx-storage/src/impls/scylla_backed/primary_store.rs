@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use itertools::Itertools;
 use async_trait::async_trait;
 use anyhow::Result;
@@ -11,22 +9,12 @@ use lnx_common::types::document::Document;
 use crate::change_log::{ChangeLogEntry, ChangeLogIterator, ChangeLogStore, Timestamp, DocId};
 use crate::ChangeKind;
 use crate::doc_store::{DocStore, DocumentIterator};
-use crate::impls::scylla_backed::connection::Session;
+use crate::impls::scylla_backed::connection::keyspace;
 use crate::impls::scylla_backed::doc_wrapper::{DOCUMENT_PRIMARY_KEY, ScyllaSafeDocument};
+use super::connection::session;
 
 static DOCUMENT_TABLE: &str = "documents";
-static GET_PENDING_CHANGES_QUERY: &str = r#"
-    SELECT kind, affected_docs, timestamp
-    FROM index_changelog
-    WHERE timestamp > ?;
-"#;
-static ADD_PENDING_CHANGES_QUERY: &str = r#"
-    INSERT INTO index_changelog (kind, affected_docs, timestamp)
-    VALUES (?, ?, ?);
-"#;
-static PURGE_PENDING_CHANGE_QUERY: &str = r#"
-    DELETE FROM index_changelog WHERE timestamp < ?;
-"#;
+static CHANGE_LOG_TABLE: &str = "index_changelog";
 
 type ChangedRow = (i8, Vec<DocId>, chrono::Duration);
 
@@ -45,26 +33,49 @@ pub struct ScyllaPrimaryDataStore {
     /// fields are used.
     schema_fields: Vec<String>,
 
-    /// The Scylla connection.
-    session: Arc<Session>,
+    keyspace: String,
+}
+
+impl ScyllaPrimaryDataStore {
+    pub fn with_fields(index_name: &str, fields: Vec<String>) -> Self {
+        Self {
+            keyspace: keyspace(index_name),
+            schema_fields: fields,
+        }
+    }
 }
 
 #[async_trait]
 impl ChangeLogStore for ScyllaPrimaryDataStore {
     async fn append_changes(&self, logs: ChangeLogEntry) -> Result<()> {
-        self.session.query_prepared(
-            ADD_PENDING_CHANGES_QUERY,
-            (logs.kind.as_i8(), logs.affected_docs, logs.timestamp)
-        ).await?;
+        let query = format!(
+            "INSERT INTO {ks}.{table} (kind, affected_docs, timestamp) VALUES (?, ?, ?);",
+            ks = self.keyspace,
+            table = CHANGE_LOG_TABLE,
+        );
+
+        session()
+            .query_prepared(
+                &query,
+                (logs.kind.as_i8(), logs.affected_docs, logs.timestamp)
+            )
+            .await?;
 
         Ok(())
     }
 
     async fn get_pending_changes(&self, from: Timestamp, chunk_size: usize) -> Result<ChangeLogIterator> {
-        let iter = self.session.query_iter(
-            GET_PENDING_CHANGES_QUERY,
-            (from,),
-        ).await?;
+        let query = format!(
+            "SELECT kind, affected_docs, timestamp FROM {ks}.{table} WHERE timestamp > ?;",
+            ks = self.keyspace,
+            table = CHANGE_LOG_TABLE,
+        );
+
+        let iter = session()
+            .query_iter(
+                &query,
+                (from,),
+            ).await?;
 
         let (tx, rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
@@ -97,7 +108,15 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
     }
 
     async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()> {
-        self.session.query_prepared(PURGE_PENDING_CHANGE_QUERY, (upto,)).await?;
+        let query = format!(
+            "DELETE FROM {ks}.{table} WHERE timestamp < ?;",
+            ks = self.keyspace,
+            table = CHANGE_LOG_TABLE,
+        );
+
+         session()
+             .query_prepared(&query, (upto,))
+             .await?;
 
         Ok(())
     }
@@ -107,7 +126,8 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
 impl DocStore for ScyllaPrimaryDataStore {
     async fn add_documents(&self, docs: Vec<(DocId, Document)>) -> Result<()> {
         let query = format!(
-            "INSERT INTO {table} ({pk}, {columns}) VALUES (?, {placeholders})",
+            "INSERT INTO {ks}.{table} ({pk}, {columns}) VALUES (?, {placeholders})",
+            ks = self.keyspace,
             pk = DOCUMENT_PRIMARY_KEY,
             table = DOCUMENT_TABLE,
             columns = self.schema_fields.join(", "),
@@ -116,10 +136,11 @@ impl DocStore for ScyllaPrimaryDataStore {
 
         for (doc_id, doc) in docs {
             let doc = ScyllaSafeDocument(doc_id, doc);
-            self.session.query_prepared(
-                &query,
-                &doc,
-            ).await?;
+            session()
+                .query_prepared(
+                    &query,
+                    &doc,
+                ).await?;
         }
 
         Ok(())
@@ -127,11 +148,15 @@ impl DocStore for ScyllaPrimaryDataStore {
 
     async fn remove_documents(&self, docs: Vec<DocId>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {table} WHERE {pk} = ?",
+            "DELETE FROM {ks}.{table} WHERE {pk} = ?",
+            ks = self.keyspace,
             table = DOCUMENT_TABLE,
             pk = DOCUMENT_PRIMARY_KEY,
         );
-        self.session.query_prepared(&query, (docs,)).await?;
+
+        session()
+            .query_prepared(&query, (docs,))
+            .await?;
 
         Ok(())
     }
@@ -139,14 +164,15 @@ impl DocStore for ScyllaPrimaryDataStore {
     async fn fetch_documents(&self, fields: Option<Vec<String>>, docs: Vec<DocId>) -> Result<Vec<(DocId, Document)>> {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
-            "SELECT {pk}, {columns} FROM {table} WHERE {pk} = ?",
+            "SELECT {pk}, {columns} FROM {ks}.{table} WHERE {pk} = ?",
             pk = DOCUMENT_PRIMARY_KEY,
             columns = columns.join(", "),
+            ks = self.keyspace,
             table = DOCUMENT_TABLE,
         );
 
         let mut retrieved_docs = Vec::with_capacity(docs.len());
-        let mut results = self.session
+        let mut results = session()
             .query_iter(&query, (docs,))    // TODO: Can we optimise this?
             .await?;
 
@@ -162,13 +188,14 @@ impl DocStore for ScyllaPrimaryDataStore {
     async fn iter_documents(&self, fields: Option<Vec<String>>, chunk_size: usize) -> Result<DocumentIterator> {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
-            "SELECT {pk}, {columns} FROM {table};",
+            "SELECT {pk}, {columns} FROM {ks}.{table};",
             pk = DOCUMENT_PRIMARY_KEY,
             columns = columns.join(", "),
             table = DOCUMENT_TABLE,
+            ks = self.keyspace,
         );
 
-        let mut iter = self.session
+        let mut iter = session()
             .query_iter(&query, &[])
             .await?;
 

@@ -9,7 +9,7 @@ use super::field_info::FieldInfo;
 use super::boost::BoostFactor;
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
     /// The index's fields.
     ///
