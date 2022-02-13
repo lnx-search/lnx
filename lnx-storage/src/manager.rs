@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use parking_lot::RwLock;
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, Guard};
 use hashbrown::HashMap;
 use once_cell::sync::OnceCell;
 
@@ -93,6 +93,11 @@ impl StorageManager {
         self.index_stores.store(Arc::new(loaded));
 
         Ok(())
+    }
+
+    #[inline]
+    pub fn indexes(&self) -> Guard<Arc<HashMap<FieldName, IndexStore>>> {
+        self.index_stores.load()
     }
 }
 
