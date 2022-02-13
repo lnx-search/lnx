@@ -13,7 +13,7 @@ pub trait DocStore: ChangeLogStore {
 
     async fn fetch_documents(
         &self,
-        fields: Vec<String>,
+        fields: Option<Vec<String>>,
         docs: Vec<DocId>,
-    ) -> Result<Vec<Document>>;
+    ) -> Result<Vec<(DocId, Document)>>;
 }

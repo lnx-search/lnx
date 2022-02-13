@@ -1,10 +1,20 @@
+use std::ops::Deref;
 use hashbrown::HashMap;
 use serde::{Serialize, Deserialize};
 
+use crate::schema::FieldName;
 use super::field::DocField;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Document(pub HashMap<String, DocField>);
+pub struct Document(pub HashMap<FieldName, DocField>);
+
+impl Deref for Document {
+    type Target = HashMap<FieldName, DocField>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[cfg(test)]
 mod tests {

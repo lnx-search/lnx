@@ -42,7 +42,7 @@ impl Session {
     ) -> Result<RowIterator, QueryError> {
         debug!("preparing and paging new statement: {}", query);
         let result = self.0
-            .execute_iter(&Query::from(query), &values)
+            .execute_iter(Query::from(query), &values)
             .await;
 
         if let Err(e) = result {
@@ -61,7 +61,7 @@ impl Session {
     ) -> Result<QueryResult, QueryError> {
         debug!("preparing new statement: {}", query);
         let result = self.0
-            .execute(&Query::from(query), &values)
+            .execute(Query::from(query), &values)
             .await;
 
         if let Err(e) = result {

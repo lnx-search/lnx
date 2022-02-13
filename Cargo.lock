@@ -538,6 +538,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hashbrown 0.12.0",
+ "itertools",
  "lnx-common",
  "lnx-utils",
  "scylla",

@@ -8,7 +8,9 @@ use scylla::transport::Compression;
 use super::session::Session;
 use super::error::ConnectionError;
 
+
 static KEYSPACE_PREFIX: &str = "lnx_search";
+
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]  // We don't massively care about it's flaws here.
@@ -49,11 +51,11 @@ impl ConnectionInfo {
 
                 let keyspace_query = format!(
                     r#"
-                    CREATE KEYSPACE {}_{}
+                    CREATE KEYSPACE {prefix}_{index}
                     WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
                     "#,
-                    KEYSPACE_PREFIX,
-                    index_name,
+                    prefix = KEYSPACE_PREFIX,
+                    index = index_name,
                 );
 
                 session.query(keyspace_query.as_str(), &[]).await?;
@@ -82,12 +84,12 @@ impl ConnectionInfo {
 
                 let keyspace_query = format!(
                     r#"
-                    CREATE KEYSPACE {}_{}
-                    WITH replication = {{'class': 'NetworkTopologyStrategy', {}}}
+                    CREATE KEYSPACE {prefix}_{index}
+                    WITH replication = {{'class': 'NetworkTopologyStrategy', {config}}}
                     "#,
-                    KEYSPACE_PREFIX,
-                    index_name,
-                    parts.join(", "),
+                    prefix = KEYSPACE_PREFIX,
+                    index = index_name,
+                    config = parts.join(", "),
                 );
 
                 session.query(keyspace_query.as_str(), &[]).await?;

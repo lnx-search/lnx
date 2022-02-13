@@ -15,6 +15,7 @@ uuid = { version = "0.8.1", features = ["v4"] }
 hashbrown = { version = "0.12.0", features = ["serde"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 
+itertools = "0.10.3"
 futures-util = "0.3.21"
 anyhow = "1"
 sled = "0.34.7"
