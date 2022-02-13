@@ -185,11 +185,11 @@ impl IndexStore {
 
         let mut lock = self.additional_settings.write();
 
-        let item = Option::transpose(
-            settings
-                .get(key)
-                .map(|v| T::from_bytes(v))
-        )?;
+        let item = settings
+            .get(key)
+            .map(|v| T::from_bytes(v))
+            .transpose()?;
+
         (*lock) = settings;
 
         Ok(item)
