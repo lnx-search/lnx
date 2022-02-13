@@ -72,7 +72,6 @@ impl TokenStream for SimpleTokenStream {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,7 +129,9 @@ mod tests {
     /// mostly just testing the normalization rather than the tokenization ability.
     fn test_chinese_simplified() {
         let text = "你好，世界，我感到无比自豪！ ";
-        let tokens = vec!["ni", "hao", "shi", "jie", "wo", "gan", "dao", "wu", "bi", "zi", "hao"];
+        let tokens = vec![
+            "ni", "hao", "shi", "jie", "wo", "gan", "dao", "wu", "bi", "zi", "hao",
+        ];
         parse_and_compare(text, tokens);
     }
 
@@ -140,7 +141,9 @@ mod tests {
     /// mostly just testing the normalization rather than the tokenization ability.
     fn test_chinese_traditional() {
         let text = "你好，世界，我感到無比自豪！ ";
-        let tokens = vec!["ni", "hao", "shi", "jie", "wo", "gan", "dao", "wu", "bi", "zi", "hao"];
+        let tokens = vec![
+            "ni", "hao", "shi", "jie", "wo", "gan", "dao", "wu", "bi", "zi", "hao",
+        ];
         parse_and_compare(text, tokens);
     }
 
@@ -151,8 +154,8 @@ mod tests {
     fn test_japanese() {
         let text = "Hello world、これ以上誇りに思うことはできません！ ";
         let tokens = vec![
-            "hello", "world", "ko", "re", "yi", "shang", "kua", "ri", "ni",
-            "si", "u", "ko", "to", "ha", "de", "ki", "ma", "sen",
+            "hello", "world", "ko", "re", "yi", "shang", "kua", "ri", "ni", "si", "u",
+            "ko", "to", "ha", "de", "ki", "ma", "sen",
         ];
         parse_and_compare(text, tokens);
     }
@@ -164,11 +167,9 @@ mod tests {
     fn test_korean() {
         let text = "안녕하세요 세상, 이보다 더 자랑스러울 수 없습니다! ";
         let tokens = vec![
-            "an", "nyeong", "ha", "se", "yo", "se", "sang", "i",
-            "bo", "da", "deo", "ja", "rang", "seu", "reo", "ul",
-            "su", "eobs", "seub", "ni", "da"
+            "an", "nyeong", "ha", "se", "yo", "se", "sang", "i", "bo", "da", "deo",
+            "ja", "rang", "seu", "reo", "ul", "su", "eobs", "seub", "ni", "da",
         ];
         parse_and_compare(text, tokens);
     }
-
 }

@@ -4,10 +4,10 @@ pub trait Validator {
     fn validate(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
-    
+
     fn validate_with_schema(
-        &mut self, 
-        _schema: tantivy::schema::Schema
+        &mut self,
+        _schema: tantivy::schema::Schema,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

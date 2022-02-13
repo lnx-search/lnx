@@ -1,9 +1,8 @@
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
+use lnx_common::types::document::Document;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-
-use lnx_common::types::document::Document;
 
 use super::change_log::{ChangeLogStore, DocId};
 
@@ -36,10 +35,9 @@ pub trait DocStore: ChangeLogStore + Send + Sync + 'static {
     ) -> Result<DocumentIterator>;
 }
 
-
 pub struct DocumentIterator {
     rx: mpsc::Receiver<Vec<(DocId, Document)>>,
-    handle: JoinHandle<()>
+    handle: JoinHandle<()>,
 }
 
 impl DocumentIterator {

@@ -1,9 +1,10 @@
 use std::ops::Deref;
-use hashbrown::HashMap;
-use serde::{Serialize, Deserialize};
 
-use crate::schema::FieldName;
+use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
+
 use super::field::DocField;
+use crate::schema::FieldName;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document(pub HashMap<FieldName, DocField>);
@@ -20,6 +21,7 @@ impl Deref for Document {
 mod tests {
     use anyhow::Result;
     use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -49,7 +51,6 @@ mod tests {
 
         Ok(())
     }
-
 
     #[test]
     fn test_parse_pre_tokenized() -> Result<()> {

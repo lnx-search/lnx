@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
-use tantivy::DateTime;
 use tantivy::tokenizer::PreTokenizedString;
+use tantivy::DateTime;
 
 #[derive(Debug, Clone)]
 pub enum Value {

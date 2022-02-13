@@ -1,5 +1,12 @@
-use serde::{Serialize, Deserialize};
-use tantivy::schema::{Cardinality, FacetOptions, IndexRecordOption, IntOptions, TextFieldIndexing, TextOptions};
+use serde::{Deserialize, Serialize};
+use tantivy::schema::{
+    Cardinality,
+    FacetOptions,
+    IndexRecordOption,
+    IntOptions,
+    TextFieldIndexing,
+    TextOptions,
+};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// The base options every field can have.
@@ -53,7 +60,6 @@ impl BaseOptions {
     }
 }
 
-
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// A set of field options for bytes fields.
 pub struct BytesOptions {
@@ -70,7 +76,6 @@ pub struct BytesOptions {
     #[serde(flatten)]
     pub base: BaseOptions,
 }
-
 
 impl From<BytesOptions> for tantivy::schema::BytesOptions {
     fn from(v: BytesOptions) -> Self {

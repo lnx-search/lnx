@@ -1,8 +1,8 @@
-use async_trait::async_trait;
 use anyhow::Result;
-use uuid::Uuid;
+use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 pub type Timestamp = i64;
 pub type DocId = Uuid;
@@ -68,7 +68,11 @@ pub trait ChangeLogStore {
     ///
     /// Logs should be chunked into parts upto the size of `chunk_size` but does
     /// not need to be exactly that.
-    async fn get_pending_changes(&self, from: Timestamp, chunk_size: usize) -> Result<ChangeLogIterator>;
+    async fn get_pending_changes(
+        &self,
+        from: Timestamp,
+        chunk_size: usize,
+    ) -> Result<ChangeLogIterator>;
 
     /// Purge the change logs upto the given timestamp.
     async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()>;
@@ -77,7 +81,7 @@ pub trait ChangeLogStore {
 /// A chunked iterator of changes.
 pub struct ChangeLogIterator {
     rx: mpsc::Receiver<Vec<ChangeLogEntry>>,
-    handle: JoinHandle<()>
+    handle: JoinHandle<()>,
 }
 
 impl ChangeLogIterator {

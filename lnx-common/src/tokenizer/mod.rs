@@ -1,3 +1,3 @@
 mod simple;
 
-pub use simple::{SimpleUnicodeTokenizer, SimpleTokenStream};
+pub use simple::{SimpleTokenStream, SimpleUnicodeTokenizer};

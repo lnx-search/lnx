@@ -1,5 +1,5 @@
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 pub trait ToBytes: Serialize {
     fn to_bytes(&self) -> Result<Vec<u8>, bincode::Error> {

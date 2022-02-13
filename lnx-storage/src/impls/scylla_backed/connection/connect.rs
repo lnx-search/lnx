@@ -1,19 +1,22 @@
-use serde::{Serialize, Deserialize};
-
 use hashbrown::HashMap;
 use once_cell::sync::OnceCell;
 use scylla::batch::Consistency;
-use scylla::transport::Compression;
 use scylla::transport::errors::{DbError, QueryError};
+use scylla::transport::Compression;
+use serde::{Deserialize, Serialize};
 
-use super::session::Session;
 use super::error::ConnectionError;
+use super::session::Session;
 
 static CONNECTION: OnceCell<Session> = OnceCell::new();
 static KEYSPACE_PREFIX: &str = "lnx_search";
 
 pub(crate) fn keyspace(index_name: &str) -> String {
-    format!("{prefix}_{index}", prefix = KEYSPACE_PREFIX, index = index_name)
+    format!(
+        "{prefix}_{index}",
+        prefix = KEYSPACE_PREFIX,
+        index = index_name
+    )
 }
 
 pub async fn connect(
@@ -21,8 +24,7 @@ pub async fn connect(
     user: &Option<String>,
     password: &Option<String>,
 ) -> Result<(), ConnectionError> {
-    let mut builder = scylla::SessionBuilder::new()
-        .compression(Some(Compression::Lz4));
+    let mut builder = scylla::SessionBuilder::new().compression(Some(Compression::Lz4));
 
     if let (Some(user), Some(pass)) = (user, password) {
         builder = builder.user(user, pass);
@@ -47,13 +49,12 @@ pub async fn connect(
     Ok(())
 }
 
-
 pub fn session() -> &'static Session {
     CONNECTION.get().unwrap()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]  // We don't massively care about it's flaws here.
+#[serde(untagged)] // We don't massively care about it's flaws here.
 pub enum ReplicationInfo {
     /// Marks the keyspace connection as a `SimpleStrategy` used for
     /// development purposes.
@@ -71,7 +72,7 @@ pub enum ReplicationInfo {
 
         #[serde(flatten, default)]
         datacenters: HashMap<String, usize>,
-    }
+    },
 }
 
 impl ReplicationInfo {
@@ -86,13 +87,13 @@ impl ReplicationInfo {
                     ks = keyspace(index_name),
                 );
 
-                let res = session()
-                    .query(keyspace_query.as_str(), &[])
-                    .await;
+                let res = session().query(keyspace_query.as_str(), &[]).await;
 
                 match res {
                     Ok(_) => Ok(()),
-                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => Ok(()),
+                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
+                        Ok(())
+                    },
                     Err(e) => Err(e.into()),
                 }
             },
@@ -118,17 +119,16 @@ impl ReplicationInfo {
                     config = parts.join(", "),
                 );
 
-                let res = session()
-                    .query(keyspace_query.as_str(), &[])
-                    .await;
+                let res = session().query(keyspace_query.as_str(), &[]).await;
 
                 match res {
                     Ok(_) => Ok(()),
-                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => Ok(()),
+                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
+                        Ok(())
+                    },
                     Err(e) => Err(e.into()),
                 }
-            }
+            },
         }
     }
 }
-

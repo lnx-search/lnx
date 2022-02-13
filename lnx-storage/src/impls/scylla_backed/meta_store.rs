@@ -3,16 +3,15 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use lnx_utils::{FromBytes, ToBytes};
 use scylla::IntoTypedRows;
 use uuid::Uuid;
-use lnx_utils::{FromBytes, ToBytes};
 
 use super::connection::keyspace;
-use crate::meta_store::MetaStore;
 use crate::change_log::Timestamp;
 use crate::impls::scylla_backed::connection::session;
+use crate::meta_store::MetaStore;
 use crate::Synonyms;
-
 
 static STOPWORDS_TABLE: &str = "index_stopwords";
 static SYNONYMS_TABLE: &str = "index_synonyms";
@@ -20,7 +19,6 @@ static NODES_INFO_TABLE: &str = "index_nodes";
 
 static NODE_ID_KEY: &[u8] = b"NODE_ID";
 static LAST_UPDATED_TIMESTAMP_KEY: &[u8] = b"LAST_UPDATED";
-
 
 pub struct ScyllaMetaStore {
     keyspace: String,
@@ -53,8 +51,7 @@ impl MetaStore for ScyllaMetaStore {
         );
 
         for word in words {
-            session()
-                .query_prepared(&query, (word,)).await?;
+            session().query_prepared(&query, (word,)).await?;
         }
 
         Ok(())
@@ -67,8 +64,7 @@ impl MetaStore for ScyllaMetaStore {
             table = STOPWORDS_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (words,)).await?;
+        session().query_prepared(&query, (words,)).await?;
 
         Ok(())
     }
@@ -117,8 +113,7 @@ impl MetaStore for ScyllaMetaStore {
             table = SYNONYMS_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (words,)).await?;
+        session().query_prepared(&query, (words,)).await?;
 
         Ok(())
     }
@@ -138,17 +133,15 @@ impl MetaStore for ScyllaMetaStore {
         let mut groups = vec![];
         while let Some(row) = iter.next().await {
             let (word, synonyms) = row?;
-            groups.push(Synonyms {
-                word,
-                synonyms,
-            });
+            groups.push(Synonyms { word, synonyms });
         }
 
         Ok(groups)
     }
 
     async fn set_update_timestamp(&self, timestamp: Timestamp) -> Result<()> {
-        self.local_store.insert(LAST_UPDATED_TIMESTAMP_KEY, timestamp.to_bytes()?)?;
+        self.local_store
+            .insert(LAST_UPDATED_TIMESTAMP_KEY, timestamp.to_bytes()?)?;
 
         let query = format!(
             "INSERT INTO {ks}.{table} (node_id, last_updated, last_heartbeat) VALUES (?, ?, toTimeStamp(now()));",
@@ -205,16 +198,13 @@ impl MetaStore for ScyllaMetaStore {
             table = NODES_INFO_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (self.node_id,))
-            .await?;
+        session().query_prepared(&query, (self.node_id,)).await?;
 
         let query = format!(
             "SELECT node_id, last_heartbeat FROM {ks}.{table};",
             ks = self.keyspace,
             table = NODES_INFO_TABLE,
         );
-
 
         let mut iter = session()
             .query_prepared(&query, (self.node_id,))

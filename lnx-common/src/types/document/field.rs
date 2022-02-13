@@ -1,8 +1,9 @@
 use std::fmt;
 use std::str::FromStr;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
+
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tantivy::tokenizer::PreTokenizedString;
 
 use crate::types::Value;
@@ -31,7 +32,7 @@ impl<'de> Deserialize<'de> for DocField {
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
                 Ok(DocField::Single(Value::from(v)))
             }
-            
+
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
                 Ok(DocField::Single(Value::from(v)))
             }
@@ -40,14 +41,13 @@ impl<'de> Deserialize<'de> for DocField {
                 Ok(DocField::Single(Value::from(v)))
             }
 
-         
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 if let Ok(dt) = tantivy::DateTime::from_str(v) {
                     return Ok(DocField::Single(Value::from(dt)));
                 }
 
                 if let Ok(bytes) = base64::decode(v) {
-                    return Ok(DocField::Single(Value::from(bytes)))
+                    return Ok(DocField::Single(Value::from(bytes)));
                 }
 
                 Ok(DocField::Single(Value::from(v.to_owned())))
@@ -59,7 +59,7 @@ impl<'de> Deserialize<'de> for DocField {
                 }
 
                 if let Ok(bytes) = base64::decode(&v) {
-                    return Ok(DocField::Single(Value::from(bytes)))
+                    return Ok(DocField::Single(Value::from(bytes)));
                 }
 
                 Ok(DocField::Single(Value::from(v)))
@@ -75,17 +75,17 @@ impl<'de> Deserialize<'de> for DocField {
 
             fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
             where
-                A: SeqAccess<'de>
+                A: SeqAccess<'de>,
             {
-                Vec::deserialize(SeqAccessDeserializer::new(seq))
-                    .map(DocField::Multi)
+                Vec::deserialize(SeqAccessDeserializer::new(seq)).map(DocField::Multi)
             }
 
             fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
             where
                 M: MapAccess<'de>,
             {
-                let data = PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
+                let data =
+                    PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
                 Ok(DocField::Single(Value::from(data)))
             }
         }
@@ -97,7 +97,7 @@ impl<'de> Deserialize<'de> for DocField {
 impl Serialize for DocField {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         match self {
             DocField::Empty => None::<Value>.serialize(serializer),

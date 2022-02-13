@@ -1,13 +1,11 @@
 use hashbrown::{HashMap, HashSet};
-use serde::{Serialize, Deserialize};
-
 use lnx_utils::Validator;
+use serde::{Deserialize, Serialize};
 
-use crate::schema::error::SchemaError;
-use super::field_name::FieldName;
-use super::field_info::FieldInfo;
 use super::boost::BoostFactor;
-
+use super::field_info::FieldInfo;
+use super::field_name::FieldName;
+use crate::schema::error::SchemaError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
@@ -73,7 +71,8 @@ impl Validator for Schema {
         // If it is empty we default to the indexed field.
         // So we know they are valid.
         if self.search_fields.is_empty() {
-            self.search_fields = self.fields
+            self.search_fields = self
+                .fields
                 .iter()
                 .filter(|(_, v)| v.is_indexed())
                 .map(|(k, _)| k)
@@ -92,34 +91,27 @@ impl Validator for Schema {
             }
         }
 
-        self.required_fields = HashSet::from_iter(
-            self.fields
-                .iter()
-                .filter_map(
-                    |(name, info)| if info.is_required() {
-                        Some(name.to_string())
-                    } else {
-                        None
-                    },
-                ),
-        );
+        self.required_fields =
+            HashSet::from_iter(self.fields.iter().filter_map(|(name, info)| {
+                if info.is_required() {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            }));
 
-        self.multi_value_fields = HashSet::from_iter(
-            self.fields
-                .iter()
-                .filter_map(
-                    |(name, info)| if info.is_multi() {
-                        Some(name.to_string())
-                    } else {
-                        None
-                    },
-                ),
-        );
+        self.multi_value_fields =
+            HashSet::from_iter(self.fields.iter().filter_map(|(name, info)| {
+                if info.is_multi() {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            }));
 
         Ok(())
     }
 }
-
 
 impl Schema {
     #[inline]

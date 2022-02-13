@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 
@@ -70,8 +70,6 @@ pub enum FieldInfo {
         opts: BytesOptions,
     },
 }
-
-
 
 impl FieldInfo {
     #[inline]

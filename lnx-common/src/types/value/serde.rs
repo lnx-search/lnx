@@ -1,9 +1,9 @@
 use std::fmt;
 use std::str::FromStr;
 
+use serde::de::value::MapAccessDeserializer;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de::value::MapAccessDeserializer;
 use tantivy::tokenizer::PreTokenizedString;
 
 use super::Value;
@@ -40,7 +40,7 @@ impl<'de> Deserialize<'de> for Value {
                 }
 
                 if let Ok(bytes) = base64::decode(v) {
-                    return Ok(Value::Bytes(bytes))
+                    return Ok(Value::Bytes(bytes));
                 }
 
                 Ok(Value::Text(v.to_owned()))
@@ -52,7 +52,7 @@ impl<'de> Deserialize<'de> for Value {
                 }
 
                 if let Ok(bytes) = base64::decode(&v) {
-                    return Ok(Value::Bytes(bytes))
+                    return Ok(Value::Bytes(bytes));
                 }
 
                 Ok(Value::Text(v))
@@ -70,7 +70,8 @@ impl<'de> Deserialize<'de> for Value {
             where
                 M: MapAccess<'de>,
             {
-                let data = PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
+                let data =
+                    PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
                 Ok(Value::PreTokenizedText(data))
             }
         }
@@ -82,7 +83,7 @@ impl<'de> Deserialize<'de> for Value {
 impl Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
         match self {
             Value::I64(v) => v.serialize(serializer),
@@ -90,7 +91,7 @@ impl Serialize for Value {
             Value::F64(v) => v.serialize(serializer),
             Value::PreTokenizedText(v) => v.serialize(serializer),
             Value::DateTime(v) => v.to_rfc3339().serialize(serializer),
-            Value::Text(v) =>  v.serialize(serializer),
+            Value::Text(v) => v.serialize(serializer),
             Value::Bytes(v) => {
                 let data = base64::encode(v);
                 data.serialize(serializer)

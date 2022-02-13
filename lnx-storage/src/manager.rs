@@ -1,18 +1,17 @@
+use std::collections;
 use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Result;
-use parking_lot::RwLock;
 use arc_swap::{ArcSwap, Guard};
 use hashbrown::HashMap;
-use once_cell::sync::OnceCell;
-
-use lnx_common::schema::{Schema, FieldName};
+use lnx_common::schema::{FieldName, Schema};
 use lnx_utils::{FromBytes, ToBytes};
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 
-use crate::{DocStore, EngineStore, MetaStore};
 use crate::configure::Config;
-
+use crate::{DocStore, EngineStore, MetaStore};
 
 static STORAGE_ENGINE_ROOT: &str = "engine";
 static STORAGE_ENGINE: OnceCell<StorageManager> = OnceCell::new();
@@ -31,7 +30,6 @@ pub fn engine() -> &'static StorageManager {
     STORAGE_ENGINE.get().unwrap()
 }
 
-
 /// The storage manager wrapping the different backend implementations.
 pub struct StorageManager {
     /// The storage backend config.
@@ -48,7 +46,7 @@ pub struct StorageManager {
     engine_store: Box<dyn EngineStore>,
 
     /// A mapping to each index's respective stores.
-    index_stores: ArcSwap<HashMap<FieldName, IndexStore>>
+    index_stores: ArcSwap<HashMap<FieldName, IndexStore>>,
 }
 
 impl Deref for StorageManager {
@@ -75,7 +73,7 @@ impl StorageManager {
             cfg,
             local_storage_db: db,
             engine_store: engine,
-            index_stores: ArcSwap::from_pointee(HashMap::new())
+            index_stores: ArcSwap::from_pointee(HashMap::new()),
         };
 
         inst.load_existing_indexes().await?;
@@ -88,11 +86,13 @@ impl StorageManager {
 
         let mut loaded = HashMap::with_capacity(indexes.len());
         for index in indexes {
-            let docs = self.cfg
+            let docs = self
+                .cfg
                 .backend
                 .get_doc_store(&index.index_name, &index.schema);
 
-            let meta = self.cfg
+            let meta = self
+                .cfg
                 .backend
                 .get_meta_store(&index.index_name, &self.local_storage_db)?;
 
@@ -119,14 +119,13 @@ impl StorageManager {
     }
 }
 
-
 /// A Index's storage and configuration settings.
 ///
 /// Additional settings can be added via the `store` and `load` method.
 pub struct IndexStore {
     index_name: FieldName,
     schema: Schema,
-    additional_settings: RwLock<HashMap<String, Vec<u8>>>,
+    additional_settings: RwLock<collections::HashMap<String, Vec<u8>>>,
     doc_store: Arc<dyn DocStore>,
     meta_store: Arc<dyn MetaStore>,
 }
@@ -179,20 +178,14 @@ impl IndexStore {
     ///
     /// These changes are reflected in the database.
     pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
-        let settings = engine()
-            .fetch_latest_settings(&self.index_name)
-            .await?;
+        let settings = engine().fetch_latest_settings(&self.index_name).await?;
 
         let mut lock = self.additional_settings.write();
 
-        let item = settings
-            .get(key)
-            .map(|v| T::from_bytes(v))
-            .transpose()?;
+        let item = settings.get(key).map(|v| T::from_bytes(v)).transpose()?;
 
         (*lock) = settings;
 
         Ok(item)
     }
 }
-

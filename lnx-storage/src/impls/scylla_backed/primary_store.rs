@@ -1,17 +1,25 @@
-use itertools::Itertools;
-use async_trait::async_trait;
 use anyhow::Result;
-use tokio::sync::mpsc;
+use async_trait::async_trait;
 use futures_util::StreamExt;
-
+use itertools::Itertools;
 use lnx_common::types::document::Document;
+use tokio::sync::mpsc;
 
-use crate::change_log::{ChangeLogEntry, ChangeLogIterator, ChangeLogStore, Timestamp, DocId};
-use crate::ChangeKind;
+use super::connection::session;
+use crate::change_log::{
+    ChangeLogEntry,
+    ChangeLogIterator,
+    ChangeLogStore,
+    DocId,
+    Timestamp,
+};
 use crate::doc_store::{DocStore, DocumentIterator};
 use crate::impls::scylla_backed::connection::keyspace;
-use crate::impls::scylla_backed::doc_wrapper::{DOCUMENT_PRIMARY_KEY, ScyllaSafeDocument};
-use super::connection::session;
+use crate::impls::scylla_backed::doc_wrapper::{
+    ScyllaSafeDocument,
+    DOCUMENT_PRIMARY_KEY,
+};
+use crate::ChangeKind;
 
 static DOCUMENT_TABLE: &str = "documents";
 static CHANGE_LOG_TABLE: &str = "index_changelog";
@@ -57,25 +65,25 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
         session()
             .query_prepared(
                 &query,
-                (logs.kind.as_i8(), logs.affected_docs, logs.timestamp)
+                (logs.kind.as_i8(), logs.affected_docs, logs.timestamp),
             )
             .await?;
 
         Ok(())
     }
 
-    async fn get_pending_changes(&self, from: Timestamp, chunk_size: usize) -> Result<ChangeLogIterator> {
+    async fn get_pending_changes(
+        &self,
+        from: Timestamp,
+        chunk_size: usize,
+    ) -> Result<ChangeLogIterator> {
         let query = format!(
             "SELECT kind, affected_docs, timestamp FROM {ks}.{table} WHERE timestamp > ?;",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
 
-        let iter = session()
-            .query_iter(
-                &query,
-                (from,),
-            ).await?;
+        let iter = session().query_iter(&query, (from,)).await?;
 
         let (tx, rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
@@ -87,7 +95,7 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
                     chunk.push(ChangeLogEntry {
                         kind: ChangeKind::from(row.0),
                         affected_docs: row.1,
-                        timestamp: row.2.num_seconds()
+                        timestamp: row.2.num_seconds(),
                     });
 
                     if chunk.len() >= chunk_size {
@@ -114,9 +122,7 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
             table = CHANGE_LOG_TABLE,
         );
 
-         session()
-             .query_prepared(&query, (upto,))
-             .await?;
+        session().query_prepared(&query, (upto,)).await?;
 
         Ok(())
     }
@@ -136,11 +142,7 @@ impl DocStore for ScyllaPrimaryDataStore {
 
         for (doc_id, doc) in docs {
             let doc = ScyllaSafeDocument(doc_id, doc);
-            session()
-                .query_prepared(
-                    &query,
-                    &doc,
-                ).await?;
+            session().query_prepared(&query, &doc).await?;
         }
 
         Ok(())
@@ -154,14 +156,16 @@ impl DocStore for ScyllaPrimaryDataStore {
             pk = DOCUMENT_PRIMARY_KEY,
         );
 
-        session()
-            .query_prepared(&query, (docs,))
-            .await?;
+        session().query_prepared(&query, (docs,)).await?;
 
         Ok(())
     }
 
-    async fn fetch_documents(&self, fields: Option<Vec<String>>, docs: Vec<DocId>) -> Result<Vec<(DocId, Document)>> {
+    async fn fetch_documents(
+        &self,
+        fields: Option<Vec<String>>,
+        docs: Vec<DocId>,
+    ) -> Result<Vec<(DocId, Document)>> {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
             "SELECT {pk}, {columns} FROM {ks}.{table} WHERE {pk} = ?",
@@ -173,7 +177,7 @@ impl DocStore for ScyllaPrimaryDataStore {
 
         let mut retrieved_docs = Vec::with_capacity(docs.len());
         let mut results = session()
-            .query_iter(&query, (docs,))    // TODO: Can we optimise this?
+            .query_iter(&query, (docs,)) // TODO: Can we optimise this?
             .await?;
 
         while let Some(row) = results.next().await {
@@ -185,7 +189,11 @@ impl DocStore for ScyllaPrimaryDataStore {
         Ok(retrieved_docs)
     }
 
-    async fn iter_documents(&self, fields: Option<Vec<String>>, chunk_size: usize) -> Result<DocumentIterator> {
+    async fn iter_documents(
+        &self,
+        fields: Option<Vec<String>>,
+        chunk_size: usize,
+    ) -> Result<DocumentIterator> {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
             "SELECT {pk}, {columns} FROM {ks}.{table};",
@@ -195,9 +203,7 @@ impl DocStore for ScyllaPrimaryDataStore {
             ks = self.keyspace,
         );
 
-        let mut iter = session()
-            .query_iter(&query, &[])
-            .await?;
+        let mut iter = session().query_iter(&query, &[]).await?;
 
         let (tx, rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
@@ -205,10 +211,13 @@ impl DocStore for ScyllaPrimaryDataStore {
                 let mut chunk = Vec::with_capacity(chunk_size);
 
                 while let Some(Ok(row)) = iter.next().await {
-                    let row = match ScyllaSafeDocument::from_row_and_layout(row, columns.clone()) {
+                    let row = match ScyllaSafeDocument::from_row_and_layout(
+                        row,
+                        columns.clone(),
+                    ) {
                         Err(e) => {
                             error!("failed to handle chunk due to error {:?}", e);
-                            return
+                            return;
                         },
                         Ok(row) => row,
                     };

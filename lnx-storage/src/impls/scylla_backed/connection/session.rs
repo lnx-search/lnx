@@ -1,11 +1,10 @@
 use std::fmt::Debug;
 
-use scylla::transport::errors::QueryError;
 use scylla::frame::value::ValueList;
 use scylla::query::Query;
-use scylla::QueryResult;
+use scylla::transport::errors::QueryError;
 use scylla::transport::iterator::RowIterator;
-
+use scylla::QueryResult;
 
 pub struct Session(scylla::CachingSession);
 
@@ -23,9 +22,7 @@ impl Session {
         values: impl ValueList + Debug,
     ) -> Result<QueryResult, QueryError> {
         debug!("executing query {}", query);
-        let result = self.0
-            .execute(query, &values)
-            .await;
+        let result = self.0.execute(query, &values).await;
 
         if let Err(ref e) = result {
             error!("failed to execute query: {} due to error: {:?}", query, e);
@@ -41,13 +38,14 @@ impl Session {
         values: impl ValueList + Debug,
     ) -> Result<RowIterator, QueryError> {
         debug!("preparing and paging new statement: {}", query);
-        let result = self.0
-            .execute_iter(Query::from(query), &values)
-            .await;
+        let result = self.0.execute_iter(Query::from(query), &values).await;
 
         if let Err(e) = result {
-            error!("failed to execute prepared statement: {} due to error: {:?}", query, e);
-            return Err(e)
+            error!(
+                "failed to execute prepared statement: {} due to error: {:?}",
+                query, e
+            );
+            return Err(e);
         }
 
         result
@@ -60,13 +58,14 @@ impl Session {
         values: impl ValueList + Debug,
     ) -> Result<QueryResult, QueryError> {
         debug!("preparing new statement: {}", query);
-        let result = self.0
-            .execute(Query::from(query), &values)
-            .await;
+        let result = self.0.execute(Query::from(query), &values).await;
 
         if let Err(e) = result {
-            error!("failed to execute prepared statement: {} due to error: {:?}", query, e);
-            return Err(e)
+            error!(
+                "failed to execute prepared statement: {} due to error: {:?}",
+                query, e
+            );
+            return Err(e);
         }
 
         result

@@ -1,8 +1,8 @@
-mod session;
 mod connect;
 mod error;
+mod session;
 
-pub use session::Session;
+pub use connect::{connect, ReplicationInfo};
+pub(crate) use connect::{keyspace, session};
 pub use error::ConnectionError;
-pub use connect::{ReplicationInfo, connect};
-pub(crate) use connect::{session, keyspace};
+pub use session::Session;
