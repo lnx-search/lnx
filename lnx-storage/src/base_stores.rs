@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -57,9 +56,9 @@ pub trait MetaStore {
     /// Then our earliest aligned timestamp is `110`.
     async fn get_earliest_aligned_timestamp(&self) -> Result<Option<Timestamp>>;
 
-    /// Load the existing index from the given peer and download it with
+    /// Load the existing index from the most up to date peer and download it with
     /// the given output directory.
-    async fn load_index_from_peer(&self, address: SocketAddr, out_dir: PathBuf) -> Result<()>;
+    async fn load_index_from_peer(&self, out_dir: PathBuf) -> Result<()>;
 }
 
 #[async_trait]

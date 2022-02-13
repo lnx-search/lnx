@@ -1,6 +1,7 @@
 pub mod connection;
 mod primary_store;
-mod backend;
 mod doc_wrapper;
+mod meta_store;
 
-pub use backend::ScyllaBackend;
+pub use primary_store::ScyllaPrimaryDataStore;
+pub use meta_store::ScyllaMetaStore;

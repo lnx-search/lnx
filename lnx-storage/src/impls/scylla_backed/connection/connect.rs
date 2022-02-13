@@ -58,7 +58,7 @@ impl ConnectionInfo {
                     index = index_name,
                 );
 
-                session.query(keyspace_query.as_str(), &[]).await?;
+                let _ = session.query(keyspace_query.as_str(), &[]).await;
 
                 session
             },
@@ -92,11 +92,20 @@ impl ConnectionInfo {
                     config = parts.join(", "),
                 );
 
-                session.query(keyspace_query.as_str(), &[]).await?;
+                let _ = session.query(keyspace_query.as_str(), &[]).await;
 
                 session
             }
         };
+
+        session.use_keyspace(
+            format!(
+                "{prefix}_{index}",
+                prefix = KEYSPACE_PREFIX,
+                index = index_name,
+            ),
+            false
+        ).await?;
 
         Ok(Session::from(session))
     }

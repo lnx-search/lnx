@@ -10,7 +10,7 @@ use lnx_common::types::document::Document;
 
 use crate::change_log::{ChangeLogEntry, ChangeLogIterator, ChangeLogStore, Timestamp, DocId};
 use crate::ChangeKind;
-use crate::doc_store::DocStore;
+use crate::doc_store::{DocStore, DocumentIterator};
 use crate::impls::scylla_backed::connection::Session;
 use crate::impls::scylla_backed::doc_wrapper::{DOCUMENT_PRIMARY_KEY, ScyllaSafeDocument};
 
@@ -23,6 +23,9 @@ static GET_PENDING_CHANGES_QUERY: &str = r#"
 static ADD_PENDING_CHANGES_QUERY: &str = r#"
     INSERT INTO index_changelog (kind, affected_docs, timestamp)
     VALUES (?, ?, ?);
+"#;
+static PURGE_PENDING_CHANGE_QUERY: &str = r#"
+    DELETE FROM index_changelog WHERE timestamp < ?;
 "#;
 
 type ChangedRow = (i8, Vec<DocId>, chrono::Duration);
@@ -92,6 +95,12 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
 
         Ok(iterator)
     }
+
+    async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()> {
+        self.session.query_prepared(PURGE_PENDING_CHANGE_QUERY, (upto,)).await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -148,5 +157,51 @@ impl DocStore for ScyllaPrimaryDataStore {
         }
 
         Ok(retrieved_docs)
+    }
+
+    async fn iter_documents(&self, fields: Option<Vec<String>>, chunk_size: usize) -> Result<DocumentIterator> {
+        let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
+        let query = format!(
+            "SELECT {pk}, {columns} FROM {table};",
+            pk = DOCUMENT_PRIMARY_KEY,
+            columns = columns.join(", "),
+            table = DOCUMENT_TABLE,
+        );
+
+        let mut iter = self.session
+            .query_iter(&query, &[])
+            .await?;
+
+        let (tx, rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async move {
+            loop {
+                let mut chunk = Vec::with_capacity(chunk_size);
+
+                while let Some(Ok(row)) = iter.next().await {
+                    let row = match ScyllaSafeDocument::from_row_and_layout(row, columns.clone()) {
+                        Err(e) => {
+                            error!("failed to handle chunk due to error {:?}", e);
+                            return
+                        },
+                        Ok(row) => row,
+                    };
+
+                    chunk.push(row.into_parts());
+
+                    if chunk.len() >= chunk_size {
+                        break;
+                    }
+                }
+
+                if tx.send(chunk).await.is_err() {
+                    trace!("chunk send failed, cleaning up and shutting down task");
+                    break;
+                }
+            }
+        });
+
+        let iterator = DocumentIterator::from_rx_and_handle(rx, handle);
+
+        Ok(iterator)
     }
 }
