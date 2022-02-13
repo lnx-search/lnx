@@ -1,1 +1,1 @@
-mod scylla_backed;
+pub mod scylla_backed;

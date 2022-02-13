@@ -1,14 +1,19 @@
-mod impls;
-mod base;
-mod error;
+#[macro_use]
+extern crate tracing;
 
-pub use error::ChangelogStoreError;
-pub use base::{
+mod impls;
+mod base_stores;
+mod change_log;
+mod doc_store;
+
+pub use change_log::{    
     ChangeKind,
     DocId,
-    DocStore,
-    Synonyms,
     ChangeLogStore,
+};
+pub use doc_store::DocStore;
+pub use base_stores::{
+    Synonyms,
     MetaStore,
     EngineStore,
 };

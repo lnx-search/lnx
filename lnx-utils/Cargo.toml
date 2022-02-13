@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "13a4473" }
+bincode = "1.3.3"
+serde = "1"
