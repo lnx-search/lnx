@@ -24,5 +24,7 @@ pub trait EngineStore: Send + Sync + 'static {
 
     async fn remove_index(&self, index: IndexData) -> Result<()>;
 
-    async fn update_settings(&self, settings: HashMap<String, Vec<u8>>) -> Result<()>;
+    async fn update_settings(&self, index_name: &FieldName, settings: HashMap<String, Vec<u8>>) -> Result<()>;
+
+    async fn fetch_latest_settings(&self, index_name: &FieldName) -> Result<HashMap<String, Vec<u8>>>;
 }

@@ -17,20 +17,37 @@ use crate::configure::Config;
 static STORAGE_ENGINE_ROOT: &str = "engine";
 static STORAGE_ENGINE: OnceCell<StorageManager> = OnceCell::new();
 
+/// Initialises the global storage engine.
 pub async fn init_with_config(cfg: Config) -> Result<()> {
     let inst = StorageManager::from_config(cfg).await?;
     let _ = STORAGE_ENGINE.set(inst);
     Ok(())
 }
 
+/// Gets a reference to the global storage engine.
+///
+/// Panics if the engine has not yet been initialised.
 pub fn engine() -> &'static StorageManager {
     STORAGE_ENGINE.get().unwrap()
 }
 
+
+/// The storage manager wrapping the different backend implementations.
 pub struct StorageManager {
+    /// The storage backend config.
     cfg: Config,
+
+    /// A sled database to store local data in order for the
+    /// node to know some information about it's previous state.
     local_storage_db: sled::Db,
+
+    /// The engine storage.
+    ///
+    /// This stores all of our index data and configuration.
+    /// Any changes made via this will be seen by all other nodes.
     engine_store: Box<dyn EngineStore>,
+
+    /// A mapping to each index's respective stores.
     index_stores: ArcSwap<HashMap<FieldName, IndexStore>>
 }
 
@@ -43,7 +60,7 @@ impl Deref for StorageManager {
 }
 
 impl StorageManager {
-    pub async fn from_config(cfg: Config) -> Result<Self> {
+    async fn from_config(cfg: Config) -> Result<Self> {
         let db_path = cfg.storage_path.join(STORAGE_ENGINE_ROOT);
         let db = sled::Config::new()
             .use_compression(true)
@@ -96,12 +113,16 @@ impl StorageManager {
     }
 
     #[inline]
+    /// Gets a handle of the current indexes and their stores.
     pub fn indexes(&self) -> Guard<Arc<HashMap<FieldName, IndexStore>>> {
         self.index_stores.load()
     }
 }
 
 
+/// A Index's storage and configuration settings.
+///
+/// Additional settings can be added via the `store` and `load` method.
 pub struct IndexStore {
     index_name: FieldName,
     schema: Schema,
@@ -126,21 +147,52 @@ impl IndexStore {
         &self.schema
     }
 
-    pub fn store<T: ToBytes>(&self, key: &str, settings: T) -> bincode::Result<()> {
-        self.additional_settings
-            .write()
-            .insert(key.to_string(), settings.to_bytes()?);
+    /// Updates the current settings for the given key.
+    ///
+    /// These changes are reflected in the database.
+    pub async fn store<T: ToBytes>(&self, key: &str, settings: T) -> Result<()> {
+        let mut lock = self.additional_settings.write();
+        lock.insert(key.to_string(), settings.to_bytes()?);
+
+        engine()
+            .update_settings(&self.index_name, lock.clone())
+            .await?;
 
         Ok(())
     }
 
-    pub fn read<T: FromBytes>(&self, key: &str) -> bincode::Result<Option<T>> {
-        let settings = self.additional_settings
-            .read()
-            .get(key)
-            .map(|v| T::from_bytes(&v));
+    /// Removes the current settings for the given key.
+    ///
+    /// These changes are reflected in the database.
+    pub async fn remove(&self, key: &str) -> Result<()> {
+        let mut lock = self.additional_settings.write();
+        lock.remove(key);
 
-        Option::transpose(settings)
+        engine()
+            .update_settings(&self.index_name, lock.clone())
+            .await?;
+
+        Ok(())
+    }
+
+    /// Loads the latest current settings for the given key.
+    ///
+    /// These changes are reflected in the database.
+    pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
+        let settings = engine()
+            .fetch_latest_settings(&self.index_name)
+            .await?;
+
+        let mut lock = self.additional_settings.write();
+
+        let item = Option::transpose(
+            settings
+                .get(key)
+                .map(|v| T::from_bytes(v))
+        )?;
+        (*lock) = settings;
+
+        Ok(item)
     }
 }
 
