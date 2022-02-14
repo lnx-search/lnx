@@ -212,3 +212,23 @@ impl TryInto<DateTime> for Value {
         Ok(v)
     }
 }
+
+impl TryInto<Vec<u8>> for Value {
+    type Error = ConversionError;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        let err = match self {
+            Value::I64(v) => ConversionError::new("i64", "Bytes", v),
+            Value::U64(v) => ConversionError::new("u64", "Bytes", v),
+            Value::F64(v) => ConversionError::new("f64", "Bytes", v),
+            Value::PreTokenizedText(v) => {
+                ConversionError::new("PreTokenizedText", "Bytes", v)
+            },
+            Value::DateTime(v) => ConversionError::new("DateTime", "Bytes", v),
+            Value::Text(v) => return Ok(v.as_bytes().to_vec()),
+            Value::Bytes(v) => return Ok(v),
+        };
+
+        Err(err)
+    }
+}

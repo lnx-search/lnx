@@ -566,6 +566,20 @@ dependencies = [
 [[package]]
 name = "lnx-writer"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hashbrown 0.12.0",
+ "lnx-common",
+ "lnx-storage",
+ "lnx-utils",
+ "num_cpus",
+ "serde",
+ "tantivy",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+]
 
 [[package]]
 name = "lock_api"

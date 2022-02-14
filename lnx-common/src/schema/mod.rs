@@ -12,3 +12,5 @@ pub use field_info::FieldInfo;
 pub use field_name::FieldName;
 pub use options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 pub use schema::Schema;
+
+pub static INDEX_PK: &str = "_lnx_doc_id";
