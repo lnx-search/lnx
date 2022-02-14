@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use lnx_common::types::document::Document;
@@ -68,6 +69,25 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
                 (logs.kind.as_i8(), logs.affected_docs, logs.timestamp),
             )
             .await?;
+
+        Ok(())
+    }
+
+    async fn mark_documents_cleared(&self) -> Result<()> {
+        let query = format!(
+            "DELETE FROM {ks}.{table};",
+            ks = self.keyspace,
+            table = CHANGE_LOG_TABLE,
+        );
+
+        session().query_prepared(&query, &[]).await?;
+
+        self.append_changes(ChangeLogEntry {
+            kind: ChangeKind::ClearAll,
+            affected_docs: vec![],
+            timestamp: Utc::now().timestamp(),
+        })
+        .await?;
 
         Ok(())
     }
@@ -157,6 +177,18 @@ impl DocStore for ScyllaPrimaryDataStore {
         );
 
         session().query_prepared(&query, (docs,)).await?;
+
+        Ok(())
+    }
+
+    async fn clear_documents(&self) -> Result<()> {
+        let query = format!(
+            "DELETE FROM {ks}.{table};",
+            ks = self.keyspace,
+            table = DOCUMENT_TABLE,
+        );
+
+        session().query_prepared(&query, &[]).await?;
 
         Ok(())
     }

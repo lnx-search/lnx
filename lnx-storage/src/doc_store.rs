@@ -14,6 +14,9 @@ pub trait DocStore: ChangeLogStore + Send + Sync + 'static {
     /// Removes a set of documents from the store.
     async fn remove_documents(&self, docs: Vec<DocId>) -> Result<()>;
 
+    /// Clears all documents from the store.
+    async fn clear_documents(&self) -> Result<()>;
+
     /// Fetches a set of documents with the provided Ids.
     ///
     /// If `fields` is `None` all fields on the document should be returned

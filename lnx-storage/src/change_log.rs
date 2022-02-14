@@ -20,12 +20,16 @@ pub enum ChangeKind {
 
     /// The given document(s) are new and should be indexed.
     Append,
+
+    /// Clear all documents, this also should clear the changelog.
+    ClearAll,
 }
 
 impl ChangeKind {
     /// A i8 representation of the given fields.
     pub fn as_i8(&self) -> i8 {
         match self {
+            ChangeKind::ClearAll => 3,
             ChangeKind::Delete => 2,
             ChangeKind::Update => 1,
             ChangeKind::Append => 0,
@@ -39,8 +43,10 @@ impl From<i8> for ChangeKind {
             Self::Append
         } else if v == 1 {
             Self::Update
-        } else {
+        } else if v == 2 {
             Self::Delete
+        } else {
+            Self::ClearAll
         }
     }
 }
@@ -63,6 +69,10 @@ pub struct ChangeLogEntry {
 pub trait ChangeLogStore {
     /// Append a change to the change log system.
     async fn append_changes(&self, logs: ChangeLogEntry) -> Result<()>;
+
+    /// Marks the document store as cleared purging all logs other than
+    /// the clear documents change.
+    async fn mark_documents_cleared(&self) -> Result<()>;
 
     /// Get a iterator of pending changes from the given timestamp.
     ///
