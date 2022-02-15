@@ -1,11 +1,5 @@
 mod engine;
 mod error;
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
+pub use engine::init_engine;
+pub use error::InitEngineError;

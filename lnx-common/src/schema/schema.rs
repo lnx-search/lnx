@@ -1,6 +1,7 @@
 use hashbrown::{HashMap, HashSet};
 use lnx_utils::Validator;
 use serde::{Deserialize, Serialize};
+use tantivy::schema::FieldEntry;
 
 use super::boost::BoostFactor;
 use super::field_info::FieldInfo;
@@ -145,5 +146,34 @@ impl Schema {
     #[inline]
     pub fn multi_value_fields(&self) -> &HashSet<String> {
         &self.multi_value_fields
+    }
+
+    pub fn as_tantivy_schema(&self) -> tantivy::schema::Schema {
+        let mut schema = tantivy::schema::SchemaBuilder::new();
+
+        let fields = self.fields
+            .iter()
+            .filter(|(_, v)| v.is_indexed());
+
+        for (name, info) in fields {
+            schema.add_field(FieldEntry::new(name.to_string(), info.as_field_type()));
+        }
+
+        schema.build()
+    }
+
+    pub fn validate_with_tantivy_schema(&self, schema: &tantivy::schema::Schema) -> Result<(), SchemaError> {
+        let fields = self.fields
+            .iter()
+            .filter(|(_, v)| v.is_indexed())
+            .map(|(k, _)| k);
+
+        for name in fields {
+            if schema.get_field(name).is_none() {
+                return Err(SchemaError::CorruptedSchema)
+            };
+        }
+
+        Ok(())
     }
 }

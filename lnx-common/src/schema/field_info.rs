@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tantivy::schema::FieldType;
 
 use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 
@@ -46,7 +47,7 @@ pub enum FieldInfo {
 
     /// A string field with given options.
     ///
-    /// This wont be tokenized.
+    /// This wont be indexed.
     String {
         #[serde(flatten)]
         opts: BaseOptions,
@@ -108,9 +109,23 @@ impl FieldInfo {
             FieldInfo::I64 { opts } => opts.indexed,
             FieldInfo::Date { opts } => opts.indexed,
             FieldInfo::Text { .. } => true,
-            FieldInfo::String { .. } => true,
+            FieldInfo::String { .. } => false,
             FieldInfo::Facet { .. } => true,
             FieldInfo::Bytes { opts } => opts.indexed,
+        }
+    }
+    
+    #[inline]
+    pub fn as_field_type(&self) -> tantivy::schema::FieldType {
+        match self {
+            FieldInfo::F64 { opts } => FieldType::F64((*opts).as_tantivy_opts()),
+            FieldInfo::U64 { opts } => FieldType::U64(opts.as_tantivy_opts()),
+            FieldInfo::I64 { opts } => FieldType::I64(opts.as_tantivy_opts()),
+            FieldInfo::Date { opts } => FieldType::Date(opts.as_tantivy_opts()),
+            FieldInfo::Text { opts } => FieldType::Str(opts.opts_as_text()),
+            FieldInfo::String { opts } => FieldType::Str(opts.opts_as_string()),
+            FieldInfo::Facet { opts } => FieldType::Facet(opts.as_tantivy_facet_opts()),
+            FieldInfo::Bytes { opts } => FieldType::Bytes(opts.as_tantivy_opts()),
         }
     }
 }

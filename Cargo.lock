@@ -517,11 +517,14 @@ name = "lnx-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hashbrown 0.12.0",
  "lnx-common",
  "lnx-storage",
  "lnx-utils",
  "lnx-writer",
+ "tantivy",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

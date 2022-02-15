@@ -11,5 +11,9 @@ lnx-utils = { path = "../lnx-utils" }
 lnx-writer = { path = "../lnx-writer" }
 lnx-storage = { path = "../lnx-storage" }
 
+tokio = { version = "1", features = ["fs"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "13a4473" }
+
+hashbrown = "0.12.0"
 anyhow = "1.0.53"
 thiserror = "1.0.30"

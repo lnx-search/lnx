@@ -20,6 +20,12 @@ pub struct BaseOptions {
     pub required: bool,
 }
 
+impl BaseOptions {    
+    pub fn as_tantivy_facet_opts(&self) -> FacetOptions {        
+        FacetOptions::default()
+    }
+}
+
 // Although not strictly necessary we have this here for consistency.
 impl From<BaseOptions> for FacetOptions {
     fn from(_: BaseOptions) -> Self {
@@ -77,21 +83,22 @@ pub struct BytesOptions {
     pub base: BaseOptions,
 }
 
-impl From<BytesOptions> for tantivy::schema::BytesOptions {
-    fn from(v: BytesOptions) -> Self {
+impl BytesOptions {
+    pub fn as_tantivy_opts(&self) -> tantivy::schema::BytesOptions {        
         let mut opts = tantivy::schema::BytesOptions::default();
 
-        if v.indexed {
+        if self.indexed {
             opts = opts.set_indexed();
         }
 
-        if v.fast {
+        if self.fast {
             opts = opts.set_fast();
         }
 
         opts
     }
 }
+
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// A set of field options for int fields that takes into account if a field is
@@ -117,20 +124,20 @@ pub struct CalculatedIntOptions {
     pub base: BaseOptions,
 }
 
-impl From<CalculatedIntOptions> for IntOptions {
-    fn from(v: CalculatedIntOptions) -> Self {
+impl CalculatedIntOptions {
+    pub fn as_tantivy_opts(&self) -> IntOptions {        
         let mut opts = IntOptions::default();
 
-        if v.indexed {
+        if self.indexed {
             opts = opts.set_indexed();
         }
 
-        if v.fieldnorms.unwrap_or(v.indexed) {
+        if self.fieldnorms.unwrap_or(self.indexed) {
             opts = opts.set_fieldnorm();
         }
 
-        if v.fast {
-            let cardinality = if v.base.multi {
+        if self.fast {
+            let cardinality = if self.base.multi {
                 Cardinality::MultiValues
             } else {
                 Cardinality::SingleValue
@@ -142,3 +149,4 @@ impl From<CalculatedIntOptions> for IntOptions {
         opts
     }
 }
+
