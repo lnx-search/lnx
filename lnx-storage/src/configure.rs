@@ -6,7 +6,7 @@ use lnx_common::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::impls::scylla_backed;
-use crate::impls::scylla_backed::{ScyllaMetaStore, ScyllaPrimaryDataStore};
+use crate::impls::scylla_backed::{ScyllaMetaStore, ScyllaPrimaryDataStore, ScyllaEngineStore};
 use crate::{DocStore, EngineStore, MetaStore};
 
 #[derive(Serialize, Deserialize)]
@@ -69,6 +69,13 @@ impl BackendSelector {
     }
 
     pub fn get_engine_store(&self) -> Box<dyn EngineStore> {
-        todo!()
+        let backend: Arc<dyn EngineStore> = match self {
+            Self::Scylla { .. } => {
+                let backend = ScyllaEngineStore::new();
+                Arc::new(backend)
+            },
+        };
+
+        Ok(backend)
     }
 }
