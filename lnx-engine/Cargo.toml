@@ -1,0 +1,15 @@
+[package]
+name = "lnx-engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lnx-common = { path = "../lnx-common" }
+lnx-utils = { path = "../lnx-utils" }
+lnx-writer = { path = "../lnx-writer" }
+lnx-storage = { path = "../lnx-storage" }
+
+anyhow = "1.0.53"
+thiserror = "1.0.30"
