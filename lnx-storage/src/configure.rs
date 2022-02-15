@@ -69,13 +69,13 @@ impl BackendSelector {
     }
 
     pub fn get_engine_store(&self) -> Box<dyn EngineStore> {
-        let backend: Arc<dyn EngineStore> = match self {
+        let backend: Box<dyn EngineStore> = match self {
             Self::Scylla { .. } => {
                 let backend = ScyllaEngineStore::new();
-                Arc::new(backend)
+                Box::new(backend)
             },
         };
 
-        Ok(backend)
+        backend
     }
 }
