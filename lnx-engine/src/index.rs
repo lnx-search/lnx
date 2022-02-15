@@ -2,7 +2,6 @@ use anyhow::Result;
 use lnx_common::schema::Schema;
 use lnx_storage::ReplicationInfo;
 
-
 pub async fn add_index(
     name: &str,
     schema: Schema,
@@ -15,27 +14,17 @@ pub async fn add_index(
         .add_new_index(name, schema, replication, polling_mode, additional_settings)
         .await?;
 
-    let handle = lnx_writer::start_polling_for_index(
-        name.to_string(),
-        polling_mode
-    );
+    let handle = lnx_writer::start_polling_for_index(name.to_string(), polling_mode);
 
-    lnx_writer::get()
-        .add_index(name, index, handle)
-        .await?;
+    lnx_writer::get().add_index(name, index, handle).await?;
 
     Ok(())
 }
 
-
 pub async fn remove_index(name: &str) -> Result<()> {
-    lnx_writer::get()
-        .remove_index(name)
-        .await?;
+    lnx_writer::get().remove_index(name).await?;
 
-    lnx_storage::engine()
-        .remove_index(name)
-        .await?;
+    lnx_storage::engine().remove_index(name).await?;
 
     Ok(())
 }

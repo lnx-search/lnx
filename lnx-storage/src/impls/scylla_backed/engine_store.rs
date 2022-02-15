@@ -41,17 +41,12 @@ impl EngineStore for ScyllaEngineStore {
             .await?
             .rows
             .unwrap_or_default()
-            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, HashMap<String, Vec<u8>>)>();
+            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, HashMap<String, Vec<u8>>)>(
+            );
 
         let mut indexes = vec![];
         for index in results {
-            let (
-                name,
-                schema,
-                plolling_mode,
-                replication,
-                settings,
-            ) = index?;
+            let (name, schema, plolling_mode, replication, settings) = index?;
 
             let schema = Schema::from_bytes(&schema)?;
             let replication = ReplicationInfo::from_bytes(&replication)?;
@@ -98,9 +93,7 @@ impl EngineStore for ScyllaEngineStore {
             table = INDEXES_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (index,))
-            .await?;
+        session().query_prepared(&query, (index,)).await?;
 
         Ok(())
     }

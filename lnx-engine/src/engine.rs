@@ -18,7 +18,8 @@ pub async fn init_engine(
     let mut indexes = HashMap::new();
     for (name, data) in lnx_storage::engine().indexes().as_ref() {
         let index = load_index(data.file_path(), data.schema())?;
-        let handle = lnx_writer::start_polling_for_index(name.to_string(), data.polling_mode());
+        let handle =
+            lnx_writer::start_polling_for_index(name.to_string(), data.polling_mode());
         indexes.insert(name.to_string(), lnx_writer::Index::new(index, handle));
     }
 

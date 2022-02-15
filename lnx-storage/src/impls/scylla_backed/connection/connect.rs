@@ -1,10 +1,10 @@
 use hashbrown::HashMap;
+use lnx_utils::index_id;
 use once_cell::sync::OnceCell;
 use scylla::batch::Consistency;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::transport::Compression;
 use serde::{Deserialize, Serialize};
-use lnx_utils::index_id;
 
 use super::error::ConnectionError;
 use super::session::Session;

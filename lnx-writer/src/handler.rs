@@ -117,9 +117,17 @@ impl IndexerHandler {
         Ok(())
     }
 
-    pub async fn add_index(&self, index_name: &str, index: InnerIndex, cancel: JoinHandle<()>) -> Result<()> {
-        self.send_event(Event::AddIndex(index_name.to_string(), Index::new(index, cancel)))
-            .await
+    pub async fn add_index(
+        &self,
+        index_name: &str,
+        index: InnerIndex,
+        cancel: JoinHandle<()>,
+    ) -> Result<()> {
+        self.send_event(Event::AddIndex(
+            index_name.to_string(),
+            Index::new(index, cancel),
+        ))
+        .await
     }
 
     pub async fn remove_index(&self, index_name: &str) -> Result<()> {

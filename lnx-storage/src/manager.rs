@@ -88,7 +88,8 @@ impl StorageManager {
 
         let mut loaded = HashMap::with_capacity(indexes.len());
         for index in indexes {
-            index.replication
+            index
+                .replication
                 .build_keyspace(index.index_name.as_str())
                 .await?;
 
@@ -134,14 +135,9 @@ impl StorageManager {
         polling_mode: PollingMode,
         additional_settings: collections::HashMap<String, Vec<u8>>,
     ) -> Result<()> {
-        replication
-            .build_keyspace(name)
-            .await?;
+        replication.build_keyspace(name).await?;
 
-        let docs = self
-            .cfg
-            .backend
-            .get_doc_store(name, &schema);
+        let docs = self.cfg.backend.get_doc_store(name, &schema);
 
         let meta = self
             .cfg
@@ -197,7 +193,7 @@ impl IndexStore {
     pub fn polling_mode(&self) -> PollingMode {
         self.polling_mode
     }
-    
+
     #[inline]
     pub fn file_path(&self) -> &Path {
         &self.output_path
