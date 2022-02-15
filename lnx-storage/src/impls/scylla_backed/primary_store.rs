@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
+use scylla::IntoTypedRows;
 use lnx_common::types::document::Document;
 use tokio::sync::mpsc;
 
@@ -58,7 +59,7 @@ impl ScyllaPrimaryDataStore {
 impl ChangeLogStore for ScyllaPrimaryDataStore {
     async fn append_changes(&self, logs: ChangeLogEntry) -> Result<()> {
         let query = format!(
-            "INSERT INTO {ks}.{table} (kind, affected_docs, timestamp) VALUES (?, ?, ?);",
+            "INSERT INTO {ks}.{table} (id, kind, affected_docs, timestamp) VALUES (uuid(), ?, ?, ?);",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
@@ -85,7 +86,7 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
         self.append_changes(ChangeLogEntry {
             kind: ChangeKind::ClearAll,
             affected_docs: vec![],
-            timestamp: Utc::now().timestamp(),
+            timestamp: Utc::now().timestamp_millis(),
         })
         .await?;
 
@@ -133,6 +134,28 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
         let iterator = ChangeLogIterator::from_rx_and_handle(rx, handle);
 
         Ok(iterator)
+    }
+
+    async fn count_pending_changes(&self, from: Timestamp) -> Result<usize> {
+        let query = format!(
+            "SELECT COUNT (id) FROM {ks}.{table} WHERE timestamp > ?;",
+            ks = self.keyspace,
+            table = CHANGE_LOG_TABLE,
+        );
+
+        let row = session()
+            .query_prepared(&query, (from,))
+            .await?
+            .rows
+            .unwrap_or_default()
+            .into_typed::<(i64,)>()
+            .next();
+
+        if let Some(Ok((count,))) = row {
+            Ok(count as usize)
+        } else {
+            Ok(0)
+        }
     }
 
     async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()> {

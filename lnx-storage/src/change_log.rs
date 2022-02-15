@@ -84,6 +84,9 @@ pub trait ChangeLogStore {
         chunk_size: usize,
     ) -> Result<ChangeLogIterator>;
 
+    /// Get the current amount of pending changes.
+    async fn count_pending_changes(&self, from: Timestamp) -> Result<usize>;
+
     /// Purge the change logs upto the given timestamp.
     async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()>;
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -187,7 +187,7 @@ impl MetaStore for ScyllaMetaStore {
         }
     }
 
-    async fn load_index_from_peer(&self, _out_dir: PathBuf) -> anyhow::Result<()> {
+    async fn load_index_from_peer(&self, _out_dir: &Path) -> anyhow::Result<()> {
         Err(anyhow!("Loading from a index is not supported"))
     }
 

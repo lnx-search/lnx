@@ -9,3 +9,4 @@ edition = "2021"
 tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "13a4473" }
 bincode = "1.3.3"
 serde = "1"
+crc32fast = "1.3.2"

@@ -119,6 +119,14 @@ impl Schema {
         self.fields.contains_key(field_name)
     }
 
+    pub fn indexed_fields(&self) -> Vec<String> {
+        self.fields
+            .iter()
+            .filter(|(_, v)| v.is_indexed())
+            .map(|(k, _)| k.to_string())
+            .collect()
+    }
+
     #[inline]
     pub fn boost_fields(&self) -> &HashMap<FieldName, BoostFactor> {
         &self.boost_fields

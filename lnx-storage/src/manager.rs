@@ -1,5 +1,6 @@
 use std::collections;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -14,6 +15,7 @@ use crate::configure::Config;
 use crate::{DocStore, EngineStore, MetaStore};
 
 static STORAGE_ENGINE_ROOT: &str = "engine";
+static INDEX_STORAGE_ROOT: &str = "engine";
 static STORAGE_ENGINE: OnceCell<StorageManager> = OnceCell::new();
 
 /// Initialises the global storage engine.
@@ -46,7 +48,7 @@ pub struct StorageManager {
     engine_store: Box<dyn EngineStore>,
 
     /// A mapping to each index's respective stores.
-    index_stores: ArcSwap<HashMap<FieldName, IndexStore>>,
+    index_stores: ArcSwap<HashMap<String, IndexStore>>,
 }
 
 impl Deref for StorageManager {
@@ -96,7 +98,13 @@ impl StorageManager {
                 .backend
                 .get_meta_store(&index.index_name, &self.local_storage_db)?;
 
+            let path = self.cfg
+                .storage_path
+                .join(INDEX_STORAGE_ROOT)
+                .join(lnx_utils::index_id(&index.index_name).to_string());
+
             let store = IndexStore {
+                output_path: path,
                 index_name: index.index_name,
                 schema: index.schema,
                 additional_settings: RwLock::new(index.additional_settings),
@@ -104,7 +112,7 @@ impl StorageManager {
                 meta_store: meta,
             };
 
-            loaded.insert(store.index_name.clone(), store);
+            loaded.insert(store.index_name.0.clone(), store);
         }
 
         self.index_stores.store(Arc::new(loaded));
@@ -114,7 +122,7 @@ impl StorageManager {
 
     #[inline]
     /// Gets a handle of the current indexes and their stores.
-    pub fn indexes(&self) -> Guard<Arc<HashMap<FieldName, IndexStore>>> {
+    pub fn indexes(&self) -> Guard<Arc<HashMap<String, IndexStore>>> {
         self.index_stores.load()
     }
 }
@@ -125,12 +133,23 @@ impl StorageManager {
 pub struct IndexStore {
     index_name: FieldName,
     schema: Schema,
+    output_path: PathBuf,
     additional_settings: RwLock<collections::HashMap<String, Vec<u8>>>,
     doc_store: Arc<dyn DocStore>,
     meta_store: Arc<dyn MetaStore>,
 }
 
 impl IndexStore {
+    #[inline]
+    pub fn file_path(&self) -> &Path {
+        &self.output_path
+    }
+
+    #[inline]
+    pub fn name(&self) -> &str {
+        self.index_name.as_str()
+    }
+
     #[inline]
     pub fn docs(&self) -> &Arc<dyn DocStore> {
         &self.doc_store

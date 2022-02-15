@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -58,7 +58,7 @@ pub trait MetaStore: Send + Sync + 'static {
 
     /// Load the existing index from the most up to date peer and download it with
     /// the given output directory.
-    async fn load_index_from_peer(&self, out_dir: PathBuf) -> Result<()>;
+    async fn load_index_from_peer(&self, out_dir: &Path) -> Result<()>;
 
     /// Called in order to mark the node as active still.
     async fn heartbeat(&self, purge_delta: chrono::Duration) -> Result<()>;

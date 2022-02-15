@@ -9,7 +9,7 @@ mod impls;
 mod manager;
 mod meta_store;
 
-pub use change_log::{ChangeKind, ChangeLogStore, DocId};
+pub use change_log::{ChangeKind, ChangeLogStore, DocId, Timestamp};
 pub use configure::BackendSelector;
 pub use doc_store::DocStore;
 pub use engine_store::EngineStore;

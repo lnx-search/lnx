@@ -1,20 +1,36 @@
 use std::num::NonZeroUsize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use hashbrown::HashMap;
-use lnx_common::schema::FieldName;
 use serde::{Deserialize, Serialize};
 use tantivy::Index;
-use tokio::sync::mpsc::Permit;
+use once_cell::sync::OnceCell;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
+use lnx_common::types::document::Document;
+use lnx_storage::DocId;
 
 use super::helpers::serde::{BufferSize, NumThreads};
 use super::indexer::{start_indexing, Task};
 
 static INDEXER_CONFIG_KEY: &str = "INDEXER_CONFIG";
+static INDEXER_HANDLER: OnceCell<IndexerHandler> = OnceCell::new();
 type Indexes = HashMap<String, Arc<Index>>;
+
+/// Starts the indexer handler.
+pub fn start(config: IndexerHandlerConfig, base_indexes: Indexes) {
+    let handler = IndexerHandler::start(config, base_indexes);
+    let _ = INDEXER_HANDLER.set(handler);
+}
+
+/// Gets the indexer handler.
+///
+/// Panics if the global state hasn't been initialised yet.
+pub fn get() -> &'static IndexerHandler {
+    INDEXER_HANDLER.get().unwrap()
+}
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IndexerHandlerConfig {
@@ -66,7 +82,76 @@ impl IndexerHandler {
 
         inst
     }
+
+    async fn send_event(&self, event: Event) -> Result<()> {
+        let res = self
+            .events
+            .send(event)
+            .await;
+
+        if res.is_err() {
+            return Err(anyhow!("the indexer handler has shut down, no new indexes can be added."))
+        }
+
+        Ok(())
+    }
+
+    pub async fn add_index(&self, index_name: &str, index: Index) -> Result<()> {
+        self.send_event(Event::AddIndex(index_name.to_string(), index)).await
+    }
+
+    pub async fn remove_index(&self, index_name: &str) -> Result<()> {
+        self.send_event(Event::RemoveIndex(index_name.to_string())).await
+    }
+
+    pub async fn begin_indexing(&self, index_name: &str) -> Result<Indexer> {
+        let (tx, rx) = mpsc::channel(1);
+        let indexer = Indexer { emitter: tx };
+        self.send_event(Event::BeginIndexing(index_name.to_string(), rx)).await?;
+
+        Ok(indexer)
+    }
 }
+
+
+/// A handle to a indexer actor to begin processing documents.
+///
+/// Note that an indexer may not start processing tasks immediately
+/// as it may be waiting on another indexer to finish.
+pub struct Indexer {
+    emitter: mpsc::Sender<Task>,
+}
+
+impl Indexer {
+    async fn send_event(&self, event: Task) -> Result<()> {
+        let res = self
+            .emitter
+            .send(event)
+            .await;
+
+        if res.is_err() {
+            return Err(anyhow!("the indexer has shut down, no new tasks can be added."))
+        }
+
+        Ok(())
+    }
+
+    /// Add a set of documents to the indexer.
+    pub async fn add_documents(&self, docs: Vec<(DocId, Document)>) -> Result<()> {
+        self.send_event(Task::AddDocuments(docs)).await
+    }
+
+    /// Remove a set of documents.
+    pub async fn remove_documents(&self, docs: Vec<DocId>) -> Result<()> {
+        self.send_event(Task::RemoveDocs(docs)).await
+    }
+
+    /// Clear all documents.
+    pub async fn clear_documents(&self) -> Result<()> {
+        self.send_event(Task::ClearAllDocuments).await
+    }
+}
+
 
 #[instrument(name = "indexer-actor", skip(indexes, events))]
 async fn run_actor(
@@ -125,7 +210,6 @@ async fn begin_indexing(
     info!("Waiting on permit to begin indexing documents");
     let _permit = limiter.acquire().await?;
 
-    let name = FieldName(name);
     let indexes = lnx_storage::engine().indexes();
     let index_store = indexes
         .get(&name)
@@ -141,8 +225,9 @@ async fn begin_indexing(
 
     info!("Beginning indexing process");
     let start = std::time::Instant::now();
-    tokio::task::spawn_blocking(move || start_indexing(schema, writer, tasks_queue))
-        .await??;
+    tokio::task::spawn_blocking(
+        move || start_indexing(schema, writer, tasks_queue)
+    ).await??;
     info!("Indexing process took {:?} to complete.", start.elapsed());
 
     Ok(())
