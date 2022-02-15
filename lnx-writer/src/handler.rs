@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
@@ -7,7 +8,7 @@ use lnx_common::types::document::Document;
 use lnx_storage::DocId;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
-use tantivy::Index;
+use tantivy::Index as InnerIndex;
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
 
@@ -16,7 +17,29 @@ use super::indexer::{start_indexing, Task};
 
 static INDEXER_CONFIG_KEY: &str = "INDEXER_CONFIG";
 static INDEXER_HANDLER: OnceCell<IndexerHandler> = OnceCell::new();
-type Indexes = HashMap<String, Arc<Index>>;
+type Indexes = HashMap<String, Index>;
+
+pub struct Index {
+    inner: Arc<InnerIndex>,
+    cancel: JoinHandle<()>,
+}
+
+impl Index {
+    pub fn new(index: InnerIndex, cancel: JoinHandle<()>) -> Self {
+        Self {
+            inner: Arc::new(index),
+            cancel,
+        }
+    }
+}
+
+impl Deref for Index {
+    type Target = InnerIndex;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner.as_ref()
+    }
+}
 
 /// Starts the indexer handler.
 pub fn start(config: IndexerHandlerConfig, base_indexes: Indexes) {
@@ -94,8 +117,8 @@ impl IndexerHandler {
         Ok(())
     }
 
-    pub async fn add_index(&self, index_name: &str, index: Index) -> Result<()> {
-        self.send_event(Event::AddIndex(index_name.to_string(), index))
+    pub async fn add_index(&self, index_name: &str, index: InnerIndex, cancel: JoinHandle<()>) -> Result<()> {
+        self.send_event(Event::AddIndex(index_name.to_string(), Index::new(index, cancel)))
             .await
     }
 
@@ -177,10 +200,12 @@ async fn handle_event(
 ) -> Result<()> {
     match event {
         Event::AddIndex(name, index) => {
-            indexes.insert(name, Arc::new(index));
+            indexes.insert(name, index);
         },
         Event::RemoveIndex(name) => {
-            indexes.remove(&name);
+            if let Some(index) = indexes.remove(&name) {
+                index.cancel.abort();
+            };
         },
         Event::BeginIndexing(name, tasks_queue) => {
             if let Some(index) = indexes.get(&name) {
@@ -188,7 +213,7 @@ async fn handle_event(
                     limiter,
                     name,
                     tasks_queue,
-                    index.clone(),
+                    index.inner.clone(),
                 ));
                 active_indexers.push(handle);
             }
@@ -203,7 +228,7 @@ async fn begin_indexing(
     limiter: Arc<Semaphore>,
     name: String,
     tasks_queue: mpsc::Receiver<Task>,
-    index: Arc<Index>,
+    index: Arc<InnerIndex>,
 ) -> Result<()> {
     info!("Waiting on permit to begin indexing documents");
     let _permit = limiter.acquire().await?;

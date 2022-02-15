@@ -12,7 +12,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 
 use crate::configure::Config;
-use crate::{DocStore, EngineStore, MetaStore};
+use crate::{DocStore, EngineStore, MetaStore, PollingMode, ReplicationInfo};
 
 static STORAGE_ENGINE_ROOT: &str = "engine";
 static INDEX_STORAGE_ROOT: &str = "engine";
@@ -88,6 +88,10 @@ impl StorageManager {
 
         let mut loaded = HashMap::with_capacity(indexes.len());
         for index in indexes {
+            index.replication
+                .build_keyspace(index.index_name.as_str())
+                .await?;
+
             let docs = self
                 .cfg
                 .backend
@@ -108,15 +112,61 @@ impl StorageManager {
                 output_path: path,
                 index_name: index.index_name,
                 schema: index.schema,
-                additional_settings: RwLock::new(index.additional_settings),
+                additional_settings: Arc::from(RwLock::new(index.additional_settings)),
                 doc_store: docs,
                 meta_store: meta,
+                polling_mode: index.polling_mode,
             };
 
             loaded.insert(store.index_name.0.clone(), store);
         }
 
         self.index_stores.store(Arc::new(loaded));
+
+        Ok(())
+    }
+
+    pub async fn add_new_index(
+        &self,
+        name: &str,
+        schema: Schema,
+        replication: ReplicationInfo,
+        polling_mode: PollingMode,
+        additional_settings: collections::HashMap<String, Vec<u8>>,
+    ) -> Result<()> {
+        replication
+            .build_keyspace(name)
+            .await?;
+
+        let docs = self
+            .cfg
+            .backend
+            .get_doc_store(name, &schema);
+
+        let meta = self
+            .cfg
+            .backend
+            .get_meta_store(name, &self.local_storage_db)?;
+
+        let path = self
+            .cfg
+            .storage_path
+            .join(INDEX_STORAGE_ROOT)
+            .join(lnx_utils::index_id(name).to_string());
+
+        let store = IndexStore {
+            output_path: path,
+            index_name: FieldName(name.to_string()),
+            polling_mode,
+            schema,
+            additional_settings: Arc::from(RwLock::new(additional_settings)),
+            doc_store: docs,
+            meta_store: meta,
+        };
+
+        let mut indexes = self.index_stores.load().as_ref().clone();
+        indexes.insert(name.to_string(), store);
+        self.index_stores.store(Arc::new(indexes));
 
         Ok(())
     }
@@ -128,6 +178,7 @@ impl StorageManager {
     }
 }
 
+#[derive(Clone)]
 /// A Index's storage and configuration settings.
 ///
 /// Additional settings can be added via the `store` and `load` method.
@@ -135,12 +186,18 @@ pub struct IndexStore {
     index_name: FieldName,
     schema: Schema,
     output_path: PathBuf,
-    additional_settings: RwLock<collections::HashMap<String, Vec<u8>>>,
+    polling_mode: PollingMode,
+    additional_settings: Arc<RwLock<collections::HashMap<String, Vec<u8>>>>,
     doc_store: Arc<dyn DocStore>,
     meta_store: Arc<dyn MetaStore>,
 }
 
 impl IndexStore {
+    #[inline]
+    pub fn polling_mode(&self) -> PollingMode {
+        self.polling_mode
+    }
+    
     #[inline]
     pub fn file_path(&self) -> &Path {
         &self.output_path

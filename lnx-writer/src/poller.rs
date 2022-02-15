@@ -1,8 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use lnx_storage::{ChangeKind, DocId, IndexStore, Timestamp};
-use serde::{Deserialize, Serialize};
+use lnx_storage::{ChangeKind, DocId, IndexStore, PollingMode, Timestamp};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 
@@ -12,12 +11,6 @@ use crate::handler::Indexer;
 const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
 const CHUNK_SIZE: usize = 10_000; // todo optimise?
 const POLLING_BASE_INTERVAL: u64 = 30;
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub enum PollingMode {
-    Continuous,
-    Dynamic,
-}
 
 pub enum PollStatus {
     Ok,

@@ -12,6 +12,8 @@ mod meta_store;
 pub use change_log::{ChangeKind, ChangeLogStore, DocId, Timestamp};
 pub use configure::{BackendSelector, Config};
 pub use doc_store::DocStore;
-pub use engine_store::EngineStore;
+pub use engine_store::{EngineStore, PollingMode};
 pub use manager::{engine, init_with_config, IndexStore, StorageManager};
 pub use meta_store::{MetaStore, Synonyms};
+
+pub use impls::scylla_backed::ReplicationInfo;

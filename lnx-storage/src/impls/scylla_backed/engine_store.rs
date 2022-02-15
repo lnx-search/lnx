@@ -7,7 +7,7 @@ use lnx_utils::{FromBytes, ToBytes};
 use scylla::IntoTypedRows;
 
 use super::connection::keyspace;
-use crate::engine_store::IndexData;
+use crate::engine_store::{IndexData, PollingMode};
 use crate::impls::scylla_backed::connection::session;
 use crate::impls::scylla_backed::ReplicationInfo;
 use crate::EngineStore;
@@ -31,7 +31,7 @@ impl ScyllaEngineStore {
 impl EngineStore for ScyllaEngineStore {
     async fn fetch_indexes(&self) -> Result<Vec<IndexData>> {
         let query = format!(
-            "SELECT name, schema, replication, settings FROM {ks}.{table};",
+            "SELECT name, schema, polling_mode, replication, settings FROM {ks}.{table};",
             ks = self.keyspace,
             table = INDEXES_TABLE,
         );
@@ -41,11 +41,17 @@ impl EngineStore for ScyllaEngineStore {
             .await?
             .rows
             .unwrap_or_default()
-            .into_typed::<(String, Vec<u8>, Vec<u8>, HashMap<String, Vec<u8>>)>();
+            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, HashMap<String, Vec<u8>>)>();
 
         let mut indexes = vec![];
         for index in results {
-            let (name, schema, replication, settings) = index?;
+            let (
+                name,
+                schema,
+                plolling_mode,
+                replication,
+                settings,
+            ) = index?;
 
             let schema = Schema::from_bytes(&schema)?;
             let replication = ReplicationInfo::from_bytes(&replication)?;
@@ -54,6 +60,7 @@ impl EngineStore for ScyllaEngineStore {
                 index_name: FieldName(name),
                 schema,
                 replication,
+                polling_mode: PollingMode::from_bytes(&plolling_mode)?,
                 additional_settings: settings,
             })
         }
@@ -63,7 +70,7 @@ impl EngineStore for ScyllaEngineStore {
 
     async fn store_index(&self, index: IndexData) -> Result<()> {
         let query = format!(
-            "INSERT INTO {ks}.{table} (name, schema, replication, settings) VALUES (?, ?, ?, ?);",
+            "INSERT INTO {ks}.{table} (name, schema, polling_mode, replication, settings) VALUES (?, ?, ?, ?);",
             ks = self.keyspace,
             table = INDEXES_TABLE,
         );
@@ -74,6 +81,7 @@ impl EngineStore for ScyllaEngineStore {
                 (
                     index.index_name.0,
                     index.schema.to_bytes()?,
+                    index.polling_mode.to_bytes()?,
                     index.replication.to_bytes()?,
                     index.additional_settings,
                 ),
@@ -83,7 +91,7 @@ impl EngineStore for ScyllaEngineStore {
         Ok(())
     }
 
-    async fn remove_index(&self, index: IndexData) -> Result<()> {
+    async fn remove_index(&self, index: &str) -> Result<()> {
         let query = format!(
             "DELETE FROM {ks}.{table} WHERE name = ?",
             ks = self.keyspace,
@@ -91,7 +99,7 @@ impl EngineStore for ScyllaEngineStore {
         );
 
         session()
-            .query_prepared(&query, (index.index_name.0,))
+            .query_prepared(&query, (index,))
             .await?;
 
         Ok(())

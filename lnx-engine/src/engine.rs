@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use hashbrown::HashMap;
 use lnx_common::schema::Schema;
@@ -19,7 +18,8 @@ pub async fn init_engine(
     let mut indexes = HashMap::new();
     for (name, data) in lnx_storage::engine().indexes().as_ref() {
         let index = load_index(data.file_path(), data.schema())?;
-        indexes.insert(name.to_string(), Arc::new(index));
+        let handle = lnx_writer::start_polling_for_index(name.to_string(), data.polling_mode());
+        indexes.insert(name.to_string(), lnx_writer::Index::new(index, handle));
     }
 
     lnx_writer::start(indexer_cfg, indexes);

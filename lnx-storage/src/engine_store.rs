@@ -7,11 +7,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::impls::scylla_backed::ReplicationInfo;
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum PollingMode {
+    Dynamic,
+    Continuous,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexData {
     pub index_name: FieldName,
     pub schema: Schema,
     pub replication: ReplicationInfo,
+    pub polling_mode: PollingMode,
     pub additional_settings: HashMap<String, Vec<u8>>,
 }
 
@@ -21,7 +28,7 @@ pub trait EngineStore: Send + Sync + 'static {
 
     async fn store_index(&self, index: IndexData) -> Result<()>;
 
-    async fn remove_index(&self, index: IndexData) -> Result<()>;
+    async fn remove_index(&self, index: &str) -> Result<()>;
 
     async fn update_settings(
         &self,

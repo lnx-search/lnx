@@ -4,6 +4,7 @@ use scylla::batch::Consistency;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::transport::Compression;
 use serde::{Deserialize, Serialize};
+use lnx_utils::index_id;
 
 use super::error::ConnectionError;
 use super::session::Session;
@@ -15,7 +16,7 @@ pub(crate) fn keyspace(index_name: &str) -> String {
     format!(
         "{prefix}_{index}",
         prefix = KEYSPACE_PREFIX,
-        index = index_name
+        index = index_id(index_name)
     )
 }
 
