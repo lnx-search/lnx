@@ -1,3 +1,5 @@
+// TODO: Heartbeater.
+
 use std::time::Duration;
 
 use anyhow::Result;
@@ -106,9 +108,27 @@ async fn handle_changes(
 ) -> Result<()> {
     info!("Changes detected since last update...");
     match mode {
-        PollingMode::Continuous => handle_continuous_indexing(index, last_update).await,
-        PollingMode::Dynamic => handle_dynamic_indexing(index, last_update).await,
+        PollingMode::Continuous => handle_continuous_indexing(index, last_update).await?,
+        PollingMode::Dynamic => handle_dynamic_indexing(index, last_update).await?,
+    };
+
+    index.meta()
+        .set_update_timestamp(last_update)
+        .await?;
+
+    // See if we can cleanup the change log.
+    let aligned = index.meta()
+        .get_earliest_aligned_timestamp()
+        .await?;
+
+    // If we do have some aligned time stamps lets try clear upto that point.
+    if let Some(ts) = aligned {
+        index.docs()
+            .run_garbage_collection(ts)
+            .await?;
     }
+
+    Ok(())
 }
 
 #[inline]
