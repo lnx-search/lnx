@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
-use scylla::IntoTypedRows;
 use lnx_common::types::document::Document;
+use scylla::IntoTypedRows;
 use tokio::sync::mpsc;
 
 use super::connection::session;

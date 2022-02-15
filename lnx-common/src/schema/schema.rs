@@ -151,9 +151,7 @@ impl Schema {
     pub fn as_tantivy_schema(&self) -> tantivy::schema::Schema {
         let mut schema = tantivy::schema::SchemaBuilder::new();
 
-        let fields = self.fields
-            .iter()
-            .filter(|(_, v)| v.is_indexed());
+        let fields = self.fields.iter().filter(|(_, v)| v.is_indexed());
 
         for (name, info) in fields {
             schema.add_field(FieldEntry::new(name.to_string(), info.as_field_type()));
@@ -162,15 +160,19 @@ impl Schema {
         schema.build()
     }
 
-    pub fn validate_with_tantivy_schema(&self, schema: &tantivy::schema::Schema) -> Result<(), SchemaError> {
-        let fields = self.fields
+    pub fn validate_with_tantivy_schema(
+        &self,
+        schema: &tantivy::schema::Schema,
+    ) -> Result<(), SchemaError> {
+        let fields = self
+            .fields
             .iter()
             .filter(|(_, v)| v.is_indexed())
             .map(|(k, _)| k);
 
         for name in fields {
             if schema.get_field(name).is_none() {
-                return Err(SchemaError::CorruptedSchema)
+                return Err(SchemaError::CorruptedSchema);
             };
         }
 

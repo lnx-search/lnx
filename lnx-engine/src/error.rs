@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-
 #[derive(Debug, Error)]
 pub enum InitEngineError {
     #[error("failed to start engine due to a storage error: {0}")]
@@ -12,7 +11,9 @@ pub enum InitEngineError {
     #[error("failed to start engine due to and error when attempting to open a directory: {0}")]
     OpenDirectoryError(#[from] tantivy::directory::error::OpenDirectoryError),
 
-    #[error("failed to start engine due to and error when attempting to read data: {0}")]
+    #[error(
+        "failed to start engine due to and error when attempting to read data: {0}"
+    )]
     OpenReadError(#[from] tantivy::directory::error::OpenReadError),
 
     #[error("failed to start engine due to a corrupted schema: {0}")]

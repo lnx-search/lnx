@@ -8,4 +8,4 @@ mod indexer;
 mod poller;
 
 pub use handler::{start, IndexerHandlerConfig};
-pub use poller::{PollingMode, start_polling_for_index};
+pub use poller::{start_polling_for_index, PollingMode};

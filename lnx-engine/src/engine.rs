@@ -1,13 +1,12 @@
 use std::path::Path;
 use std::sync::Arc;
+
 use hashbrown::HashMap;
+use lnx_common::schema::Schema;
 use tantivy::directory::MmapDirectory;
 use tantivy::Index;
-use lnx_common::schema::Schema;
-
 
 use super::error::InitEngineError;
-
 
 pub async fn init_engine(
     storage_cfg: lnx_storage::Config,
@@ -27,7 +26,6 @@ pub async fn init_engine(
 
     Ok(())
 }
-
 
 fn load_index(path: &Path, schema: &Schema) -> Result<Index, InitEngineError> {
     std::fs::create_dir_all(path)?;

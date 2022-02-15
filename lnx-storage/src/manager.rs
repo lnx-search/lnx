@@ -98,7 +98,8 @@ impl StorageManager {
                 .backend
                 .get_meta_store(&index.index_name, &self.local_storage_db)?;
 
-            let path = self.cfg
+            let path = self
+                .cfg
                 .storage_path
                 .join(INDEX_STORAGE_ROOT)
                 .join(lnx_utils::index_id(&index.index_name).to_string());

@@ -114,7 +114,7 @@ impl FieldInfo {
             FieldInfo::Bytes { opts } => opts.indexed,
         }
     }
-    
+
     #[inline]
     pub fn as_field_type(&self) -> tantivy::schema::FieldType {
         match self {

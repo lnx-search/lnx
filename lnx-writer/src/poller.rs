@@ -1,18 +1,17 @@
 use std::time::Duration;
 
-use serde::{Serialize, Deserialize};
 use anyhow::Result;
+use lnx_storage::{ChangeKind, DocId, IndexStore, Timestamp};
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
-use lnx_storage::{IndexStore, Timestamp, ChangeKind, DocId};
-use crate::handler::Indexer;
 
 use super::handler::{self};
+use crate::handler::Indexer;
 
-const MAX_TICKS: usize = 360;  // 360 x 5 second ticks.
+const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
 const CHUNK_SIZE: usize = 10_000; // todo optimise?
 const POLLING_BASE_INTERVAL: u64 = 30;
-
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum PollingMode {
@@ -20,18 +19,15 @@ pub enum PollingMode {
     Dynamic,
 }
 
-
 pub enum PollStatus {
     Ok,
     NoIndex,
     Err(anyhow::Error),
 }
 
-
 pub fn start_polling_for_index(index_name: String, mode: PollingMode) -> JoinHandle<()> {
     tokio::spawn(run_poller(index_name, mode))
 }
-
 
 #[instrument(name = "index-poller")]
 async fn run_poller(index_name: String, mode: PollingMode) {
@@ -48,7 +44,7 @@ async fn run_poller(index_name: String, mode: PollingMode) {
             },
             PollStatus::Err(e) => {
                 error!("Failed to handle poll. {}", e);
-            }
+            },
         }
     }
 }
@@ -60,9 +56,7 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
         None => return PollStatus::NoIndex,
     };
 
-    let maybe_last_ts = index.meta()
-        .get_last_update_timestamp()
-        .await;
+    let maybe_last_ts = index.meta().get_last_update_timestamp().await;
 
     match maybe_last_ts {
         Ok(Some(ts)) => match handle_changes(index, mode, ts).await {
@@ -77,7 +71,6 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
     }
 }
 
-
 #[instrument(name = "index-loader", skip_all)]
 async fn handle_load_index(index: &IndexStore) -> Result<()> {
     let output_path = index.file_path();
@@ -90,20 +83,17 @@ async fn handle_load_index(index: &IndexStore) -> Result<()> {
         },
         Err(e) => {
             warn!("Cannot load index from existing peer, defaulting back to sequential load. Reason: {}", e);
-        }
+        },
     }
 
-    let indexed_fields = index
-        .schema()
-        .indexed_fields();
+    let indexed_fields = index.schema().indexed_fields();
 
-    let mut documents = index.docs()
+    let mut documents = index
+        .docs()
         .iter_documents(Some(indexed_fields), CHUNK_SIZE)
         .await?;
 
-    let indexer = handler::get()
-        .begin_indexing(index.name())
-        .await?;
+    let indexer = handler::get().begin_indexing(index.name()).await?;
 
     while let Some(docs) = documents.next().await {
         debug!("Handling document chunk with len={}", docs.len());
@@ -114,10 +104,13 @@ async fn handle_load_index(index: &IndexStore) -> Result<()> {
     Ok(())
 }
 
-
 #[inline]
 #[instrument(name = "index-updater", skip(index))]
-async fn handle_changes(index: &IndexStore, mode: PollingMode, last_update: Timestamp) -> Result<()> {
+async fn handle_changes(
+    index: &IndexStore,
+    mode: PollingMode,
+    last_update: Timestamp,
+) -> Result<()> {
     info!("Changes detected since last update...");
     match mode {
         PollingMode::Continuous => handle_continuous_indexing(index, last_update).await,
@@ -127,12 +120,18 @@ async fn handle_changes(index: &IndexStore, mode: PollingMode, last_update: Time
 
 #[inline]
 #[instrument(name = "continuous-indexer", skip_all)]
-async fn handle_continuous_indexing(index: &IndexStore, last_update: Timestamp) -> Result<()> {
+async fn handle_continuous_indexing(
+    index: &IndexStore,
+    last_update: Timestamp,
+) -> Result<()> {
     process_changes(index, last_update).await
 }
 
 #[instrument(name = "dynamic-indexer", skip_all)]
-async fn handle_dynamic_indexing(index: &IndexStore, last_update: Timestamp) -> Result<()> {
+async fn handle_dynamic_indexing(
+    index: &IndexStore,
+    last_update: Timestamp,
+) -> Result<()> {
     info!("Checking if changes are still in progress...");
 
     // We're checking to see if changes are still being added to the database.
@@ -148,9 +147,7 @@ async fn handle_dynamic_indexing(index: &IndexStore, last_update: Timestamp) -> 
     while num_ticks <= MAX_TICKS {
         interval.tick().await;
 
-        let count = index
-            .docs()
-            .count_pending_changes(last_update).await?;
+        let count = index.docs().count_pending_changes(last_update).await?;
 
         if count == last_count {
             break;
@@ -166,25 +163,40 @@ async fn handle_dynamic_indexing(index: &IndexStore, last_update: Timestamp) -> 
 }
 
 async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<()> {
-    let indexer = handler::get()
-        .begin_indexing(index.name())
-        .await?;
+    let indexer = handler::get().begin_indexing(index.name()).await?;
 
-    let mut changes = index.docs()
+    let mut changes = index
+        .docs()
         .get_pending_changes(last_update, CHUNK_SIZE)
         .await?;
 
-    let indexed_fields = index
-        .schema()
-        .indexed_fields();
+    let indexed_fields = index.schema().indexed_fields();
 
     while let Some(changes) = changes.next().await {
         for change in changes {
             match change.kind {
                 ChangeKind::ClearAll => indexer.clear_documents().await?,
-                ChangeKind::Append => add_documents(index,indexed_fields.clone(), &indexer, change.affected_docs).await?,
-                ChangeKind::Delete => remove_documents(&indexer,change.affected_docs).await?,
-                ChangeKind::Update => update_documents(index, indexed_fields.clone(), &indexer,change.affected_docs).await?,
+                ChangeKind::Append => {
+                    add_documents(
+                        index,
+                        indexed_fields.clone(),
+                        &indexer,
+                        change.affected_docs,
+                    )
+                    .await?
+                },
+                ChangeKind::Delete => {
+                    remove_documents(&indexer, change.affected_docs).await?
+                },
+                ChangeKind::Update => {
+                    update_documents(
+                        index,
+                        indexed_fields.clone(),
+                        &indexer,
+                        change.affected_docs,
+                    )
+                    .await?
+                },
             }
         }
     }
@@ -198,17 +210,15 @@ async fn add_documents(
     indexer: &Indexer,
     doc_ids: Vec<DocId>,
 ) -> Result<()> {
-    let documents = index.docs()
+    let documents = index
+        .docs()
         .fetch_documents(Some(indexed_fields), doc_ids)
         .await?;
 
     indexer.add_documents(documents).await
 }
 
-async fn remove_documents(
-    indexer: &Indexer,
-    doc_ids: Vec<DocId>,
-) -> Result<()> {
+async fn remove_documents(indexer: &Indexer, doc_ids: Vec<DocId>) -> Result<()> {
     indexer.remove_documents(doc_ids).await?;
     Ok(())
 }

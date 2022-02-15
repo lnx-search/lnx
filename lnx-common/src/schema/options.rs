@@ -20,8 +20,8 @@ pub struct BaseOptions {
     pub required: bool,
 }
 
-impl BaseOptions {    
-    pub fn as_tantivy_facet_opts(&self) -> FacetOptions {        
+impl BaseOptions {
+    pub fn as_tantivy_facet_opts(&self) -> FacetOptions {
         FacetOptions::default()
     }
 }
@@ -84,7 +84,7 @@ pub struct BytesOptions {
 }
 
 impl BytesOptions {
-    pub fn as_tantivy_opts(&self) -> tantivy::schema::BytesOptions {        
+    pub fn as_tantivy_opts(&self) -> tantivy::schema::BytesOptions {
         let mut opts = tantivy::schema::BytesOptions::default();
 
         if self.indexed {
@@ -98,7 +98,6 @@ impl BytesOptions {
         opts
     }
 }
-
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 /// A set of field options for int fields that takes into account if a field is
@@ -125,7 +124,7 @@ pub struct CalculatedIntOptions {
 }
 
 impl CalculatedIntOptions {
-    pub fn as_tantivy_opts(&self) -> IntOptions {        
+    pub fn as_tantivy_opts(&self) -> IntOptions {
         let mut opts = IntOptions::default();
 
         if self.indexed {
@@ -149,4 +148,3 @@ impl CalculatedIntOptions {
         opts
     }
 }
-

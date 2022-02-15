@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use hashbrown::HashMap;
-use serde::{Deserialize, Serialize};
-use tantivy::Index;
-use once_cell::sync::OnceCell;
-use tokio::sync::{mpsc, Semaphore};
-use tokio::task::JoinHandle;
 use lnx_common::types::document::Document;
 use lnx_storage::DocId;
+use once_cell::sync::OnceCell;
+use serde::{Deserialize, Serialize};
+use tantivy::Index;
+use tokio::sync::{mpsc, Semaphore};
+use tokio::task::JoinHandle;
 
 use super::helpers::serde::{BufferSize, NumThreads};
 use super::indexer::{start_indexing, Task};
@@ -30,7 +30,6 @@ pub fn start(config: IndexerHandlerConfig, base_indexes: Indexes) {
 pub fn get() -> &'static IndexerHandler {
     INDEXER_HANDLER.get().unwrap()
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IndexerHandlerConfig {
@@ -84,35 +83,36 @@ impl IndexerHandler {
     }
 
     async fn send_event(&self, event: Event) -> Result<()> {
-        let res = self
-            .events
-            .send(event)
-            .await;
+        let res = self.events.send(event).await;
 
         if res.is_err() {
-            return Err(anyhow!("the indexer handler has shut down, no new indexes can be added."))
+            return Err(anyhow!(
+                "the indexer handler has shut down, no new indexes can be added."
+            ));
         }
 
         Ok(())
     }
 
     pub async fn add_index(&self, index_name: &str, index: Index) -> Result<()> {
-        self.send_event(Event::AddIndex(index_name.to_string(), index)).await
+        self.send_event(Event::AddIndex(index_name.to_string(), index))
+            .await
     }
 
     pub async fn remove_index(&self, index_name: &str) -> Result<()> {
-        self.send_event(Event::RemoveIndex(index_name.to_string())).await
+        self.send_event(Event::RemoveIndex(index_name.to_string()))
+            .await
     }
 
     pub async fn begin_indexing(&self, index_name: &str) -> Result<Indexer> {
         let (tx, rx) = mpsc::channel(1);
         let indexer = Indexer { emitter: tx };
-        self.send_event(Event::BeginIndexing(index_name.to_string(), rx)).await?;
+        self.send_event(Event::BeginIndexing(index_name.to_string(), rx))
+            .await?;
 
         Ok(indexer)
     }
 }
-
 
 /// A handle to a indexer actor to begin processing documents.
 ///
@@ -124,13 +124,12 @@ pub struct Indexer {
 
 impl Indexer {
     async fn send_event(&self, event: Task) -> Result<()> {
-        let res = self
-            .emitter
-            .send(event)
-            .await;
+        let res = self.emitter.send(event).await;
 
         if res.is_err() {
-            return Err(anyhow!("the indexer has shut down, no new tasks can be added."))
+            return Err(anyhow!(
+                "the indexer has shut down, no new tasks can be added."
+            ));
         }
 
         Ok(())
@@ -151,7 +150,6 @@ impl Indexer {
         self.send_event(Task::ClearAllDocuments).await
     }
 }
-
 
 #[instrument(name = "indexer-actor", skip(indexes, events))]
 async fn run_actor(
@@ -225,9 +223,8 @@ async fn begin_indexing(
 
     info!("Beginning indexing process");
     let start = std::time::Instant::now();
-    tokio::task::spawn_blocking(
-        move || start_indexing(schema, writer, tasks_queue)
-    ).await??;
+    tokio::task::spawn_blocking(move || start_indexing(schema, writer, tasks_queue))
+        .await??;
     info!("Indexing process took {:?} to complete.", start.elapsed());
 
     Ok(())

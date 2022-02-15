@@ -6,7 +6,11 @@ use lnx_common::schema::Schema;
 use serde::{Deserialize, Serialize};
 
 use crate::impls::scylla_backed;
-use crate::impls::scylla_backed::{ScyllaMetaStore, ScyllaPrimaryDataStore, ScyllaEngineStore};
+use crate::impls::scylla_backed::{
+    ScyllaEngineStore,
+    ScyllaMetaStore,
+    ScyllaPrimaryDataStore,
+};
 use crate::{DocStore, EngineStore, MetaStore};
 
 #[derive(Serialize, Deserialize)]
