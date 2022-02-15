@@ -7,5 +7,5 @@ mod helpers;
 mod indexer;
 mod poller;
 
-pub use handler::start;
+pub use handler::{start, IndexerHandlerConfig};
 pub use poller::{PollingMode, start_polling_for_index};

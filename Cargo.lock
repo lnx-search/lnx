@@ -513,6 +513,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-engine"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lnx-common",
+ "lnx-storage",
+ "lnx-utils",
+ "lnx-writer",
+ "thiserror",
+]
+
+[[package]]
 name = "lnx-http"
 version = "0.1.0"
 

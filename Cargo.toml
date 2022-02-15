@@ -9,6 +9,7 @@ members = [
     "lnx-storage",
     "lnx-metrics",
     "lnx-utils",
+    "lnx-engine",
 ]
 
 [profile.release]
