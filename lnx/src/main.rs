@@ -2,12 +2,11 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use anyhow::Result;
-use tantivy::directory::MmapDirectory;
 
+use anyhow::Result;
 use lnx_storage::{BackendSelector, PollingMode, ReplicationInfo};
 use lnx_utils::Validator;
-
+use tantivy::directory::MmapDirectory;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,9 +17,9 @@ async fn main() -> Result<()> {
             nodes: vec!["127.0.0.1:9042".to_string()],
             user: None,
             password: None,
-            engine_replication: ReplicationInfo::Simple
+            engine_replication: ReplicationInfo::Simple,
         },
-        storage_path: PathBuf::from("./tests")
+        storage_path: PathBuf::from("./tests"),
     };
 
     let indexer_cfg = lnx_writer::IndexerHandlerConfig {
@@ -29,16 +28,17 @@ async fn main() -> Result<()> {
 
     lnx_engine::init_engine(cfg, indexer_cfg).await?;
 
-    let mut schema: lnx_common::schema::Schema = serde_json::from_value(serde_json::json!({
-        "fields": {
-            "test": {
-                "type": "text",
+    let mut schema: lnx_common::schema::Schema =
+        serde_json::from_value(serde_json::json!({
+            "fields": {
+                "test": {
+                    "type": "text",
+                },
+                "name": {
+                    "type": "string",
+                }
             },
-            "name": {
-                "type": "string",
-            }
-        },
-    }))?;
+        }))?;
 
     schema.validate()?;
 

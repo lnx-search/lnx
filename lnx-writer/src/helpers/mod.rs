@@ -1,4 +1,4 @@
-pub mod serde;
 mod handle;
+pub mod serde;
 
 pub use handle::CancellingJoinHandle;

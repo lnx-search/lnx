@@ -47,9 +47,11 @@ pub async fn connect(
             .await
     }?;
 
-    let _ = CONNECTION.set( Session::from(session));
+    let _ = CONNECTION.set(Session::from(session));
 
-    replication_info.build_keyspace(engine_store::KEYSPACE).await?;
+    replication_info
+        .build_keyspace(engine_store::KEYSPACE)
+        .await?;
 
     Ok(())
 }
@@ -116,7 +118,10 @@ impl ReplicationInfo {
         }
     }
 
-    pub async fn build_index_keyspace(&self, index_name: &str) -> Result<(), ConnectionError> {
+    pub async fn build_index_keyspace(
+        &self,
+        index_name: &str,
+    ) -> Result<(), ConnectionError> {
         self.build_keyspace(&keyspace(index_name)).await
     }
 
@@ -124,9 +129,7 @@ impl ReplicationInfo {
     pub async fn build_keyspace(&self, ks: &str) -> Result<(), ConnectionError> {
         info!("Ensuring keyspace exists...");
         let query = self.format_keyspace(ks);
-        let res = session()
-            .query(&query, &[])
-            .await;
+        let res = session().query(&query, &[]).await;
 
         match res {
             Ok(_) => {},

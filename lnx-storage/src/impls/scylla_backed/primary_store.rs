@@ -1,4 +1,5 @@
 use std::time::Instant;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -20,8 +21,8 @@ use crate::change_log::{
 use crate::doc_store::{DocStore, DocumentIterator};
 use crate::impls::scylla_backed::connection::keyspace;
 use crate::impls::scylla_backed::doc_wrapper::ScyllaSafeDocument;
-use crate::ChangeKind;
 use crate::impls::scylla_backed::tables::{self, format_column};
+use crate::ChangeKind;
 
 pub static DOCUMENT_TABLE: &str = "documents";
 pub static CHANGE_LOG_TABLE: &str = "index_changelog";

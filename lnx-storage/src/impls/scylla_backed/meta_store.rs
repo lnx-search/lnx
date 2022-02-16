@@ -61,9 +61,7 @@ impl MetaStore for ScyllaMetaStore {
             table = NODES_INFO_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (self.node_id,))
-            .await?;
+        session().query_prepared(&query, (self.node_id,)).await?;
 
         Ok(())
     }

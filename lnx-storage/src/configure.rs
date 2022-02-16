@@ -40,7 +40,8 @@ impl BackendSelector {
                 password,
                 engine_replication,
             } => {
-                scylla_backed::connect(nodes, user, password, engine_replication).await?;
+                scylla_backed::connect(nodes, user, password, engine_replication)
+                    .await?;
             },
         }
 

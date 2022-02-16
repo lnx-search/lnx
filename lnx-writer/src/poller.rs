@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use tantivy::chrono::Utc;
 use lnx_storage::{ChangeKind, DocId, IndexStore, PollingMode, Timestamp};
+use tantivy::chrono::Utc;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 
@@ -55,9 +55,7 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
         None => return PollStatus::NoIndex,
     };
 
-    let maybe_last_ts = index.meta()
-        .get_last_update_timestamp()
-        .await;
+    let maybe_last_ts = index.meta().get_last_update_timestamp().await;
 
     let maybe_last_ts = match maybe_last_ts {
         Err(e) => return PollStatus::Err(e),
@@ -78,7 +76,9 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
     info!("Setting the node's last update timestamp...");
     let res = index
         .meta()
-        .set_update_timestamp(maybe_last_ts.unwrap_or_else(|| Utc::now().timestamp_millis()))
+        .set_update_timestamp(
+            maybe_last_ts.unwrap_or_else(|| Utc::now().timestamp_millis()),
+        )
         .await;
 
     if let Err(e) = res {
@@ -93,7 +93,7 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
     match aligned {
         Ok(Some(ts)) => match index.docs().run_garbage_collection(ts).await {
             Ok(()) => PollStatus::Ok,
-            Err(e) => PollStatus::Err(e)
+            Err(e) => PollStatus::Err(e),
         },
         Ok(None) => PollStatus::Ok,
         Err(e) => PollStatus::Err(e),
@@ -122,9 +122,7 @@ async fn handle_load_index(index: &IndexStore) -> Result<()> {
         .iter_documents(Some(indexed_fields), CHUNK_SIZE)
         .await?;
 
-    let mut indexer = handler::get()
-        .begin_indexing(index.name())
-        .await?;
+    let mut indexer = handler::get().begin_indexing(index.name()).await?;
 
     while let Some(docs) = documents.next().await {
         debug!("Handling document chunk with len={}", docs.len());
@@ -198,9 +196,7 @@ async fn handle_dynamic_indexing(
 }
 
 async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<()> {
-    let mut indexer = handler::get()
-        .begin_indexing(index.name())
-        .await?;
+    let mut indexer = handler::get().begin_indexing(index.name()).await?;
 
     let mut changes = index
         .docs()

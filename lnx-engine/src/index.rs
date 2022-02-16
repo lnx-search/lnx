@@ -30,4 +30,3 @@ pub async fn remove_index(name: &str) -> Result<()> {
 
     Ok(())
 }
-

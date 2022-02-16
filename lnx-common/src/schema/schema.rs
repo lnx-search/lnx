@@ -1,14 +1,13 @@
 use hashbrown::{HashMap, HashSet};
 use lnx_utils::Validator;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{FAST, FieldEntry, INDEXED, STORED};
+use tantivy::schema::{FieldEntry, FAST, INDEXED, STORED};
 
 use super::boost::BoostFactor;
 use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
 use crate::schema::INDEX_PK;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {

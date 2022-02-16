@@ -45,8 +45,13 @@ impl EngineStore for ScyllaEngineStore {
             .await?
             .rows
             .unwrap_or_default()
-            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, Option<HashMap<String, Vec<u8>>>)>(
-            );
+            .into_typed::<(
+                String,
+                Vec<u8>,
+                Vec<u8>,
+                Vec<u8>,
+                Option<HashMap<String, Vec<u8>>>,
+            )>();
 
         let mut indexes = vec![];
         for index in results {

@@ -12,8 +12,8 @@ use tantivy::Index as InnerIndex;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::task::JoinHandle;
 
-use super::helpers::CancellingJoinHandle;
 use super::helpers::serde::{BufferSize, NumThreads};
+use super::helpers::CancellingJoinHandle;
 use super::indexer::{start_indexing, Task};
 
 static INDEXER_CONFIG_KEY: &str = "INDEXER_CONFIG";
@@ -86,7 +86,11 @@ pub struct IndexerConfig {
 enum Event {
     AddIndex(String, Index),
     RemoveIndex(String),
-    BeginIndexing(String, mpsc::Receiver<Task>, oneshot::Sender<CancellingJoinHandle<Result<()>>>),
+    BeginIndexing(
+        String,
+        mpsc::Receiver<Task>,
+        oneshot::Sender<CancellingJoinHandle<Result<()>>>,
+    ),
 }
 
 #[derive(Clone)]
@@ -148,7 +152,10 @@ impl IndexerHandler {
             .await?;
 
         let handle = handle_rx.await?;
-        let indexer = Indexer { emitter: tx, handle };
+        let indexer = Indexer {
+            emitter: tx,
+            handle,
+        };
 
         Ok(indexer)
     }
@@ -171,7 +178,9 @@ impl Indexer {
             return if let Some(handle) = self.handle.0.take() {
                 handle.await?
             } else {
-                Err(anyhow!("Index writer has shut down. No new tasks can be added"))
+                Err(anyhow!(
+                    "Index writer has shut down. No new tasks can be added"
+                ))
             };
         }
 
@@ -202,10 +211,7 @@ async fn run_actor(
 ) {
     let limiter = Arc::new(Semaphore::new(cfg.max_indexer_concurrency.get()));
     while let Some(event) = events.recv().await {
-        if let Err(e) =
-            handle_event(limiter.clone(), &mut indexes, event)
-                .await
-        {
+        if let Err(e) = handle_event(limiter.clone(), &mut indexes, event).await {
             error!("Failed to handle event due to error: {}", e);
         }
     }

@@ -66,7 +66,7 @@ impl Session {
     }
 }
 
-fn consider_logging_error(query: &str, e: &QueryError)  {
+fn consider_logging_error(query: &str, e: &QueryError) {
     match e {
         QueryError::DbError(DbError::AlreadyExists { .. }, ..) => {
             info!("Keyspace already exists, skipping...");

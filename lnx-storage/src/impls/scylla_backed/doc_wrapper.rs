@@ -15,7 +15,6 @@ use scylla::frame::value::{
 
 use crate::DocId;
 
-
 #[derive(Debug)]
 pub struct ScyllaSafeDocument(pub DocId, pub Document);
 

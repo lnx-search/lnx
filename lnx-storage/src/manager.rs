@@ -13,8 +13,8 @@ use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 
 use crate::configure::Config;
-use crate::{DocStore, EngineStore, MetaStore, PollingMode, ReplicationInfo};
 use crate::engine_store::IndexData;
+use crate::{DocStore, EngineStore, MetaStore, PollingMode, ReplicationInfo};
 
 static STORAGE_ENGINE_ROOT: &str = "engine";
 static INDEX_STORAGE_ROOT: &str = "engine";
@@ -151,13 +151,15 @@ impl StorageManager {
         info!("Ensuring keyspace replication: {:?}", &replication);
         replication.build_index_keyspace(name).await?;
 
-        self.engine_store.store_index(IndexData {
-            index_name: FieldName(name.to_string()),
-            schema: schema.clone(),
-            replication: replication.clone(),
-            polling_mode,
-            additional_settings: additional_settings.clone(),
-        }).await?;
+        self.engine_store
+            .store_index(IndexData {
+                index_name: FieldName(name.to_string()),
+                schema: schema.clone(),
+                replication: replication.clone(),
+                polling_mode,
+                additional_settings: additional_settings.clone(),
+            })
+            .await?;
 
         let docs = self.cfg.backend.get_doc_store(name, &schema);
 
@@ -291,9 +293,7 @@ impl IndexStore {
     #[instrument(name = "index-settings-load", skip(self), fields(index_name = %self.name()))]
     pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
         let instant = Instant::now();
-        let settings = engine()
-            .fetch_latest_settings(&self.index_name)
-            .await?;
+        let settings = engine().fetch_latest_settings(&self.index_name).await?;
         info!("Settings load took {:?}", instant.elapsed());
 
         let mut lock = self.additional_settings.write();

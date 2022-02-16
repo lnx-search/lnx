@@ -3,9 +3,9 @@ use lnx_common::schema::INDEX_PK;
 use scylla::transport::errors::QueryError;
 
 use super::connection::session;
-use super::engine_store::{INDEXES_TABLE, self};
-use super::meta_store::{STOPWORDS_TABLE, SYNONYMS_TABLE, NODES_INFO_TABLE};
-use super::primary_store::{DOCUMENT_TABLE, CHANGE_LOG_TABLE};
+use super::engine_store::{self, INDEXES_TABLE};
+use super::meta_store::{NODES_INFO_TABLE, STOPWORDS_TABLE, SYNONYMS_TABLE};
+use super::primary_store::{CHANGE_LOG_TABLE, DOCUMENT_TABLE};
 
 pub fn format_column(v: impl AsRef<str>) -> String {
     format!("field_{}", v.as_ref())
@@ -26,15 +26,14 @@ pub async fn create_indexes_table() -> Result<(), QueryError> {
         table = INDEXES_TABLE,
     );
 
-    session()
-        .query_prepared(&query, &[])
-        .await?;
+    session().query_prepared(&query, &[]).await?;
 
     Ok(())
 }
 
 pub async fn create_meta_tables(ks: &str) -> Result<(), QueryError> {
-    let queries = vec![format!(
+    let queries = vec![
+        format!(
             r#"CREATE TABLE IF NOT EXISTS {ks}.{table} (
                 word text,
                 PRIMARY KEY ( word )
@@ -67,15 +66,16 @@ pub async fn create_meta_tables(ks: &str) -> Result<(), QueryError> {
     ];
 
     for query in queries {
-        session()
-            .query_prepared(&query, &[])
-            .await?;
+        session().query_prepared(&query, &[]).await?;
     }
 
     Ok(())
 }
 
-pub async fn create_doc_tables(ks: &str, doc_fields: Vec<String>) -> Result<(), QueryError> {
+pub async fn create_doc_tables(
+    ks: &str,
+    doc_fields: Vec<String>,
+) -> Result<(), QueryError> {
     let fields = doc_fields
         .into_iter()
         .map(|v| format!("{} blob", format_column(v)))
@@ -109,9 +109,7 @@ pub async fn create_doc_tables(ks: &str, doc_fields: Vec<String>) -> Result<(), 
     ];
 
     for query in queries {
-        session()
-            .query_prepared(&query, &[])
-            .await?;
+        session().query_prepared(&query, &[]).await?;
     }
 
     Ok(())
