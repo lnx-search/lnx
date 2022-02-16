@@ -130,9 +130,7 @@ impl ReplicationInfo {
 
         match res {
             Ok(_) => {},
-            Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
-                info!("Keyspace already exists, skipping...");
-            },
+            Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {},
             Err(e) => return Err(e.into()),
         }
 

@@ -32,7 +32,12 @@ impl ScyllaMetaStore {
     pub fn load_from_local(index_name: &str, db: sled::Tree) -> Result<Self> {
         let id = match db.get(NODE_ID_KEY)? {
             Some(id) => FromBytes::from_bytes(&id)?,
-            None => Uuid::new_v4(),
+            None => {
+                let new_id = Uuid::new_v4();
+                db.insert(NODE_ID_KEY, new_id.to_bytes()?)?;
+
+                new_id
+            },
         };
 
         info!("I am node {}!", &id);
@@ -49,6 +54,17 @@ impl ScyllaMetaStore {
 impl MetaStore for ScyllaMetaStore {
     async fn setup(&self) -> Result<()> {
         tables::create_meta_tables(&self.keyspace).await?;
+
+        let query = format!(
+            "INSERT INTO {ks}.{table} (node_id, last_heartbeat) VALUES (?, toTimeStamp(now()));",
+            ks = self.keyspace,
+            table = NODES_INFO_TABLE,
+        );
+
+        session()
+            .query_prepared(&query, (self.node_id,))
+            .await?;
+
         Ok(())
     }
 
@@ -68,7 +84,7 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn remove_stopwords(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table} WHERE word = ?;",
+            "DELETE FROM {ks}.{table} WHERE word IN ?;",
             ks = self.keyspace,
             table = STOPWORDS_TABLE,
         );
@@ -117,7 +133,7 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table} WHERE word = ?;",
+            "DELETE FROM {ks}.{table} WHERE word IN ?;",
             ks = self.keyspace,
             table = SYNONYMS_TABLE,
         );

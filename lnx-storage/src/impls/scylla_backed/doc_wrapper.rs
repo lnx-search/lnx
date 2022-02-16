@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use hashbrown::HashMap;
-use lnx_common::schema::FieldName;
+use lnx_common::schema::{FieldName, INDEX_PK};
 use lnx_common::types::document::{DocField, Document};
 use lnx_utils::{FromBytes, ToBytes};
 use scylla::cql_to_rust::{FromCqlValError, FromRowError};
@@ -15,7 +15,6 @@ use scylla::frame::value::{
 
 use crate::DocId;
 
-pub static DOCUMENT_PRIMARY_KEY: &str = "doc_id";
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument(pub DocId, pub Document);
@@ -70,7 +69,7 @@ impl ScyllaSafeDocument {
 impl ValueList for ScyllaSafeDocument {
     fn serialized(&self) -> SerializedResult<'_> {
         let mut result = SerializedValues::with_capacity(self.1.len());
-        result.add_named_value(DOCUMENT_PRIMARY_KEY, &self.0)?;
+        result.add_named_value(INDEX_PK, &self.0)?;
 
         for (name, field) in self.1.iter() {
             let buff = match field {

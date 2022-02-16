@@ -9,9 +9,10 @@ use lnx_storage::DocId;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use tantivy::Index as InnerIndex;
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::task::JoinHandle;
 
+use super::helpers::CancellingJoinHandle;
 use super::helpers::serde::{BufferSize, NumThreads};
 use super::indexer::{start_indexing, Task};
 
@@ -42,7 +43,9 @@ impl Deref for Index {
 }
 
 /// Starts the indexer handler.
+#[instrument(name = "indexer-starter", skip(base_indexes))]
 pub fn start(config: IndexerHandlerConfig, base_indexes: Indexes) {
+    info!("Starting indexer...");
     let handler = IndexerHandler::start(config, base_indexes);
     let _ = INDEXER_HANDLER.set(handler);
 }
@@ -65,7 +68,7 @@ pub struct IndexerHandlerConfig {
 
 impl IndexerHandlerConfig {
     fn default_indexer_concurrency() -> NonZeroUsize {
-        unsafe { NonZeroUsize::new_unchecked(1) }
+        NonZeroUsize::new(1).unwrap()
     }
 }
 
@@ -83,7 +86,7 @@ pub struct IndexerConfig {
 enum Event {
     AddIndex(String, Index),
     RemoveIndex(String),
-    BeginIndexing(String, mpsc::Receiver<Task>),
+    BeginIndexing(String, mpsc::Receiver<Task>, oneshot::Sender<CancellingJoinHandle<Result<()>>>),
 }
 
 #[derive(Clone)]
@@ -110,7 +113,7 @@ impl IndexerHandler {
 
         if res.is_err() {
             return Err(anyhow!(
-                "the indexer handler has shut down, no new indexes can be added."
+                "The indexer handler actor has shut down, no new indexes can be added."
             ));
         }
 
@@ -135,11 +138,17 @@ impl IndexerHandler {
             .await
     }
 
+    #[instrument(name = "create-indexer", skip(self))]
     pub async fn begin_indexing(&self, index_name: &str) -> Result<Indexer> {
+        info!("Creating indexer...");
+
         let (tx, rx) = mpsc::channel(1);
-        let indexer = Indexer { emitter: tx };
-        self.send_event(Event::BeginIndexing(index_name.to_string(), rx))
+        let (handle_tx, handle_rx) = oneshot::channel();
+        self.send_event(Event::BeginIndexing(index_name.to_string(), rx, handle_tx))
             .await?;
+
+        let handle = handle_rx.await?;
+        let indexer = Indexer { emitter: tx, handle };
 
         Ok(indexer)
     }
@@ -151,33 +160,36 @@ impl IndexerHandler {
 /// as it may be waiting on another indexer to finish.
 pub struct Indexer {
     emitter: mpsc::Sender<Task>,
+    handle: CancellingJoinHandle<Result<()>>,
 }
 
 impl Indexer {
-    async fn send_event(&self, event: Task) -> Result<()> {
+    async fn send_event(&mut self, event: Task) -> Result<()> {
         let res = self.emitter.send(event).await;
 
         if res.is_err() {
-            return Err(anyhow!(
-                "the indexer has shut down, no new tasks can be added."
-            ));
+            return if let Some(handle) = self.handle.0.take() {
+                handle.await?
+            } else {
+                Err(anyhow!("Index writer has shut down. No new tasks can be added"))
+            };
         }
 
         Ok(())
     }
 
     /// Add a set of documents to the indexer.
-    pub async fn add_documents(&self, docs: Vec<(DocId, Document)>) -> Result<()> {
+    pub async fn add_documents(&mut self, docs: Vec<(DocId, Document)>) -> Result<()> {
         self.send_event(Task::AddDocuments(docs)).await
     }
 
     /// Remove a set of documents.
-    pub async fn remove_documents(&self, docs: Vec<DocId>) -> Result<()> {
+    pub async fn remove_documents(&mut self, docs: Vec<DocId>) -> Result<()> {
         self.send_event(Task::RemoveDocs(docs)).await
     }
 
     /// Clear all documents.
-    pub async fn clear_documents(&self) -> Result<()> {
+    pub async fn clear_documents(&mut self) -> Result<()> {
         self.send_event(Task::ClearAllDocuments).await
     }
 }
@@ -188,21 +200,21 @@ async fn run_actor(
     mut indexes: Indexes,
     mut events: mpsc::Receiver<Event>,
 ) {
-    let mut active_indexers = vec![];
     let limiter = Arc::new(Semaphore::new(cfg.max_indexer_concurrency.get()));
     while let Some(event) = events.recv().await {
         if let Err(e) =
-            handle_event(limiter.clone(), &mut active_indexers, &mut indexes, event)
+            handle_event(limiter.clone(), &mut indexes, event)
                 .await
         {
             error!("Failed to handle event due to error: {}", e);
         }
     }
+
+    info!("Indexing actor is shutting down...");
 }
 
 async fn handle_event(
     limiter: Arc<Semaphore>,
-    active_indexers: &mut Vec<JoinHandle<Result<()>>>,
     indexes: &mut Indexes,
     event: Event,
 ) -> Result<()> {
@@ -212,10 +224,11 @@ async fn handle_event(
         },
         Event::RemoveIndex(name) => {
             if let Some(index) = indexes.remove(&name) {
+                info!("Stopping existing polling task on old index...");
                 index.cancel.abort();
             };
         },
-        Event::BeginIndexing(name, tasks_queue) => {
+        Event::BeginIndexing(name, tasks_queue, returner) => {
             if let Some(index) = indexes.get(&name) {
                 let handle = tokio::spawn(begin_indexing(
                     limiter,
@@ -223,7 +236,9 @@ async fn handle_event(
                     tasks_queue,
                     index.inner.clone(),
                 ));
-                active_indexers.push(handle);
+
+                let handle = CancellingJoinHandle::from(handle);
+                let _ = returner.send(handle);
             }
         },
     };

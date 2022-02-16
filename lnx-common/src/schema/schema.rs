@@ -1,12 +1,14 @@
 use hashbrown::{HashMap, HashSet};
 use lnx_utils::Validator;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::FieldEntry;
+use tantivy::schema::{FAST, FieldEntry, INDEXED, STORED};
 
 use super::boost::BoostFactor;
 use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
+use crate::schema::INDEX_PK;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
@@ -152,6 +154,7 @@ impl Schema {
         let mut schema = tantivy::schema::SchemaBuilder::new();
 
         let fields = self.fields.iter().filter(|(_, v)| v.is_indexed());
+        schema.add_bytes_field(INDEX_PK, FAST | STORED | INDEXED);
 
         for (name, info) in fields {
             schema.add_field(FieldEntry::new(name.to_string(), info.as_field_type()));

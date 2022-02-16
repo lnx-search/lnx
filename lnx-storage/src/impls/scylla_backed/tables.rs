@@ -1,11 +1,11 @@
 use itertools::Itertools;
+use lnx_common::schema::INDEX_PK;
 use scylla::transport::errors::QueryError;
 
 use super::connection::session;
 use super::engine_store::{INDEXES_TABLE, self};
 use super::meta_store::{STOPWORDS_TABLE, SYNONYMS_TABLE, NODES_INFO_TABLE};
 use super::primary_store::{DOCUMENT_TABLE, CHANGE_LOG_TABLE};
-use super::doc_wrapper::DOCUMENT_PRIMARY_KEY;
 
 pub fn format_column(v: impl AsRef<str>) -> String {
     format!("field_{}", v.as_ref())
@@ -103,7 +103,7 @@ pub async fn create_doc_tables(ks: &str, doc_fields: Vec<String>) -> Result<(), 
             "#,
             ks = ks,
             table = DOCUMENT_TABLE,
-            pk = DOCUMENT_PRIMARY_KEY,
+            pk = INDEX_PK,
             fields = fields,
         ),
     ];

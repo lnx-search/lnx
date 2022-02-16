@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use futures_util::StreamExt;
 use itertools::Itertools;
+use lnx_common::schema::INDEX_PK;
 use lnx_common::types::document::Document;
 use scylla::IntoTypedRows;
 use tokio::sync::mpsc;
@@ -18,10 +19,7 @@ use crate::change_log::{
 };
 use crate::doc_store::{DocStore, DocumentIterator};
 use crate::impls::scylla_backed::connection::keyspace;
-use crate::impls::scylla_backed::doc_wrapper::{
-    ScyllaSafeDocument,
-    DOCUMENT_PRIMARY_KEY,
-};
+use crate::impls::scylla_backed::doc_wrapper::ScyllaSafeDocument;
 use crate::ChangeKind;
 use crate::impls::scylla_backed::tables::{self, format_column};
 
@@ -196,7 +194,7 @@ impl DocStore for ScyllaPrimaryDataStore {
         let query = format!(
             "INSERT INTO {ks}.{table} ({pk}, {columns}) VALUES (?, {placeholders})",
             ks = self.keyspace,
-            pk = DOCUMENT_PRIMARY_KEY,
+            pk = INDEX_PK,
             table = DOCUMENT_TABLE,
             columns = self.schema_fields.iter().map(format_column).join(", "),
             placeholders = self.schema_fields.iter().map(|_| "?").join(", "),
@@ -212,10 +210,10 @@ impl DocStore for ScyllaPrimaryDataStore {
 
     async fn remove_documents(&self, docs: Vec<DocId>) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table} WHERE {pk} = ?",
+            "DELETE FROM {ks}.{table} WHERE {pk} IN ?",
             ks = self.keyspace,
             table = DOCUMENT_TABLE,
-            pk = DOCUMENT_PRIMARY_KEY,
+            pk = INDEX_PK,
         );
 
         session().query_prepared(&query, (docs,)).await?;
@@ -242,8 +240,8 @@ impl DocStore for ScyllaPrimaryDataStore {
     ) -> Result<Vec<(DocId, Document)>> {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
-            "SELECT {pk}, {columns} FROM {ks}.{table} WHERE {pk} = ?",
-            pk = DOCUMENT_PRIMARY_KEY,
+            "SELECT {pk}, {columns} FROM {ks}.{table} WHERE {pk} IN ?",
+            pk = INDEX_PK,
             columns = columns.iter().map(format_column).join(", "),
             ks = self.keyspace,
             table = DOCUMENT_TABLE,
@@ -271,7 +269,7 @@ impl DocStore for ScyllaPrimaryDataStore {
         let columns = fields.unwrap_or_else(|| self.schema_fields.clone());
         let query = format!(
             "SELECT {pk}, {columns} FROM {ks}.{table};",
-            pk = DOCUMENT_PRIMARY_KEY,
+            pk = INDEX_PK,
             columns = columns.iter().map(format_column).join(", "),
             table = DOCUMENT_TABLE,
             ks = self.keyspace,

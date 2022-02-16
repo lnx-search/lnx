@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use tantivy::chrono::Utc;
 use lnx_storage::{ChangeKind, DocId, IndexStore, PollingMode, Timestamp};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
@@ -28,6 +29,9 @@ pub fn start_polling_for_index(index_name: String, mode: PollingMode) -> JoinHan
 async fn run_poller(index_name: String, mode: PollingMode) {
     let mut interval = interval(Duration::from_secs(POLLING_BASE_INTERVAL));
 
+    // Use first tick to ensure the rest of our state is synced before polling.
+    interval.tick().await;
+
     loop {
         interval.tick().await;
 
@@ -51,17 +55,47 @@ async fn handle_poll(index_name: &str, mode: PollingMode) -> PollStatus {
         None => return PollStatus::NoIndex,
     };
 
-    let maybe_last_ts = index.meta().get_last_update_timestamp().await;
+    let maybe_last_ts = index.meta()
+        .get_last_update_timestamp()
+        .await;
+
+    let maybe_last_ts = match maybe_last_ts {
+        Err(e) => return PollStatus::Err(e),
+        Ok(ts) => ts,
+    };
 
     match maybe_last_ts {
-        Ok(Some(ts)) => match handle_changes(index, mode, ts).await {
-            Ok(()) => PollStatus::Ok,
-            Err(e) => PollStatus::Err(e),
+        Some(ref ts) => match handle_changes(index, mode, *ts).await {
+            Ok(()) => {},
+            Err(e) => return PollStatus::Err(e),
         },
-        Ok(None) => match handle_load_index(index).await {
-            Ok(()) => PollStatus::Ok,
-            Err(e) => PollStatus::Err(e),
+        None => match handle_load_index(index).await {
+            Ok(()) => {},
+            Err(e) => return PollStatus::Err(e),
         },
+    }
+
+    info!("Setting the node's last update timestamp...");
+    let res = index
+        .meta()
+        .set_update_timestamp(maybe_last_ts.unwrap_or_else(|| Utc::now().timestamp_millis()))
+        .await;
+
+    if let Err(e) = res {
+        error!("Failed to set node timestamp.");
+        return PollStatus::Err(e);
+    }
+
+    // See if we can cleanup the change log.
+    info!("Attempting to run log garbage collections...");
+    let aligned = index.meta().get_earliest_aligned_timestamp().await;
+
+    match aligned {
+        Ok(Some(ts)) => match index.docs().run_garbage_collection(ts).await {
+            Ok(()) => PollStatus::Ok,
+            Err(e) => PollStatus::Err(e)
+        },
+        Ok(None) => PollStatus::Ok,
         Err(e) => PollStatus::Err(e),
     }
 }
@@ -88,7 +122,9 @@ async fn handle_load_index(index: &IndexStore) -> Result<()> {
         .iter_documents(Some(indexed_fields), CHUNK_SIZE)
         .await?;
 
-    let indexer = handler::get().begin_indexing(index.name()).await?;
+    let mut indexer = handler::get()
+        .begin_indexing(index.name())
+        .await?;
 
     while let Some(docs) = documents.next().await {
         debug!("Handling document chunk with len={}", docs.len());
@@ -113,16 +149,6 @@ async fn handle_changes(
         },
         PollingMode::Dynamic => handle_dynamic_indexing(index, last_update).await?,
     };
-
-    index.meta().set_update_timestamp(last_update).await?;
-
-    // See if we can cleanup the change log.
-    let aligned = index.meta().get_earliest_aligned_timestamp().await?;
-
-    // If we do have some aligned time stamps lets try clear upto that point.
-    if let Some(ts) = aligned {
-        index.docs().run_garbage_collection(ts).await?;
-    }
 
     Ok(())
 }
@@ -172,7 +198,9 @@ async fn handle_dynamic_indexing(
 }
 
 async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<()> {
-    let indexer = handler::get().begin_indexing(index.name()).await?;
+    let mut indexer = handler::get()
+        .begin_indexing(index.name())
+        .await?;
 
     let mut changes = index
         .docs()
@@ -189,19 +217,19 @@ async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<(
                     add_documents(
                         index,
                         indexed_fields.clone(),
-                        &indexer,
+                        &mut indexer,
                         change.affected_docs,
                     )
                     .await?
                 },
                 ChangeKind::Delete => {
-                    remove_documents(&indexer, change.affected_docs).await?
+                    remove_documents(&mut indexer, change.affected_docs).await?
                 },
                 ChangeKind::Update => {
                     update_documents(
                         index,
                         indexed_fields.clone(),
-                        &indexer,
+                        &mut indexer,
                         change.affected_docs,
                     )
                     .await?
@@ -216,7 +244,7 @@ async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<(
 async fn add_documents(
     index: &IndexStore,
     indexed_fields: Vec<String>,
-    indexer: &Indexer,
+    indexer: &mut Indexer,
     doc_ids: Vec<DocId>,
 ) -> Result<()> {
     let documents = index
@@ -227,7 +255,7 @@ async fn add_documents(
     indexer.add_documents(documents).await
 }
 
-async fn remove_documents(indexer: &Indexer, doc_ids: Vec<DocId>) -> Result<()> {
+async fn remove_documents(indexer: &mut Indexer, doc_ids: Vec<DocId>) -> Result<()> {
     indexer.remove_documents(doc_ids).await?;
     Ok(())
 }
@@ -235,7 +263,7 @@ async fn remove_documents(indexer: &Indexer, doc_ids: Vec<DocId>) -> Result<()> 
 async fn update_documents(
     index: &IndexStore,
     indexed_fields: Vec<String>,
-    indexer: &Indexer,
+    indexer: &mut Indexer,
     doc_ids: Vec<DocId>,
 ) -> Result<()> {
     remove_documents(indexer, doc_ids.clone()).await?;

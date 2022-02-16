@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use anyhow::Result;
 use tantivy::directory::MmapDirectory;
 
@@ -56,14 +57,16 @@ async fn main() -> Result<()> {
     let ref_schema = index.schema();
     schema.validate_with_tantivy_schema(&ref_schema)?;
 
-    lnx_engine::add_index(
-        "test",
-        schema,
-        ReplicationInfo::Simple,
-        PollingMode::Dynamic,
-        HashMap::new(),
-        index,
-    ).await?;
+    // lnx_engine::add_index(
+    //     "test",
+    //     schema,
+    //     ReplicationInfo::Simple,
+    //     PollingMode::Dynamic,
+    //     HashMap::new(),
+    //     index,
+    // ).await?;
+
+    tokio::time::sleep(Duration::from_secs(120)).await;
 
     Ok(())
 }

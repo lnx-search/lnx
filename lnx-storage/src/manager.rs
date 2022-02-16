@@ -99,7 +99,7 @@ impl StorageManager {
 
         let mut loaded = HashMap::with_capacity(indexes.len());
         for index in indexes {
-            info!("Ensuring keyspace replication {:?}", &index.replication);
+            info!("Ensuring keyspace replication: {:?}", &index.replication);
             index
                 .replication
                 .build_index_keyspace(index.index_name.as_str())
@@ -148,7 +148,7 @@ impl StorageManager {
         polling_mode: PollingMode,
         additional_settings: collections::HashMap<String, Vec<u8>>,
     ) -> Result<()> {
-        info!("Ensuring keyspace replication");
+        info!("Ensuring keyspace replication: {:?}", &replication);
         replication.build_index_keyspace(name).await?;
 
         self.engine_store.store_index(IndexData {
