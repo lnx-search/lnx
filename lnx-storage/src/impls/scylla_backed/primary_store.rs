@@ -262,6 +262,7 @@ impl DocStore for ScyllaPrimaryDataStore {
         Ok(retrieved_docs)
     }
 
+    #[instrument(name = "fetch-all-documents", skip(self))]
     async fn iter_documents(
         &self,
         fields: Option<Vec<String>>,
@@ -280,31 +281,29 @@ impl DocStore for ScyllaPrimaryDataStore {
 
         let (tx, rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
-            loop {
-                let mut chunk = Vec::with_capacity(chunk_size);
+            let mut chunk = Vec::with_capacity(chunk_size);
 
-                while let Some(Ok(row)) = iter.next().await {
-                    let row = match ScyllaSafeDocument::from_row_and_layout(
-                        row,
-                        columns.clone(),
-                    ) {
-                        Err(e) => {
-                            error!("failed to handle chunk due to error {:?}", e);
-                            return;
-                        },
-                        Ok(row) => row,
-                    };
+            while let Some(Ok(row)) = iter.next().await {
+                let row = match ScyllaSafeDocument::from_row_and_layout(
+                    row,
+                    columns.clone(),
+                ) {
+                    Err(e) => {
+                        error!("failed to handle chunk due to error {:?}", e);
+                        return;
+                    },
+                    Ok(row) => row,
+                };
 
-                    chunk.push(row.into_parts());
+                chunk.push(row.into_parts());
 
-                    if chunk.len() >= chunk_size {
+                if chunk.len() >= chunk_size {
+                    if tx.send(chunk.clone()).await.is_err() {
+                        trace!("chunk send failed, cleaning up and shutting down task");
                         break;
                     }
-                }
 
-                if tx.send(chunk).await.is_err() {
-                    trace!("chunk send failed, cleaning up and shutting down task");
-                    break;
+                    chunk.clear();
                 }
             }
         });
