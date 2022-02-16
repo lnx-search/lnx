@@ -7,7 +7,7 @@ use lnx_utils::{FromJSON, ToJSON};
 use scylla::IntoTypedRows;
 
 use crate::engine_store::{IndexData, PollingMode};
-use crate::impls::scylla_backed::connection::session;
+use crate::impls::scylla_backed::connection::{keyspace, session};
 use crate::impls::scylla_backed::ReplicationInfo;
 use crate::EngineStore;
 
@@ -105,12 +105,16 @@ impl EngineStore for ScyllaEngineStore {
 
     async fn remove_index(&self, index: &str) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table} WHERE name = ?",
+            "DELETE FROM {ks}.{table} WHERE name = ?;",
             ks = self.keyspace,
             table = INDEXES_TABLE,
         );
 
         session().query_prepared(&query, (index,)).await?;
+
+        let query = format!("DROP KEYSPACE IF EXISTS {ks};", ks = keyspace(index),);
+
+        session().query_prepared(&query, &[]).await?;
 
         Ok(())
     }

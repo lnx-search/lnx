@@ -66,6 +66,8 @@ async fn main() -> Result<()> {
     //     index,
     // ).await?;
 
+    lnx_engine::remove_index("test").await?;
+
     tokio::time::sleep(Duration::from_secs(120)).await;
 
     Ok(())
