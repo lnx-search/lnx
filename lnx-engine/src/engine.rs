@@ -28,7 +28,7 @@ pub async fn init_engine(
     Ok(())
 }
 
-fn load_index(path: &Path, schema: &Schema) -> Result<Index, InitEngineError> {
+pub fn load_index(path: &Path, schema: &Schema) -> Result<Index, InitEngineError> {
     std::fs::create_dir_all(path)?;
 
     let dir = MmapDirectory::open(path)?;

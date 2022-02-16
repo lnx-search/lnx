@@ -60,7 +60,7 @@ pub struct IndexerHandlerConfig {
     ///
     /// Node that this does not control how many threads each indexer uses.
     #[serde(default = "IndexerHandlerConfig::default_indexer_concurrency")]
-    max_indexer_concurrency: NonZeroUsize,
+    pub max_indexer_concurrency: NonZeroUsize,
 }
 
 impl IndexerHandlerConfig {

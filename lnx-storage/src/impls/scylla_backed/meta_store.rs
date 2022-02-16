@@ -10,12 +10,13 @@ use uuid::Uuid;
 use super::connection::keyspace;
 use crate::change_log::Timestamp;
 use crate::impls::scylla_backed::connection::session;
+use crate::impls::scylla_backed::tables;
 use crate::meta_store::MetaStore;
 use crate::Synonyms;
 
-static STOPWORDS_TABLE: &str = "index_stopwords";
-static SYNONYMS_TABLE: &str = "index_synonyms";
-static NODES_INFO_TABLE: &str = "index_nodes";
+pub static STOPWORDS_TABLE: &str = "index_stopwords";
+pub static SYNONYMS_TABLE: &str = "index_synonyms";
+pub static NODES_INFO_TABLE: &str = "index_nodes";
 
 static NODE_ID_KEY: &[u8] = b"NODE_ID";
 static LAST_UPDATED_TIMESTAMP_KEY: &[u8] = b"LAST_UPDATED";
@@ -27,11 +28,14 @@ pub struct ScyllaMetaStore {
 }
 
 impl ScyllaMetaStore {
+    #[instrument(name = "meta-store", skip(db))]
     pub fn load_from_local(index_name: &str, db: sled::Tree) -> Result<Self> {
         let id = match db.get(NODE_ID_KEY)? {
             Some(id) => FromBytes::from_bytes(&id)?,
             None => Uuid::new_v4(),
         };
+
+        info!("I am node {}!", &id);
 
         Ok(Self {
             keyspace: keyspace(index_name),
@@ -43,6 +47,11 @@ impl ScyllaMetaStore {
 
 #[async_trait]
 impl MetaStore for ScyllaMetaStore {
+    async fn setup(&self) -> Result<()> {
+        tables::create_meta_tables(&self.keyspace).await?;
+        Ok(())
+    }
+
     async fn add_stopwords(&self, words: Vec<String>) -> Result<()> {
         let query = format!(
             "INSERT INTO {ks}.{table} (word) VALUES (?);",
@@ -167,7 +176,7 @@ impl MetaStore for ScyllaMetaStore {
 
     async fn get_earliest_aligned_timestamp(&self) -> Result<Option<Timestamp>> {
         let query = format!(
-            "SELECT MIN (last_updated) FROM {ks}.{table};",
+            "SELECT MIN (last_updated) FROM {ks}.{table} ALLOW FILTERING;",
             ks = self.keyspace,
             table = NODES_INFO_TABLE,
         );

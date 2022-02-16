@@ -3,16 +3,15 @@ use std::collections::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
 use lnx_common::schema::{FieldName, Schema};
-use lnx_utils::{FromBytes, ToBytes};
+use lnx_utils::{FromJSON, ToJSON};
 use scylla::IntoTypedRows;
 
-use super::connection::keyspace;
 use crate::engine_store::{IndexData, PollingMode};
 use crate::impls::scylla_backed::connection::session;
 use crate::impls::scylla_backed::ReplicationInfo;
 use crate::EngineStore;
 
-pub static ENGINE_STORE_KS_SUFFIX: &str = "engine";
+pub static KEYSPACE: &str = "lnx_search_engine";
 pub static INDEXES_TABLE: &str = "indexes";
 
 pub struct ScyllaEngineStore {
@@ -22,16 +21,21 @@ pub struct ScyllaEngineStore {
 impl ScyllaEngineStore {
     pub fn new() -> Self {
         Self {
-            keyspace: keyspace(ENGINE_STORE_KS_SUFFIX),
+            keyspace: KEYSPACE.to_string(),
         }
     }
 }
 
 #[async_trait]
 impl EngineStore for ScyllaEngineStore {
+    async fn setup(&self) -> Result<()> {
+        super::tables::create_indexes_table().await?;
+        Ok(())
+    }
+
     async fn fetch_indexes(&self) -> Result<Vec<IndexData>> {
         let query = format!(
-            "SELECT name, schema, polling_mode, replication, settings FROM {ks}.{table};",
+            "SELECT name, index_schema, polling_mode, replication, settings FROM {ks}.{table};",
             ks = self.keyspace,
             table = INDEXES_TABLE,
         );
@@ -41,22 +45,22 @@ impl EngineStore for ScyllaEngineStore {
             .await?
             .rows
             .unwrap_or_default()
-            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, HashMap<String, Vec<u8>>)>(
+            .into_typed::<(String, Vec<u8>, Vec<u8>, Vec<u8>, Option<HashMap<String, Vec<u8>>>)>(
             );
 
         let mut indexes = vec![];
         for index in results {
             let (name, schema, plolling_mode, replication, settings) = index?;
 
-            let schema = Schema::from_bytes(&schema)?;
-            let replication = ReplicationInfo::from_bytes(&replication)?;
+            let schema = Schema::from_json(&schema)?;
+            let replication = ReplicationInfo::from_json(&replication)?;
 
             indexes.push(IndexData {
                 index_name: FieldName(name),
                 schema,
                 replication,
-                polling_mode: PollingMode::from_bytes(&plolling_mode)?,
-                additional_settings: settings,
+                polling_mode: PollingMode::from_json(&plolling_mode)?,
+                additional_settings: settings.unwrap_or_default(),
             })
         }
 
@@ -65,7 +69,15 @@ impl EngineStore for ScyllaEngineStore {
 
     async fn store_index(&self, index: IndexData) -> Result<()> {
         let query = format!(
-            "INSERT INTO {ks}.{table} (name, schema, polling_mode, replication, settings) VALUES (?, ?, ?, ?);",
+            r#"
+            INSERT INTO {ks}.{table} (
+                name,
+                index_schema,
+                polling_mode,
+                replication,
+                settings
+            ) VALUES (?, ?, ?, ?, ?);
+            "#,
             ks = self.keyspace,
             table = INDEXES_TABLE,
         );
@@ -75,9 +87,9 @@ impl EngineStore for ScyllaEngineStore {
                 &query,
                 (
                     index.index_name.0,
-                    index.schema.to_bytes()?,
-                    index.polling_mode.to_bytes()?,
-                    index.replication.to_bytes()?,
+                    index.schema.to_json()?,
+                    index.polling_mode.to_json()?,
+                    index.replication.to_json()?,
                     index.additional_settings,
                 ),
             )

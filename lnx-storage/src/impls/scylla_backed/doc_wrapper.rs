@@ -15,7 +15,7 @@ use scylla::frame::value::{
 
 use crate::DocId;
 
-pub static DOCUMENT_PRIMARY_KEY: &str = "_lnx_doc_id";
+pub static DOCUMENT_PRIMARY_KEY: &str = "doc_id";
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument(pub DocId, pub Document);

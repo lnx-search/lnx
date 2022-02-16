@@ -1,3 +1,4 @@
+use std::time::Instant;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -22,9 +23,10 @@ use crate::impls::scylla_backed::doc_wrapper::{
     DOCUMENT_PRIMARY_KEY,
 };
 use crate::ChangeKind;
+use crate::impls::scylla_backed::tables::{self, format_column};
 
-static DOCUMENT_TABLE: &str = "documents";
-static CHANGE_LOG_TABLE: &str = "index_changelog";
+pub static DOCUMENT_TABLE: &str = "documents";
+pub static CHANGE_LOG_TABLE: &str = "index_changelog";
 
 type ChangedRow = (i8, Vec<DocId>, chrono::Duration);
 
@@ -57,9 +59,15 @@ impl ScyllaPrimaryDataStore {
 
 #[async_trait]
 impl ChangeLogStore for ScyllaPrimaryDataStore {
+    async fn setup(&self) -> Result<()> {
+        tables::create_doc_tables(&self.keyspace, self.schema_fields.clone()).await?;
+        Ok(())
+    }
+
+    #[instrument(name = "change-log-append", skip(self, logs), level = "trace")]
     async fn append_changes(&self, logs: ChangeLogEntry) -> Result<()> {
         let query = format!(
-            "INSERT INTO {ks}.{table} (id, kind, affected_docs, timestamp) VALUES (uuid(), ?, ?, ?);",
+            "INSERT INTO {ks}.{table} (id, kind, affected_docs, at) VALUES (uuid(), ?, ?, ?);",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
@@ -71,12 +79,15 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
             )
             .await?;
 
+        trace!("Update registered with change log.");
+
         Ok(())
     }
 
+    #[instrument(name = "change-log-clear-docs", skip(self), level = "trace")]
     async fn mark_documents_cleared(&self) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table};",
+            "DELETE FROM {ks}.{table} WHERE at < toTimeStamp(now());",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
@@ -90,21 +101,26 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
         })
         .await?;
 
+        trace!("Documents have been cleared upto current marker point.");
+
         Ok(())
     }
 
+    #[instrument(name = "get-pending-changes", skip(self), level = "info")]
     async fn get_pending_changes(
         &self,
         from: Timestamp,
         chunk_size: usize,
     ) -> Result<ChangeLogIterator> {
         let query = format!(
-            "SELECT kind, affected_docs, timestamp FROM {ks}.{table} WHERE timestamp > ?;",
+            "SELECT kind, affected_docs, at FROM {ks}.{table} WHERE at > ?;",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
 
+        let start = Instant::now();
         let iter = session().query_iter(&query, (from,)).await?;
+        info!("Query took {:?} to execute.", start.elapsed());
 
         let (tx, rx) = mpsc::channel(1);
         let handle = tokio::spawn(async move {
@@ -138,7 +154,7 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
 
     async fn count_pending_changes(&self, from: Timestamp) -> Result<usize> {
         let query = format!(
-            "SELECT COUNT (id) FROM {ks}.{table} WHERE timestamp > ?;",
+            "SELECT COUNT (id) FROM {ks}.{table} WHERE at > ?;",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
@@ -158,14 +174,17 @@ impl ChangeLogStore for ScyllaPrimaryDataStore {
         }
     }
 
+    #[instrument(name = "run-garbage-collection", skip(self), level = "info")]
     async fn run_garbage_collection(&self, upto: Timestamp) -> Result<()> {
         let query = format!(
-            "DELETE FROM {ks}.{table} WHERE timestamp < ?;",
+            "DELETE FROM {ks}.{table} WHERE at < ?;",
             ks = self.keyspace,
             table = CHANGE_LOG_TABLE,
         );
 
+        let start = Instant::now();
         session().query_prepared(&query, (upto,)).await?;
+        info!("Delete query took {:?} to execute.", start.elapsed());
 
         Ok(())
     }
@@ -179,7 +198,7 @@ impl DocStore for ScyllaPrimaryDataStore {
             ks = self.keyspace,
             pk = DOCUMENT_PRIMARY_KEY,
             table = DOCUMENT_TABLE,
-            columns = self.schema_fields.join(", "),
+            columns = self.schema_fields.iter().map(format_column).join(", "),
             placeholders = self.schema_fields.iter().map(|_| "?").join(", "),
         );
 
@@ -225,7 +244,7 @@ impl DocStore for ScyllaPrimaryDataStore {
         let query = format!(
             "SELECT {pk}, {columns} FROM {ks}.{table} WHERE {pk} = ?",
             pk = DOCUMENT_PRIMARY_KEY,
-            columns = columns.join(", "),
+            columns = columns.iter().map(format_column).join(", "),
             ks = self.keyspace,
             table = DOCUMENT_TABLE,
         );
@@ -253,7 +272,7 @@ impl DocStore for ScyllaPrimaryDataStore {
         let query = format!(
             "SELECT {pk}, {columns} FROM {ks}.{table};",
             pk = DOCUMENT_PRIMARY_KEY,
-            columns = columns.join(", "),
+            columns = columns.iter().map(format_column).join(", "),
             table = DOCUMENT_TABLE,
             ks = self.keyspace,
         );

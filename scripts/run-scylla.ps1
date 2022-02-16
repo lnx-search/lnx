@@ -1,0 +1,1 @@
+& docker run --name scylla -p "9042:9042" -p "7000-7001:7000-7001" -d scylladb/scylla

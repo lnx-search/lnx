@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use scylla::frame::value::ValueList;
 use scylla::query::Query;
-use scylla::transport::errors::QueryError;
+use scylla::transport::errors::{DbError, QueryError};
 use scylla::transport::iterator::RowIterator;
 use scylla::QueryResult;
 
@@ -25,7 +25,7 @@ impl Session {
         let result = self.0.execute(query, &values).await;
 
         if let Err(ref e) = result {
-            error!("failed to execute query: {} due to error: {:?}", query, e);
+            consider_logging_error(query, e);
         }
 
         result
@@ -41,10 +41,7 @@ impl Session {
         let result = self.0.execute_iter(Query::from(query), &values).await;
 
         if let Err(e) = result {
-            error!(
-                "failed to execute prepared statement: {} due to error: {:?}",
-                query, e
-            );
+            consider_logging_error(query, &e);
             return Err(e);
         }
 
@@ -61,13 +58,24 @@ impl Session {
         let result = self.0.execute(Query::from(query), &values).await;
 
         if let Err(e) = result {
-            error!(
-                "failed to execute prepared statement: {} due to error: {:?}",
-                query, e
-            );
+            consider_logging_error(query, &e);
             return Err(e);
         }
 
         result
+    }
+}
+
+fn consider_logging_error(query: &str, e: &QueryError)  {
+    match e {
+        QueryError::DbError(DbError::AlreadyExists { .. }, ..) => {
+            info!("Keyspace already exists, skipping...");
+        },
+        other => {
+            error!(
+                "failed to execute statement: {} due to error: {:?}",
+                query, other
+            );
+        },
     }
 }

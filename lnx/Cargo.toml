@@ -6,3 +6,15 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lnx-engine = { path = "../lnx-engine" }
+lnx-storage = { path = "../lnx-storage" }
+lnx-writer = { path = "../lnx-writer" }
+lnx-common = { path = "../lnx-common" }
+lnx-utils = { path = "../lnx-utils" }
+
+tokio = { version = "1", features = ["full"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "13a4473" }
+
+serde_json = "1.0.79"
+tracing-subscriber = "0.3.8"
+anyhow = "1.0.53"

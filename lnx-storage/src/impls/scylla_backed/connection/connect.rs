@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::ConnectionError;
 use super::session::Session;
+use crate::impls::scylla_backed::engine_store;
 
 static CONNECTION: OnceCell<Session> = OnceCell::new();
 static KEYSPACE_PREFIX: &str = "lnx_search";
@@ -24,6 +25,7 @@ pub async fn connect(
     nodes: &[impl AsRef<str>],
     user: &Option<String>,
     password: &Option<String>,
+    replication_info: &ReplicationInfo,
 ) -> Result<(), ConnectionError> {
     let mut builder = scylla::SessionBuilder::new().compression(Some(Compression::Lz4));
 
@@ -45,7 +47,9 @@ pub async fn connect(
             .await
     }?;
 
-    let _ = CONNECTION.set(Session::from(session));
+    let _ = CONNECTION.set( Session::from(session));
+
+    replication_info.build_keyspace(engine_store::KEYSPACE).await?;
 
     Ok(())
 }
@@ -55,7 +59,6 @@ pub fn session() -> &'static Session {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)] // We don't massively care about it's flaws here.
 pub enum ReplicationInfo {
     /// Marks the keyspace connection as a `SimpleStrategy` used for
     /// development purposes.
@@ -77,26 +80,16 @@ pub enum ReplicationInfo {
 }
 
 impl ReplicationInfo {
-    pub async fn build_keyspace(self, index_name: &str) -> Result<(), ConnectionError> {
+    pub fn format_keyspace(&self, ks: &str) -> String {
         match self {
             Self::Simple => {
-                let keyspace_query = format!(
+                format!(
                     r#"
                     CREATE KEYSPACE {ks}
                     WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}}
                     "#,
-                    ks = keyspace(index_name),
-                );
-
-                let res = session().query(keyspace_query.as_str(), &[]).await;
-
-                match res {
-                    Ok(_) => Ok(()),
-                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
-                        Ok(())
-                    },
-                    Err(e) => Err(e.into()),
-                }
+                    ks = ks,
+                )
             },
             Self::NetworkTopology {
                 replication_factor,
@@ -111,25 +104,38 @@ impl ReplicationInfo {
                     parts.push(format!("'{}': {}", dc, factor));
                 }
 
-                let keyspace_query = format!(
+                format!(
                     r#"
                     CREATE KEYSPACE {ks}
                     WITH replication = {{'class': 'NetworkTopologyStrategy', {config}}}
                     "#,
-                    ks = keyspace(index_name),
+                    ks = ks,
                     config = parts.join(", "),
-                );
-
-                let res = session().query(keyspace_query.as_str(), &[]).await;
-
-                match res {
-                    Ok(_) => Ok(()),
-                    Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
-                        Ok(())
-                    },
-                    Err(e) => Err(e.into()),
-                }
+                )
             },
         }
+    }
+
+    pub async fn build_index_keyspace(&self, index_name: &str) -> Result<(), ConnectionError> {
+        self.build_keyspace(&keyspace(index_name)).await
+    }
+
+    #[instrument(name = "keyspace-replication", skip(self))]
+    pub async fn build_keyspace(&self, ks: &str) -> Result<(), ConnectionError> {
+        info!("Ensuring keyspace exists...");
+        let query = self.format_keyspace(ks);
+        let res = session()
+            .query(&query, &[])
+            .await;
+
+        match res {
+            Ok(_) => {},
+            Err(QueryError::DbError(DbError::AlreadyExists { .. }, ..)) => {
+                info!("Keyspace already exists, skipping...");
+            },
+            Err(e) => return Err(e.into()),
+        }
+
+        Ok(())
     }
 }

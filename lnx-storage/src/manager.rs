@@ -2,6 +2,7 @@ use std::collections;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result;
 use arc_swap::{ArcSwap, Guard};
@@ -13,6 +14,7 @@ use parking_lot::RwLock;
 
 use crate::configure::Config;
 use crate::{DocStore, EngineStore, MetaStore, PollingMode, ReplicationInfo};
+use crate::engine_store::IndexData;
 
 static STORAGE_ENGINE_ROOT: &str = "engine";
 static INDEX_STORAGE_ROOT: &str = "engine";
@@ -60,8 +62,11 @@ impl Deref for StorageManager {
 }
 
 impl StorageManager {
+    #[instrument(name = "storage-manager-init", skip(cfg))]
     async fn from_config(cfg: Config) -> Result<Self> {
         let db_path = cfg.storage_path.join(STORAGE_ENGINE_ROOT);
+        tokio::fs::create_dir_all(&db_path).await?;
+
         let db = sled::Config::new()
             .use_compression(true)
             .mode(sled::Mode::HighThroughput)
@@ -78,19 +83,26 @@ impl StorageManager {
             index_stores: ArcSwap::from_pointee(HashMap::new()),
         };
 
+        info!("Loading existing indexes...");
         inst.load_existing_indexes().await?;
 
         Ok(inst)
     }
 
     async fn load_existing_indexes(&self) -> Result<()> {
+        info!("Running engine store setup...");
+        self.engine_store.setup().await?;
+        info!("Engine store setup complete!");
+
         let indexes = self.engine_store.fetch_indexes().await?;
+        info!("Found {} existing indexes.", indexes.len());
 
         let mut loaded = HashMap::with_capacity(indexes.len());
         for index in indexes {
+            info!("Ensuring keyspace replication {:?}", &index.replication);
             index
                 .replication
-                .build_keyspace(index.index_name.as_str())
+                .build_index_keyspace(index.index_name.as_str())
                 .await?;
 
             let docs = self
@@ -127,6 +139,7 @@ impl StorageManager {
         Ok(())
     }
 
+    #[instrument(name = "add-new-index", skip(self, schema, additional_settings))]
     pub async fn add_new_index(
         &self,
         name: &str,
@@ -135,14 +148,33 @@ impl StorageManager {
         polling_mode: PollingMode,
         additional_settings: collections::HashMap<String, Vec<u8>>,
     ) -> Result<()> {
-        replication.build_keyspace(name).await?;
+        info!("Ensuring keyspace replication");
+        replication.build_index_keyspace(name).await?;
+
+        self.engine_store.store_index(IndexData {
+            index_name: FieldName(name.to_string()),
+            schema: schema.clone(),
+            replication: replication.clone(),
+            polling_mode,
+            additional_settings: additional_settings.clone(),
+        }).await?;
 
         let docs = self.cfg.backend.get_doc_store(name, &schema);
+
+        info!("Running doc store setup...");
+        let instant = Instant::now();
+        docs.setup().await?;
+        info!("Success! Took {:?}", instant.elapsed());
 
         let meta = self
             .cfg
             .backend
             .get_meta_store(name, &self.local_storage_db)?;
+
+        info!("Running meta store setup...");
+        let instant = Instant::now();
+        meta.setup().await?;
+        info!("Success! Took {:?}", instant.elapsed());
 
         let path = self
             .cfg
@@ -222,13 +254,16 @@ impl IndexStore {
     /// Updates the current settings for the given key.
     ///
     /// These changes are reflected in the database.
+    #[instrument(name = "index-settings-store", skip(self, settings), fields(index_name = %self.name()))]
     pub async fn store<T: ToBytes>(&self, key: &str, settings: T) -> Result<()> {
         let mut lock = self.additional_settings.write();
         lock.insert(key.to_string(), settings.to_bytes()?);
 
+        let instant = Instant::now();
         engine()
             .update_settings(&self.index_name, lock.clone())
             .await?;
+        info!("Settings store took {:?}", instant.elapsed());
 
         Ok(())
     }
@@ -236,13 +271,16 @@ impl IndexStore {
     /// Removes the current settings for the given key.
     ///
     /// These changes are reflected in the database.
+    #[instrument(name = "index-settings-remove", skip(self), fields(index_name = %self.name()))]
     pub async fn remove(&self, key: &str) -> Result<()> {
         let mut lock = self.additional_settings.write();
         lock.remove(key);
 
+        let instant = Instant::now();
         engine()
             .update_settings(&self.index_name, lock.clone())
             .await?;
+        info!("Settings update took {:?}", instant.elapsed());
 
         Ok(())
     }
@@ -250,8 +288,13 @@ impl IndexStore {
     /// Loads the latest current settings for the given key.
     ///
     /// These changes are reflected in the database.
+    #[instrument(name = "index-settings-load", skip(self), fields(index_name = %self.name()))]
     pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
-        let settings = engine().fetch_latest_settings(&self.index_name).await?;
+        let instant = Instant::now();
+        let settings = engine()
+            .fetch_latest_settings(&self.index_name)
+            .await?;
+        info!("Settings load took {:?}", instant.elapsed());
 
         let mut lock = self.additional_settings.write();
 

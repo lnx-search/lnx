@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate tracing;
+
 mod engine;
 mod error;
 mod index;

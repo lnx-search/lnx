@@ -11,7 +11,7 @@ use crate::impls::scylla_backed::{
     ScyllaMetaStore,
     ScyllaPrimaryDataStore,
 };
-use crate::{DocStore, EngineStore, MetaStore};
+use crate::{DocStore, EngineStore, MetaStore, ReplicationInfo};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -27,6 +27,7 @@ pub enum BackendSelector {
         nodes: Vec<String>,
         user: Option<String>,
         password: Option<String>,
+        engine_replication: ReplicationInfo,
     },
 }
 
@@ -37,8 +38,9 @@ impl BackendSelector {
                 nodes,
                 user,
                 password,
+                engine_replication,
             } => {
-                scylla_backed::connect(nodes, user, password).await?;
+                scylla_backed::connect(nodes, user, password, engine_replication).await?;
             },
         }
 

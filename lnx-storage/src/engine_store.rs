@@ -24,6 +24,8 @@ pub struct IndexData {
 
 #[async_trait]
 pub trait EngineStore: Send + Sync + 'static {
+    async fn setup(&self) -> Result<()>;
+
     async fn fetch_indexes(&self) -> Result<Vec<IndexData>>;
 
     async fn store_index(&self, index: IndexData) -> Result<()>;

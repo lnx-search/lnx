@@ -2,6 +2,7 @@ use anyhow::Result;
 use lnx_common::schema::Schema;
 use lnx_storage::ReplicationInfo;
 
+#[instrument(name = "add-index", skip(additional_settings, schema, index))]
 pub async fn add_index(
     name: &str,
     schema: Schema,
@@ -21,6 +22,7 @@ pub async fn add_index(
     Ok(())
 }
 
+#[instrument(name = "remove-index")]
 pub async fn remove_index(name: &str) -> Result<()> {
     lnx_writer::get().remove_index(name).await?;
 
@@ -28,3 +30,4 @@ pub async fn remove_index(name: &str) -> Result<()> {
 
     Ok(())
 }
+
