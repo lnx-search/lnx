@@ -140,7 +140,19 @@ async fn handle_changes(
     mode: PollingMode,
     last_update: Timestamp,
 ) -> Result<()> {
-    info!("Changes detected since last update...");
+    info!("Checking for changes since last update...");
+
+    let count = index.docs()
+        .count_pending_changes(last_update)
+        .await?;
+
+    if count == 0 {
+        debug!("No updates pending!");
+        return Ok(());
+    }
+
+    info!("{} Pending updates waiting.", count);
+
     match mode {
         PollingMode::Continuous => {
             handle_continuous_indexing(index, last_update).await?

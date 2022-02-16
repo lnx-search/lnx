@@ -288,7 +288,7 @@ impl IndexStore {
     }
 
     /// Loads the latest current settings for the given key.
-    ///
+    ///v
     /// These changes are reflected in the database.
     #[instrument(name = "index-settings-load", skip(self), fields(index_name = %self.name()))]
     pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
