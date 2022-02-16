@@ -142,9 +142,7 @@ async fn handle_changes(
 ) -> Result<()> {
     info!("Checking for changes since last update...");
 
-    let count = index.docs()
-        .count_pending_changes(last_update)
-        .await?;
+    let count = index.docs().count_pending_changes(last_update).await?;
 
     if count == 0 {
         debug!("No updates pending!");
