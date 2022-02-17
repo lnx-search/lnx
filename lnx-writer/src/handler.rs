@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use bincode::{Decode, Encode};
 use hashbrown::HashMap;
 use lnx_common::types::document::Document;
 use lnx_storage::DocId;
@@ -11,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use tantivy::Index as InnerIndex;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::task::JoinHandle;
-use bincode::{Encode, Decode};
 
 use super::helpers::serde::{BufferSize, NumThreads};
 use super::helpers::CancellingJoinHandle;

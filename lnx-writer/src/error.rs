@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-
 #[derive(Debug, Error)]
 pub enum DocumentError {
     #[error("Unknown index {0:?}")]
@@ -12,4 +11,3 @@ pub enum DocumentError {
     #[error("An error occurred while trying to complete this operation: {0}")]
     Error(#[from] anyhow::Error),
 }
-

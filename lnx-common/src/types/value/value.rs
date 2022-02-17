@@ -1,9 +1,8 @@
 use std::fmt::{Display, Formatter};
 
-use bincode::{Encode, Decode};
+use bincode::{Decode, Encode};
 
 use crate::types::DateTime;
-
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Value {
@@ -81,4 +80,3 @@ impl From<&[u8]> for Value {
         Self::Bytes(v.to_vec())
     }
 }
-

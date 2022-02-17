@@ -13,8 +13,8 @@ use scylla::frame::value::{
     ValueList,
 };
 
-use crate::DocId;
 use crate::impls::scylla_backed::tables::format_column;
+use crate::DocId;
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument(pub DocId, pub Document);

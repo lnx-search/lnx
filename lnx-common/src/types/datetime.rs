@@ -1,11 +1,12 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use bincode::enc::Encoder;
-use bincode::{Decode, Encode};
+
 use bincode::de::Decoder;
+use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
-use tantivy::DateTime as TDateTime;
+use bincode::{Decode, Encode};
 use tantivy::fastfield::FastValue;
+use tantivy::DateTime as TDateTime;
 
 #[derive(Debug, Clone)]
 pub struct DateTime(TDateTime);

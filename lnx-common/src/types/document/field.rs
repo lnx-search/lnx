@@ -1,10 +1,10 @@
 use std::fmt;
 use std::str::FromStr;
 
+use bincode::{Decode, Encode};
 use serde::de::value::SeqAccessDeserializer;
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use bincode::{Encode, Decode};
 
 use crate::types::Value;
 

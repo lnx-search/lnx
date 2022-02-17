@@ -1,7 +1,7 @@
 pub mod document;
 
-mod value;
 mod datetime;
+mod value;
 
 pub use datetime::DateTime;
 pub use value::Value;

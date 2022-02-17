@@ -1,9 +1,9 @@
 use std::cmp;
 use std::ops::Deref;
 
+use bincode::{Decode, Encode};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use bincode::{Encode, Decode};
 
 #[derive(Debug, Decode, Encode)]
 pub struct NumThreads(usize);

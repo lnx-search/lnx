@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-pub use bincode::{Decode, Encode};
 
+pub use bincode::{Decode, Encode};
 
 #[derive(Debug)]
 pub struct DeserializeError(&'static str);
@@ -17,11 +17,10 @@ impl Error for DeserializeError {}
 pub trait ToBytes: Encode + Sized {
     #[instrument(name = "binary-serializer", skip(self))]
     fn to_bytes(&self) -> Result<Vec<u8>, bincode::error::EncodeError> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .map_err(|e| {
-                error!("Failed to complete serialization {}", e);
-                e
-            })
+        bincode::encode_to_vec(self, bincode::config::standard()).map_err(|e| {
+            error!("Failed to complete serialization {}", e);
+            e
+        })
     }
 }
 

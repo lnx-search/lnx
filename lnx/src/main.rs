@@ -10,7 +10,6 @@ use lnx_storage::{BackendSelector, PollingMode, ReplicationInfo};
 use lnx_utils::Validator;
 use tantivy::directory::MmapDirectory;
 
-
 macro_rules! doc {
     ($($key:expr => $val:expr),* ,) => (
         doc!($($key => $val),*)
@@ -79,15 +78,13 @@ async fn main() -> Result<()> {
         PollingMode::Dynamic,
         HashMap::new(),
         index,
-    ).await?;
+    )
+    .await?;
 
-
-    let documents = vec![
-        doc! {
-            "test".to_string() => "Hello, world",
-            "name".to_string() => "Bob marly",
-        }
-    ];
+    let documents = vec![doc! {
+        "test".to_string() => "Hello, world",
+        "name".to_string() => "Bob marly",
+    }];
 
     lnx_writer::add_documents("test", documents).await?;
 
