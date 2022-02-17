@@ -1,14 +1,15 @@
 use std::fmt::{Display, Formatter};
 
-use tantivy::tokenizer::PreTokenizedString;
-use tantivy::DateTime;
+use bincode::{Encode, Decode};
 
-#[derive(Debug, Clone)]
+use crate::types::DateTime;
+
+
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Value {
     I64(i64),
     U64(u64),
     F64(f64),
-    PreTokenizedText(PreTokenizedString),
     DateTime(DateTime),
     Text(String),
     Bytes(Vec<u8>),
@@ -20,7 +21,6 @@ impl Display for Value {
             Value::I64(v) => write!(f, "{}", v),
             Value::U64(v) => write!(f, "{}", v),
             Value::F64(v) => write!(f, "{}", v),
-            Value::PreTokenizedText(v) => write!(f, "{}", v.text),
             Value::DateTime(v) => write!(f, "{}", v),
             Value::Text(v) => write!(f, "{}", v),
             Value::Bytes(v) => write!(f, "{}", base64::encode(v)),
@@ -64,6 +64,12 @@ impl From<DateTime> for Value {
     }
 }
 
+impl From<tantivy::DateTime> for Value {
+    fn from(v: tantivy::DateTime) -> Self {
+        Self::DateTime(DateTime::from(v))
+    }
+}
+
 impl From<Vec<u8>> for Value {
     fn from(v: Vec<u8>) -> Self {
         Self::Bytes(v)
@@ -76,8 +82,3 @@ impl From<&[u8]> for Value {
     }
 }
 
-impl From<PreTokenizedString> for Value {
-    fn from(v: PreTokenizedString) -> Self {
-        Self::PreTokenizedText(v)
-    }
-}

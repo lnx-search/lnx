@@ -1,14 +1,14 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
-use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::de::value::SeqAccessDeserializer;
+use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tantivy::tokenizer::PreTokenizedString;
+use bincode::{Encode, Decode};
 
 use crate::types::Value;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum DocField {
     Empty,
     Single(Value),
@@ -78,15 +78,6 @@ impl<'de> Deserialize<'de> for DocField {
                 A: SeqAccess<'de>,
             {
                 Vec::deserialize(SeqAccessDeserializer::new(seq)).map(DocField::Multi)
-            }
-
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let data =
-                    PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
-                Ok(DocField::Single(Value::from(data)))
             }
         }
 

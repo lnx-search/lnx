@@ -71,9 +71,6 @@ impl TryInto<i64> for Value {
                 .try_into()
                 .map_err(|_| ConversionError::new("u64", "i64", v))?,
             Value::F64(v) => return Err(ConversionError::new("Float", "i64", v)),
-            Value::PreTokenizedText(v) => {
-                return Err(ConversionError::new("PreTokenizedText", "i64", v))
-            },
             Value::DateTime(v) => v.timestamp(),
             Value::Text(v) => v
                 .parse::<i64>()
@@ -101,9 +98,6 @@ impl TryInto<u64> for Value {
                 .map_err(|_| ConversionError::new("i64", "u64", v))?,
             Value::U64(v) => v,
             Value::F64(v) => return Err(ConversionError::new("f64", "u64", v)),
-            Value::PreTokenizedText(v) => {
-                return Err(ConversionError::new("PreTokenizedText", "u64", v))
-            },
             Value::DateTime(v) => v.as_u64(),
             Value::Text(v) => v
                 .parse::<u64>()
@@ -129,9 +123,6 @@ impl TryInto<f64> for Value {
             Value::I64(v) => v as f64,
             Value::U64(v) => v as f64,
             Value::F64(v) => v,
-            Value::PreTokenizedText(v) => {
-                return Err(ConversionError::new("PreTokenizedText", "f64", v))
-            },
             Value::DateTime(v) => {
                 return Err(ConversionError::new("DateTime", "f64", v))
             },
@@ -159,9 +150,6 @@ impl TryInto<Facet> for Value {
             Value::I64(v) => ConversionError::new("i64", "Facet", v),
             Value::U64(v) => ConversionError::new("u64", "Facet", v),
             Value::F64(v) => ConversionError::new("f64", "Facet", v),
-            Value::PreTokenizedText(v) => {
-                ConversionError::new("PreTokenizedText", "Facet", v)
-            },
             Value::DateTime(v) => ConversionError::new("DateTime", "Facet", v),
             Value::Text(v) => {
                 return Facet::from_text(&v)
@@ -194,10 +182,7 @@ impl TryInto<DateTime> for Value {
                 Utc,
             ),
             Value::F64(v) => return Err(ConversionError::new("f64", "DateTime", v)),
-            Value::PreTokenizedText(v) => {
-                return Err(ConversionError::new("PreTokenizedText", "DateTime", v))
-            },
-            Value::DateTime(v) => v,
+            Value::DateTime(v) => v.into_inner(),
             Value::Text(v) => DateTime::from_str(&v)
                 .map_err(|_| ConversionError::new("Text", "DateTime", v))?,
             Value::Bytes(v) => {
@@ -221,9 +206,6 @@ impl TryInto<Vec<u8>> for Value {
             Value::I64(v) => ConversionError::new("i64", "Bytes", v),
             Value::U64(v) => ConversionError::new("u64", "Bytes", v),
             Value::F64(v) => ConversionError::new("f64", "Bytes", v),
-            Value::PreTokenizedText(v) => {
-                ConversionError::new("PreTokenizedText", "Bytes", v)
-            },
             Value::DateTime(v) => ConversionError::new("DateTime", "Bytes", v),
             Value::Text(v) => return Ok(v.as_bytes().to_vec()),
             Value::Bytes(v) => return Ok(v),

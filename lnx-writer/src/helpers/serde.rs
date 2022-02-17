@@ -3,8 +3,9 @@ use std::ops::Deref;
 
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use bincode::{Encode, Decode};
 
-#[derive(Debug)]
+#[derive(Debug, Decode, Encode)]
 pub struct NumThreads(usize);
 
 impl Deref for NumThreads {
@@ -45,7 +46,7 @@ impl Default for NumThreads {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Encode, Decode)]
 /// A struct that allows for the buffer size to be specified in short hand.
 ///
 /// The following format is allowed:

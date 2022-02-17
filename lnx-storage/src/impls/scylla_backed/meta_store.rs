@@ -31,10 +31,10 @@ impl ScyllaMetaStore {
     #[instrument(name = "meta-store", skip(db))]
     pub fn load_from_local(index_name: &str, db: sled::Tree) -> Result<Self> {
         let id = match db.get(NODE_ID_KEY)? {
-            Some(id) => FromBytes::from_bytes(&id)?,
+            Some(id) => Uuid::from_slice(&id)?,
             None => {
                 let new_id = Uuid::new_v4();
-                db.insert(NODE_ID_KEY, new_id.to_bytes()?)?;
+                db.insert(NODE_ID_KEY, new_id.as_bytes().as_slice())?;
 
                 new_id
             },

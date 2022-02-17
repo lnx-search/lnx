@@ -14,6 +14,7 @@ use scylla::frame::value::{
 };
 
 use crate::DocId;
+use crate::impls::scylla_backed::tables::format_column;
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument(pub DocId, pub Document);
@@ -47,7 +48,8 @@ impl ScyllaSafeDocument {
                 None => items.insert(FieldName(column), DocField::Empty),
                 Some(v) => {
                     let field = match v.as_blob() {
-                        Some(b) => DocField::from_bytes(b).map_err(|_| {
+                        Some(b) => DocField::from_bytes(b).map_err(|e| {
+                            error!("Decoding error {}", e);
                             FromRowError::BadCqlVal {
                                 err: FromCqlValError::BadCqlType,
                                 column: i + 1,
@@ -80,7 +82,7 @@ impl ValueList for ScyllaSafeDocument {
                 ),
             };
 
-            result.add_named_value(&name, &buff)?;
+            result.add_named_value(&format_column(name), &buff)?;
         }
 
         Ok(Cow::Owned(result))

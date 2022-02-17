@@ -16,6 +16,7 @@ hashbrown = { version = "0.12.0", features = ["serde"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 sled = { version = "0.34.7", features = ["compression"] }
 
+bincode = "2.0.0-beta.3"
 scylla = "0.4.1"
 parking_lot = "0.12"
 arc-swap = "1.5.0"
@@ -24,7 +25,6 @@ itertools = "0.10.3"
 futures-util = "0.3.21"
 anyhow = "1"
 thiserror = "1.0.30"
-bincode = "1.3.3"
 async-trait = "0.1.52"
 tracing = "0.1.30"
 tracing-futures = "0.2.5"

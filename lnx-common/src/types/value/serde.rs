@@ -1,10 +1,8 @@
 use std::fmt;
 use std::str::FromStr;
 
-use serde::de::value::MapAccessDeserializer;
-use serde::de::{MapAccess, Visitor};
+use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use tantivy::tokenizer::PreTokenizedString;
 
 use super::Value;
 
@@ -36,7 +34,7 @@ impl<'de> Deserialize<'de> for Value {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 if let Ok(dt) = tantivy::DateTime::from_str(v) {
-                    return Ok(Value::DateTime(dt));
+                    return Ok(Value::DateTime(crate::types::DateTime::from(dt)));
                 }
 
                 if let Ok(bytes) = base64::decode(v) {
@@ -48,7 +46,7 @@ impl<'de> Deserialize<'de> for Value {
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 if let Ok(dt) = tantivy::DateTime::from_str(&v) {
-                    return Ok(Value::DateTime(dt));
+                    return Ok(Value::DateTime(crate::types::DateTime::from(dt)));
                 }
 
                 if let Ok(bytes) = base64::decode(&v) {
@@ -65,15 +63,6 @@ impl<'de> Deserialize<'de> for Value {
             fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> {
                 Ok(Value::Bytes(v))
             }
-
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let data =
-                    PreTokenizedString::deserialize(MapAccessDeserializer::new(map))?;
-                Ok(Value::PreTokenizedText(data))
-            }
         }
 
         deserializer.deserialize_any(ValueVisitor)
@@ -89,7 +78,6 @@ impl Serialize for Value {
             Value::I64(v) => v.serialize(serializer),
             Value::U64(v) => v.serialize(serializer),
             Value::F64(v) => v.serialize(serializer),
-            Value::PreTokenizedText(v) => v.serialize(serializer),
             Value::DateTime(v) => v.to_rfc3339().serialize(serializer),
             Value::Text(v) => v.serialize(serializer),
             Value::Bytes(v) => {

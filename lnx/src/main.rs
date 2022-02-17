@@ -4,9 +4,24 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
+use lnx_common::schema::FieldName;
+use lnx_common::types::document::DocField;
 use lnx_storage::{BackendSelector, PollingMode, ReplicationInfo};
 use lnx_utils::Validator;
 use tantivy::directory::MmapDirectory;
+
+
+macro_rules! doc {
+    ($($key:expr => $val:expr),* ,) => (
+        doc!($($key => $val),*)
+    );
+    ($($key:expr => $val:expr),*) => ({
+        #[allow(unused_mut)]
+        let mut map = hashbrown::HashMap::new();
+        $( map.insert(FieldName($key), DocField::Single($val.into())); )*
+        lnx_common::types::document::Document(map)
+    });
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -57,18 +72,28 @@ async fn main() -> Result<()> {
     let ref_schema = index.schema();
     schema.validate_with_tantivy_schema(&ref_schema)?;
 
-    // lnx_engine::add_index(
-    //     "test",
-    //     schema,
-    //     ReplicationInfo::Simple,
-    //     PollingMode::Dynamic,
-    //     HashMap::new(),
-    //     index,
-    // ).await?;
+    lnx_engine::add_index(
+        "test",
+        schema,
+        ReplicationInfo::Simple,
+        PollingMode::Dynamic,
+        HashMap::new(),
+        index,
+    ).await?;
 
-    lnx_engine::remove_index("test").await?;
+
+    let documents = vec![
+        doc! {
+            "test".to_string() => "Hello, world",
+            "name".to_string() => "Bob marly",
+        }
+    ];
+
+    lnx_writer::add_documents("test", documents).await?;
 
     tokio::time::sleep(Duration::from_secs(120)).await;
+
+    lnx_engine::remove_index("test").await?;
 
     Ok(())
 }

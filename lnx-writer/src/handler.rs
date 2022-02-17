@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::Index as InnerIndex;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio::task::JoinHandle;
+use bincode::{Encode, Decode};
 
 use super::helpers::serde::{BufferSize, NumThreads};
 use super::helpers::CancellingJoinHandle;
@@ -72,7 +73,7 @@ impl IndexerHandlerConfig {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Decode, Encode)]
 pub struct IndexerConfig {
     #[serde(default)]
     /// The number of threads to use on the index writer.
