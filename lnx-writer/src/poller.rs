@@ -140,7 +140,7 @@ async fn handle_changes(
     mode: PollingMode,
     last_update: Timestamp,
 ) -> Result<()> {
-    info!("Checking for changes since last update...");
+    debug!("Checking for changes since last update...");
 
     let count = index.docs().count_pending_changes(last_update).await?;
 
@@ -149,7 +149,7 @@ async fn handle_changes(
         return Ok(());
     }
 
-    info!("{} Pending updates waiting.", count);
+    info!("Detected {} pending updates waiting.", count);
 
     match mode {
         PollingMode::Continuous => {
@@ -206,6 +206,8 @@ async fn handle_dynamic_indexing(
 }
 
 async fn process_changes(index: &IndexStore, last_update: Timestamp) -> Result<()> {
+    info!("Beginning the indexing process. Updating to timestamp {}", last_update);
+
     let mut indexer = handler::get().begin_indexing(index.name()).await?;
 
     let mut changes = index
