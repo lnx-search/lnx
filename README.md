@@ -1,6 +1,7 @@
 <p align="center">
-  <img width="20%" src="https://user-images.githubusercontent.com/57491488/151217716-45bf341b-6664-45d7-800d-4e01857418a6.png" alt="Lust Logo">
+  <img width="30%" src="https://user-images.githubusercontent.com/57491488/156235904-5c0f956f-1bd7-4b7e-8cd0-fd344db7e632.png" alt="lnx Logo">
 </p>
+
 
 #
 <p align="center">
