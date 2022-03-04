@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::executors::search::ExecutorError;
