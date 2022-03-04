@@ -1,6 +1,7 @@
 use tantivy::DocAddress;
-use tantivy::query::Query;
+use tantivy::query::{Explanation, Query};
 
+use crate::types::document::DocId;
 use super::filter::Filter;
 
 #[derive(Debug, thiserror::Error)]
@@ -14,11 +15,22 @@ pub enum SearchError {
 
 
 pub trait Searchable {
+    /// Executes a given query returning the set of doc ids.
+    ///
+    /// The order of query execution is important, a given query must
+    /// take presidency over the following queries.
     fn execute(
         &self,
-        query: Box<dyn Query>,
+        queries: Vec<Box<dyn Query>>,
         limit: usize,
         offset: usize,
         filters: Vec<Filter>,
-    ) -> Result<Vec<DocAddress>, SearchError>;
+    ) -> Result<Vec<DocId>, SearchError>;
+
+    /// Produce an explanation for the given doc with a given query.
+    fn explain(
+        &self,
+        doc_id: DocId,
+        query: Box<dyn Query>,
+    ) -> Result<Vec<Explanation>, SearchError>;
 }
