@@ -33,14 +33,12 @@ impl Searchable for InnerMicroIndex {
         queries: Vec<Box<dyn Query>>,
         limit: usize,
         offset: usize,
-        filters: Vec<Filter>,
+        filter: Filter,
     ) -> Result<Vec<DocId>, SearchError> {
         let mut micro_index_filter = Filter::new(self.id_field, FilterOp::Eq(self.id));
-        micro_index_filter.and(filters);
+        micro_index_filter.and(filter);
 
-        let filters = vec![micro_index_filter];
-
-        self.parent.execute(queries, limit, offset, filters)
+        self.parent.execute(queries, limit, offset, micro_index_filter)
     }
 
     fn explain(

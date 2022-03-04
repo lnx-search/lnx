@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use tantivy::schema::Field;
 
 #[derive(Debug, Clone)]
@@ -6,8 +5,8 @@ pub struct Filter {
     pub field: Field,
     pub op: FilterOp,
 
-    pub and: Option<Vec<Filter>>,
-    pub or: Option<Vec<Filter>>,
+    pub and: Option<Box<Filter>>,
+    pub or: Option<Box<Filter>>,
 }
 
 impl Filter {
@@ -21,12 +20,12 @@ impl Filter {
         }
     }
 
-    pub fn and(&mut self, other: Vec<Filter>) {
-        self.and = Some(other);
+    pub fn and(&mut self, other: Filter) {
+        self.and = Some(Box::new(other));
     }
 
-    pub fn or(&mut self, other: Vec<Filter>) {
-        self.or = Some(other)
+    pub fn or(&mut self, other: Filter) {
+        self.or = Some(Box::new(other))
     }
 }
 

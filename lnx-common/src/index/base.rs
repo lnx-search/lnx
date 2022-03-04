@@ -25,11 +25,11 @@ pub struct InnerIndex {
 
 impl Searchable for InnerIndex {
     fn execute(
-        &self, 
+        &self,
         queries: Vec<Box<dyn Query>>,
         limit: usize,
         offset: usize,
-        filters: Vec<Filter>,
+        filters: Filter,
     ) -> Result<Vec<DocId>, SearchError> {
         todo!()
     }

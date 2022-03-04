@@ -24,7 +24,7 @@ pub trait Searchable {
         queries: Vec<Box<dyn Query>>,
         limit: usize,
         offset: usize,
-        filters: Vec<Filter>,
+        filters: Filter,
     ) -> Result<Vec<DocId>, SearchError>;
 
     /// Produce an explanation for the given doc with a given query.
