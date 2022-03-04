@@ -1,1 +1,2 @@
-pub(crate) mod searchable;
+pub mod searchable;
+pub mod process_document;
