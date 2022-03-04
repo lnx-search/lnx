@@ -2,16 +2,16 @@ use std::path::Path;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use lnx_metrics::Stats;
 
 /// A synonym mapping which maps a given word to a set of synonyms.
+#[derive(Clone)]
 pub struct Synonyms {
     pub word: String,
     pub synonyms: Vec<String>,
 }
 
 #[async_trait]
-pub trait MetaStore: Stats + Send + Sync + 'static {
+pub trait MetaStore: Send + Sync + 'static {
     async fn setup(&self) -> Result<()>;
 
     /// Add a set of stop words to the existing set of words.
