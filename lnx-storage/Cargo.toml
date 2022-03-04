@@ -12,6 +12,7 @@ anyhow = "1"
 scylla = "0.4.1"
 chrono = "0.4.19"
 async-trait = "0.1.52"
+serde_json = "1.0.79"
 
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }  # todo change
