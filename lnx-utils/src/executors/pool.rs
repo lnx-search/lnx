@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tantivy::{HasLen, Searcher};
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::executors::search::ExecutorError;
