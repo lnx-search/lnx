@@ -1,7 +1,9 @@
 use std::collections::HashSet;
+use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use lnx_common::types::document::{DocId, Document};
 
 use super::change_log::ChangeLogStore;
 use crate::types::SegmentId;

@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lnx-common = { path = "../lnx-common" }
+
 anyhow = "1"
 scylla = "0.4.1"
 chrono = "0.4.19"
