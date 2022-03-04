@@ -23,6 +23,18 @@ pub struct InnerIndex {
     inner: tantivy::Index,
 }
 
+impl InnerIndex {
+    #[inline]
+    pub fn ctx(&self) -> &IndexContext {
+        &self.ctx
+    }
+
+    #[inline]
+    pub fn inner(&self) -> &tantivy::Index {
+        &self.inner
+    }
+}
+
 impl Searchable for InnerIndex {
     fn execute(
         &self,
