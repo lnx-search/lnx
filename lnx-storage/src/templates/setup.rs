@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use anyhow::Result;
 use serde_json::Value;
+use lnx_common::index::context::IndexContext;
 
 
 #[async_trait]
@@ -10,5 +11,5 @@ pub trait SetupOnce {
 
 #[async_trait]
 pub trait SetupForIndex {
-    async fn setup(index_name: config: Value) -> Result<()>;    
+    async fn setup(ctx: IndexContext, config: Value) -> Result<()>;
 }
