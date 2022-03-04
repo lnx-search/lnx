@@ -4,3 +4,4 @@ mod serde;
 mod value;
 
 pub use value::Value;
+pub use convert::ConversionError;
