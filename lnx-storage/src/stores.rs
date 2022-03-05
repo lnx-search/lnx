@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+use lnx_common::index::base::Index;
 use lnx_common::index::context::IndexContext;
 use lnx_utils::{FromBytes, ToBytes};
 
@@ -16,6 +17,7 @@ use crate::templates::meta_store::MetaStore;
 /// Additional settings can be added via the `store` and `load` method.
 pub struct IndexStore {
     ctx: IndexContext,
+    index: Index,
     polling_mode: PollingMode,
     doc_store: Arc<dyn DocStore>,
     meta_store: Arc<dyn MetaStore>,
@@ -24,16 +26,23 @@ pub struct IndexStore {
 impl IndexStore {
     pub fn new(
         ctx: IndexContext,
+        index: Index,
         polling_mode: PollingMode,
         doc_store: Arc<dyn DocStore>,
         meta_store: Arc<dyn MetaStore>
     ) -> Self {
         Self {
             ctx,
+            index,
             polling_mode,
             doc_store,
             meta_store,
         }
+    }
+
+    #[inline]
+    pub fn index(&self) -> Index {
+        self.index.clone()
     }
 
     #[inline]
