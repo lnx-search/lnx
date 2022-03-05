@@ -1,10 +1,9 @@
-use serde::{Serialize, Deserialize};
-
 use scylladb_backend::{ConnectionConfig, ReplicationInfo};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BackendSelector {
-    Scylla(ConnectionConfig)
+    Scylla(ConnectionConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

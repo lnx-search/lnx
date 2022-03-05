@@ -59,15 +59,14 @@ impl IndexStore {
     pub fn ctx(&self) -> &IndexContext {
         &self.ctx
     }
-    
+
     /// Updates the current settings for the given key.
     ///
     /// These changes are reflected in the database.
     #[instrument(name = "index-settings-store", skip(self, settings))]
     pub async fn store<T: ToBytes>(&self, key: &str, settings: T) -> Result<()> {
         let instant = Instant::now();
-        self.update_settings(key, settings.to_bytes()?)
-            .await?;
+        self.update_settings(key, settings.to_bytes()?).await?;
         info!("Settings store took {:?}", instant.elapsed());
 
         Ok(())

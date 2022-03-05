@@ -6,8 +6,8 @@ use lnx_common::types::document::{DocId, Document};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::templates::meta_store::MetaStore;
 use super::change_log::ChangeLogStore;
+use crate::templates::meta_store::MetaStore;
 use crate::types::SegmentId;
 
 #[async_trait]

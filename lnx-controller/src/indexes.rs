@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::sync::Arc;
-use once_cell::sync::OnceCell;
+
 use dashmap::DashMap;
 use lnx_common::index::base::Index;
 use lnx_common::index::context::IndexContext;
@@ -9,6 +9,7 @@ use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::doc_store::DocStore;
 use lnx_storage::templates::meta_store::MetaStore;
 use lnx_storage::templates::setup::SetupForIndex;
+use once_cell::sync::OnceCell;
 use scylladb_backend::ScyllaIndexStore;
 
 use crate::backends::IndexStorageConfig;
@@ -18,11 +19,7 @@ static INDEXES: OnceCell<DashMap<String, IndexStore>> = OnceCell::new();
 #[inline]
 /// Gets the index store for the given index if it exists.
 pub fn get(index_name: &str) -> Option<IndexStore> {
-    Some(INDEXES
-        .get()?
-        .get(index_name)?
-        .deref()
-        .clone())
+    Some(INDEXES.get()?.get(index_name)?.deref().clone())
 }
 
 #[inline]
@@ -45,15 +42,10 @@ pub async fn new(
     let doc_store: Arc<dyn DocStore> = match config.clone() {
         IndexStorageConfig::Scylla(cfg) => {
             Arc::new(ScyllaIndexStore::setup(ctx.clone(), cfg).await?)
-        }
+        },
     };
 
-    let store = IndexStore::new(
-        ctx,
-        index,
-        polling_mode,
-        doc_store,
-    );
+    let store = IndexStore::new(ctx, index, polling_mode, doc_store);
 
     let indexes = INDEXES.get_or_init(DashMap::new);
     indexes.insert(ctx.name().to_string(), store);
