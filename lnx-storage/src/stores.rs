@@ -1,8 +1,7 @@
-use std::collections;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
-use parking_lot::Mutex;
+
 use anyhow::Result;
 use lnx_common::schema::{FieldName, Schema};
 use lnx_utils::{FromBytes, ToBytes};
@@ -26,8 +25,8 @@ pub struct IndexStore {
 
 impl IndexStore {
     #[inline]
-    pub fn polling_mode(&self) -> PollingMode {
-        self.polling_mode
+    pub fn polling_mode(&self) -> &PollingMode {
+        &self.polling_mode
     }
 
     #[inline]
