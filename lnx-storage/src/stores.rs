@@ -38,8 +38,8 @@ impl IndexStore {
     }
 
     #[inline]
-    pub fn polling_mode(&self) -> &PollingMode {
-        &self.polling_mode
+    pub fn polling_mode(&self) -> PollingMode {
+        self.polling_mode
     }
 
     #[inline]
