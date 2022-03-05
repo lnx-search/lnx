@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::types::Timestamp;
+
 /// A synonym mapping which maps a given word to a set of synonyms.
 #[derive(Clone)]
 pub struct Synonyms {
@@ -34,7 +36,7 @@ pub trait MetaStore: Send + Sync + 'static {
     ///
     /// This should be a persistent operation as it is required for the node
     /// to understand where it currently stand in the index history.
-    async fn set_update_timestamp(&self, timestamp: chrono::Duration) -> Result<()>;
+    async fn set_update_timestamp(&self, timestamp: Timestamp) -> Result<()>;
 
     /// Get node's the last updated timestamp.
     ///
@@ -42,12 +44,9 @@ pub trait MetaStore: Send + Sync + 'static {
     ///
     /// If None is required it is assumed that the index completely blank and
     /// has no existing history.
-    async fn get_last_update_timestamp(&self) -> Result<Option<chrono::Duration>>;
+    async fn get_last_update_timestamp(&self) -> Result<Option<Timestamp>>;
 
     /// Load the existing index from the most up to date peer and download it with
     /// the given output directory.
     async fn load_index_from_peer(&self, out_dir: &Path) -> Result<()>;
-
-    /// Called in order to mark the node as active still.
-    async fn heartbeat(&self, purge_delta: chrono::Duration) -> Result<()>;
 }
