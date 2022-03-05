@@ -1,4 +1,3 @@
-use tantivy::DocAddress;
 use tantivy::query::{Explanation, Query};
 
 use crate::types::document::DocId;

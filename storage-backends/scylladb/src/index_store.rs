@@ -112,4 +112,16 @@ impl MetaStore for ScyllaIndexStore {
     async fn load_index_from_peer(&self, out_dir: &Path) -> Result<()> {
         todo!()
     }
+
+    async fn update_settings(&self, key: &str, data: Vec<u8>) -> Result<()> {
+        todo!()
+    }
+
+    async fn remove_settings(&self, key: &str) -> Result<()> {
+        todo!()
+    }
+
+    async fn load_settings(&self, key: &str) -> Result<Option<Vec<u8>>> {
+        todo!()
+    }
 }
