@@ -7,12 +7,16 @@ edition = "2021"
 
 [dependencies]
 lnx-common = { path = "../lnx-common" }
+lnx-utils = { path = "../lnx-utils" }
 
 anyhow = "1"
 scylla = "0.4.1"
 chrono = "0.4.19"
 async-trait = "0.1.52"
 serde_json = "1.0.79"
+parking_lot = "0.12.0"
+tracing = "0.1.30"
+tracing-futures = "0.2.5"
 
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }  # todo change
