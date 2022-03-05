@@ -9,7 +9,7 @@ pub enum SearchError {
     TantivyError(#[from] tantivy::TantivyError),
 
     #[error("Search Error: {0}")]
-    Other(#[from] anyhow::Error)
+    Other(#[from] anyhow::Error),
 }
 
 

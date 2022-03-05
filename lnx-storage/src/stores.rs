@@ -1,11 +1,10 @@
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
 use lnx_common::index::context::IndexContext;
-use lnx_common::schema::{FieldName, Schema};
 use lnx_utils::{FromBytes, ToBytes};
+
 use crate::polling::PollingMode;
 use crate::templates::doc_store::DocStore;
 use crate::templates::meta_store::MetaStore;
