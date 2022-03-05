@@ -12,8 +12,6 @@ pub struct Synonyms {
 
 #[async_trait]
 pub trait MetaStore: Send + Sync + 'static {
-    async fn setup(&self) -> Result<()>;
-
     /// Add a set of stop words to the existing set of words.
     async fn add_stopwords(&self, words: Vec<String>) -> Result<()>;
 

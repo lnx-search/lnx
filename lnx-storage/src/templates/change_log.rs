@@ -20,8 +20,6 @@ pub struct ChangeLogEntry {
 
 #[async_trait]
 pub trait ChangeLogStore {
-    async fn setup(&self) -> Result<()>;
-
     /// Append a change to the change log system.
     async fn append_changes(&self, logs: ChangeLogEntry) -> Result<()>;
 
