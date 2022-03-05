@@ -33,7 +33,6 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
     Some(INDEXES.get()?.remove(index_name)?.1)
 }
 
-
 #[inline]
 /// Creates a new index from the given context, index, polling mode and
 /// storage backend configuration.
