@@ -29,7 +29,6 @@ impl Filter {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum FilterOp {
     Eq(u64),

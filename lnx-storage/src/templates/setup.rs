@@ -1,8 +1,7 @@
-use async_trait::async_trait;
 use anyhow::Result;
-use serde_json::Value;
+use async_trait::async_trait;
 use lnx_common::index::context::IndexContext;
-
+use serde_json::Value;
 
 #[async_trait]
 pub trait SetupOnce {

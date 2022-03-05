@@ -1,9 +1,8 @@
+use lnx_storage::async_trait;
+use lnx_storage::templates::setup::SetupOnce;
 use serde_json::Value;
 
-use lnx_storage::templates::setup::SetupOnce;
-use lnx_storage::async_trait;
-
-use crate::connection::{ConnectionConfig, connect};
+use crate::connection::{connect, ConnectionConfig};
 
 pub struct ScyllaCluster;
 

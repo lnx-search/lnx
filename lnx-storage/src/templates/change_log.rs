@@ -5,7 +5,6 @@ use tokio::task::JoinHandle;
 
 use crate::types::{SegmentId, Timestamp};
 
-
 /// A given change log entry.
 #[derive(Debug)]
 pub struct ChangeLogEntry {
@@ -27,10 +26,7 @@ pub trait ChangeLogStore {
     ///
     /// Logs should be chunked into parts upto the size of `chunk_size` but does
     /// not need to be exactly that.
-    async fn get_pending_changes(
-        &self,
-        from: Timestamp,
-    ) -> Result<ChangeLogIterator>;
+    async fn get_pending_changes(&self, from: Timestamp) -> Result<ChangeLogIterator>;
 
     /// Get the current amount of pending changes.
     async fn count_pending_changes(&self, from: Timestamp) -> Result<usize>;

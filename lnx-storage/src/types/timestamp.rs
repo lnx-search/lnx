@@ -1,17 +1,19 @@
-use chrono::Utc;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
+use chrono::Utc;
 use scylla::cql_to_rust::{FromCqlVal, FromCqlValError};
 use scylla::frame::response::result::CqlValue;
-use scylla::frame::value::{ValueTooBig, self};
+use scylla::frame::value::{self, ValueTooBig};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Timestamp(pub chrono::Duration);
 
 impl Default for Timestamp {
     fn default() -> Self {
-        Self(chrono::Duration::milliseconds(Utc::now().timestamp_millis()))
+        Self(chrono::Duration::milliseconds(
+            Utc::now().timestamp_millis(),
+        ))
     }
 }
 

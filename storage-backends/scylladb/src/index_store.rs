@@ -1,16 +1,21 @@
 use std::collections::HashSet;
 use std::path::Path;
-use serde_json::Value;
-use anyhow::Result;
 
+use anyhow::Result;
 use lnx_common::index::context::IndexContext;
 use lnx_common::types::document::{DocId, Document};
-use lnx_storage::templates::setup::SetupForIndex;
 use lnx_storage::async_trait;
-use lnx_storage::templates::change_log::{ChangeLogEntry, ChangeLogIterator, ChangeLogStore};
+use lnx_storage::templates::change_log::{
+    ChangeLogEntry,
+    ChangeLogIterator,
+    ChangeLogStore,
+};
 use lnx_storage::templates::doc_store::{DocStore, DocumentIterator};
 use lnx_storage::templates::meta_store::{MetaStore, Synonyms};
+use lnx_storage::templates::setup::SetupForIndex;
 use lnx_storage::types::{SegmentId, Timestamp};
+use serde_json::Value;
+
 use crate::ReplicationInfo;
 
 pub struct ScyllaIndexStore {
@@ -24,15 +29,16 @@ impl SetupForIndex for ScyllaIndexStore {
 
         replication_info.build_index_keyspace(&ctx).await?;
 
-        Ok(Self {
-            ctx
-        })
+        Ok(Self { ctx })
     }
 }
 
 #[async_trait]
 impl DocStore for ScyllaIndexStore {
-    async fn add_documents(&self, docs: &[(DocId, Document)]) -> Result<HashSet<SegmentId>> {
+    async fn add_documents(
+        &self,
+        docs: &[(DocId, Document)],
+    ) -> Result<HashSet<SegmentId>> {
         todo!()
     }
 
@@ -45,14 +51,16 @@ impl DocStore for ScyllaIndexStore {
     }
 
     async fn fetch_document(
-        &self, fields: Option<Vec<String>>,
+        &self,
+        fields: Option<Vec<String>>,
         docs: DocId,
     ) -> Result<Option<(DocId, SegmentId, Document)>> {
         todo!()
     }
 
     async fn iter_documents(
-        &self, fields: Option<Vec<String>>,
+        &self,
+        fields: Option<Vec<String>>,
         chunk_size: usize,
         segment_id: Option<SegmentId>,
     ) -> Result<DocumentIterator> {

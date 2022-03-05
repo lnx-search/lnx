@@ -17,7 +17,7 @@ impl IndexContext {
     pub fn id(&self) -> u64 {
         crc32fast::hash(self.name.as_bytes()) as u64
     }
-    
+
     #[inline]
     pub fn keyspace(&self) -> String {
         format!(

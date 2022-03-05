@@ -1,11 +1,11 @@
 use std::ops::Deref;
 use std::sync::Arc;
+
 use tantivy::query::{Explanation, Query};
 
 use crate::index::context::IndexContext;
-use crate::index::handlers::searchable::{Filter, Searchable, SearchError};
+use crate::index::handlers::searchable::{Filter, SearchError, Searchable};
 use crate::types::document::DocId;
-
 
 #[derive(Clone)]
 pub struct Index(Arc<InnerIndex>);

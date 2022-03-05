@@ -1,13 +1,13 @@
 use std::collections::HashSet;
+
 use anyhow::Result;
 use async_trait::async_trait;
+use lnx_common::types::document::{DocId, Document};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use lnx_common::types::document::{DocId, Document};
 
 use super::change_log::ChangeLogStore;
 use crate::types::SegmentId;
-
 
 #[async_trait]
 pub trait DocStore: ChangeLogStore + Send + Sync + 'static {

@@ -10,7 +10,6 @@ use crate::polling::PollingMode;
 use crate::templates::doc_store::DocStore;
 use crate::templates::meta_store::MetaStore;
 
-
 #[derive(Clone)]
 /// A Index's storage and configuration settings.
 ///
@@ -29,7 +28,7 @@ impl IndexStore {
         index: Index,
         polling_mode: PollingMode,
         doc_store: Arc<dyn DocStore>,
-        meta_store: Arc<dyn MetaStore>
+        meta_store: Arc<dyn MetaStore>,
     ) -> Self {
         Self {
             ctx,
@@ -85,9 +84,7 @@ impl IndexStore {
     #[instrument(name = "index-settings-remove", skip(self))]
     pub async fn remove(&self, key: &str) -> Result<()> {
         let instant = Instant::now();
-        self.meta()
-            .remove_settings(key)
-            .await?;
+        self.meta().remove_settings(key).await?;
         info!("Settings update took {:?}", instant.elapsed());
 
         Ok(())

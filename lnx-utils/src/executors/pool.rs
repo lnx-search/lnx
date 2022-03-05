@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::executors::search::ExecutorError;
@@ -41,7 +42,7 @@ impl ExecutorPool {
     pub fn max_concurrency(&self) -> usize {
         self.max_concurrency
     }
-    
+
     /// Creates a new thread pool with a set concurrency.
     ///
     /// The set concurrency determines the number of threads spawned.
@@ -58,8 +59,6 @@ impl ExecutorPool {
             thread_pool: Arc::new(thread_pool),
         })
     }
-    
-    
 
     /// Spawns a new function into the pool and returns
     /// the results once complete.
@@ -83,4 +82,3 @@ impl ExecutorPool {
         rx.await.map_err(|_| SpawnError::JoinError)
     }
 }
-

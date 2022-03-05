@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use hashbrown::HashMap;
+use lnx_common::configuration::SEARCH_ENGINE_CONFIGURATION_KEYSPACE;
+use lnx_common::index::context::IndexContext;
 use once_cell::sync::OnceCell;
 use scylla::transport::errors::{DbError, QueryError};
 use scylla::transport::Compression;
 use serde::{Deserialize, Serialize};
-use lnx_common::index::context::IndexContext;
-use lnx_common::configuration::SEARCH_ENGINE_CONFIGURATION_KEYSPACE;
 
 use super::error::ConnectionError;
 use super::session::Session;
@@ -58,7 +58,9 @@ pub struct ConnectionConfig {
 pub async fn connect(config: ConnectionConfig) -> Result<(), ConnectionError> {
     let mut builder = scylla::SessionBuilder::new()
         .compression(Some(Compression::Lz4))
-        .connection_timeout(Duration::from_secs(config.connection_timeout.unwrap_or(30)));
+        .connection_timeout(Duration::from_secs(
+            config.connection_timeout.unwrap_or(30),
+        ));
 
     if let (Some(user), Some(pass)) = (config.user, config.password) {
         builder = builder.user(user, pass);

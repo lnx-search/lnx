@@ -1,7 +1,7 @@
-mod session;
-mod error;
 mod connect;
+mod error;
+mod session;
 
-pub use session::Session;
+pub use connect::{connect, session, ConnectionConfig, ReplicationInfo};
 pub use error::ConnectionError;
-pub use connect::{session, connect, ReplicationInfo, ConnectionConfig};
+pub use session::Session;

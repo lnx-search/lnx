@@ -1,5 +1,5 @@
-mod filter;
 mod base;
+mod filter;
 
-pub use filter::{FilterOp, Filter, AdaptableSet};
 pub use base::{SearchError, Searchable};
+pub use filter::{AdaptableSet, Filter, FilterOp};

@@ -1,7 +1,7 @@
 use tantivy::query::{Explanation, Query};
 
-use crate::types::document::DocId;
 use super::filter::Filter;
+use crate::types::document::DocId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SearchError {
@@ -11,7 +11,6 @@ pub enum SearchError {
     #[error("Search Error: {0}")]
     Other(#[from] anyhow::Error),
 }
-
 
 pub trait Searchable {
     /// Executes a given query returning the set of doc ids.

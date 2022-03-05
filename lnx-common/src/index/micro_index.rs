@@ -5,7 +5,7 @@ use tantivy::query::{Explanation, Query};
 use tantivy::schema::Field;
 
 use crate::index::base::Index;
-use crate::index::handlers::searchable::{Filter, FilterOp, Searchable, SearchError};
+use crate::index::handlers::searchable::{Filter, FilterOp, SearchError, Searchable};
 use crate::types::document::DocId;
 
 pub type MicroIndexId = u64;
@@ -38,7 +38,8 @@ impl Searchable for InnerMicroIndex {
         let mut micro_index_filter = Filter::new(self.id_field, FilterOp::Eq(self.id));
         micro_index_filter.and(filter);
 
-        self.parent.execute(queries, limit, offset, micro_index_filter)
+        self.parent
+            .execute(queries, limit, offset, micro_index_filter)
     }
 
     fn explain(

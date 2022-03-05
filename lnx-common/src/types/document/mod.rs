@@ -1,5 +1,5 @@
 mod document;
 mod field;
 
-pub use document::{Document, DocId};
+pub use document::{DocId, Document};
 pub use field::DocField;
