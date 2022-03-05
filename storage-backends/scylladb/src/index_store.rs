@@ -11,15 +11,22 @@ use lnx_storage::templates::change_log::{ChangeLogEntry, ChangeLogIterator, Chan
 use lnx_storage::templates::doc_store::{DocStore, DocumentIterator};
 use lnx_storage::templates::meta_store::{MetaStore, Synonyms};
 use lnx_storage::types::{SegmentId, Timestamp};
+use crate::ReplicationInfo;
 
 pub struct ScyllaIndexStore {
-
+    ctx: IndexContext,
 }
 
 #[async_trait]
 impl SetupForIndex for ScyllaIndexStore {
-    async fn setup(ctx: IndexContext, config: Value) -> Result<()> {
-        todo!()
+    async fn setup(ctx: IndexContext, config: Value) -> Result<Self> {
+        let replication_info: ReplicationInfo = serde_json::from_value(config)?;
+
+        replication_info.build_index_keyspace(&ctx).await?;
+
+        Ok(Self {
+            ctx
+        })
     }
 }
 

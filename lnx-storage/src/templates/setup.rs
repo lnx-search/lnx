@@ -11,5 +11,5 @@ pub trait SetupOnce {
 
 #[async_trait]
 pub trait SetupForIndex {
-    async fn setup(ctx: IndexContext, config: Value) -> Result<()>;
+    async fn setup(ctx: IndexContext, config: Value) -> Result<Self>;
 }

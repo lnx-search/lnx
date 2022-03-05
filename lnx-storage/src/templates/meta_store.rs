@@ -49,4 +49,10 @@ pub trait MetaStore: Send + Sync + 'static {
     /// Load the existing index from the most up to date peer and download it with
     /// the given output directory.
     async fn load_index_from_peer(&self, out_dir: &Path) -> Result<()>;
+
+    async fn update_settings(&self, key: &str, data: Vec<u8>) -> Result<()>;
+
+    async fn remove_settings(&self, key: &str) -> Result<()>;
+
+    async fn load_settings(&self, key: &str) -> Result<Option<Vec<u8>>>;
 }
