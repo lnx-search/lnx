@@ -13,7 +13,7 @@ use super::session::Session;
 
 static CONNECTION: OnceCell<Session> = OnceCell::new();
 
-#[derive(Copy, CLone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Consistency {
     Any,
