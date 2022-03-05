@@ -13,7 +13,7 @@ use super::session::Session;
 
 static CONNECTION: OnceCell<Session> = OnceCell::new();
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Copy, CLone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Consistency {
     Any,
@@ -45,7 +45,7 @@ impl Into<scylla::frame::types::Consistency> for Consistency {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConnectionConfig {
     nodes: Vec<String>,
     user: Option<String>,

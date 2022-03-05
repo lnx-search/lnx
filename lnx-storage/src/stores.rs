@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -18,8 +19,15 @@ pub struct IndexStore {
     ctx: IndexContext,
     index: Index,
     polling_mode: PollingMode,
-    doc_store: Arc<dyn DocStore>,
-    meta_store: Arc<dyn MetaStore>,
+    store: Arc<dyn DocStore>,
+}
+
+impl Deref for IndexStore {
+    type Target = Arc<dyn DocStore>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
 }
 
 impl IndexStore {
@@ -27,15 +35,13 @@ impl IndexStore {
         ctx: IndexContext,
         index: Index,
         polling_mode: PollingMode,
-        doc_store: Arc<dyn DocStore>,
-        meta_store: Arc<dyn MetaStore>,
+        store: Arc<dyn DocStore>,
     ) -> Self {
         Self {
             ctx,
             index,
             polling_mode,
-            doc_store,
-            meta_store,
+            store,
         }
     }
 
@@ -53,25 +59,14 @@ impl IndexStore {
     pub fn ctx(&self) -> &IndexContext {
         &self.ctx
     }
-
-    #[inline]
-    pub fn docs(&self) -> &Arc<dyn DocStore> {
-        &self.doc_store
-    }
-
-    #[inline]
-    pub fn meta(&self) -> &Arc<dyn MetaStore> {
-        &self.meta_store
-    }
-
+    
     /// Updates the current settings for the given key.
     ///
     /// These changes are reflected in the database.
     #[instrument(name = "index-settings-store", skip(self, settings))]
     pub async fn store<T: ToBytes>(&self, key: &str, settings: T) -> Result<()> {
         let instant = Instant::now();
-        self.meta()
-            .update_settings(key, settings.to_bytes()?)
+        self.update_settings(key, settings.to_bytes()?)
             .await?;
         info!("Settings store took {:?}", instant.elapsed());
 
@@ -84,7 +79,7 @@ impl IndexStore {
     #[instrument(name = "index-settings-remove", skip(self))]
     pub async fn remove(&self, key: &str) -> Result<()> {
         let instant = Instant::now();
-        self.meta().remove_settings(key).await?;
+        self.remove_settings(key).await?;
         info!("Settings update took {:?}", instant.elapsed());
 
         Ok(())
@@ -96,7 +91,7 @@ impl IndexStore {
     #[instrument(name = "index-settings-load", skip(self))]
     pub async fn load<T: FromBytes>(&self, key: &str) -> Result<Option<T>> {
         let instant = Instant::now();
-        let settings = self.meta().load_settings(key).await?;
+        let settings = self.load_settings(key).await?;
         info!("Settings load took {:?}", instant.elapsed());
 
         settings

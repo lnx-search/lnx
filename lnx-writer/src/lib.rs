@@ -1,4 +1,5 @@
-mod helpers;
+pub mod helpers;
+pub mod error;
 
 #[cfg(test)]
 mod tests {
