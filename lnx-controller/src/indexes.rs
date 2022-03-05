@@ -16,6 +16,7 @@ use crate::backends::IndexStorageConfig;
 static INDEXES: OnceCell<DashMap<String, IndexStore>> = OnceCell::new();
 
 #[inline]
+/// Gets the index store for the given index if it exists.
 pub fn get(index_name: &str) -> Option<IndexStore> {
     Some(INDEXES
         .get()?
@@ -25,13 +26,17 @@ pub fn get(index_name: &str) -> Option<IndexStore> {
 }
 
 #[inline]
+/// Removes the index and returns it if it exists.
+///
+/// This can be used to shutdown and cleanup the index.
 pub fn remove(index_name: &str) -> Option<IndexStore> {
     Some(INDEXES.get()?.remove(index_name)?.1)
 }
 
 
-
-
+#[inline]
+/// Creates a new index from the given context, index, polling mode and
+/// storage backend configuration.
 pub async fn new(
     ctx: IndexContext,
     index: Index,
