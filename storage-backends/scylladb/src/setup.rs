@@ -12,6 +12,7 @@ impl SetupOnce for ScyllaCluster {
     async fn setup_once(config: Value) -> anyhow::Result<()> {
         let config: ConnectionConfig = serde_json::from_value(config)?;
 
+        connect(config).await?;
 
         Ok(())
     }
