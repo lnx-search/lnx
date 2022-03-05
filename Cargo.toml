@@ -3,6 +3,7 @@ members = [
     "lnx-storage",
     "lnx-common",
     "lnx-utils",
+    "lnx-writer",
 
     "storage-backends/scylladb"
 ]
