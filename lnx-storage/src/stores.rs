@@ -7,9 +7,8 @@ use lnx_common::index::base::Index;
 use lnx_common::index::context::IndexContext;
 use lnx_utils::{FromBytes, ToBytes};
 
-use crate::polling::PollingMode;
 use crate::templates::doc_store::DocStore;
-use crate::templates::meta_store::MetaStore;
+
 
 #[derive(Clone)]
 /// A Index's storage and configuration settings.
@@ -18,7 +17,6 @@ use crate::templates::meta_store::MetaStore;
 pub struct IndexStore {
     ctx: IndexContext,
     index: Index,
-    polling_mode: PollingMode,
     store: Arc<dyn DocStore>,
 }
 
@@ -34,13 +32,11 @@ impl IndexStore {
     pub fn new(
         ctx: IndexContext,
         index: Index,
-        polling_mode: PollingMode,
         store: Arc<dyn DocStore>,
     ) -> Self {
         Self {
             ctx,
             index,
-            polling_mode,
             store,
         }
     }
@@ -48,11 +44,6 @@ impl IndexStore {
     #[inline]
     pub fn index(&self) -> Index {
         self.index.clone()
-    }
-
-    #[inline]
-    pub fn polling_mode(&self) -> PollingMode {
-        self.polling_mode
     }
 
     #[inline]

@@ -49,6 +49,34 @@ pub struct Schema {
     multi_value_fields: HashSet<String>,
 }
 
+impl Schema {
+    pub fn field_eq(&self, other: &Self) -> bool {
+        self.fields.iter().all(|(name, info)| {
+            other.fields
+                .get(name)
+                .map(|v| v == info)
+                .unwrap_or_default()
+        })
+    }
+
+    pub fn search_fields_eq(&self, other: &Self) -> bool {
+        self.search_fields.iter().all(|name| {
+            other.search_fields
+                .iter()
+                .any(|n| n == name)
+        })
+    }
+
+    pub fn boost_fields_eq(&self, other: &Self) -> bool {
+        self.boost_fields.iter().all(|(name, boost)| {
+            other.boost_fields
+                .get(name)
+                .map(|v| v == boost)
+                .unwrap_or_default()
+        })
+    }
+}
+
 impl Validator for Schema {
     type Error = SchemaError;
 

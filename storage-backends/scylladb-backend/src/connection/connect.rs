@@ -50,7 +50,7 @@ pub struct ConnectionConfig {
     nodes: Vec<String>,
     user: Option<String>,
     password: Option<String>,
-    engine_replication: ReplicationInfo,
+    pub engine_replication: ReplicationInfo,
     connection_timeout: Option<u64>,
     consistency: Consistency,
 }

@@ -3,7 +3,7 @@ use tantivy::schema::FieldType;
 
 use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "type")]
 /// A declared schema field type.

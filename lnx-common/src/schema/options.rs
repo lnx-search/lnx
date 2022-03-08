@@ -8,7 +8,7 @@ use tantivy::schema::{
     TextOptions,
 };
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.
 pub struct BaseOptions {
     #[serde(default)]
@@ -66,7 +66,7 @@ impl BaseOptions {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 /// A set of field options for bytes fields.
 pub struct BytesOptions {
     #[serde(default)]
@@ -99,7 +99,7 @@ impl BytesOptions {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 /// A set of field options for int fields that takes into account if a field is
 /// multi-value or not in order to determine the fast-field cardinality.
 pub struct CalculatedIntOptions {
