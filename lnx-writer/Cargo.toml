@@ -9,6 +9,7 @@ edition = "2021"
 lnx-storage = { path = "../lnx-storage" }
 lnx-utils = { path = "../lnx-utils" }
 lnx-common = { path = "../lnx-common" }
+lnx-controller = { path = "../lnx-controller" }
 
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["sync", "rt" ,"time"] }
