@@ -15,6 +15,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["sync", "rt" ,"time"] }
 uuid = { version = "0.8.2", features = ["v4"] }
 
+tantivy = "0.17"
 async-channel = "1.6.0"
 bincode = "2.0.0-beta.3"
 itertools = "0.10.3"

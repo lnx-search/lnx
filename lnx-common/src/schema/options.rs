@@ -1,12 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{
-    Cardinality,
-    FacetOptions,
-    IndexRecordOption,
-    IntOptions,
-    TextFieldIndexing,
-    TextOptions,
-};
+use tantivy::schema::{Cardinality, FacetOptions, IndexRecordOption, NumericOptions, TextFieldIndexing, TextOptions};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.
@@ -124,8 +117,8 @@ pub struct CalculatedIntOptions {
 }
 
 impl CalculatedIntOptions {
-    pub fn as_tantivy_opts(&self) -> IntOptions {
-        let mut opts = IntOptions::default();
+    pub fn as_tantivy_opts(&self) -> NumericOptions {
+        let mut opts = NumericOptions::default();
 
         if self.indexed {
             opts = opts.set_indexed();

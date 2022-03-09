@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["sync"] }
-tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "cef1457" }
 
+tantivy = "0.17"
 rayon = "1.5.1"
 tracing = "0.1.30"
 bincode = "2.0.0-beta.3"
