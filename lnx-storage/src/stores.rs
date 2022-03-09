@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -87,5 +88,15 @@ impl IndexStore {
         settings
             .map(|buff| T::from_bytes(&buff).map_err(anyhow::Error::from))
             .transpose()
+    }
+
+    /// Shuts down and removes all of the index content from the local store.
+    ///
+    /// Note:
+    ///     This does nto remove any information from the global storage backend.
+    pub async fn destroy(self, base_path: &Path) -> Result<()> {
+        self.ctx.clear_local_data(base_path)?;
+        
+        Ok(())
     }
 }

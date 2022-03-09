@@ -81,6 +81,7 @@ pub async fn start_poller(period: Duration) -> JoinHandle<()> {
 
 #[instrument(name="check-and-update-indexes", skip_all)]
 async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyhow::Result<()> {
+    let engine = ENGINE.get_or_init(|| todo!());
     let indexes = store.fetch_indexes().await?;
     let existing_indexes = INDEXES.get_or_init(DashMap::new);
 
@@ -88,7 +89,11 @@ async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyho
         if let Some((_, settings)) = indexes.iter().find(|(k, _)| k == item.key()) {
             let existing_schema = item.value().ctx().schema();
             if existing_schema.field_eq(settings.schema()) {
-                create_new_index_staging(settings.clone()).await?;
+                if let Some((_, store)) = existing_indexes.remove(item.key()) {
+                    store.destroy(engine.base_path()).await?;
+                };
+
+                new(settings.clone()).await?;
             }
 
             if existing_schema.search_fields_eq(settings.schema()) {
@@ -99,7 +104,9 @@ async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyho
                 adjust_boost_fields(settings.clone()).await?;
             }
         } else {
-            existing_indexes.remove(item.key());
+            if let Some((_, store)) = existing_indexes.remove(item.key()) {
+                store.destroy(engine.base_path()).await?;
+            };
         }
     }
 
@@ -110,10 +117,6 @@ async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyho
     }
 
     Ok(())
-}
-
-async fn create_new_index_staging(ctx: IndexContext) -> anyhow::Result<()> {
-    todo!()
 }
 
 async fn adjust_search_fields(ctx: IndexContext) -> anyhow::Result<()> {
