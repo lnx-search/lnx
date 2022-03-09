@@ -214,3 +214,20 @@ impl TryInto<Vec<u8>> for Value {
         Err(err)
     }
 }
+
+impl TryInto<serde_json::Map<String, serde_json::Value>> for Value {
+    type Error = ConversionError;
+
+    fn try_into(self) -> Result<serde_json::Map<String, serde_json::Value>, Self::Error> {
+        let err = match self {
+            Value::I64(v) => ConversionError::new("i64", "JSON Object", v),
+            Value::U64(v) => ConversionError::new("u64", "JSON Object", v),
+            Value::F64(v) => ConversionError::new("f64", "JSON Object", v),
+            Value::DateTime(v) => ConversionError::new("DateTime", "JSON Object", v),
+            Value::Text(v) => ConversionError::new("Text", "JSON Object", v),
+            Value::Bytes(v) => ConversionError::new("Bytes", "JSON Object", v),
+        };
+
+        Err(err)
+    }
+}
