@@ -10,6 +10,12 @@ use crate::types::document::DocId;
 #[derive(Clone)]
 pub struct Index(Arc<InnerIndex>);
 
+impl Index {
+    pub fn new(ctx: IndexContext, inner: tantivy::Index) -> Self {
+        Self(Arc::new(InnerIndex { ctx, inner }))
+    }
+}
+
 impl Deref for Index {
     type Target = InnerIndex;
 

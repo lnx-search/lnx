@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use anyhow::anyhow;
 
 use dashmap::DashMap;
 use tokio::task::JoinHandle;
@@ -40,7 +41,6 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
 /// storage backend configuration.
 pub async fn new(
     ctx: IndexContext,
-    index: Index,
 ) -> anyhow::Result<()> {
     let engine = ENGINE.get_or_init(|| todo!());
     let doc_store: Arc<dyn DocStore> = match engine.config() {
@@ -49,6 +49,7 @@ pub async fn new(
         }
     };
 
+    let index = ctx.get_or_create_index(engine.base_path())?;
     let store = IndexStore::new(ctx.clone(), index, doc_store);
 
     let indexes = INDEXES.get_or_init(DashMap::new);
@@ -84,12 +85,41 @@ async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyho
     let existing_indexes = INDEXES.get_or_init(DashMap::new);
 
     for item in existing_indexes.iter() {
-        if let Some((name, settings)) = indexes.iter().find(|(k, _)| k == item.key()) {
-            todo!()
+        if let Some((_, settings)) = indexes.iter().find(|(k, _)| k == item.key()) {
+            let existing_schema = item.value().ctx().schema();
+            if existing_schema.field_eq(settings.schema()) {
+                create_new_index_staging(settings.clone()).await?;
+            }
+
+            if existing_schema.search_fields_eq(settings.schema()) {
+                adjust_search_fields(settings.clone()).await?;
+            }
+
+            if existing_schema.boost_fields_eq(settings.schema()) {
+                adjust_boost_fields(settings.clone()).await?;
+            }
         } else {
             existing_indexes.remove(item.key());
         }
     }
 
+    for (name, ctx) in indexes {
+        if !existing_indexes.contains_key(&name) {
+            new(ctx).await?;
+        }
+    }
+
     Ok(())
+}
+
+async fn create_new_index_staging(ctx: IndexContext) -> anyhow::Result<()> {
+    todo!()
+}
+
+async fn adjust_search_fields(ctx: IndexContext) -> anyhow::Result<()> {
+    todo!()
+}
+
+async fn adjust_boost_fields(ctx: IndexContext) -> anyhow::Result<()> {
+    todo!()
 }
