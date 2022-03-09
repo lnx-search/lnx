@@ -3,7 +3,7 @@ use std::ops::Deref;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BoostFactor(pub f32);
 
 impl Deref for BoostFactor {
