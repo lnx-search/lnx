@@ -23,6 +23,16 @@ pub struct Indexer {
 }
 
 impl Indexer {
+    pub(crate) fn new(
+        emitter: mpsc::Sender<Task>,
+        handle: CancellingJoinHandle<Result<()>>,
+    ) -> Self {
+        Self {
+            emitter,
+            handle,
+        }
+    }
+
     pub fn get_weak(&self) -> WeakIndexer {
         WeakIndexer {
             emitter: self.emitter.clone(),

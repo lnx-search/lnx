@@ -24,9 +24,9 @@ impl IndexerHandlerConfig {
 pub struct IndexerConfig {
     #[serde(default)]
     /// The number of threads to use on the index writer.
-    num_threads: NumThreads,
+    pub num_threads: NumThreads,
 
     #[serde(default)]
     /// The per-thread buffer size.
-    buffer_size: BufferSize,
+    pub buffer_size: BufferSize,
 }
