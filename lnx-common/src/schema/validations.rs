@@ -1,4 +1,7 @@
-use serde::{Serialize, Deserialize};
+use std::ops::Deref;
+use regex::Regex;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::de::Error;
 use crate::types::DateTime;
 
 
@@ -32,7 +35,7 @@ numeric_validation!(I64Validations, i64);
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TextValidations {
     /// The value must align with the given regex.
-    pub regex: Option<String>,
+    pub regex: Option<RegexValidator>,
 
     /// The maximum length a given string/bytes/facet value can be.
     pub max_length: Option<usize>,
@@ -64,4 +67,35 @@ pub struct ContainerLengthValidations {
 
     /// The minimum number of items a multi-value field can contain.
     pub min_container_length: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RegexValidator(Regex);
+
+impl Deref for RegexValidator {
+    type Target = Regex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for RegexValidator {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_str() == other.0.as_str()
+    }
+}
+
+impl Serialize for RegexValidator {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        self.0.as_str().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RegexValidator {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let pattern = String::deserialize(deserializer)?;
+        let re = Regex::new(&pattern).map_err(D::Error::custom)?;
+        Ok(Self(re))
+    }
 }
