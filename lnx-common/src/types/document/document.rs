@@ -54,25 +54,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn test_parse_pre_tokenized() -> Result<()> {
-        let payload = json!({
-            "id": "12345",
-            "title": {
-                "text": "hello",
-                "tokens": [{
-                    "offset_from": 0,
-                    "offset_to": 5,
-                    "position": 0,
-                    "text": "hello",
-                    "position_length": 0
-                }]
-            }
-        });
-
-        serde_json::from_value::<Document>(payload)?;
-
-        Ok(())
-    }
 }
