@@ -7,7 +7,8 @@ use super::boost::BoostFactor;
 use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
-use crate::schema::{INDEX_PK, SEGMENT_KEY};
+use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
+use crate::types::document::Document;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
@@ -208,5 +209,24 @@ impl Schema {
         }
 
         Ok(())
+    }
+    
+    pub fn validate_document(&self, document: &Document) -> Option<ConstraintViolation> {
+        for (name, info) in self.fields() {
+            match document.get(name) {
+                None => if info.is_required() {
+                    return Some(ConstraintViolation::MissingRequiredField(name.to_string()))
+                },
+                Some(field) => {
+                    if !info.is_multi() && field.is_multi() {
+                        return Some(ConstraintViolation::TooManyValues())
+                    }
+                }                
+            }
+            
+            
+        }
+        
+        None
     }
 }

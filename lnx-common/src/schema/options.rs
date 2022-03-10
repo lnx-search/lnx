@@ -7,8 +7,24 @@ use tantivy::schema::{
     TextFieldIndexing,
     TextOptions,
 };
+use crate::types::Value;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum PossibleValue {
+    NoDefault,
+    Default(Option<Value>),
+}
+
+impl Default for PossibleValue {
+    fn default() -> Self {
+        Self::NoDefault
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.
 pub struct BaseOptions {
     #[serde(default)]
@@ -18,6 +34,13 @@ pub struct BaseOptions {
     #[serde(default)]
     /// Is the field required to exist for a document to be valid?
     pub required: bool,
+
+    #[serde(default)]
+    /// If the field is missing set a default value.
+    ///
+    /// Note:
+    ///     This does *not* take precedence over the `required` field.
+    pub default: PossibleValue,
 }
 
 impl BaseOptions {
@@ -66,7 +89,7 @@ impl BaseOptions {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// A set of field options for bytes fields.
 pub struct BytesOptions {
     #[serde(default)]
@@ -99,7 +122,7 @@ impl BytesOptions {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// A set of field options for int fields that takes into account if a field is
 /// multi-value or not in order to determine the fast-field cardinality.
 pub struct CalculatedIntOptions {

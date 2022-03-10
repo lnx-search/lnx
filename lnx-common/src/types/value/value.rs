@@ -14,6 +14,20 @@ pub enum Value {
     Bytes(Vec<u8>),
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::I64(v1), Self::I64(v2)) => v1 == v2,
+            (Self::U64(v1), Self::U64(v2)) => v1 == v2,
+            (Self::F64(v1), Self::F64(v2)) => v1 == v2,
+            (Self::DateTime(v1), Self::DateTime(v2)) => v1.timestamp_millis() == v2.timestamp_millis(),
+            (Self::Text(v1), Self::Text(v2)) => v1 == v2,
+            (Self::Bytes(v1), Self::Bytes(v2)) => v1 == v2,
+            _ => false,
+        }
+    }
+}
+
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

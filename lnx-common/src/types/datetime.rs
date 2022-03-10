@@ -11,6 +11,12 @@ use tantivy::DateTime as TDateTime;
 #[derive(Debug, Clone)]
 pub struct DateTime(TDateTime);
 
+impl PartialEq for DateTime {
+    fn eq(&self, other: &Self) -> bool {
+        self.timestamp_millis() == other.timestamp_millis()
+    }
+}
+
 impl From<TDateTime> for DateTime {
     fn from(v: TDateTime) -> Self {
         Self(v)

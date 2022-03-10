@@ -15,6 +15,37 @@ pub enum DocField {
     Multi(Vec<Value>),
 }
 
+impl DocField {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Empty => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_single(&self) -> bool {
+        match self {
+            Self::Single(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_multi(&self) -> bool {
+        match self {
+            Self::Multi(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Empty => 0,
+            Self::Single(_) => 1,
+            Self::Multi(v) => v.len(),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for DocField {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -77,7 +108,22 @@ impl<'de> Deserialize<'de> for DocField {
             where
                 A: SeqAccess<'de>,
             {
-                Vec::deserialize(SeqAccessDeserializer::new(seq)).map(DocField::Multi)
+                let inst = Vec::deserialize(SeqAccessDeserializer::new(seq)).map(DocField::Multi)?;
+
+                let inst = match inst {
+                    DocField::Multi(mut v) => {
+                        if v.is_empty() {
+                            DocField::Empty
+                        } else if v.len() == 1 {
+                            DocField::Single(v.remove(0))
+                        } else {
+                            DocField::Multi(v)
+                        }
+                    },
+                    other => other,
+                };
+
+                Ok(inst)
             }
         }
 

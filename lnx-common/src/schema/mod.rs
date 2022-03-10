@@ -5,9 +5,10 @@ mod field_name;
 mod options;
 #[allow(clippy::module_inception)]
 mod schema;
+mod validations;
 
 pub use boost::BoostFactor;
-pub use error::SchemaError;
+pub use error::{SchemaError, ConstraintViolation};
 pub use field_info::FieldInfo;
 pub use field_name::FieldName;
 pub use options::{BaseOptions, BytesOptions, CalculatedIntOptions};
