@@ -1,19 +1,19 @@
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::anyhow;
 
+use anyhow::anyhow;
 use dashmap::DashMap;
-use tokio::task::JoinHandle;
 use lnx_common::index::context::IndexContext;
 use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::doc_store::DocStore;
 use once_cell::sync::OnceCell;
-use tokio::time::interval;
 use scylladb_backend::ScyllaIndexStore;
+use tokio::task::JoinHandle;
+use tokio::time::interval;
+
 use crate::backends::BackendSelector;
 use crate::engine::Engine;
-
 
 static INDEXES: OnceCell<DashMap<String, IndexStore>> = OnceCell::new();
 
@@ -34,14 +34,12 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
 #[inline]
 /// Creates a new index from the given context, index, polling mode and
 /// storage backend configuration.
-pub async fn new(
-    ctx: IndexContext,
-) -> anyhow::Result<()> {
+pub async fn new(ctx: IndexContext) -> anyhow::Result<()> {
     let engine = crate::engine::get();
     let doc_store: Arc<dyn DocStore> = match engine.config() {
-        BackendSelector::Scylla(cfg) => {
-            Arc::new(ScyllaIndexStore::setup(ctx.clone(), cfg.engine_replication.clone()).await?)
-        }
+        BackendSelector::Scylla(cfg) => Arc::new(
+            ScyllaIndexStore::setup(ctx.clone(), cfg.engine_replication.clone()).await?,
+        ),
     };
 
     let index = ctx.get_or_create_index(engine.base_path())?;
@@ -74,7 +72,7 @@ pub async fn start_poller(period: Duration) -> JoinHandle<()> {
     })
 }
 
-#[instrument(name="check-and-update-indexes", skip_all)]
+#[instrument(name = "check-and-update-indexes", skip_all)]
 async fn check_and_update_indexes(engine: &'static Engine) -> anyhow::Result<()> {
     let indexes = engine.fetch_indexes().await?;
     let existing_indexes = INDEXES.get_or_init(DashMap::new);

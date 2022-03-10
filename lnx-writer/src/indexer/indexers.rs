@@ -1,10 +1,10 @@
 use anyhow::{anyhow, Result};
-use tokio::sync::mpsc;
 use lnx_common::types::document::{DocId, Document};
 use lnx_storage::types::SegmentId;
+use tokio::sync::mpsc;
+
 use crate::helpers::CancellingJoinHandle;
 use crate::indexer::task_handler::Task;
-
 
 /// The structure used to submit tasks to the internal indexing system.
 ///
@@ -67,7 +67,6 @@ impl Indexer {
         drop(self); // Unnecessary but helps to show what's happening.
     }
 }
-
 
 #[derive(Clone)]
 /// A Indexer which does not cancel the indexing job when dropped.

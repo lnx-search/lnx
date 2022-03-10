@@ -10,7 +10,6 @@ use lnx_utils::{FromBytes, ToBytes};
 
 use crate::templates::doc_store::DocStore;
 
-
 #[derive(Clone)]
 /// A Index's storage and configuration settings.
 ///
@@ -30,16 +29,8 @@ impl Deref for IndexStore {
 }
 
 impl IndexStore {
-    pub fn new(
-        ctx: IndexContext,
-        index: Index,
-        store: Arc<dyn DocStore>,
-    ) -> Self {
-        Self {
-            ctx,
-            index,
-            store,
-        }
+    pub fn new(ctx: IndexContext, index: Index, store: Arc<dyn DocStore>) -> Self {
+        Self { ctx, index, store }
     }
 
     #[inline]
@@ -96,7 +87,7 @@ impl IndexStore {
     ///     This does nto remove any information from the global storage backend.
     pub async fn destroy(self, base_path: &Path) -> Result<()> {
         self.ctx.clear_local_data(base_path)?;
-        
+
         Ok(())
     }
 }

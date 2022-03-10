@@ -1,8 +1,9 @@
 use std::num::NonZeroUsize;
-use serde::{Serialize, Deserialize};
-use bincode::{Encode, Decode};
-use crate::helpers::serde::{BufferSize, NumThreads};
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
+use crate::helpers::serde::{BufferSize, NumThreads};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IndexerHandlerConfig {

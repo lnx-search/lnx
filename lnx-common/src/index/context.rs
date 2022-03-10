@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
+
+use serde::{Deserialize, Serialize};
 use tantivy::directory::MmapDirectory;
 
 use crate::configuration::{INDEX_KEYSPACE_PREFIX, TANTIVY_DATA_FOLDER};
 use crate::index::base::Index;
 use crate::index::polling::PollingMode;
 use crate::schema::Schema;
-
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct IndexContext {

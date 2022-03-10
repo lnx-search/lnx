@@ -21,11 +21,13 @@ pub struct ScyllaIndexStore {
 }
 
 impl ScyllaIndexStore {
-    pub async fn setup(ctx: IndexContext, default_replication: ReplicationInfo) -> Result<Self> {
+    pub async fn setup(
+        ctx: IndexContext,
+        default_replication: ReplicationInfo,
+    ) -> Result<Self> {
         let replication_info: ReplicationInfo = match ctx.storage_config().cloned() {
             None => default_replication,
-            Some(cfg) => serde_json::from_value(cfg)
-                .unwrap_or(default_replication),
+            Some(cfg) => serde_json::from_value(cfg).unwrap_or(default_replication),
         };
 
         replication_info.build_index_keyspace(&ctx).await?;

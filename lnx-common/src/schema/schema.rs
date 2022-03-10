@@ -52,7 +52,8 @@ pub struct Schema {
 impl Schema {
     pub fn field_eq(&self, other: &Self) -> bool {
         self.fields.iter().all(|(name, info)| {
-            other.fields
+            other
+                .fields
                 .get(name)
                 .map(|v| v == info)
                 .unwrap_or_default()
@@ -60,16 +61,15 @@ impl Schema {
     }
 
     pub fn search_fields_eq(&self, other: &Self) -> bool {
-        self.search_fields.iter().all(|name| {
-            other.search_fields
-                .iter()
-                .any(|n| n == name)
-        })
+        self.search_fields
+            .iter()
+            .all(|name| other.search_fields.iter().any(|n| n == name))
     }
 
     pub fn boost_fields_eq(&self, other: &Self) -> bool {
         self.boost_fields.iter().all(|(name, boost)| {
-            other.boost_fields
+            other
+                .boost_fields
                 .get(name)
                 .map(|v| v == boost)
                 .unwrap_or_default()

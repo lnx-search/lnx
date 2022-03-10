@@ -1,21 +1,21 @@
 use std::time::{Duration, Instant};
-use tokio::task::JoinHandle;
-use tokio::time::{interval, MissedTickBehavior};
-use async_channel::Receiver;
-use anyhow::Result;
-use lnx_common::index::context::IndexContext;
 
+use anyhow::Result;
+use async_channel::Receiver;
+use lnx_common::index::context::IndexContext;
 use lnx_common::index::polling::PollingMode;
 use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::Timestamp;
+use tokio::task::JoinHandle;
+use tokio::time::{interval, MissedTickBehavior};
 
-use crate::indexer::{WeakIndexer, self};
+use crate::indexer::{self, WeakIndexer};
 
 const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
-const MAX_CONCURRENCY: usize = 10;  // todo change to use index specific max download concurrency
+const MAX_CONCURRENCY: usize = 10; // todo change to use index specific max download concurrency
 const CHUNK_SIZE: usize = 5_000; // todo optimise?
-const POLLING_BASE_INTERVAL: u64 = 30;  // todo change to use index specific polling interval
+const POLLING_BASE_INTERVAL: u64 = 30; // todo change to use index specific polling interval
 
 pub enum PollStatus {
     Ok,
@@ -94,9 +94,7 @@ async fn handle_poll(ctx: &IndexContext) -> PollStatus {
 #[instrument(name = "index-loader", skip_all)]
 async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()> {
     let engine = lnx_controller::engine::get();
-    let output_path = index
-        .ctx()
-        .root_storage_path(engine.base_path());  // todo: Adjust so it uses the given engine's path.
+    let output_path = index.ctx().root_storage_path(engine.base_path()); // todo: Adjust so it uses the given engine's path.
 
     info!("Attempting to load index from an existing peer...");
     match index.load_index_from_peer(&output_path).await {
@@ -132,7 +130,6 @@ async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()>
     Ok(())
 }
 
-
 #[instrument(name = "index-updater", skip_all)]
 async fn handle_changes(
     ctx: &IndexContext,
@@ -154,7 +151,9 @@ async fn handle_changes(
         PollingMode::Continuous { .. } => {
             handle_continuous_indexing(ctx, index, last_update).await?
         },
-        PollingMode::Dynamic { .. } => handle_dynamic_indexing(ctx, index, last_update).await?,
+        PollingMode::Dynamic { .. } => {
+            handle_dynamic_indexing(ctx, index, last_update).await?
+        },
     };
 
     Ok(Some(updated_to))

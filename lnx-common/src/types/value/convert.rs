@@ -218,7 +218,9 @@ impl TryInto<Vec<u8>> for Value {
 impl TryInto<serde_json::Map<String, serde_json::Value>> for Value {
     type Error = ConversionError;
 
-    fn try_into(self) -> Result<serde_json::Map<String, serde_json::Value>, Self::Error> {
+    fn try_into(
+        self,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, Self::Error> {
         let err = match self {
             Value::I64(v) => ConversionError::new("i64", "JSON Object", v),
             Value::U64(v) => ConversionError::new("u64", "JSON Object", v),

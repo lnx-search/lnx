@@ -2,12 +2,12 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use lnx_common::schema::{FieldName, INDEX_PK, SEGMENT_KEY};
-use lnx_common::types::document::{DocField, Document, DocId};
+use lnx_common::types::document::{DocField, DocId, Document};
 use lnx_common::types::Value;
+use lnx_storage::types::SegmentId;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
 use tantivy::{IndexWriter, Term};
 use tokio::sync::mpsc;
-use lnx_storage::types::SegmentId;
 
 /// A index task.
 pub(crate) enum Task {
@@ -156,7 +156,7 @@ fn add_field(
         FieldType::Date(_) => schema::Value::Date(value.try_into()?),
         FieldType::Facet(_) => schema::Value::Facet(value.try_into()?),
         FieldType::Bytes(_) => schema::Value::Bytes(value.try_into()?),
-        FieldType::JsonObject(_) => schema::Value::JsonObject(value.try_into()?)
+        FieldType::JsonObject(_) => schema::Value::JsonObject(value.try_into()?),
     };
 
     doc.add_field_value(field, val);

@@ -6,4 +6,3 @@ use serde_json::Value;
 pub trait SetupOnce {
     async fn setup_once(config: Value) -> Result<()>;
 }
-

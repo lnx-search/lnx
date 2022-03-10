@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Cardinality, FacetOptions, IndexRecordOption, NumericOptions, TextFieldIndexing, TextOptions};
+use tantivy::schema::{
+    Cardinality,
+    FacetOptions,
+    IndexRecordOption,
+    NumericOptions,
+    TextFieldIndexing,
+    TextOptions,
+};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.
