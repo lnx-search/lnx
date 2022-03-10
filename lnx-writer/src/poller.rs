@@ -10,7 +10,7 @@ use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::Timestamp;
 
-use crate::indexer::{Indexer, WeakIndexer, self};
+use crate::indexer::{WeakIndexer, self};
 
 const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
 const MAX_CONCURRENCY: usize = 10;  // todo change to use index specific max download concurrency
