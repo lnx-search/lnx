@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use serde::{Serialize, Deserialize};
 use tantivy::directory::MmapDirectory;
 
-use crate::configuration::INDEX_KEYSPACE_PREFIX;
+use crate::configuration::{INDEX_KEYSPACE_PREFIX, TANTIVY_DATA_FOLDER};
 use crate::index::base::Index;
 use crate::index::polling::PollingMode;
 use crate::schema::Schema;
@@ -52,9 +52,14 @@ impl IndexContext {
         )
     }
 
+    #[inline]
+    pub fn root_storage_path(&self, base_path: &Path) -> PathBuf {
+        base_path.join(self.id().to_string())
+    }
+
     /// Gets an existing index or creates a new index otherwise.
     pub fn get_or_create_index(&self, base_path: &Path) -> anyhow::Result<Index> {
-        let target_path = base_path.join(self.id().to_string());
+        let target_path = self.root_storage_path(base_path).join(TANTIVY_DATA_FOLDER);
 
         std::fs::create_dir_all(&target_path)?;
 
@@ -75,6 +80,6 @@ impl IndexContext {
 
     /// Removes the folder that would contain the index local data if it exists.
     pub fn clear_local_data(&self, base_path: &Path) -> std::io::Result<()> {
-        std::fs::remove_dir_all(base_path.join(self.id().to_string()))
+        std::fs::remove_dir_all(self.root_storage_path(base_path))
     }
 }

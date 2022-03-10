@@ -93,10 +93,13 @@ async fn handle_poll(ctx: &IndexContext) -> PollStatus {
 
 #[instrument(name = "index-loader", skip_all)]
 async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()> {
-    let output_path = index.ctx().file_path();  // todo: Adjust so it uses the given engine's path.
+    let engine = lnx_controller::engine::get();
+    let output_path = index
+        .ctx()
+        .root_storage_path(engine.base_path());  // todo: Adjust so it uses the given engine's path.
 
     info!("Attempting to load index from an existing peer...");
-    match index.load_index_from_peer(output_path).await {
+    match index.load_index_from_peer(&output_path).await {
         Ok(()) => {
             info!("Peer loading success. The node is now synced!");
             return Ok(());

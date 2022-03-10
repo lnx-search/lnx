@@ -1,9 +1,6 @@
 use anyhow::{anyhow, Result};
 use tokio::sync::mpsc;
-use lnx_common::index::base::Index;
-use lnx_common::index::context::IndexContext;
 use lnx_common::types::document::{DocId, Document};
-use lnx_storage::stores::IndexStore;
 use lnx_storage::types::SegmentId;
 use crate::helpers::CancellingJoinHandle;
 use crate::indexer::task_handler::Task;
