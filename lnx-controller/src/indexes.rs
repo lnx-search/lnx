@@ -5,22 +5,17 @@ use anyhow::anyhow;
 
 use dashmap::DashMap;
 use tokio::task::JoinHandle;
-use lnx_common::index::base::Index;
 use lnx_common::index::context::IndexContext;
-use lnx_common::index::polling::PollingMode;
 use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::doc_store::DocStore;
-use lnx_storage::templates::meta_store::MetaStore;
 use once_cell::sync::OnceCell;
 use tokio::time::interval;
-use lnx_storage::templates::engine_store::EngineStore;
 use scylladb_backend::ScyllaIndexStore;
 use crate::backends::BackendSelector;
 use crate::engine::Engine;
 
 
 static INDEXES: OnceCell<DashMap<String, IndexStore>> = OnceCell::new();
-static ENGINE: OnceCell<Engine> = OnceCell::new();
 
 #[inline]
 /// Gets the index store for the given index if it exists.
@@ -42,7 +37,7 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
 pub async fn new(
     ctx: IndexContext,
 ) -> anyhow::Result<()> {
-    let engine = ENGINE.get_or_init(|| todo!());
+    let engine = crate::engine::get();
     let doc_store: Arc<dyn DocStore> = match engine.config() {
         BackendSelector::Scylla(cfg) => {
             Arc::new(ScyllaIndexStore::setup(ctx.clone(), cfg.engine_replication.clone()).await?)
@@ -65,14 +60,14 @@ pub async fn new(
 ///
 /// This should only be called once.
 pub async fn start_poller(period: Duration) -> JoinHandle<()> {
-    let store = ENGINE.get_or_init(|| todo!());
+    let engine = crate::engine::get();
 
     tokio::spawn(async move {
         let mut interval = interval(period);
         loop {
             interval.tick().await;
 
-            if let Err(e) = check_and_update_indexes(store).await {
+            if let Err(e) = check_and_update_indexes(engine).await {
                 error!("Failed to handle check due to error: {}", e);
             }
         }
@@ -80,9 +75,8 @@ pub async fn start_poller(period: Duration) -> JoinHandle<()> {
 }
 
 #[instrument(name="check-and-update-indexes", skip_all)]
-async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyhow::Result<()> {
-    let engine = ENGINE.get_or_init(|| todo!());
-    let indexes = store.fetch_indexes().await?;
+async fn check_and_update_indexes(engine: &'static Engine) -> anyhow::Result<()> {
+    let indexes = engine.fetch_indexes().await?;
     let existing_indexes = INDEXES.get_or_init(DashMap::new);
 
     for item in existing_indexes.iter() {
@@ -103,10 +97,8 @@ async fn check_and_update_indexes(store: &'static Box<dyn EngineStore>) -> anyho
             if existing_schema.boost_fields_eq(settings.schema()) {
                 adjust_boost_fields(settings.clone()).await?;
             }
-        } else {
-            if let Some((_, store)) = existing_indexes.remove(item.key()) {
-                store.destroy(engine.base_path()).await?;
-            };
+        } else if let Some((_, store)) = existing_indexes.remove(item.key()) {
+            store.destroy(engine.base_path()).await?;
         }
     }
 

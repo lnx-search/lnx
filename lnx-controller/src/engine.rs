@@ -1,7 +1,18 @@
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use once_cell::sync::OnceCell;
 use lnx_storage::templates::engine_store::EngineStore;
 use crate::backends::BackendSelector;
+
+static ENGINE: OnceCell<Engine> = OnceCell::new();
+
+pub fn init() {
+    ENGINE.get_or_init(|| todo!());
+}
+
+pub fn get() -> &'static Engine {
+    ENGINE.get().expect("Engine initialised")
+}
 
 pub struct Engine {
     store: Box<dyn EngineStore>,
