@@ -69,7 +69,7 @@ async fn handle_poll(ctx: &IndexContext) -> PollStatus {
             Ok(changed) => changed,
             Err(e) => return PollStatus::Err(e),
         },
-        None => match handle_load_index(ctx, &index).await {
+        None => match handle_load_index(&index).await {
             Ok(()) => Some(Timestamp::default()),
             Err(e) => return PollStatus::Err(e),
         },
@@ -92,7 +92,7 @@ async fn handle_poll(ctx: &IndexContext) -> PollStatus {
 }
 
 #[instrument(name = "index-loader", skip_all)]
-async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()> {
+async fn handle_load_index(index: &IndexStore) -> Result<()> {
     let engine = lnx_controller::engine::get();
     let output_path = index.ctx().root_storage_path(engine.base_path()); // todo: Adjust so it uses the given engine's path.
 
