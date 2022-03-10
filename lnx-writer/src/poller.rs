@@ -13,9 +13,9 @@ use lnx_storage::types::Timestamp;
 use crate::indexer::{Indexer, WeakIndexer, self};
 
 const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
-const MAX_CONCURRENCY: usize = 10;
+const MAX_CONCURRENCY: usize = 10;  // todo change to use index specific max download concurrency
 const CHUNK_SIZE: usize = 5_000; // todo optimise?
-const POLLING_BASE_INTERVAL: u64 = 30;
+const POLLING_BASE_INTERVAL: u64 = 30;  // todo change to use index specific polling interval
 
 pub enum PollStatus {
     Ok,
