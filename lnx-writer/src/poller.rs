@@ -10,6 +10,8 @@ use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::Timestamp;
 
+use crate::indexer::{Indexer, WeakIndexer, self};
+
 const MAX_TICKS: usize = 360; // 360 x 5 second ticks.
 const MAX_CONCURRENCY: usize = 10;
 const CHUNK_SIZE: usize = 5_000; // todo optimise?
@@ -111,7 +113,7 @@ async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()>
         .iter_documents(Some(indexed_fields), CHUNK_SIZE, None)
         .await?;
 
-    let mut indexer = handler::get().begin_indexing(ctx.name()).await?;
+    let mut indexer = indexer::new(ctx.clone(), index.clone()).await?;
 
     while let Some(docs) = documents.next().await {
         debug!("Handling document chunk with len={}", docs.len());
@@ -209,7 +211,7 @@ async fn process_changes(
         last_update
     );
 
-    let mut indexer = handler::get().begin_indexing(ctx.name()).await?;
+    let mut indexer = indexer::new(ctx.clone(), index.clone()).await?;
     indexer.clear_documents().await?;
 
     let indexed_fields = index.ctx().schema().indexed_fields();
