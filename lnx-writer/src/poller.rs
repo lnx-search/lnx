@@ -114,7 +114,7 @@ async fn handle_load_index(ctx: &IndexContext, index: &IndexStore) -> Result<()>
         .iter_documents(Some(indexed_fields), CHUNK_SIZE, None)
         .await?;
 
-    let mut indexer = indexer::new(ctx.clone(), index.clone()).await?;
+    let mut indexer = indexer::new(index.clone()).await?;
 
     while let Some(docs) = documents.next().await {
         debug!("Handling document chunk with len={}", docs.len());
@@ -149,10 +149,10 @@ async fn handle_changes(
 
     let updated_to = match ctx.polling_mode() {
         PollingMode::Continuous { .. } => {
-            handle_continuous_indexing(ctx, index, last_update).await?
+            handle_continuous_indexing(index, last_update).await?
         },
         PollingMode::Dynamic { .. } => {
-            handle_dynamic_indexing(ctx, index, last_update).await?
+            handle_dynamic_indexing(index, last_update).await?
         },
     };
 
@@ -162,16 +162,14 @@ async fn handle_changes(
 #[inline]
 #[instrument(name = "continuous-indexer", skip_all)]
 async fn handle_continuous_indexing(
-    ctx: &IndexContext,
     index: &IndexStore,
     last_update: Timestamp,
 ) -> Result<Timestamp> {
-    process_changes(ctx, index, last_update).await
+    process_changes(index, last_update).await
 }
 
 #[instrument(name = "dynamic-indexer", skip_all)]
 async fn handle_dynamic_indexing(
-    ctx: &IndexContext,
     index: &IndexStore,
     last_update: Timestamp,
 ) -> Result<Timestamp> {
@@ -200,11 +198,10 @@ async fn handle_dynamic_indexing(
         num_ticks += 1;
     }
 
-    process_changes(ctx, index, last_update).await
+    process_changes(index, last_update).await
 }
 
 async fn process_changes(
-    ctx: &IndexContext,
     index: &IndexStore,
     last_update: Timestamp,
 ) -> Result<Timestamp> {
@@ -213,7 +210,7 @@ async fn process_changes(
         last_update
     );
 
-    let mut indexer = indexer::new(ctx.clone(), index.clone()).await?;
+    let mut indexer = indexer::new(index.clone()).await?;
     indexer.clear_documents().await?;
 
     let indexed_fields = index.ctx().schema().indexed_fields();
