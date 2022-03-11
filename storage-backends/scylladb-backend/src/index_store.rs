@@ -10,7 +10,7 @@ use lnx_storage::templates::change_log::{
     ChangeLogIterator,
     ChangeLogStore,
 };
-use lnx_storage::templates::doc_store::{DocStore, DocumentIterator};
+use lnx_storage::templates::doc_store::{DocStore, DocumentIterator, DocumentUpdate};
 use lnx_storage::templates::meta_store::{MetaStore, Synonyms};
 use lnx_storage::types::{SegmentId, Timestamp};
 
@@ -42,6 +42,10 @@ impl DocStore for ScyllaIndexStore {
         &self,
         docs: &[(DocId, TypeSafeDocument)],
     ) -> Result<HashSet<SegmentId>> {
+        todo!()
+    }
+
+    async fn update_documents(&self, docs: &[DocumentUpdate]) -> Result<HashSet<SegmentId>> {
         todo!()
     }
 

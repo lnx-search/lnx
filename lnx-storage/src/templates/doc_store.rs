@@ -1,6 +1,7 @@
 use hashbrown::HashSet;
 
 use anyhow::Result;
+use serde::{Serialize, Deserialize};
 use async_trait::async_trait;
 use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
 use tokio::sync::mpsc;
@@ -10,12 +11,28 @@ use super::change_log::ChangeLogStore;
 use crate::templates::meta_store::MetaStore;
 use crate::types::SegmentId;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DocumentUpdate {
+    pub doc_id: DocId,
+    pub data: Document,
+}
+
+
 #[async_trait]
 pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
     /// Adds a set of documents to the store.
     async fn add_documents(
         &self,
         docs: &[(DocId, TypeSafeDocument)],
+    ) -> Result<HashSet<SegmentId>>;
+
+    /// Updates a set of documents.
+    ///
+    /// If a field is not specifically indexed and required by tantivy it should not
+    /// be marked as a segment change.
+    async fn update_documents(
+        &self,
+        docs: &[DocumentUpdate]
     ) -> Result<HashSet<SegmentId>>;
 
     /// Removes a set of documents from the store.

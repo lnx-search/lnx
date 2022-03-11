@@ -7,4 +7,4 @@ mod indexer;
 pub mod poller;
 mod handler;
 
-pub use handler::add_documents;
+pub use handler::{add_documents, remove_documents, update_documents};
