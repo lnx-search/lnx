@@ -1,4 +1,11 @@
+use lnx_common::schema::ConstraintViolation;
 use thiserror::Error;
+
+#[derive(Debug)]
+pub struct ValidationError {
+    pub position: usize,
+    pub errors: Vec<ConstraintViolation>,
+}
 
 #[derive(Debug, Error)]
 pub enum DocumentError {
@@ -10,4 +17,7 @@ pub enum DocumentError {
 
     #[error("An error occurred while trying to complete this operation: {0}")]
     Error(#[from] anyhow::Error),
+
+    #[error("Some documents do not match the given schema constraints")]
+    ValidationError(Vec<ValidationError>),
 }

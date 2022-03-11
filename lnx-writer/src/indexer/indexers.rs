@@ -27,10 +27,7 @@ impl Indexer {
         emitter: mpsc::Sender<Task>,
         handle: CancellingJoinHandle<Result<()>>,
     ) -> Self {
-        Self {
-            emitter,
-            handle,
-        }
+        Self { emitter, handle }
     }
 
     pub fn get_weak(&self) -> WeakIndexer {

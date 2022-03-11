@@ -70,7 +70,9 @@ impl PartialEq for Value {
             (Self::I64(v1), Self::I64(v2)) => v1 == v2,
             (Self::U64(v1), Self::U64(v2)) => v1 == v2,
             (Self::F64(v1), Self::F64(v2)) => v1 == v2,
-            (Self::DateTime(v1), Self::DateTime(v2)) => v1.timestamp_millis() == v2.timestamp_millis(),
+            (Self::DateTime(v1), Self::DateTime(v2)) => {
+                v1.timestamp_millis() == v2.timestamp_millis()
+            },
             (Self::Text(v1), Self::Text(v2)) => v1 == v2,
             (Self::Bytes(v1), Self::Bytes(v2)) => v1 == v2,
             _ => false,
