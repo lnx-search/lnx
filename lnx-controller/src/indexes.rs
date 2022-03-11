@@ -2,7 +2,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
 use dashmap::DashMap;
 use lnx_common::index::context::IndexContext;
 use lnx_storage::stores::IndexStore;
@@ -80,13 +79,6 @@ async fn check_and_update_indexes(engine: &'static Engine) -> anyhow::Result<()>
     for item in existing_indexes.iter() {
         if let Some((_, settings)) = indexes.iter().find(|(k, _)| k == item.key()) {
             let existing_schema = item.value().ctx().schema();
-            if existing_schema.field_eq(settings.schema()) {
-                if let Some((_, store)) = existing_indexes.remove(item.key()) {
-                    store.destroy(engine.base_path()).await?;
-                };
-
-                new(settings.clone()).await?;
-            }
 
             if existing_schema.search_fields_eq(settings.schema()) {
                 adjust_search_fields(settings.clone()).await?;
