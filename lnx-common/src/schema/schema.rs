@@ -8,6 +8,7 @@ use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
 use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
+use crate::schema::validations::FieldValidator;
 use crate::types::document::{DocField, Document};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +246,7 @@ fn check_field(
         }
     };
 
-    
-    todo!()
+    info
+        .validate(field)
+        .map(|fail| ConstraintViolation::ValidatorError(name.to_string(), fail))
 }

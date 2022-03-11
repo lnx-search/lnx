@@ -8,7 +8,6 @@ use tantivy::schema::{
     TextOptions,
 };
 use crate::types::document::DocField;
-use crate::types::Value;
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

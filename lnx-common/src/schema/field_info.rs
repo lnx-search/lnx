@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tantivy::schema::FieldType;
 
-use crate::schema::validations::{F64Validations, I64Validations, StandardValidations, TextValidations, U64Validations};
+use crate::schema::validations::{F64Validations, FieldValidator, I64Validations, StandardValidations, TextValidations, U64Validations, ValidationFailure};
 use crate::types::document::DocField;
 use crate::types::Value;
 use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
@@ -151,6 +151,21 @@ impl FieldInfo {
             FieldInfo::String { opts, .. } => FieldType::Str(opts.opts_as_string()),
             FieldInfo::Facet { opts, .. } => FieldType::Facet(opts.as_tantivy_facet_opts()),
             FieldInfo::Bytes { opts, .. } => FieldType::Bytes(opts.as_tantivy_opts()),
+        }
+    }
+}
+
+impl FieldValidator for FieldInfo {
+    fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
+        match self {
+            FieldInfo::F64 { validations, ..  } => validations.validate(field),
+            FieldInfo::U64 { validations, ..  } => validations.validate(field),
+            FieldInfo::I64 { validations, ..  } => validations.validate(field),
+            FieldInfo::Date { validations, ..  } => validations.validate(field),
+            FieldInfo::Text { validations, ..  } => validations.validate(field),
+            FieldInfo::String { validations, ..  } => validations.validate(field),
+            FieldInfo::Facet { validations, ..  } => validations.validate(field),
+            FieldInfo::Bytes { validations, ..  } => validations.validate(field),
         }
     }
 }

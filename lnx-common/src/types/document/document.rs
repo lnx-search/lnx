@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,12 @@ pub type DocId = Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document(pub HashMap<FieldName, DocField>);
+
+impl DerefMut for Document {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl Deref for Document {
     type Target = HashMap<FieldName, DocField>;

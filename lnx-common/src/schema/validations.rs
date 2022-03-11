@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use regex::Regex;
 use thiserror::Error;
@@ -26,32 +27,134 @@ pub enum ValidationFailure {
     NoRegexMatch(String, String),
 }
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LowerBound<T> {
+    /// The field must be greater than this size.
+    Gt(T),
 
-macro_rules! numeric_validation {
-    ($name:ident, $tp:ty) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-        pub struct $name {
-            /// The field must be greater than this size.
-            pub gt: Option<$tp>,
+    /// The field must be greater than or equal to this size.
+    Ge(T),
 
-            /// The field must be greater than or equal to this size.
-            pub ge: Option<$tp>,
+    /// There is no lower bound
+    None,
+}
 
-            /// The field must be less than this size.
-            pub lt: Option<$tp>,
+impl<T> Default for LowerBound<T> {
+    fn default() -> Self {
+        Self::None
+    }
+}
 
-            /// The field must be less than or equal to this size.
-            pub le: Option<$tp>,
-
-            #[serde(flatten)]
-            pub container_validations: ContainerLengthValidations,
+impl<T: PartialOrd> LowerBound<T> {
+    fn is_ok(&self, v: T) -> bool {
+        match self {
+            Self::Gt(cmp) => v > *cmp,
+            Self::Ge(cmp) => v >= *cmp,
+            Self::None => true,
         }
     }
 }
 
-numeric_validation!(F64Validations, f64);
-numeric_validation!(U64Validations, u64);
-numeric_validation!(I64Validations, i64);
+impl<T: Display> Display for LowerBound<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gt(v) => write!(f, "{} <", v),
+            Self::Ge(v) => write!(f, "{} <=", v),
+            Self::None => write!(f, ""),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpperBound<T> {
+    /// The field must be less than this size.
+    Lt(T),
+
+    /// The field must be less than or equal to this size.
+    Le(T),
+
+    /// There is no upper bound
+    None,
+}
+
+impl<T> Default for UpperBound<T> {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl<T: PartialOrd> UpperBound<T> {
+    fn is_ok(&self, v: T) -> bool {
+        match self {
+            Self::Lt(cmp) => v < *cmp,
+            Self::Le(cmp) => v <= *cmp,
+            Self::None => true,
+        }
+    }
+}
+
+impl<T: Display> Display for UpperBound<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lt(v) => write!(f, "< {}", v),
+            Self::Le(v) => write!(f, "<= {}", v),
+            Self::None => write!(f, ""),
+        }
+    }
+}
+
+macro_rules! numeric_validation {
+    ($name:ident, $tp:ty, $transformer:ident) => {
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+        pub struct $name {
+            #[serde(flatten, default)]
+            pub lower: LowerBound<$tp>,
+
+            #[serde(flatten, default)]
+            pub upper: UpperBound<$tp>,
+
+            #[serde(flatten)]
+            pub container_validations: ContainerLengthValidations,
+        }
+
+        impl $name {
+            fn as_range(&self) -> String {
+                format!("{} value {}", self.lower, self.upper)
+            }
+        }
+
+        impl FieldValidator for $name {
+            fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
+                if let Some(fail) = self.container_validations.validate(field) {
+                    return Some(fail)
+                }
+
+                for value in field.to_multi() {
+                    let v = match value.$transformer() {
+                        None => continue,
+                        Some(v) => v,
+                    };
+
+                    if !self.lower.is_ok(*v) {
+                        return Some(ValidationFailure::OutOfRange(self.as_range(), v.to_string()))
+                    }
+
+                    if !self.upper.is_ok(*v) {
+                        return Some(ValidationFailure::OutOfRange(self.as_range(), v.to_string()))
+                    }
+                }
+
+                None
+            }
+        }
+    }
+}
+
+numeric_validation!(F64Validations, f64, as_f64);
+numeric_validation!(U64Validations, u64, as_u64);
+numeric_validation!(I64Validations, i64, as_i64);
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -71,27 +174,67 @@ pub struct TextValidations {
 
 impl TextValidations {
     fn as_range(&self) -> String {
-        match (self.min_length, self.max_length) {
-            (None, None) => "len".to_string(),
-            (Some(min), None) => format!("{} <= len", min),
-            (None, Some(max)) => format!("len <= {}", max),
-            (Some(min), Some(max)) => format!("{} <= len <= {}", min, max),
-        }
+        helpers::as_range(self.min_length, self.max_length)
     }
 }
 
 impl FieldValidator for TextValidations {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
-        if let Some(min_container_length) = self.container_validations.min_length {
-            if field.len() < min_container_length {
-                return Some(ValidationFailure::TooFewItems(min_container_length, field.len()))
+        if let Some(fail) = self.container_validations.validate(field) {
+            return Some(fail)
+        }
+
+        for value in field.to_multi() {
+            let text = match value.as_text() {
+                None => continue,
+                Some(text) => text,
+            };
+
+            if let Some(min_length) = self.min_length {
+                if text.len() < min_length {
+                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                }
+            }
+
+            if let Some(max_length) = self.max_length {
+                if text.len() < max_length {
+                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                }
+            }
+
+            if let Some(re) = &self.regex {
+                if !re.is_match(text) {
+                    return Some(ValidationFailure::NoRegexMatch(text.to_string(), re.as_str().to_string()))
+                }
             }
         }
 
-        if let Some(max_container_length) = self.container_validations.max_length {
-            if field.len() < max_container_length {
-                return Some(ValidationFailure::TooManyItems(max_container_length, field.len()))
-            }
+        None
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StandardValidations {
+    /// The maximum length a given string/bytes/facet value can be.
+    pub max_length: Option<usize>,
+
+    /// The minimum length a given string/bytes/facet value can be.
+    pub min_length: Option<usize>,
+
+    #[serde(flatten)]
+    pub container_validations: ContainerLengthValidations,
+}
+
+impl StandardValidations {
+    fn as_range(&self) -> String {
+        helpers::as_range(self.min_length, self.max_length)
+    }
+}
+
+impl FieldValidator for StandardValidations {
+    fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
+        if let Some(fail) = self.container_validations.validate(field) {
+            return Some(fail)
         }
 
         for value in field.to_multi() {
@@ -114,20 +257,8 @@ impl FieldValidator for TextValidations {
         }
 
 
-        todo!()
+        None
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct StandardValidations {
-    /// The maximum length a given string/bytes/facet value can be.
-    pub max_length: Option<usize>,
-
-    /// The minimum length a given string/bytes/facet value can be.
-    pub min_length: Option<usize>,
-
-    #[serde(flatten)]
-    pub container_validations: ContainerLengthValidations,
 }
 
 
@@ -138,6 +269,24 @@ pub struct ContainerLengthValidations {
 
     /// The minimum number of items a multi-value field can contain.
     pub min_length: Option<usize>,
+}
+
+impl FieldValidator for ContainerLengthValidations {
+    fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
+        if let Some(min_container_length) = self.min_length {
+            if field.len() < min_container_length {
+                return Some(ValidationFailure::TooFewItems(min_container_length, field.len()))
+            }
+        }
+
+        if let Some(max_container_length) = self.max_length {
+            if field.len() < max_container_length {
+                return Some(ValidationFailure::TooManyItems(max_container_length, field.len()))
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -175,18 +324,12 @@ mod helpers {
     use std::fmt::Display;
 
     #[inline]
-    pub fn format_range<T1: Display, T2: Display>(
-        upper: T1,
-        lower: T2,
-        upper_eq: bool,
-        lower_eq: bool,
-    ) -> String {
-        format!(
-            "{upper}{ueq}..{leq}{lower}",
-            upper = upper,
-            lower = lower,
-            ueq = if upper_eq { "=" } else { "" },
-            leq = if lower_eq { "=" } else { "" },
-        )
+    pub fn as_range<T1: Display, T2: Display>(min: Option<T1>, max: Option<T2>) -> String {
+        match (min, max) {
+            (None, None) => "len".to_string(),
+            (Some(min), None) => format!("{} <= len", min),
+            (None, Some(max)) => format!("len <= {}", max),
+            (Some(min), Some(max)) => format!("{} <= len <= {}", min, max),
+        }
     }
 }
