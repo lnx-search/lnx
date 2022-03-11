@@ -2,9 +2,9 @@
 extern crate tracing;
 
 pub mod error;
-mod handler;
 pub mod helpers;
 mod indexer;
 pub mod poller;
+mod handler;
 
 pub use handler::add_documents;

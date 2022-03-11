@@ -19,7 +19,7 @@ pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
     ) -> Result<HashSet<SegmentId>>;
 
     /// Removes a set of documents from the store.
-    async fn remove_documents(&self, docs: Vec<DocId>) -> Result<HashSet<SegmentId>>;
+    async fn remove_documents(&self, docs: &[DocId]) -> Result<HashSet<SegmentId>>;
 
     /// Clears all documents from the store.
     async fn clear_documents(&self) -> Result<()>;
