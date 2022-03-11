@@ -7,8 +7,8 @@ use tantivy::schema::{
     TextFieldIndexing,
     TextOptions,
 };
-use crate::types::document::DocField;
 
+use crate::types::document::DocField;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.

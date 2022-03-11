@@ -8,7 +8,7 @@ mod schema;
 mod validations;
 
 pub use boost::BoostFactor;
-pub use error::{SchemaError, ConstraintViolation};
+pub use error::{ConstraintViolation, SchemaError};
 pub use field_info::FieldInfo;
 pub use field_name::FieldName;
 pub use options::{BaseOptions, BytesOptions, CalculatedIntOptions};

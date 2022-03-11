@@ -1,10 +1,18 @@
 use serde::{Deserialize, Serialize};
 use tantivy::schema::FieldType;
 
-use crate::schema::validations::{F64Validations, FieldValidator, I64Validations, StandardValidations, TextValidations, U64Validations, ValidationFailure};
+use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
+use crate::schema::validations::{
+    F64Validations,
+    FieldValidator,
+    I64Validations,
+    StandardValidations,
+    TextValidations,
+    U64Validations,
+    ValidationFailure,
+};
 use crate::types::document::DocField;
 use crate::types::Value;
-use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -87,56 +95,56 @@ impl FieldInfo {
     #[inline]
     pub fn default_value(&self) -> DocField {
         match self {
-            FieldInfo::F64 { opts, ..  } => opts.base.default.clone(),
-            FieldInfo::U64 { opts, ..  } => opts.base.default.clone(),
-            FieldInfo::I64 { opts, ..  } => opts.base.default.clone(),
-            FieldInfo::Date { opts, ..  } => opts.base.default.clone(),
-            FieldInfo::Text { opts, ..  } => opts.default.clone(),
-            FieldInfo::String { opts, ..  } => opts.default.clone(),
-            FieldInfo::Facet { opts, ..  } => opts.default.clone(),
-            FieldInfo::Bytes { opts, ..  } => opts.base.default.clone(),
+            FieldInfo::F64 { opts, .. } => opts.base.default.clone(),
+            FieldInfo::U64 { opts, .. } => opts.base.default.clone(),
+            FieldInfo::I64 { opts, .. } => opts.base.default.clone(),
+            FieldInfo::Date { opts, .. } => opts.base.default.clone(),
+            FieldInfo::Text { opts, .. } => opts.default.clone(),
+            FieldInfo::String { opts, .. } => opts.default.clone(),
+            FieldInfo::Facet { opts, .. } => opts.default.clone(),
+            FieldInfo::Bytes { opts, .. } => opts.base.default.clone(),
         }
     }
 
     #[inline]
     pub fn is_required(&self) -> bool {
         match self {
-            FieldInfo::F64 { opts, ..  } => opts.base.required,
-            FieldInfo::U64 { opts, ..  } => opts.base.required,
-            FieldInfo::I64 { opts, ..  } => opts.base.required,
-            FieldInfo::Date { opts, ..  } => opts.base.required,
-            FieldInfo::Text { opts, ..  } => opts.required,
-            FieldInfo::String { opts, ..  } => opts.required,
-            FieldInfo::Facet { opts, ..  } => opts.required,
-            FieldInfo::Bytes { opts, ..  } => opts.base.required,
+            FieldInfo::F64 { opts, .. } => opts.base.required,
+            FieldInfo::U64 { opts, .. } => opts.base.required,
+            FieldInfo::I64 { opts, .. } => opts.base.required,
+            FieldInfo::Date { opts, .. } => opts.base.required,
+            FieldInfo::Text { opts, .. } => opts.required,
+            FieldInfo::String { opts, .. } => opts.required,
+            FieldInfo::Facet { opts, .. } => opts.required,
+            FieldInfo::Bytes { opts, .. } => opts.base.required,
         }
     }
 
     #[inline]
     pub fn is_multi(&self) -> bool {
         match self {
-            FieldInfo::F64 { opts, ..  } => opts.base.multi,
-            FieldInfo::U64 { opts, ..  } => opts.base.multi,
-            FieldInfo::I64 { opts, ..  } => opts.base.multi,
-            FieldInfo::Date { opts, ..  } => opts.base.multi,
-            FieldInfo::Text { opts, ..  } => opts.multi,
-            FieldInfo::String { opts, ..  } => opts.multi,
-            FieldInfo::Facet { opts, ..  } => opts.multi,
-            FieldInfo::Bytes { opts, ..  } => opts.base.multi,
+            FieldInfo::F64 { opts, .. } => opts.base.multi,
+            FieldInfo::U64 { opts, .. } => opts.base.multi,
+            FieldInfo::I64 { opts, .. } => opts.base.multi,
+            FieldInfo::Date { opts, .. } => opts.base.multi,
+            FieldInfo::Text { opts, .. } => opts.multi,
+            FieldInfo::String { opts, .. } => opts.multi,
+            FieldInfo::Facet { opts, .. } => opts.multi,
+            FieldInfo::Bytes { opts, .. } => opts.base.multi,
         }
     }
 
     #[inline]
     pub fn is_indexed(&self) -> bool {
         match self {
-            FieldInfo::F64 { opts, ..  } => opts.indexed,
-            FieldInfo::U64 { opts, ..  } => opts.indexed,
-            FieldInfo::I64 { opts, ..  } => opts.indexed,
-            FieldInfo::Date { opts, ..  } => opts.indexed,
+            FieldInfo::F64 { opts, .. } => opts.indexed,
+            FieldInfo::U64 { opts, .. } => opts.indexed,
+            FieldInfo::I64 { opts, .. } => opts.indexed,
+            FieldInfo::Date { opts, .. } => opts.indexed,
             FieldInfo::Text { .. } => true,
             FieldInfo::String { .. } => false,
             FieldInfo::Facet { .. } => true,
-            FieldInfo::Bytes { opts, ..  } => opts.indexed,
+            FieldInfo::Bytes { opts, .. } => opts.indexed,
         }
     }
 
@@ -149,7 +157,9 @@ impl FieldInfo {
             FieldInfo::Date { opts, .. } => FieldType::Date(opts.as_tantivy_opts()),
             FieldInfo::Text { opts, .. } => FieldType::Str(opts.opts_as_text()),
             FieldInfo::String { opts, .. } => FieldType::Str(opts.opts_as_string()),
-            FieldInfo::Facet { opts, .. } => FieldType::Facet(opts.as_tantivy_facet_opts()),
+            FieldInfo::Facet { opts, .. } => {
+                FieldType::Facet(opts.as_tantivy_facet_opts())
+            },
             FieldInfo::Bytes { opts, .. } => FieldType::Bytes(opts.as_tantivy_opts()),
         }
     }
@@ -158,14 +168,14 @@ impl FieldInfo {
 impl FieldValidator for FieldInfo {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
         match self {
-            FieldInfo::F64 { validations, ..  } => validations.validate(field),
-            FieldInfo::U64 { validations, ..  } => validations.validate(field),
-            FieldInfo::I64 { validations, ..  } => validations.validate(field),
-            FieldInfo::Date { validations, ..  } => validations.validate(field),
-            FieldInfo::Text { validations, ..  } => validations.validate(field),
-            FieldInfo::String { validations, ..  } => validations.validate(field),
-            FieldInfo::Facet { validations, ..  } => validations.validate(field),
-            FieldInfo::Bytes { validations, ..  } => validations.validate(field),
+            FieldInfo::F64 { validations, .. } => validations.validate(field),
+            FieldInfo::U64 { validations, .. } => validations.validate(field),
+            FieldInfo::I64 { validations, .. } => validations.validate(field),
+            FieldInfo::Date { validations, .. } => validations.validate(field),
+            FieldInfo::Text { validations, .. } => validations.validate(field),
+            FieldInfo::String { validations, .. } => validations.validate(field),
+            FieldInfo::Facet { validations, .. } => validations.validate(field),
+            FieldInfo::Bytes { validations, .. } => validations.validate(field),
         }
     }
 }

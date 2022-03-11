@@ -7,8 +7,8 @@ use super::boost::BoostFactor;
 use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
-use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
 use crate::schema::validations::FieldValidator;
+use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
 use crate::types::document::{DocField, Document};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +212,10 @@ impl Schema {
         Ok(())
     }
 
-    pub fn validate_document(&self, document: &mut Document) -> Vec<ConstraintViolation> {
+    pub fn validate_document(
+        &self,
+        document: &mut Document,
+    ) -> Vec<ConstraintViolation> {
         let mut violations = vec![];
         for (name, info) in self.fields() {
             if let Some(violation) = check_field(name, info, document) {
@@ -224,29 +227,32 @@ impl Schema {
     }
 }
 
-
 fn check_field(
     name: &FieldName,
     info: &FieldInfo,
     doc: &mut Document,
 ) -> Option<ConstraintViolation> {
     let field = match doc.get(name) {
-        None => return if info.is_required() {
-            Some(ConstraintViolation::MissingRequiredField(name.to_string()))
-        } else {
-            doc.insert(name.clone(), info.default_value());
-            None
+        None => {
+            return if info.is_required() {
+                Some(ConstraintViolation::MissingRequiredField(name.to_string()))
+            } else {
+                doc.insert(name.clone(), info.default_value());
+                None
+            }
         },
         Some(field) => {
             if !info.is_multi() && field.is_multi() {
-                return Some(ConstraintViolation::TooManyValues(name.to_string(), field.len()))
+                return Some(ConstraintViolation::TooManyValues(
+                    name.to_string(),
+                    field.len(),
+                ));
             }
 
             field
-        }
+        },
     };
 
-    info
-        .validate(field)
+    info.validate(field)
         .map(|fail| ConstraintViolation::ValidatorError(name.to_string(), fail))
 }

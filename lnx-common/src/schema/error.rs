@@ -1,4 +1,5 @@
 use thiserror::Error;
+
 use crate::schema::validations::ValidationFailure;
 
 #[derive(Debug, Error)]
@@ -22,8 +23,10 @@ pub enum ConstraintViolation {
 
     #[error("Got `null` or `[]` instead of value of type {0} for field {1:?}")]
     UnExpectedNullValue(String, String),
-    
-    #[error("The field {0:?} is not a multi-value field. Got {1} values but expected 1.")]
+
+    #[error(
+        "The field {0:?} is not a multi-value field. Got {1} values but expected 1."
+    )]
     TooManyValues(String, usize),
 
     #[error("The field {0:?} failed it's validation checks: {1}")]

@@ -1,12 +1,13 @@
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
-use regex::Regex;
-use thiserror::Error;
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use serde::de::Error;
-use crate::types::document::DocField;
 
+use regex::Regex;
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
+
+use crate::types::document::DocField;
 
 pub trait FieldValidator {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure>;
@@ -128,7 +129,7 @@ macro_rules! numeric_validation {
         impl FieldValidator for $name {
             fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
                 if let Some(fail) = self.container_validations.validate(field) {
-                    return Some(fail)
+                    return Some(fail);
                 }
 
                 for value in field.to_multi() {
@@ -138,24 +139,29 @@ macro_rules! numeric_validation {
                     };
 
                     if !self.lower.is_ok(*v) {
-                        return Some(ValidationFailure::OutOfRange(self.as_range(), v.to_string()))
+                        return Some(ValidationFailure::OutOfRange(
+                            self.as_range(),
+                            v.to_string(),
+                        ));
                     }
 
                     if !self.upper.is_ok(*v) {
-                        return Some(ValidationFailure::OutOfRange(self.as_range(), v.to_string()))
+                        return Some(ValidationFailure::OutOfRange(
+                            self.as_range(),
+                            v.to_string(),
+                        ));
                     }
                 }
 
                 None
             }
         }
-    }
+    };
 }
 
 numeric_validation!(F64Validations, f64, as_f64);
 numeric_validation!(U64Validations, u64, as_u64);
 numeric_validation!(I64Validations, i64, as_i64);
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TextValidations {
@@ -181,7 +187,7 @@ impl TextValidations {
 impl FieldValidator for TextValidations {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
         if let Some(fail) = self.container_validations.validate(field) {
-            return Some(fail)
+            return Some(fail);
         }
 
         for value in field.to_multi() {
@@ -192,19 +198,28 @@ impl FieldValidator for TextValidations {
 
             if let Some(min_length) = self.min_length {
                 if text.len() < min_length {
-                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                    return Some(ValidationFailure::OutOfRange(
+                        self.as_range(),
+                        text.len().to_string(),
+                    ));
                 }
             }
 
             if let Some(max_length) = self.max_length {
                 if text.len() < max_length {
-                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                    return Some(ValidationFailure::OutOfRange(
+                        self.as_range(),
+                        text.len().to_string(),
+                    ));
                 }
             }
 
             if let Some(re) = &self.regex {
                 if !re.is_match(text) {
-                    return Some(ValidationFailure::NoRegexMatch(text.to_string(), re.as_str().to_string()))
+                    return Some(ValidationFailure::NoRegexMatch(
+                        text.to_string(),
+                        re.as_str().to_string(),
+                    ));
                 }
             }
         }
@@ -234,7 +249,7 @@ impl StandardValidations {
 impl FieldValidator for StandardValidations {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
         if let Some(fail) = self.container_validations.validate(field) {
-            return Some(fail)
+            return Some(fail);
         }
 
         for value in field.to_multi() {
@@ -245,22 +260,26 @@ impl FieldValidator for StandardValidations {
 
             if let Some(min_length) = self.min_length {
                 if text.len() < min_length {
-                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                    return Some(ValidationFailure::OutOfRange(
+                        self.as_range(),
+                        text.len().to_string(),
+                    ));
                 }
             }
 
             if let Some(max_length) = self.max_length {
                 if text.len() < max_length {
-                    return Some(ValidationFailure::OutOfRange(self.as_range(), text.len().to_string()))
+                    return Some(ValidationFailure::OutOfRange(
+                        self.as_range(),
+                        text.len().to_string(),
+                    ));
                 }
             }
         }
 
-
         None
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContainerLengthValidations {
@@ -275,13 +294,19 @@ impl FieldValidator for ContainerLengthValidations {
     fn validate(&self, field: &DocField) -> Option<ValidationFailure> {
         if let Some(min_container_length) = self.min_length {
             if field.len() < min_container_length {
-                return Some(ValidationFailure::TooFewItems(min_container_length, field.len()))
+                return Some(ValidationFailure::TooFewItems(
+                    min_container_length,
+                    field.len(),
+                ));
             }
         }
 
         if let Some(max_container_length) = self.max_length {
             if field.len() < max_container_length {
-                return Some(ValidationFailure::TooManyItems(max_container_length, field.len()))
+                return Some(ValidationFailure::TooManyItems(
+                    max_container_length,
+                    field.len(),
+                ));
             }
         }
 
@@ -307,13 +332,19 @@ impl PartialEq for RegexValidator {
 }
 
 impl Serialize for RegexValidator {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         self.0.as_str().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for RegexValidator {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let pattern = String::deserialize(deserializer)?;
         let re = Regex::new(&pattern).map_err(D::Error::custom)?;
         Ok(Self(re))
@@ -324,7 +355,10 @@ mod helpers {
     use std::fmt::Display;
 
     #[inline]
-    pub fn as_range<T1: Display, T2: Display>(min: Option<T1>, max: Option<T2>) -> String {
+    pub fn as_range<T1: Display, T2: Display>(
+        min: Option<T1>,
+        max: Option<T2>,
+    ) -> String {
         match (min, max) {
             (None, None) => "len".to_string(),
             (Some(min), None) => format!("{} <= len", min),

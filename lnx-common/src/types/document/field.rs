@@ -54,7 +54,7 @@ impl DocField {
             Self::Multi(v) => v.len(),
         }
     }
-    
+
     #[inline]
     pub fn to_multi(&self) -> Vec<Value> {
         match self {
@@ -127,7 +127,8 @@ impl<'de> Deserialize<'de> for DocField {
             where
                 A: SeqAccess<'de>,
             {
-                let inst = Vec::deserialize(SeqAccessDeserializer::new(seq)).map(DocField::Multi)?;
+                let inst = Vec::deserialize(SeqAccessDeserializer::new(seq))
+                    .map(DocField::Multi)?;
 
                 let inst = match inst {
                     DocField::Multi(mut v) => {
