@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use lnx_common::index::context::IndexContext;
-use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
+use lnx_common::types::document::{DocId, TypeSafeDocument};
 use lnx_storage::async_trait;
 use lnx_storage::templates::change_log::{
     ChangeLogEntry,
