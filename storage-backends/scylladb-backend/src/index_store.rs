@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use hashbrown::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
@@ -45,7 +45,7 @@ impl DocStore for ScyllaIndexStore {
         todo!()
     }
 
-    async fn remove_documents(&self, docs: Vec<DocId>) -> Result<HashSet<SegmentId>> {
+    async fn remove_documents(&self, docs: &[DocId]) -> Result<HashSet<SegmentId>> {
         todo!()
     }
 

@@ -12,12 +12,26 @@ use crate::schema::Schema;
 #[derive(Clone, Serialize, Deserialize)]
 pub struct IndexContext {
     name: Cow<'static, String>,
-    schema: Schema,
+    schema: Cow<'static, Schema>,
     polling_mode: PollingMode,
-    storage_config: Option<serde_json::Value>,
+    storage_config: Option<Cow<'static, serde_json::Value>>,
 }
 
 impl IndexContext {
+    pub fn new(
+        name: String,
+        schema: Schema,
+        polling_mode: PollingMode,
+        storage_cfg: Option<serde_json::Value>
+    ) -> Self {
+        Self {
+            name: Cow::Owned(name),
+            schema: Cow::Owned(schema),
+            polling_mode,
+            storage_config: storage_cfg.map(Cow::Owned),
+        }
+    }
+
     #[inline]
     pub fn name(&self) -> &str {
         self.name.as_str()
@@ -40,7 +54,7 @@ impl IndexContext {
 
     #[inline]
     pub fn storage_config(&self) -> Option<&serde_json::Value> {
-        self.storage_config.as_ref()
+        self.storage_config.as_ref().map(|v| v.as_ref())
     }
 
     #[inline]

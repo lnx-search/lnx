@@ -18,18 +18,20 @@ pub async fn add_documents(
     index_name: &str,
     documents: Vec<Document>,
 ) -> Result<(), DocumentError> {
-    let index = lnx_controller::get(index_name)
+    let index_store = lnx_controller::get(index_name)
         .ok_or_else(|| DocumentError::UnknownIndex(index_name.to_string()))?;
 
     let docs_len = documents.len();
     let start = Instant::now();
-    let docs = parse_and_validate_documents(index.ctx().schema(), documents)?;
+    let docs = parse_and_validate_documents(index_store.ctx().schema(), documents)?;
     batcher::batch(
         MAX_INSERT_CONCURRENCY,
         index_store,
         docs,
         move |chunk, store| {
-            store.add_documents(chunk)
+            async move {
+                store.add_documents(chunk).await
+            }
         }
     ).await?;
     info!(

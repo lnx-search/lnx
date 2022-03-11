@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 use anyhow::Result;
 use async_trait::async_trait;

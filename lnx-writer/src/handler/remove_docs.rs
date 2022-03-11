@@ -23,7 +23,9 @@ pub async fn remove_documents(
         index_store,
         documents,
         move |chunk, store| {
-            store.remove_documents(chunk)
+            async move {
+                store.remove_documents(chunk).await
+            }
         }
     ).await?;
 
