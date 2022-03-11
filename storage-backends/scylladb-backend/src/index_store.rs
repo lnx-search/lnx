@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use lnx_common::index::context::IndexContext;
-use lnx_common::types::document::{DocId, Document};
+use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
 use lnx_storage::async_trait;
 use lnx_storage::templates::change_log::{
     ChangeLogEntry,
@@ -40,7 +40,7 @@ impl ScyllaIndexStore {
 impl DocStore for ScyllaIndexStore {
     async fn add_documents(
         &self,
-        docs: &[(DocId, Document)],
+        docs: &[(DocId, TypeSafeDocument)],
     ) -> Result<HashSet<SegmentId>> {
         todo!()
     }
@@ -57,7 +57,7 @@ impl DocStore for ScyllaIndexStore {
         &self,
         fields: Option<Vec<String>>,
         docs: DocId,
-    ) -> Result<Option<(DocId, SegmentId, Document)>> {
+    ) -> Result<Option<(DocId, SegmentId, TypeSafeDocument)>> {
         todo!()
     }
 

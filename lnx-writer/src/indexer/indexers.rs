@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use lnx_common::types::document::{DocId, Document};
+use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
 use lnx_storage::types::SegmentId;
 use tokio::sync::mpsc;
 
@@ -55,7 +55,7 @@ impl Indexer {
     /// Add a set of documents to the indexer.
     pub async fn add_documents(
         &mut self,
-        docs: Vec<(DocId, SegmentId, Document)>,
+        docs: Vec<(DocId, SegmentId, TypeSafeDocument)>,
     ) -> Result<()> {
         self.send_event(Task::AddDocuments(docs)).await
     }
@@ -100,7 +100,7 @@ impl WeakIndexer {
     /// Add a set of documents to the indexer.
     pub async fn add_documents(
         &self,
-        docs: Vec<(DocId, SegmentId, Document)>,
+        docs: Vec<(DocId, SegmentId, TypeSafeDocument)>,
     ) -> Result<()> {
         self.send_event(Task::AddDocuments(docs)).await
     }

@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use lnx_common::schema::{FieldName, INDEX_PK, SEGMENT_KEY};
-use lnx_common::types::document::{DocField, DocId, Document};
+use lnx_common::types::document::{DocField, DocId, Document, TypeSafeDocument};
 use lnx_common::types::Value;
 use lnx_storage::types::SegmentId;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
@@ -14,7 +14,7 @@ pub(crate) enum Task {
     /// Adds a set of documents to the index.
     ///
     /// Only fields which are actually indexed are added.
-    AddDocuments(Vec<(DocId, SegmentId, Document)>),
+    AddDocuments(Vec<(DocId, SegmentId, TypeSafeDocument)>),
 
     /// Removes a set of documents from the index.
     RemoveSegment(SegmentId),
@@ -79,16 +79,11 @@ fn handle_task(
             writer.delete_term(term);
         },
         Task::AddDocuments(docs) => {
-            let fields: Vec<(Field, FieldName, &FieldEntry)> = schema
-                .fields()
-                .map(|(f, e)| (f, FieldName(e.name().to_string()), e))
-                .collect();
-
             for (doc_id, segment, doc) in docs {
                 let doc = process_document(
                     pk_field,
                     segment_id_field,
-                    &fields,
+                    schema,
                     doc_id,
                     segment,
                     doc,
@@ -104,31 +99,32 @@ fn handle_task(
 fn process_document(
     pk_field: Field,
     segment_id_field: Field,
-    fields: &[(Field, FieldName, &FieldEntry)],
+    schema: &Schema,
     doc_id: DocId,
     segment_id: SegmentId,
-    mut doc: Document,
+    doc: TypeSafeDocument,
 ) -> Result<tantivy::Document> {
     trace!("Adding document {:?}", &doc);
 
     let mut document = tantivy::Document::new();
 
-    for (field, name, entry) in fields.iter() {
-        let doc_field = match doc.0.remove(name) {
-            Some(v) => v,
+    for (field_name, value) in doc.0 {
+        let field = match schema.get_field(&field_name) {
             None => continue,
+            Some(f) => f,
         };
+        let entry = schema.get_field_entry(field);
 
         if !entry.is_indexed() {
             continue;
         }
 
-        match doc_field {
+        match value {
             DocField::Empty => continue,
-            DocField::Single(value) => add_field(&mut document, entry, *field, value)?,
+            DocField::Single(value) => add_field(&mut document, entry, field, value)?,
             DocField::Multi(values) => {
                 for value in values {
-                    add_field(&mut document, entry, *field, value)?;
+                    add_field(&mut document, entry, field, value)?;
                 }
             },
         }
