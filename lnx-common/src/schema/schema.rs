@@ -219,7 +219,9 @@ impl Schema {
         let mut validated_fields = Vec::with_capacity(self.fields().len());
         let mut violations = vec![];
         for (name, info) in self.fields() {
-            if let Some(violation) = check_field(name, info, &mut document, &mut validated_fields) {
+            if let Some(violation) =
+                check_field(name, info, &mut document, &mut validated_fields)
+            {
                 violations.push(violation);
             }
         }
@@ -267,8 +269,7 @@ fn check_field(
                 validated_fields.push((name.to_string(), converted));
                 None
             },
-            Err(e) =>
-                Some(ConstraintViolation::TypeError(name.to_string(), e)),
+            Err(e) => Some(ConstraintViolation::TypeError(name.to_string(), e)),
         }
     }
 }

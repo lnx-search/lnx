@@ -5,8 +5,8 @@ use bincode::{Decode, Encode};
 use serde::de::value::SeqAccessDeserializer;
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use crate::schema::FieldInfo;
 
+use crate::schema::FieldInfo;
 use crate::types::{ConversionError, Value};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
@@ -23,7 +23,10 @@ impl Default for DocField {
 }
 
 impl DocField {
-    pub fn cast_into_schema_type(self, info: &FieldInfo) -> Result<Self, ConversionError> {
+    pub fn cast_into_schema_type(
+        self,
+        info: &FieldInfo,
+    ) -> Result<Self, ConversionError> {
         let new = match self {
             Self::Single(v) => {
                 let inst = v.cast_into_schema_type(info)?;

@@ -57,7 +57,8 @@ pub async fn add_documents(
     info!("Got {} document(s) to process...", docs_len);
     for chunk in chunks {
         // SAFETY: We know chunks is always going to outlive our tasks here.
-        let chunk: &'static [(DocId, TypeSafeDocument)] = unsafe { std::mem::transmute(chunk) };
+        let chunk: &'static [(DocId, TypeSafeDocument)] =
+            unsafe { std::mem::transmute(chunk) };
         if tx.send(chunk).await.is_err() {
             break;
         };
@@ -100,10 +101,7 @@ fn parse_and_validate_documents(
     for (position, document) in docs.into_iter().enumerate() {
         match schema.validate_document(document) {
             Ok(doc) => processed_documents.push((Uuid::new_v4(), doc)),
-            Err(errors) => invalid_documents.push(ValidationError {
-                position,
-                errors,
-            }),
+            Err(errors) => invalid_documents.push(ValidationError { position, errors }),
         }
     }
 

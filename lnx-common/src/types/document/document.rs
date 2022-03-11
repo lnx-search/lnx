@@ -30,7 +30,6 @@ impl Deref for Document {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A checked and safe document.
 ///
