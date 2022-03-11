@@ -82,6 +82,7 @@ impl TryInto<i64> for Value {
                     format!("<bytes len={}>", v.len()),
                 ))
             },
+            Value::Json(v) => return Err(ConversionError::new("JSON Object", "i64", v)),
         };
 
         Ok(v)
@@ -109,6 +110,7 @@ impl TryInto<u64> for Value {
                     format!("<bytes len={}>", v.len()),
                 ))
             },
+            Value::Json(v) => return Err(ConversionError::new("JSON Object", "u64", v)),
         };
 
         Ok(v)
@@ -136,6 +138,7 @@ impl TryInto<f64> for Value {
                     format!("<bytes len={}>", v.len()),
                 ))
             },
+            Value::Json(v) => return Err(ConversionError::new("JSON Object", "f64", v)),
         };
 
         Ok(v)
@@ -160,6 +163,7 @@ impl TryInto<Facet> for Value {
                 "Facet",
                 format!("<bytes len={}>", v.len()),
             ),
+            Value::Json(v) => ConversionError::new("JSON Object", "Facet", v),
         };
 
         Err(err)
@@ -192,6 +196,7 @@ impl TryInto<DateTime> for Value {
                     format!("<bytes len={}>", v.len()),
                 ))
             },
+            Value::Json(v) => return Err(ConversionError::new("JSON Object", "DateTime", v)),
         };
 
         Ok(v)
@@ -209,6 +214,7 @@ impl TryInto<Vec<u8>> for Value {
             Value::DateTime(v) => ConversionError::new("DateTime", "Bytes", v),
             Value::Text(v) => return Ok(v.as_bytes().to_vec()),
             Value::Bytes(v) => return Ok(v),
+            Value::Json(v) => ConversionError::new("JSON Object", "Bytes", v),
         };
 
         Err(err)
@@ -228,6 +234,7 @@ impl TryInto<serde_json::Map<String, serde_json::Value>> for Value {
             Value::DateTime(v) => ConversionError::new("DateTime", "JSON Object", v),
             Value::Text(v) => ConversionError::new("Text", "JSON Object", v),
             Value::Bytes(v) => ConversionError::new("Bytes", "JSON Object", v),
+            Value::Json(v) => return Ok(v.inner()),
         };
 
         Err(err)

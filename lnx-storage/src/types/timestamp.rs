@@ -5,6 +5,7 @@ use chrono::Utc;
 use scylla::cql_to_rust::{FromCqlVal, FromCqlValError};
 use scylla::frame::response::result::CqlValue;
 use scylla::frame::value::{self, ValueTooBig};
+use lnx_common::types::DateTime;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Timestamp(pub chrono::Duration);
@@ -14,6 +15,18 @@ impl Default for Timestamp {
         Self(chrono::Duration::milliseconds(
             Utc::now().timestamp_millis(),
         ))
+    }
+}
+
+impl Into<DateTime> for Timestamp {
+    fn into(self) -> DateTime {
+        DateTime::from(self.0.num_seconds() as u64)
+    }
+}
+
+impl From<chrono::Duration> for Timestamp {
+    fn from(v: chrono::Duration) -> Self {
+        Self(v)
     }
 }
 

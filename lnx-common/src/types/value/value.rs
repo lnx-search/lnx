@@ -1,10 +1,65 @@
-use std::fmt::{Display, Formatter};
+use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter, write};
+use std::ops::Deref;
 
 use bincode::{Decode, Encode};
+use bincode::de::Decoder;
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
 use tantivy::schema::Facet;
 
 use crate::schema::FieldInfo;
 use crate::types::{ConversionError, DateTime};
+
+
+#[derive(Debug, Clone)]
+pub struct JsonMapping(serde_json::Map<String, serde_json::Value>);
+
+impl JsonMapping {
+    pub(crate) fn inner(self) -> serde_json::Map<String, serde_json::Value> {
+        self.0
+    }
+}
+
+impl Deref for JsonMapping {
+    type Target = serde_json::Map<String, serde_json::Value>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for JsonMapping {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl Encode for JsonMapping {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        let mut mapping = BTreeMap::new();
+
+        for (key, value) in self.iter() {
+            let value = serde_json::to_vec(value).unwrap();
+            mapping.insert(key.to_string(), value);
+        }
+
+        mapping.encode(encoder)
+    }
+}
+
+impl Decode for JsonMapping {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let partial: BTreeMap<String, Vec<u8>> = BTreeMap::decode(decoder)?;
+        let mut mapping = serde_json::Map::with_capacity(partial.len());
+
+        for (key, data) in partial {
+            mapping.insert(key, serde_json::from_slice(&data).unwrap());
+        }
+
+        Ok(Self(mapping))
+    }
+}
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Value {
@@ -14,6 +69,7 @@ pub enum Value {
     DateTime(DateTime),
     Text(String),
     Bytes(Vec<u8>),
+    Json(JsonMapping),
 }
 
 impl Value {
@@ -134,6 +190,7 @@ impl Display for Value {
             Value::DateTime(v) => write!(f, "{}", v),
             Value::Text(v) => write!(f, "{}", v),
             Value::Bytes(v) => write!(f, "{}", base64::encode(v)),
+            Value::Json(v) => write!(f, "{:?}", v),
         }
     }
 }
@@ -141,6 +198,12 @@ impl Display for Value {
 impl From<String> for Value {
     fn from(v: String) -> Self {
         Self::Text(v)
+    }
+}
+
+impl From<serde_json::Map<String, serde_json::Value>> for Value {
+    fn from(v: serde_json::Map<String, serde_json::Value>) -> Self {
+        Self::Json(JsonMapping(v))
     }
 }
 

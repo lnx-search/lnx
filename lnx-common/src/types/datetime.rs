@@ -17,6 +17,12 @@ impl PartialEq for DateTime {
     }
 }
 
+impl From<u64> for DateTime {
+    fn from(value: u64) -> Self {
+        Self(TDateTime::from_u64(value))
+    }
+}
+
 impl From<TDateTime> for DateTime {
     fn from(v: TDateTime) -> Self {
         Self(v)

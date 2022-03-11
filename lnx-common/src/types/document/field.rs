@@ -9,7 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::schema::FieldInfo;
 use crate::types::{ConversionError, Value};
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub enum DocField {
     Empty,
     Single(Value),

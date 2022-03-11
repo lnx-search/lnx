@@ -84,6 +84,10 @@ impl Serialize for Value {
                 let data = base64::encode(v);
                 data.serialize(serializer)
             },
+            Value::Json(v) => {
+                let mapping = v.clone().inner();
+                mapping.serialize(serializer)
+            }
         }
     }
 }

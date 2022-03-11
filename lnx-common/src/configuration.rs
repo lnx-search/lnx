@@ -4,3 +4,4 @@ pub static TANTIVY_DATA_FOLDER: &str = "data";
 pub static METADATA_FOLDER: &str = "meta";
 
 pub const TASK_BACKLOG_SIZE: usize = 10;
+pub const NUM_SEGMENTS: i64 = 12505;
