@@ -8,12 +8,10 @@ use lnx_utils::{FromBytes, ToBytes};
 use scylla::cql_to_rust::{FromCqlValError, FromRowError};
 use scylla::frame::response::result::{CqlValue, Row};
 use scylla::frame::value::{
-    SerializeValuesError,
     SerializedResult,
     SerializedValues,
     ValueList,
 };
-use scylla::transport::errors::BadQuery::SerializeValuesError;
 use lnx_common::configuration::NUM_SEGMENTS;
 
 use lnx_common::types::document::DocId;
@@ -26,12 +24,11 @@ pub struct ScyllaSafeDocument<'a>(pub DocId, pub &'a TypeSafeDocument);
 impl<'a> ScyllaSafeDocument<'a> {
     pub fn from_row_and_layout(
         mut row: Row,
-        layout: &[(String, FieldInfo)],
+        layout: &[String],
     ) -> Result<(DocId, SegmentId, TypeSafeDocument), FromRowError> {
         let doc_id = row
             .columns
-            .remove(0)
-            .ok_or_else(|| FromRowError::WrongRowSize {
+            .remove(0).ok_or(FromRowError::WrongRowSize {
                 expected: 2 + layout.len(),
                 actual: 0,
             })?
@@ -43,8 +40,7 @@ impl<'a> ScyllaSafeDocument<'a> {
 
         let token_id = row
             .columns
-            .remove(0)
-            .ok_or_else(|| FromRowError::WrongRowSize {
+            .remove(0).ok_or(FromRowError::WrongRowSize {
                 expected: 2 + layout.len(),
                 actual: 1,
             })?
@@ -55,9 +51,9 @@ impl<'a> ScyllaSafeDocument<'a> {
             })?;
 
         let mut items = Vec::with_capacity(layout.len());
-        for ((column, info), value) in layout.iter().zip(row.columns) {
+        for (column, value) in layout.iter().zip(row.columns) {
             let value = match value {
-                None => info.default_value(),
+                None => DocField::Empty,
                 Some(v) => match v.into_blob() {
                     None => DocField::Empty,
                     Some(b) => DocField::from_bytes(&b).unwrap(),

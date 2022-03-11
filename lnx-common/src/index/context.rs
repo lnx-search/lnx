@@ -15,6 +15,7 @@ pub struct IndexContext {
     schema: Cow<'static, Schema>,
     polling_mode: PollingMode,
     storage_config: Option<Cow<'static, serde_json::Value>>,
+    keyspace: Cow<'static, String>,
 }
 
 impl IndexContext {
@@ -25,10 +26,15 @@ impl IndexContext {
         storage_cfg: Option<serde_json::Value>
     ) -> Self {
         Self {
-            name: Cow::Owned(name),
+            name: Cow::Owned(name.clone()),
             schema: Cow::Owned(schema),
             polling_mode,
             storage_config: storage_cfg.map(Cow::Owned),
+            keyspace: Cow::Owned(format!(
+                "{prefix}_{index}",
+                prefix = INDEX_KEYSPACE_PREFIX,
+                index = crc32fast::hash(name.as_str().as_bytes()) as u64
+            )),
         }
     }
 
@@ -58,12 +64,8 @@ impl IndexContext {
     }
 
     #[inline]
-    pub fn keyspace(&self) -> String {
-        format!(
-            "{prefix}_{index}",
-            prefix = INDEX_KEYSPACE_PREFIX,
-            index = self.id()
-        )
+    pub fn keyspace(&self) -> &str {
+        self.keyspace.as_str()
     }
 
     #[inline]

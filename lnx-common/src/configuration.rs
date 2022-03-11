@@ -5,3 +5,4 @@ pub static METADATA_FOLDER: &str = "meta";
 
 pub const TASK_BACKLOG_SIZE: usize = 10;
 pub const NUM_SEGMENTS: i64 = 12505;
+pub const SEGMENT_SIZE: i64 = 1475149466110320;
