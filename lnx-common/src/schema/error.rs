@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::schema::validations::ValidationFailure;
+use crate::types::ConversionError;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -31,4 +32,7 @@ pub enum ConstraintViolation {
 
     #[error("The field {0:?} failed it's validation checks: {1}")]
     ValidatorError(String, ValidationFailure),
+
+    #[error("The field {0:?} has the incorrect type: {1}")]
+    TypeError(String, ConversionError),
 }

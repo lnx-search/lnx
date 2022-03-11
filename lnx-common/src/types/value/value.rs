@@ -1,8 +1,10 @@
 use std::fmt::{Display, Formatter};
 
 use bincode::{Decode, Encode};
+use tantivy::schema::Facet;
+use crate::schema::FieldInfo;
 
-use crate::types::DateTime;
+use crate::types::{ConversionError, DateTime};
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Value {
@@ -15,6 +17,44 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn cast_into_schema_type(self, info: &FieldInfo) -> Result<Self, ConversionError> {
+        let new = match info {
+            FieldInfo::F64 { .. } => {
+                let target: f64 = self.try_into()?;
+                Self::F64(target)
+            }
+            FieldInfo::U64 { .. } => {
+                let target: u64 = self.try_into()?;
+                Self::U64(target)
+            }
+            FieldInfo::I64 { .. } => {
+                let target: i64 = self.try_into()?;
+                Self::I64(target)
+            }
+            FieldInfo::Date { .. } => {
+                let target: tantivy::DateTime = self.try_into()?;
+                Self::DateTime(DateTime::from(target))
+            }
+            FieldInfo::Text { .. } => {
+                let target: f64 = self.try_into()?;
+                Self::F64(target)
+            }
+            FieldInfo::String { .. } => {
+                let target: String = self.try_into()?;
+                Self::Text(target)
+            }
+            FieldInfo::Facet { .. } => {
+                // Just for validation purposes
+                let target: Facet = self.try_into()?;
+                Self::Text(target.to_string())}
+            FieldInfo::Bytes { .. } => {
+                let target: Vec<u8> = self.try_into()?;
+                Self::Bytes(target)}
+        };
+
+        Ok(new)
+    }
+
     #[inline]
     pub fn as_i64(&self) -> Option<&i64> {
         match self {

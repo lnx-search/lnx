@@ -5,8 +5,9 @@ use bincode::{Decode, Encode};
 use serde::de::value::SeqAccessDeserializer;
 use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::schema::FieldInfo;
 
-use crate::types::Value;
+use crate::types::{ConversionError, Value};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub enum DocField {
@@ -22,28 +23,39 @@ impl Default for DocField {
 }
 
 impl DocField {
+    pub fn cast_into_schema_type(self, info: &FieldInfo) -> Result<Self, ConversionError> {
+        let new = match self {
+            Self::Single(v) => {
+                let inst = v.cast_into_schema_type(info)?;
+                Self::Single(inst)
+            },
+            Self::Multi(values) => {
+                let inst = values
+                    .into_iter()
+                    .map(|v| v.cast_into_schema_type(info))
+                    .collect::<Result<Vec<_>, ConversionError>>()?;
+
+                Self::Multi(inst)
+            },
+            _ => Self::Empty,
+        };
+
+        Ok(new)
+    }
+
     #[inline]
     pub fn is_empty(&self) -> bool {
-        match self {
-            Self::Empty => true,
-            _ => false,
-        }
+        matches!(self, Self::Empty)
     }
 
     #[inline]
     pub fn is_single(&self) -> bool {
-        match self {
-            Self::Single(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Single(_))
     }
 
     #[inline]
     pub fn is_multi(&self) -> bool {
-        match self {
-            Self::Multi(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Multi(_))
     }
 
     #[inline]

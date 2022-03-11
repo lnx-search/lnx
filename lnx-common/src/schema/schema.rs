@@ -9,7 +9,7 @@ use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
 use crate::schema::validations::FieldValidator;
 use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
-use crate::types::document::{DocField, Document};
+use crate::types::document::{DocField, Document, TypeSafeDocument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
@@ -214,16 +214,21 @@ impl Schema {
 
     pub fn validate_document(
         &self,
-        document: &mut Document,
-    ) -> Vec<ConstraintViolation> {
+        mut document: Document,
+    ) -> Result<TypeSafeDocument, Vec<ConstraintViolation>> {
+        let mut validated_fields = Vec::with_capacity(self.fields().len());
         let mut violations = vec![];
         for (name, info) in self.fields() {
-            if let Some(violation) = check_field(name, info, document) {
+            if let Some(violation) = check_field(name, info, &mut document, &mut validated_fields) {
                 violations.push(violation);
             }
         }
 
-        violations
+        if violations.is_empty() {
+            Ok(TypeSafeDocument(validated_fields))
+        } else {
+            Err(violations)
+        }
     }
 }
 
@@ -231,13 +236,14 @@ fn check_field(
     name: &FieldName,
     info: &FieldInfo,
     doc: &mut Document,
+    validated_fields: &mut Vec<(String, DocField)>,
 ) -> Option<ConstraintViolation> {
-    let field = match doc.get(name) {
+    let field = match doc.remove(name) {
         None => {
             return if info.is_required() {
                 Some(ConstraintViolation::MissingRequiredField(name.to_string()))
             } else {
-                doc.insert(name.clone(), info.default_value());
+                validated_fields.push((name.to_string(), info.default_value()));
                 None
             }
         },
@@ -253,6 +259,16 @@ fn check_field(
         },
     };
 
-    info.validate(field)
-        .map(|fail| ConstraintViolation::ValidatorError(name.to_string(), fail))
+    if let Some(fail) = info.validate(&field) {
+        Some(ConstraintViolation::ValidatorError(name.to_string(), fail))
+    } else {
+        match field.cast_into_schema_type(info) {
+            Ok(converted) => {
+                validated_fields.push((name.to_string(), converted));
+                None
+            },
+            Err(e) =>
+                Some(ConstraintViolation::TypeError(name.to_string(), e)),
+        }
+    }
 }

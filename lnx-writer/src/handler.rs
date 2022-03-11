@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::Result;
 use hashbrown::HashSet;
 use lnx_common::schema::Schema;
-use lnx_common::types::document::{DocId, Document};
+use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
 use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::Timestamp;
 use uuid::Uuid;
@@ -57,7 +57,7 @@ pub async fn add_documents(
     info!("Got {} document(s) to process...", docs_len);
     for chunk in chunks {
         // SAFETY: We know chunks is always going to outlive our tasks here.
-        let chunk: &'static [(DocId, Document)] = unsafe { std::mem::transmute(chunk) };
+        let chunk: &'static [(DocId, TypeSafeDocument)] = unsafe { std::mem::transmute(chunk) };
         if tx.send(chunk).await.is_err() {
             break;
         };
@@ -93,20 +93,17 @@ pub async fn add_documents(
 fn parse_and_validate_documents(
     schema: &Schema,
     docs: Vec<Document>,
-) -> Result<Vec<(Uuid, Document)>, DocumentError> {
+) -> Result<Vec<(Uuid, TypeSafeDocument)>, DocumentError> {
     let mut processed_documents = Vec::with_capacity(docs.len());
     let mut invalid_documents = Vec::new();
 
-    for (position, mut document) in docs.into_iter().enumerate() {
-        let violations = schema.validate_document(&mut document);
-
-        if violations.is_empty() {
-            processed_documents.push((Uuid::new_v4(), document));
-        } else {
-            invalid_documents.push(ValidationError {
+    for (position, document) in docs.into_iter().enumerate() {
+        match schema.validate_document(document) {
+            Ok(doc) => processed_documents.push((Uuid::new_v4(), doc)),
+            Err(errors) => invalid_documents.push(ValidationError {
                 position,
-                errors: violations,
-            });
+                errors,
+            }),
         }
     }
 

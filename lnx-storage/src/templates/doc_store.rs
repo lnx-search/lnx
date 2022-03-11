@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use lnx_common::types::document::{DocId, Document};
+use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -15,7 +15,7 @@ pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
     /// Adds a set of documents to the store.
     async fn add_documents(
         &self,
-        docs: &[(DocId, Document)],
+        docs: &[(DocId, TypeSafeDocument)],
     ) -> Result<HashSet<SegmentId>>;
 
     /// Removes a set of documents from the store.
@@ -32,7 +32,7 @@ pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
         &self,
         fields: Option<Vec<String>>,
         docs: DocId,
-    ) -> Result<Option<(DocId, SegmentId, Document)>>;
+    ) -> Result<Option<(DocId, SegmentId, TypeSafeDocument)>>;
 
     /// Used to get all documents from the store.
     async fn iter_documents(
@@ -43,8 +43,10 @@ pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
     ) -> Result<DocumentIterator>;
 }
 
+pub type DocumentsPayload = Vec<(DocId, SegmentId, TypeSafeDocument)>;
+
 pub struct DocumentIterator {
-    rx: mpsc::Receiver<Vec<(DocId, SegmentId, Document)>>,
+    rx: mpsc::Receiver<DocumentsPayload>,
     handle: JoinHandle<()>,
 }
 
@@ -53,14 +55,14 @@ impl DocumentIterator {
     ///
     /// The handle is used for task cleanup after the iterator has been dropped.
     pub fn from_rx_and_handle(
-        rx: mpsc::Receiver<Vec<(DocId, SegmentId, Document)>>,
+        rx: mpsc::Receiver<DocumentsPayload>,
         handle: JoinHandle<()>,
     ) -> DocumentIterator {
         Self { rx, handle }
     }
 
     /// Get the next chunk from the query.
-    pub async fn next(&mut self) -> Option<Vec<(DocId, SegmentId, Document)>> {
+    pub async fn next(&mut self) -> Option<DocumentsPayload> {
         self.rx.recv().await
     }
 }

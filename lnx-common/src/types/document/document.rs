@@ -10,6 +10,10 @@ use crate::schema::FieldName;
 pub type DocId = Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A raw, unprocessed document.
+///
+/// Anything handling this type should assume that it may not
+/// follow any of the schema, validations, constraints or types.
 pub struct Document(pub HashMap<FieldName, DocField>);
 
 impl DerefMut for Document {
@@ -20,6 +24,25 @@ impl DerefMut for Document {
 
 impl Deref for Document {
     type Target = HashMap<FieldName, DocField>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A checked and safe document.
+///
+/// This document should be treated as if all fields align with the schema
+/// and pass all validations, constraints and type checks.
+///
+/// The type of the value at the given field can be assumed to be the
+/// the type of the schema field.
+pub struct TypeSafeDocument(pub Vec<(String, DocField)>);
+
+impl Deref for TypeSafeDocument {
+    type Target = Vec<(String, DocField)>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
