@@ -8,7 +8,7 @@ use super::field_info::FieldInfo;
 use super::field_name::FieldName;
 use crate::schema::error::SchemaError;
 use crate::schema::{ConstraintViolation, INDEX_PK, SEGMENT_KEY};
-use crate::types::document::Document;
+use crate::types::document::{DocField, Document};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
@@ -210,23 +210,41 @@ impl Schema {
 
         Ok(())
     }
-    
-    pub fn validate_document(&self, document: &Document) -> Option<ConstraintViolation> {
+
+    pub fn validate_document(&self, document: &mut Document) -> Vec<ConstraintViolation> {
+        let mut violations = vec![];
         for (name, info) in self.fields() {
-            match document.get(name) {
-                None => if info.is_required() {
-                    return Some(ConstraintViolation::MissingRequiredField(name.to_string()))
-                },
-                Some(field) => {
-                    if !info.is_multi() && field.is_multi() {
-                        return Some(ConstraintViolation::TooManyValues())
-                    }
-                }                
+            if let Some(violation) = check_field(name, info, document) {
+                violations.push(violation);
             }
-            
-            
         }
-        
-        None
+
+        violations
     }
+}
+
+
+fn check_field(
+    name: &FieldName,
+    info: &FieldInfo,
+    doc: &mut Document,
+) -> Option<ConstraintViolation> {
+    let field = match doc.get(name) {
+        None => return if info.is_required() {
+            Some(ConstraintViolation::MissingRequiredField(name.to_string()))
+        } else {
+            doc.insert(name.clone(), info.default_value());
+            None
+        },
+        Some(field) => {
+            if !info.is_multi() && field.is_multi() {
+                return Some(ConstraintViolation::TooManyValues(name.to_string(), field.len()))
+            }
+
+            field
+        }
+    };
+
+    
+    todo!()
 }

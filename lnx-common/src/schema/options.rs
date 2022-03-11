@@ -7,22 +7,9 @@ use tantivy::schema::{
     TextFieldIndexing,
     TextOptions,
 };
+use crate::types::document::DocField;
 use crate::types::Value;
 
-
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum PossibleValue {
-    NoDefault,
-    Default(Option<Value>),
-}
-
-impl Default for PossibleValue {
-    fn default() -> Self {
-        Self::NoDefault
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// The base options every field can have.
@@ -40,7 +27,7 @@ pub struct BaseOptions {
     ///
     /// Note:
     ///     This does *not* take precedence over the `required` field.
-    pub default: PossibleValue,
+    pub default: DocField,
 }
 
 impl BaseOptions {

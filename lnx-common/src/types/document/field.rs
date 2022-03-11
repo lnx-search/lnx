@@ -15,7 +15,14 @@ pub enum DocField {
     Multi(Vec<Value>),
 }
 
+impl Default for DocField {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
 impl DocField {
+    #[inline]
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Empty => true,
@@ -23,6 +30,7 @@ impl DocField {
         }
     }
 
+    #[inline]
     pub fn is_single(&self) -> bool {
         match self {
             Self::Single(_) => true,
@@ -30,6 +38,7 @@ impl DocField {
         }
     }
 
+    #[inline]
     pub fn is_multi(&self) -> bool {
         match self {
             Self::Multi(_) => true,
@@ -37,11 +46,21 @@ impl DocField {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         match self {
             Self::Empty => 0,
             Self::Single(_) => 1,
             Self::Multi(v) => v.len(),
+        }
+    }
+    
+    #[inline]
+    pub fn to_multi(&self) -> Vec<Value> {
+        match self {
+            Self::Empty => vec![],
+            Self::Single(v) => vec![v.clone()],
+            Self::Multi(v) => v.clone(),
         }
     }
 }

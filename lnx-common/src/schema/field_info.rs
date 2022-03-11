@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use tantivy::schema::FieldType;
 
 use crate::schema::validations::{F64Validations, I64Validations, StandardValidations, TextValidations, U64Validations};
+use crate::types::document::DocField;
+use crate::types::Value;
 use super::options::{BaseOptions, BytesOptions, CalculatedIntOptions};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -82,6 +84,20 @@ pub enum FieldInfo {
 }
 
 impl FieldInfo {
+    #[inline]
+    pub fn default_value(&self) -> DocField {
+        match self {
+            FieldInfo::F64 { opts, ..  } => opts.base.default.clone(),
+            FieldInfo::U64 { opts, ..  } => opts.base.default.clone(),
+            FieldInfo::I64 { opts, ..  } => opts.base.default.clone(),
+            FieldInfo::Date { opts, ..  } => opts.base.default.clone(),
+            FieldInfo::Text { opts, ..  } => opts.default.clone(),
+            FieldInfo::String { opts, ..  } => opts.default.clone(),
+            FieldInfo::Facet { opts, ..  } => opts.default.clone(),
+            FieldInfo::Bytes { opts, ..  } => opts.base.default.clone(),
+        }
+    }
+
     #[inline]
     pub fn is_required(&self) -> bool {
         match self {

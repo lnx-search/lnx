@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::schema::validations::ValidationFailure;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -24,4 +25,7 @@ pub enum ConstraintViolation {
     
     #[error("The field {0:?} is not a multi-value field. Got {1} values but expected 1.")]
     TooManyValues(String, usize),
+
+    #[error("The field {0:?} failed it's validation checks: {1}")]
+    ValidatorError(String, ValidationFailure),
 }
