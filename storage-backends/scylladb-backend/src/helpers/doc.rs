@@ -1,14 +1,11 @@
 use std::borrow::Cow;
 
-use hashbrown::HashMap;
 use lnx_common::configuration::NUM_SEGMENTS;
-use lnx_common::schema::{FieldInfo, FieldName};
-use lnx_common::types::document::{DocField, DocId, Document, TypeSafeDocument};
-use lnx_common::types::{DateTime, Value};
-use lnx_storage::types::{SegmentId, Timestamp};
+use lnx_common::types::document::{DocField, DocId, TypeSafeDocument};
+use lnx_storage::types::SegmentId;
 use lnx_utils::{FromBytes, ToBytes};
 use scylla::cql_to_rust::{FromCqlValError, FromRowError};
-use scylla::frame::response::result::{CqlValue, Row};
+use scylla::frame::response::result::Row;
 use scylla::frame::value::{SerializedResult, SerializedValues, ValueList};
 
 #[derive(Debug)]

@@ -12,6 +12,7 @@ impl SetupOnce for ScyllaCluster {
         let config: ConnectionConfig = serde_json::from_value(config)?;
 
         connect(config).await?;
+        super::tables::create_indexes_table().await?;
 
         Ok(())
     }

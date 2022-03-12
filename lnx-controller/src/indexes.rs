@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+use anyhow::anyhow;
 
 use dashmap::DashMap;
 use lnx_common::configuration::NODE_ID_KEY;
@@ -28,14 +29,25 @@ pub fn get(index_name: &str) -> Option<IndexStore> {
 /// Removes the index and returns it if it exists.
 ///
 /// This can be used to shutdown and cleanup the index.
-pub fn remove(index_name: &str) -> Option<IndexStore> {
-    Some(INDEXES.get()?.remove(index_name)?.1)
+pub async fn remove(index_name: &str) -> anyhow::Result<()> {
+    let engine = crate::engine::get();
+    let indexes = INDEXES.get_or_init(DashMap::new);
+    if let Some((name, store)) = indexes.remove(index_name) {
+        store.destroy(engine.base_path()).await?;
+        engine.remove_index(&name).await?;
+    }
+
+    Ok(())
 }
 
 #[inline]
 /// Creates a new index from the given context, index, polling mode and
 /// storage backend configuration.
 pub async fn new(mut ctx: IndexContext) -> anyhow::Result<()> {
+    if get(ctx.name()).is_some() {
+        return Err(anyhow!("Index already exists"))
+    }
+
     let engine = crate::engine::get();
 
     let index = ctx.get_or_create_index(engine.base_path())?; // TODO: Spawn blocking?

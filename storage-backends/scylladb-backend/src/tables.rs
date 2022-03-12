@@ -22,7 +22,6 @@ pub async fn create_indexes_table() -> Result<(), QueryError> {
             index_schema blob,
             polling_mode blob,
             replication blob,
-            settings map<text, blob>,
             PRIMARY KEY ( name )
         );
         "#,

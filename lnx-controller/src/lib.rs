@@ -5,4 +5,4 @@ mod indexes;
 
 pub mod backends;
 pub mod engine;
-pub use indexes::{get, remove};
+pub use indexes::{get, remove, new};
