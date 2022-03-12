@@ -13,6 +13,7 @@ scylladb-backend = { path = "../storage-backends/scylladb-backend" }
 
 tokio = { version = "1", features = ["rt"] }
 serde = { version = "1", features = ["derive"] }
+uuid = { version = "0.8.1", features = ["v4"] }
 
 tracing = "0.1.29"
 tracing-futures = "0.2.5"

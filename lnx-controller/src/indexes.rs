@@ -10,6 +10,8 @@ use once_cell::sync::OnceCell;
 use scylladb_backend::ScyllaIndexStore;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
+use uuid::Uuid;
+use lnx_common::configuration::NODE_ID_KEY;
 
 use crate::backends::BackendSelector;
 use crate::engine::Engine;
@@ -33,16 +35,32 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
 #[inline]
 /// Creates a new index from the given context, index, polling mode and
 /// storage backend configuration.
-pub async fn new(ctx: IndexContext) -> anyhow::Result<()> {
+pub async fn new(mut ctx: IndexContext) -> anyhow::Result<()> {
     let engine = crate::engine::get();
+
+    let index = ctx.get_or_create_index(engine.base_path())?;   // TODO: Spawn blocking?
+    let meta_store = ctx.get_or_create_metastore(engine.base_path())?;   // TODO: Spawn blocking?
+
+    let id = match meta_store.get(NODE_ID_KEY)? {
+        Some(id) => Uuid::from_slice(&id)?,
+        None => {
+            let new_id = Uuid::new_v4();
+            meta_store.insert(NODE_ID_KEY, new_id.as_bytes().as_slice())?;
+
+            new_id
+        },
+    };
+
+    info!("I am node {}!", &id);
+    ctx.set_node_id(id);    // Just a little hacky.
+
     let doc_store: Arc<dyn DocStore> = match engine.config() {
         BackendSelector::Scylla(cfg) => Arc::new(
             ScyllaIndexStore::setup(ctx.clone(), cfg.engine_replication.clone()).await?,
         ),
     };
 
-    let index = ctx.get_or_create_index(engine.base_path())?;
-    let store = IndexStore::new(ctx.clone(), index, doc_store);
+    let store = IndexStore::new(ctx.clone(), index, doc_store, meta_store);
 
     let indexes = INDEXES.get_or_init(DashMap::new);
     indexes.insert(ctx.name().to_string(), store);

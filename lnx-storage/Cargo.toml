@@ -9,6 +9,7 @@ edition = "2021"
 lnx-common = { path = "../lnx-common" }
 lnx-utils = { path = "../lnx-utils" }
 
+sled = "0.34.7"
 anyhow = "1"
 scylla = "0.4.1"
 chrono = "0.4.19"

@@ -1,10 +1,12 @@
+use std::any;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tantivy::directory::MmapDirectory;
+use uuid::Uuid;
 
-use crate::configuration::{INDEX_KEYSPACE_PREFIX, TANTIVY_DATA_FOLDER};
+use crate::configuration::{INDEX_KEYSPACE_PREFIX, METADATA_FOLDER, TANTIVY_DATA_FOLDER};
 use crate::index::base::Index;
 use crate::index::polling::PollingMode;
 use crate::schema::Schema;
@@ -16,6 +18,10 @@ pub struct IndexContext {
     polling_mode: PollingMode,
     storage_config: Option<Cow<'static, serde_json::Value>>,
     keyspace: Cow<'static, String>,
+
+    #[serde(default = "Uuid::new_v4")]
+    #[serde(skip)]
+    node_id: Uuid,
 }
 
 impl IndexContext {
@@ -35,7 +41,18 @@ impl IndexContext {
                 prefix = INDEX_KEYSPACE_PREFIX,
                 index = crc32fast::hash(name.as_str().as_bytes()) as u64
             )),
+            node_id: Uuid::new_v4()
         }
+    }
+
+    #[inline]
+    pub fn set_node_id(&mut self, node_id: Uuid) {
+        self.node_id = node_id
+    }
+
+    #[inline]
+    pub fn node_id(&self) -> Uuid {
+        self.node_id
     }
 
     #[inline]
@@ -71,6 +88,18 @@ impl IndexContext {
     #[inline]
     pub fn root_storage_path(&self, base_path: &Path) -> PathBuf {
         base_path.join(self.id().to_string())
+    }
+
+    pub fn get_or_create_metastore(&self, base_path: &Path) -> anyhow::Result<sled::Db> {
+        let target_path = self.root_storage_path(base_path).join(METADATA_FOLDER);
+        std::fs::create_dir_all(&target_path)?;
+
+        sled::Config::new()
+            .create_new(true)
+            .mode(sled::Mode::HighThroughput)
+            .path(target_path)
+            .open()
+            .map_err(anyhow::Error::from)
     }
 
     /// Gets an existing index or creates a new index otherwise.

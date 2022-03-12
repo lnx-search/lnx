@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use futures_util::StreamExt;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use scylla::frame::value::ValueList;
 use scylla::IntoTypedRows;
@@ -34,6 +34,7 @@ pub static CHANGE_LOG_TABLE: &str = "index_changelog";
 pub static SYNONYMS_TABLE: &str = "synonyms";
 pub static STOPWORDS_TABLE: &str = "stop_words";
 pub static NODES_INFO_TABLE: &str = "stop_words";
+pub static SETTINGS_TABLE: &str = "settings";
 
 macro_rules! send_chunk {
     ($chunk:expr, $tx:expr) => {
@@ -346,50 +347,183 @@ impl ChangeLogStore for ScyllaIndexStore {
 #[async_trait]
 impl MetaStore for ScyllaIndexStore {
     async fn add_stopwords(&self, words: Vec<String>) -> Result<()> {
-        todo!()
+        let query = format!(
+            "INSERT INTO {ks}.{table} (word) VALUES (?);",
+            ks = self.ctx.keyspace(),
+            table = STOPWORDS_TABLE,
+        );
+
+        for word in words {
+            session().query_prepared(&query, (word,)).await?;
+        }
+
+        Ok(())
     }
 
     async fn remove_stopwords(&self, words: Vec<String>) -> Result<()> {
-        todo!()
+        let query = format!(
+            "DELETE FROM {ks}.{table} WHERE word IN ?;",
+            ks = self.ctx.keyspace(),
+            table = STOPWORDS_TABLE,
+        );
+
+        session().query_prepared(&query, (words,)).await?;
+
+        Ok(())
     }
 
     async fn fetch_stopwords(&self) -> Result<Vec<String>> {
-        todo!()
+        let query = format!(
+            "SELECT word FROM {ks}.{table};",
+            ks = self.ctx.keyspace(),
+            table = STOPWORDS_TABLE,
+        );
+
+        let mut iter = session()
+            .query_iter(query.as_str(), &[])
+            .await?
+            .into_typed::<(String,)>();
+
+        let mut words = vec![];
+        while let Some(row) = iter.next().await {
+            let (word,) = row?;
+            words.push(word);
+        }
+
+        Ok(words)
     }
 
     async fn add_synonyms(&self, words: Vec<Synonyms>) -> Result<()> {
-        todo!()
+        let query = format!(
+            "INSERT INTO {ks}.{table} (word, synonyms) VALUES (?, ?);",
+            ks = self.ctx.keyspace(),
+            table = SYNONYMS_TABLE,
+        );
+
+        for group in words {
+            session()
+                .query_prepared(&query, (group.word, group.synonyms))
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn remove_synonyms(&self, words: Vec<String>) -> Result<()> {
-        todo!()
+        let query = format!(
+            "DELETE FROM {ks}.{table} WHERE word IN ?;",
+            ks = self.ctx.keyspace(),
+            table = SYNONYMS_TABLE,
+        );
+
+        session().query_prepared(&query, (words,)).await?;
+
+        Ok(())
     }
 
     async fn fetch_synonyms(&self) -> Result<Vec<Synonyms>> {
-        todo!()
+        let query = format!(
+            "SELECT word, synonyms FROM {ks}.{table};",
+            ks = self.ctx.keyspace(),
+            table = SYNONYMS_TABLE,
+        );
+
+        let mut iter = session()
+            .query_iter(query.as_str(), &[])
+            .await?
+            .into_typed::<(String, Vec<String>)>();
+
+        let mut groups = vec![];
+        while let Some(row) = iter.next().await {
+            let (word, synonyms) = row?;
+            groups.push(Synonyms { word, synonyms });
+        }
+
+        Ok(groups)
     }
 
     async fn set_update_timestamp(&self, timestamp: Timestamp) -> Result<()> {
-        todo!()
+        let query = format!(
+            "UPDATE {ks}.{table} SET last_updated = ?, last_heartbeat = toTimeStamp(now()) WHERE node_id = ?;",
+            ks = self.ctx.keyspace(),
+            table = NODES_INFO_TABLE,
+        );
+
+        session()
+            .query_prepared(&query, (timestamp, self.ctx.node_id()))
+            .await?;
+
+        Ok(())
     }
 
     async fn get_last_update_timestamp(&self) -> Result<Option<Timestamp>> {
-        todo!()
+        let query = format!(
+            "SELECT last_updated FROM {ks}.{table} WHERE node_id = ?;",
+            ks = self.ctx.keyspace(),
+            table = NODES_INFO_TABLE,
+        );
+
+        let result = session()
+            .query_prepared(&query, (self.ctx.node_id(),))
+            .await?
+            .rows
+            .unwrap_or_default()
+            .into_typed::<(Option<Timestamp>,)>()
+            .next()
+            .transpose()?;
+
+        Ok(Option::flatten(result.map(|v| v.0)))
     }
 
-    async fn load_index_from_peer(&self, out_dir: &Path) -> Result<()> {
-        todo!()
+    async fn load_index_from_peer(&self, _out_dir: &Path) -> Result<()> {
+        Err(anyhow!("Loading from a index is not supported"))
     }
 
     async fn update_settings(&self, key: &str, data: Vec<u8>) -> Result<()> {
-        todo!()
+        let query = format!(
+            "INSERT INTO {ks}.{table} (key, data) VALUES (?, ?);",
+            ks = self.ctx.keyspace(),
+            table = NODES_INFO_TABLE,
+        );
+
+        session()
+            .query_prepared(&query, (key, data))
+            .await?;
+
+        Ok(())
     }
 
     async fn remove_settings(&self, key: &str) -> Result<()> {
-        todo!()
+        let query = format!(
+            "DELETE FROM {ks}.{table} WHERE key = ?;",
+            ks = self.ctx.keyspace(),
+            table = NODES_INFO_TABLE,
+        );
+
+        session()
+            .query_prepared(&query, (key,))
+            .await?;
+
+        Ok(())
     }
 
     async fn load_settings(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        todo!()
+        let query = format!(
+            "SELECT data FROM {ks}.{table} WHERE key = ?;",
+            ks = self.ctx.keyspace(),
+            table = NODES_INFO_TABLE,
+        );
+
+        let result = session()
+            .query_prepared(&query, (key,))
+            .await?
+            .rows
+            .unwrap_or_default()
+            .into_typed::<(Vec<u8>,)>()
+            .next()
+            .transpose()?
+            .map(|v| v.0);
+
+        Ok(result)
     }
 }

@@ -4,7 +4,7 @@ use scylla::transport::errors::QueryError;
 use crate::helpers::format_column;
 
 use super::connection::session;
-use crate::index_store::{CHANGE_LOG_TABLE, DOCUMENT_TABLE, NODES_INFO_TABLE, SYNONYMS_TABLE, STOPWORDS_TABLE};
+use crate::index_store::{CHANGE_LOG_TABLE, DOCUMENT_TABLE, NODES_INFO_TABLE, SYNONYMS_TABLE, STOPWORDS_TABLE, SETTINGS_TABLE};
 
 pub static INDEXES_TABLE: &str = "indexes";
 
@@ -60,6 +60,16 @@ pub async fn create_meta_tables(ks: &str) -> Result<(), QueryError> {
             "#,
             ks = ks,
             table = NODES_INFO_TABLE,
+        ),
+        format!(
+            r#"CREATE TABLE IF NOT EXISTS {ks}.{table} (
+                key text,
+                data blob,
+                PRIMARY KEY ( key )
+            );
+            "#,
+            ks = ks,
+            table = SETTINGS_TABLE,
         ),
     ];
 

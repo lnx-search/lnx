@@ -18,6 +18,7 @@ pub struct IndexStore {
     ctx: IndexContext,
     index: Index,
     store: Arc<dyn DocStore>,
+    meta_store: sled::Db,
 }
 
 impl Deref for IndexStore {
@@ -29,8 +30,13 @@ impl Deref for IndexStore {
 }
 
 impl IndexStore {
-    pub fn new(ctx: IndexContext, index: Index, store: Arc<dyn DocStore>) -> Self {
-        Self { ctx, index, store }
+    pub fn new(
+        ctx: IndexContext,
+        index: Index,
+        store: Arc<dyn DocStore>,
+        meta_store: sled::Db,
+    ) -> Self {
+        Self { ctx, index, store, meta_store }
     }
 
     #[inline]
@@ -41,6 +47,11 @@ impl IndexStore {
     #[inline]
     pub fn ctx(&self) -> &IndexContext {
         &self.ctx
+    }
+
+    #[inline]
+    pub fn meta_store(&self) -> &sled::Db {
+        &self.meta_store
     }
 
     /// Updates the current settings for the given key.
