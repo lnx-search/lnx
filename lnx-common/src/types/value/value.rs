@@ -1,16 +1,15 @@
 use std::collections::BTreeMap;
-use std::fmt::{Display, Formatter, write};
+use std::fmt::{write, Display, Formatter};
 use std::ops::Deref;
 
-use bincode::{Decode, Encode};
 use bincode::de::Decoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
+use bincode::{Decode, Encode};
 use tantivy::schema::Facet;
 
 use crate::schema::FieldInfo;
 use crate::types::{ConversionError, DateTime};
-
 
 #[derive(Debug, Clone)]
 pub struct JsonMapping(serde_json::Map<String, serde_json::Value>);

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use lnx_common::configuration::NODE_ID_KEY;
 use lnx_common::index::context::IndexContext;
 use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::doc_store::DocStore;
@@ -11,7 +12,6 @@ use scylladb_backend::ScyllaIndexStore;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use uuid::Uuid;
-use lnx_common::configuration::NODE_ID_KEY;
 
 use crate::backends::BackendSelector;
 use crate::engine::Engine;
@@ -38,8 +38,8 @@ pub fn remove(index_name: &str) -> Option<IndexStore> {
 pub async fn new(mut ctx: IndexContext) -> anyhow::Result<()> {
     let engine = crate::engine::get();
 
-    let index = ctx.get_or_create_index(engine.base_path())?;   // TODO: Spawn blocking?
-    let meta_store = ctx.get_or_create_metastore(engine.base_path())?;   // TODO: Spawn blocking?
+    let index = ctx.get_or_create_index(engine.base_path())?; // TODO: Spawn blocking?
+    let meta_store = ctx.get_or_create_metastore(engine.base_path())?; // TODO: Spawn blocking?
 
     let id = match meta_store.get(NODE_ID_KEY)? {
         Some(id) => Uuid::from_slice(&id)?,
@@ -52,7 +52,7 @@ pub async fn new(mut ctx: IndexContext) -> anyhow::Result<()> {
     };
 
     info!("I am node {}!", &id);
-    ctx.set_node_id(id);    // Just a little hacky.
+    ctx.set_node_id(id); // Just a little hacky.
 
     let doc_store: Arc<dyn DocStore> = match engine.config() {
         BackendSelector::Scylla(cfg) => Arc::new(

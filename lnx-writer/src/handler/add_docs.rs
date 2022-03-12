@@ -8,8 +8,7 @@ use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::Timestamp;
 use uuid::Uuid;
 
-use crate::error::DocumentError;
-use crate::error::ValidationError;
+use crate::error::{DocumentError, ValidationError};
 use crate::handler::batcher;
 
 const MAX_INSERT_CONCURRENCY: usize = 256;
@@ -28,12 +27,9 @@ pub async fn add_documents(
         MAX_INSERT_CONCURRENCY,
         index_store,
         docs,
-        move |chunk, store| {
-            async move {
-                store.add_documents(chunk).await
-            }
-        }
-    ).await?;
+        move |chunk, store| async move { store.add_documents(chunk).await },
+    )
+    .await?;
     info!(
         "Added {} document(s) to the database in {:?}.",
         docs_len,

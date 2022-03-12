@@ -6,7 +6,11 @@ use serde::{Deserialize, Serialize};
 use tantivy::directory::MmapDirectory;
 use uuid::Uuid;
 
-use crate::configuration::{INDEX_KEYSPACE_PREFIX, METADATA_FOLDER, TANTIVY_DATA_FOLDER};
+use crate::configuration::{
+    INDEX_KEYSPACE_PREFIX,
+    METADATA_FOLDER,
+    TANTIVY_DATA_FOLDER,
+};
 use crate::index::base::Index;
 use crate::index::polling::PollingMode;
 use crate::schema::Schema;
@@ -29,7 +33,7 @@ impl IndexContext {
         name: String,
         schema: Schema,
         polling_mode: PollingMode,
-        storage_cfg: Option<serde_json::Value>
+        storage_cfg: Option<serde_json::Value>,
     ) -> Self {
         Self {
             name: Cow::Owned(name.clone()),
@@ -41,7 +45,7 @@ impl IndexContext {
                 prefix = INDEX_KEYSPACE_PREFIX,
                 index = crc32fast::hash(name.as_str().as_bytes()) as u64
             )),
-            node_id: Uuid::new_v4()
+            node_id: Uuid::new_v4(),
         }
     }
 

@@ -1,9 +1,8 @@
-use hashbrown::HashSet;
-
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
 use async_trait::async_trait;
+use hashbrown::HashSet;
 use lnx_common::types::document::{DocId, Document, TypeSafeDocument};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -16,7 +15,6 @@ pub struct DocumentUpdate {
     pub doc_id: DocId,
     pub data: Document,
 }
-
 
 #[async_trait]
 pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
@@ -32,7 +30,7 @@ pub trait DocStore: MetaStore + ChangeLogStore + Send + Sync + 'static {
     /// be marked as a segment change.
     async fn update_documents(
         &self,
-        docs: &[DocumentUpdate]
+        docs: &[DocumentUpdate],
     ) -> Result<HashSet<SegmentId>>;
 
     /// Removes a set of documents from the store.

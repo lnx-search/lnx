@@ -2,12 +2,12 @@ use std::future::Future;
 use std::process::Output;
 use std::sync::Arc;
 use std::time::Instant;
+
 use anyhow::anyhow;
 use hashbrown::HashSet;
 use lnx_storage::stores::IndexStore;
 use lnx_storage::templates::change_log::ChangeLogEntry;
 use lnx_storage::types::{SegmentId, Timestamp};
-
 
 #[instrument(name = "concurrent-batcher", skip(data, store, callback))]
 pub(crate) async fn batch<BATCH, CB, F>(
@@ -57,8 +57,7 @@ where
     info!("Got {} entries(s) to process...", data_len);
     for chunk in chunks {
         // SAFETY: We know chunks is always going to outlive our tasks here.
-        let chunk: &'static [BATCH] =
-            unsafe { std::mem::transmute(chunk) };
+        let chunk: &'static [BATCH] = unsafe { std::mem::transmute(chunk) };
         if tx.send(chunk).await.is_err() {
             break;
         };
@@ -80,7 +79,11 @@ where
 
     let num_errors = failed_tasks.len();
     if !failed_tasks.is_empty() {
-        return Err(anyhow!("{} Tasks failed with the error: {}", num_errors, failed_tasks[0]))
+        return Err(anyhow!(
+            "{} Tasks failed with the error: {}",
+            num_errors,
+            failed_tasks[0]
+        ));
     }
 
     Ok(())

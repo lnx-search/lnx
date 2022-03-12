@@ -1,14 +1,15 @@
 use std::time::Instant;
+
 use anyhow::Result;
 use lnx_common::types::document::{DocId, Document};
-use crate::error::DocumentError;
-use serde::{Serialize, Deserialize};
-use tantivy::doc;
 use lnx_storage::templates::doc_store::DocumentUpdate;
+use serde::{Deserialize, Serialize};
+use tantivy::doc;
+
+use crate::error::DocumentError;
 use crate::handler::batcher;
 
 const MAX_UPDATE_CONCURRENCY: usize = 128;
-
 
 pub async fn update_documents(
     index_name: &str,
@@ -23,12 +24,9 @@ pub async fn update_documents(
         MAX_UPDATE_CONCURRENCY,
         index_store,
         documents,
-        move |chunk, store| {
-            async move {
-                store.update_documents(chunk).await
-            }
-        }
-    ).await?;
+        move |chunk, store| async move { store.update_documents(chunk).await },
+    )
+    .await?;
 
     info!(
         "Update {} document(s) in the database in {:?}.",

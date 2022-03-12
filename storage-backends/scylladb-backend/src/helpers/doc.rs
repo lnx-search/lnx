@@ -1,22 +1,15 @@
 use std::borrow::Cow;
 
 use hashbrown::HashMap;
+use lnx_common::configuration::NUM_SEGMENTS;
 use lnx_common::schema::{FieldInfo, FieldName};
-use lnx_common::types::document::{DocField, Document, TypeSafeDocument};
+use lnx_common::types::document::{DocField, DocId, Document, TypeSafeDocument};
+use lnx_common::types::{DateTime, Value};
 use lnx_storage::types::{SegmentId, Timestamp};
 use lnx_utils::{FromBytes, ToBytes};
 use scylla::cql_to_rust::{FromCqlValError, FromRowError};
 use scylla::frame::response::result::{CqlValue, Row};
-use scylla::frame::value::{
-    SerializedResult,
-    SerializedValues,
-    ValueList,
-};
-use lnx_common::configuration::NUM_SEGMENTS;
-
-use lnx_common::types::document::DocId;
-use lnx_common::types::{DateTime, Value};
-
+use scylla::frame::value::{SerializedResult, SerializedValues, ValueList};
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument<'a>(pub DocId, pub &'a TypeSafeDocument);
@@ -28,7 +21,8 @@ impl<'a> ScyllaSafeDocument<'a> {
     ) -> Result<(DocId, SegmentId, TypeSafeDocument), FromRowError> {
         let doc_id = row
             .columns
-            .remove(0).ok_or(FromRowError::WrongRowSize {
+            .remove(0)
+            .ok_or(FromRowError::WrongRowSize {
                 expected: 2 + layout.len(),
                 actual: 0,
             })?
@@ -40,7 +34,8 @@ impl<'a> ScyllaSafeDocument<'a> {
 
         let token_id = row
             .columns
-            .remove(0).ok_or(FromRowError::WrongRowSize {
+            .remove(0)
+            .ok_or(FromRowError::WrongRowSize {
                 expected: 2 + layout.len(),
                 actual: 1,
             })?

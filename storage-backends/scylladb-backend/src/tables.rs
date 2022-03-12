@@ -1,13 +1,19 @@
 use itertools::Itertools;
 use lnx_common::schema::INDEX_PK;
 use scylla::transport::errors::QueryError;
-use crate::helpers::format_column;
 
 use super::connection::session;
-use crate::index_store::{CHANGE_LOG_TABLE, DOCUMENT_TABLE, NODES_INFO_TABLE, SYNONYMS_TABLE, STOPWORDS_TABLE, SETTINGS_TABLE};
+use crate::helpers::format_column;
+use crate::index_store::{
+    CHANGE_LOG_TABLE,
+    DOCUMENT_TABLE,
+    NODES_INFO_TABLE,
+    SETTINGS_TABLE,
+    STOPWORDS_TABLE,
+    SYNONYMS_TABLE,
+};
 
 pub static INDEXES_TABLE: &str = "indexes";
-
 
 pub async fn create_indexes_table() -> Result<(), QueryError> {
     let query = format!(

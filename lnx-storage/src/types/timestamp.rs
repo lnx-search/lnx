@@ -2,10 +2,10 @@ use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 
 use chrono::Utc;
+use lnx_common::types::DateTime;
 use scylla::cql_to_rust::{FromCqlVal, FromCqlValError};
 use scylla::frame::response::result::CqlValue;
 use scylla::frame::value::{self, ValueTooBig};
-use lnx_common::types::DateTime;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Timestamp(pub chrono::Duration);

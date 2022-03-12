@@ -36,7 +36,12 @@ impl IndexStore {
         store: Arc<dyn DocStore>,
         meta_store: sled::Db,
     ) -> Self {
-        Self { ctx, index, store, meta_store }
+        Self {
+            ctx,
+            index,
+            store,
+            meta_store,
+        }
     }
 
     #[inline]

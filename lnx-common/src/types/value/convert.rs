@@ -196,7 +196,9 @@ impl TryInto<DateTime> for Value {
                     format!("<bytes len={}>", v.len()),
                 ))
             },
-            Value::Json(v) => return Err(ConversionError::new("JSON Object", "DateTime", v)),
+            Value::Json(v) => {
+                return Err(ConversionError::new("JSON Object", "DateTime", v))
+            },
         };
 
         Ok(v)

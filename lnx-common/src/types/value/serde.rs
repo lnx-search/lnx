@@ -87,7 +87,7 @@ impl Serialize for Value {
             Value::Json(v) => {
                 let mapping = v.clone().inner();
                 mapping.serialize(serializer)
-            }
+            },
         }
     }
 }

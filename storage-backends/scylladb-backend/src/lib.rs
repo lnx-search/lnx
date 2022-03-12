@@ -2,11 +2,11 @@
 extern crate tracing;
 
 mod connection;
+mod helpers;
 mod index_store;
 mod setup;
-mod utils;
-mod helpers;
 mod tables;
+mod utils;
 
 pub use connection::{ConnectionConfig, ReplicationInfo};
 pub use index_store::ScyllaIndexStore;

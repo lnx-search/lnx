@@ -1,15 +1,14 @@
 use std::borrow::Cow;
-use hashbrown::HashSet;
 use std::path::Path;
 use std::time::Instant;
 
-use futures_util::StreamExt;
 use anyhow::{anyhow, Result};
+use futures_util::StreamExt;
+use hashbrown::HashSet;
 use itertools::Itertools;
-use scylla::frame::value::ValueList;
-use scylla::IntoTypedRows;
-use scylla::routing::murmur3_token;
+use lnx_common::configuration::NUM_SEGMENTS;
 use lnx_common::index::context::IndexContext;
+use lnx_common::schema::{INDEX_PK, SEGMENT_KEY};
 use lnx_common::types::document::{DocId, TypeSafeDocument};
 use lnx_storage::async_trait;
 use lnx_storage::templates::change_log::{
@@ -17,16 +16,17 @@ use lnx_storage::templates::change_log::{
     ChangeLogIterator,
     ChangeLogStore,
 };
-use tokio::sync::mpsc;
-use lnx_common::configuration::NUM_SEGMENTS;
-use lnx_common::schema::{INDEX_PK, SEGMENT_KEY};
 use lnx_storage::templates::doc_store::{DocStore, DocumentIterator, DocumentUpdate};
 use lnx_storage::templates::meta_store::{MetaStore, Synonyms};
 use lnx_storage::types::{SegmentId, Timestamp};
+use scylla::frame::value::ValueList;
+use scylla::routing::murmur3_token;
+use scylla::IntoTypedRows;
+use tokio::sync::mpsc;
+
 use crate::connection::session;
 use crate::helpers::doc::ScyllaSafeDocument;
 use crate::helpers::format_column;
-
 use crate::ReplicationInfo;
 
 pub static DOCUMENT_TABLE: &str = "documents";
@@ -66,7 +66,8 @@ impl ScyllaIndexStore {
 
         replication_info.build_index_keyspace(&ctx).await?;
 
-        let raw_fields = ctx.schema()
+        let raw_fields = ctx
+            .schema()
             .fields()
             .keys()
             .map(|v| v.to_string())
@@ -79,7 +80,12 @@ impl ScyllaIndexStore {
         super::tables::create_doc_tables(ctx.keyspace(), raw_fields).await?;
         super::tables::create_meta_tables(ctx.keyspace()).await?;
 
-        Ok(Self { ctx, fields, insert_columns, placeholders_columns })
+        Ok(Self {
+            ctx,
+            fields,
+            insert_columns,
+            placeholders_columns,
+        })
     }
 }
 
@@ -115,7 +121,10 @@ impl DocStore for ScyllaIndexStore {
         Ok(tokens)
     }
 
-    async fn update_documents(&self, docs: &[DocumentUpdate]) -> Result<HashSet<SegmentId>> {
+    async fn update_documents(
+        &self,
+        docs: &[DocumentUpdate],
+    ) -> Result<HashSet<SegmentId>> {
         todo!()
     }
 
@@ -185,7 +194,12 @@ impl DocStore for ScyllaIndexStore {
             .unwrap_or_default()
             .into_iter()
             .next()
-            .map(|r| ScyllaSafeDocument::from_row_and_layout(r, fields.as_ref().unwrap_or(&self.fields)))
+            .map(|r| {
+                ScyllaSafeDocument::from_row_and_layout(
+                    r,
+                    fields.as_ref().unwrap_or(&self.fields),
+                )
+            })
             .transpose()?;
 
         Ok(rows)
@@ -275,10 +289,7 @@ impl ChangeLogStore for ScyllaIndexStore {
             .await?;
 
         session()
-            .query_prepared(
-                &insert_query,
-                (logs.affected_segment, logs.timestamp),
-            )
+            .query_prepared(&insert_query, (logs.affected_segment, logs.timestamp))
             .await?;
 
         trace!("Update registered with change log.");
@@ -294,9 +305,7 @@ impl ChangeLogStore for ScyllaIndexStore {
         );
 
         let start = Instant::now();
-        let iter = session()
-            .query_iter(query.as_str(), (from,))
-            .await?;
+        let iter = session().query_iter(query.as_str(), (from,)).await?;
         info!("Preparing iterator took {:?} to execute.", start.elapsed());
 
         type ChangedRow = (SegmentId, Timestamp);
@@ -486,9 +495,7 @@ impl MetaStore for ScyllaIndexStore {
             table = NODES_INFO_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (key, data))
-            .await?;
+        session().query_prepared(&query, (key, data)).await?;
 
         Ok(())
     }
@@ -500,9 +507,7 @@ impl MetaStore for ScyllaIndexStore {
             table = NODES_INFO_TABLE,
         );
 
-        session()
-            .query_prepared(&query, (key,))
-            .await?;
+        session().query_prepared(&query, (key,)).await?;
 
         Ok(())
     }
