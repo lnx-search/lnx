@@ -65,15 +65,18 @@ impl ScyllaIndexStore {
 
         replication_info.build_index_keyspace(&ctx).await?;
 
-        let fields = ctx.schema()
+        let raw_fields = ctx.schema()
             .fields()
             .keys()
             .map(|v| v.to_string())
             .collect::<Vec<String>>();
 
-        let insert_columns = fields.iter().map(format_column).join(", ");
-        let placeholders_columns = fields.iter().map(|_| "?").join(", ");
-        let fields = Cow::Owned(fields);
+        let insert_columns = raw_fields.iter().map(format_column).join(", ");
+        let placeholders_columns = raw_fields.iter().map(|_| "?").join(", ");
+        let fields = Cow::Owned(raw_fields.clone());
+
+        super::tables::create_doc_tables(ctx.keyspace(), raw_fields).await?;
+        super::tables::create_meta_tables(ctx.keyspace()).await?;
 
         Ok(Self { ctx, fields, insert_columns, placeholders_columns })
     }
