@@ -107,6 +107,20 @@ impl FieldInfo {
     }
 
     #[inline]
+    pub fn store_as_blob(&self) -> bool {
+        match self {
+            FieldInfo::F64 { opts, .. } => opts.base.store_as_blob,
+            FieldInfo::U64 { opts, .. } => opts.base.store_as_blob,
+            FieldInfo::I64 { opts, .. } => opts.base.store_as_blob,
+            FieldInfo::Date { opts, .. } => opts.base.store_as_blob,
+            FieldInfo::Text { opts, .. } => opts.store_as_blob,
+            FieldInfo::String { opts, .. } => opts.store_as_blob,
+            FieldInfo::Facet { opts, .. } => opts.store_as_blob,
+            FieldInfo::Bytes { opts, .. } => opts.base.store_as_blob,
+        }
+    }
+
+    #[inline]
     pub fn is_required(&self) -> bool {
         match self {
             FieldInfo::F64 { opts, .. } => opts.base.required,

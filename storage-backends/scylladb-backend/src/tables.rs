@@ -1,6 +1,7 @@
 use itertools::Itertools;
-use lnx_common::schema::INDEX_PK;
+use lnx_common::schema::{INDEX_PK, Schema};
 use scylla::transport::errors::QueryError;
+use crate::helpers::as_cql_type::AsCqlType;
 
 use super::connection::session;
 use crate::helpers::format_column;
@@ -87,11 +88,16 @@ pub async fn create_meta_tables(ks: &str) -> Result<(), QueryError> {
 
 pub async fn create_doc_tables(
     ks: &str,
-    doc_fields: Vec<String>,
+    doc_fields: &Schema,
 ) -> Result<(), QueryError> {
     let fields = doc_fields
-        .into_iter()
-        .map(|v| format!("{} blob", format_column(v)))
+        .fields()
+        .iter()
+        .map(|(name, info)| format!(
+            "{name} {ty}",
+            name = format_column(name),
+            ty = info.as_cql_type(),
+        ))
         .join(", ");
 
     let queries = vec![

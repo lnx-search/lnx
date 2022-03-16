@@ -1,12 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{
-    Cardinality,
-    FacetOptions,
-    IndexRecordOption,
-    NumericOptions,
-    TextFieldIndexing,
-    TextOptions,
-};
+use tantivy::schema::{Cardinality, FacetOptions, IndexRecordOption, NumericOptions, TextFieldIndexing, TextOptions};
 
 use crate::types::document::DocField;
 
@@ -27,6 +20,12 @@ pub struct BaseOptions {
     /// Note:
     ///     This does *not* take precedence over the `required` field.
     pub default: DocField,
+
+    #[serde(default)]
+    /// If the field should be stored as a raw blob value than it's native type.
+    /// This is only really useful in places where you have a very large multi-value
+    /// field, even then it should be the very last option to use.
+    pub store_as_blob: bool,
 }
 
 impl BaseOptions {
