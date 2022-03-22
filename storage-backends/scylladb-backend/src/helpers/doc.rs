@@ -2,11 +2,13 @@ use std::borrow::Cow;
 
 use lnx_common::configuration::NUM_SEGMENTS;
 use lnx_common::types::document::{DocField, DocId, TypeSafeDocument};
-use lnx_storage::types::SegmentId;
+use lnx_storage::types::{SegmentId, Timestamp};
 use lnx_utils::{FromBytes, ToBytes};
 use scylla::cql_to_rust::{FromCqlValError, FromRowError};
 use scylla::frame::response::result::Row;
-use scylla::frame::value::{SerializedResult, SerializedValues, ValueList};
+use scylla::frame::value::{SerializedResult, SerializedValues, ValueList, ValueTooBig};
+use lnx_common::schema::Schema;
+use lnx_common::types::Value;
 
 #[derive(Debug)]
 pub struct ScyllaSafeDocument<'a>(pub DocId, pub &'a TypeSafeDocument);
@@ -65,10 +67,30 @@ impl<'a> ValueList for ScyllaSafeDocument<'a> {
         result.add_value(&self.0)?; // PK
 
         for (_, value) in self.1.iter() {
-            let buff = value.to_bytes().unwrap();
-            result.add_value(&buff)?;
+            match value {
+                DocField::Empty => {}
+                DocField::Single(v) => {}
+                DocField::Multi(v) => {}
+            }
         }
 
         Ok(Cow::Owned(result))
+    }
+}
+
+
+fn serialize_value(
+    result: &mut SerializedValues,
+    value: &Value,
+) -> Result<(), scylla::frame::value::SerializeValuesError> {
+    Vec::serialize()
+    match value {
+        Value::I64(v) => result.add_value(v),
+        Value::U64(v) => result.add_value(&(*v as i64)),
+        Value::F64(v) => result.add_value(v),
+        Value::DateTime(v) => result.add_value(&Timestamp::from(v.timestamp_millis())),
+        Value::Text(v) => result.add_value(v),
+        Value::Bytes(v) => result.add_value(v),
+        Value::Json(v) => todo!(),
     }
 }
