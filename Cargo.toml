@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "lnx",
     "lnx-storage",
     "lnx-common",
     "lnx-utils",
