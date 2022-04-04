@@ -93,10 +93,10 @@ pub async fn create_doc_tables(
     let fields = doc_fields
         .fields()
         .iter()
-        .map(|(name, info)| format!(
+        .map(|(name, _info)| format!(
             "{name} {ty}",
             name = format_column(name),
-            ty = info.as_cql_type(),
+            ty = "BLOB"// info.as_cql_type(),
         ))
         .join(", ");
 

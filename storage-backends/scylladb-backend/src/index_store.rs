@@ -77,7 +77,7 @@ impl ScyllaIndexStore {
         let placeholders_columns = raw_fields.iter().map(|_| "?").join(", ");
         let fields = Cow::Owned(raw_fields.clone());
 
-        super::tables::create_doc_tables(ctx.keyspace(), raw_fields).await?;
+        super::tables::create_doc_tables(ctx.keyspace(), ctx.schema()).await?;
         super::tables::create_meta_tables(ctx.keyspace()).await?;
 
         Ok(Self {

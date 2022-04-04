@@ -15,7 +15,7 @@ use crate::types::{ConversionError, DateTime};
 pub struct JsonMapping(serde_json::Map<String, serde_json::Value>);
 
 impl JsonMapping {
-    pub(crate) fn inner(self) -> serde_json::Map<String, serde_json::Value> {
+    pub fn inner(self) -> serde_json::Map<String, serde_json::Value> {
         self.0
     }
 }
