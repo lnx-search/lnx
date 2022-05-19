@@ -36,6 +36,6 @@ parking_lot = "0.11"
 rand = "0.8.4"
 
 # allocator
-mimalloc = { version = "*", default-features = false, optional = true }
+mimalloc = { version = "*", default-features = false }
 
 engine = { path = "../lnx-engine/engine" }
