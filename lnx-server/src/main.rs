@@ -19,15 +19,15 @@ use clap::Parser;
 use engine::structures::{IndexDeclaration, ROOT_PATH};
 use engine::Engine;
 use hyper::Server;
-use mimalloc::MiMalloc;
 use routerify::RouterService;
 use tracing::Level;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
+#[cfg(target_env = "msvc")]
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use crate::auth::AuthManager;
 use crate::snapshot::{create_snapshot, load_snapshot};
