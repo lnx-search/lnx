@@ -1,27 +1,17 @@
 use std::borrow::Cow;
+use std::cmp;
 use std::cmp::Reverse;
 use std::sync::Arc;
 
 use aexecutor::SearcherExecutorPool;
 use anyhow::{anyhow, Error, Result};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;
-use tantivy::query::{Query, TermQuery};
+use tantivy::query::{BooleanQuery, Query, QueryClone, TermQuery};
 use tantivy::schema::{Field, FieldType, IndexRecordOption, Schema, Value};
-use tantivy::{
-    DateTime,
-    DocAddress,
-    DocId,
-    Executor,
-    IndexReader,
-    LeasedItem,
-    ReloadPolicy,
-    Searcher,
-    SegmentReader,
-    Term,
-};
+use tantivy::{DateTime, DocAddress, DocId, Executor, IndexReader, LeasedItem, ReloadPolicy, Score, Searcher, SegmentReader, Term};
 
 use crate::helpers::{AsScore, Validate};
 use crate::query::{DocumentId, QueryBuilder, QuerySelector};
@@ -139,14 +129,125 @@ impl QueryResults {
 fn order_and_search<R: AsScore + tantivy::fastfield::FastValue>(
     searcher: &Searcher,
     field: Field,
-    query: &dyn Query,
-    collector: TopDocs,
+    queries: (Box<dyn Query>, Vec<Box<dyn Query>>),
+    limit: usize,
+    offset: usize,
     executor: &Executor,
 ) -> Result<(Vec<(R, DocAddress)>, usize)> {
+    let (primary_stage, secondary_stages) = queries;
+
+    let collector = TopDocs::with_limit(limit + offset);
     let collector = collector.order_by_fast_field(field);
-    searcher
-        .search_with_executor(query, &(collector, Count), executor)
-        .map_err(Error::from)
+    let collector = (collector, Count);
+
+    if secondary_stages.is_empty() {
+        let (result_addresses, count) = searcher
+            .search_with_executor(&primary_stage, &collector, executor)
+            .map_err(Error::from)?;
+
+        let results = result_addresses.into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect::<Vec<_>>();
+
+        return Ok((results, count))
+    }
+
+    let mut approx_count = 0;
+    let mut past_addresses = HashSet::new();
+    let mut result_addresses = vec![];
+
+    for stage in secondary_stages {
+        let query = Box::new(BooleanQuery::intersection(vec![
+            primary_stage.box_clone(),
+            stage,
+        ])) as Box<dyn Query>;
+
+        let (results, count) = searcher
+            .search_with_executor(&query, &collector, executor)
+            .map_err(Error::from)?;
+
+        approx_count = cmp::max(approx_count, count);
+
+        for res in results {
+            if past_addresses.contains(&res.1) {
+                continue
+            }
+
+            let addr = res.1;
+            result_addresses.push(res);
+            past_addresses.insert(addr);
+        }
+
+        if result_addresses.len() >= (limit + offset) {
+            break;
+        }
+    }
+
+    let results = result_addresses.into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect::<Vec<_>>();
+
+    Ok((results, approx_count))
+}
+
+macro_rules! execute_staged_search {
+    ($queries:expr, $searcher:expr, $collector:expr, $executor:expr, $limit:expr, $offset:expr) => {{
+        let (primary_stage, secondary_stages) = $queries;
+        let collector = ($collector, Count);
+
+        if secondary_stages.is_empty() {
+            let (results, count) = $searcher
+                .search_with_executor(&primary_stage, &collector, $executor)
+                .map_err(Error::from)?;
+
+            let results = results.into_iter()
+                .skip($offset)
+                .take($limit)
+                .collect::<Vec<_>>();
+
+            Ok::<_, anyhow::Error>((results, count))
+        } else {
+            let mut approx_count = 0;
+            let mut past_addresses = HashSet::new();
+            let mut result_addresses = vec![];
+
+            for stage in secondary_stages {
+                let query = Box::new(BooleanQuery::intersection(vec![
+                    primary_stage.box_clone(),
+                    stage,
+                ])) as Box<dyn Query>;
+
+                let (results, count) = $searcher
+                    .search_with_executor(&query, &collector, $executor)
+                    .map_err(Error::from)?;
+
+                approx_count = cmp::max(approx_count, count);
+
+                for res in results {
+                    if past_addresses.contains(&res.1) {
+                        continue
+                    }
+
+                    let addr = res.1;
+                    result_addresses.push(res);
+                    past_addresses.insert(addr);
+                }
+
+                if result_addresses.len() >= ($limit + $offset) {
+                    break;
+                }
+            }
+
+            let results = result_addresses.into_iter()
+                .skip($offset)
+                .take($limit)
+                .collect::<Vec<_>>();
+
+            Ok::<_, anyhow::Error>((results, approx_count))
+        }
+    }};
 }
 
 /// Performs the search operation and processes the returned results.
@@ -187,11 +288,12 @@ fn process_search<S: AsScore>(
 fn order_and_sort(
     sort: Sort,
     field: Field,
-    query: &dyn Query,
+    queries: (Box<dyn Query>, Vec<Box<dyn Query>>),
     ctx: &SchemaContext,
     schema: &Schema,
     searcher: &Searcher,
-    collector: TopDocs,
+    limit: usize,
+    offset: usize,
     executor: &Executor,
 ) -> Result<(Vec<DocumentHit>, usize)> {
     let is_multi_value = ctx
@@ -209,28 +311,29 @@ fn order_and_sort(
         return match field_type {
             FieldType::I64(_) => {
                 let out: (Vec<(i64, DocAddress)>, usize) =
-                    order_and_search(searcher, field, query, collector, executor)?;
+                    order_and_search(searcher, field, queries, limit, offset, executor)?;
                 Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::U64(_) => {
                 let out: (Vec<(u64, DocAddress)>, usize) =
-                    order_and_search(searcher, field, query, collector, executor)?;
+                    order_and_search(searcher, field, queries, limit, offset, executor)?;
                 Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::F64(_) => {
                 let out: (Vec<(f64, DocAddress)>, usize) =
-                    order_and_search(searcher, field, query, collector, executor)?;
+                    order_and_search(searcher, field, queries, limit, offset, executor)?;
                 Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             FieldType::Date(_) => {
                 let out: (Vec<(DateTime, DocAddress)>, usize) =
-                    order_and_search(searcher, field, query, collector, executor)?;
+                    order_and_search(searcher, field, queries, limit, offset, executor)?;
                 Ok((process_search(ctx, searcher, schema, out.0)?, out.1))
             },
             _ => Err(Error::msg("field is not a fast field")),
         };
     }
 
+    let collector = TopDocs::with_limit(limit + offset);
     let out = match field_type {
         FieldType::I64(_) => {
             let collector =
@@ -246,9 +349,7 @@ fn order_and_sort(
                     }
                 });
 
-            let out: (Vec<(Reverse<i64>, DocAddress)>, usize) = searcher
-                .search_with_executor(query, &(collector, Count), executor)
-                .map_err(Error::from)?;
+            let out: (Vec<(Reverse<i64>, DocAddress)>, usize) = execute_staged_search!(queries, searcher, collector, executor, limit, offset)?;
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::U64(_) => {
@@ -265,9 +366,7 @@ fn order_and_sort(
                     }
                 });
 
-            let out: (Vec<(Reverse<u64>, DocAddress)>, usize) = searcher
-                .search_with_executor(query, &(collector, Count), executor)
-                .map_err(Error::from)?;
+            let out: (Vec<(Reverse<u64>, DocAddress)>, usize) = execute_staged_search!(queries, searcher, collector, executor, limit, offset)?;
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::F64(_) => {
@@ -284,9 +383,7 @@ fn order_and_sort(
                     }
                 });
 
-            let out: (Vec<(Reverse<f64>, DocAddress)>, usize) = searcher
-                .search_with_executor(query, &(collector, Count), executor)
-                .map_err(Error::from)?;
+            let out: (Vec<(Reverse<f64>, DocAddress)>, usize) = execute_staged_search!(queries, searcher, collector, executor, limit, offset)?;
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::Date(_) => {
@@ -303,9 +400,7 @@ fn order_and_sort(
                     }
                 });
 
-            let out: (Vec<(Reverse<DateTime>, DocAddress)>, usize) = searcher
-                .search_with_executor(query, &(collector, Count), executor)
-                .map_err(Error::from)?;
+            let out: (Vec<(Reverse<DateTime>, DocAddress)>, usize) = execute_staged_search!(queries, searcher, collector, executor, limit, offset)?;
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         _ => return Err(Error::msg("field is not a fast field")),
@@ -445,35 +540,31 @@ impl Reader {
         let sort = qry.sort;
         let order_by = qry.order_by;
         let offset = qry.offset;
-        let query = self.query_handler.build_query(qry.query).await?;
+        let queries = self.query_handler.build_query(qry.query).await?;
         let ctx = self.schema_ctx.clone();
 
         let (hits, count) = self
             .pool
             .spawn(move |searcher, executor| {
                 let schema = searcher.schema();
-                let collector = TopDocs::with_limit(limit).and_offset(offset);
-
                 let order_by = order_by.map(|v| schema.get_field(&v));
 
                 let (hits, count) = if let Some(Some(field)) = order_by {
                     order_and_sort(
                         sort,
                         field,
-                        &query,
+                        queries,
                         ctx.as_ref(),
                         schema,
                         &searcher,
-                        collector,
+                        limit,
+                        offset,
                         executor,
                     )?
                 } else {
-                    let (out, count) = searcher.search_with_executor(
-                        &query,
-                        &(collector, Count),
-                        executor,
-                    )?;
-                    (process_search(ctx.as_ref(), &searcher, schema, out)?, count)
+                    let collector = TopDocs::with_limit(limit);
+                    let out: (Vec<(Score, DocAddress)>, usize) = execute_staged_search!(queries, searcher, collector, executor, limit, offset)?;
+                    (process_search(ctx.as_ref(), &searcher, schema, out.0)?, out.1)
                 };
 
                 Ok::<_, Error>((hits, count))

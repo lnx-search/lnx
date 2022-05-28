@@ -99,6 +99,8 @@ pub struct FuzzyConfig {
 
     #[serde(default)]
     transposition_costs_two: bool,
+
+
 }
 
 impl Default for FuzzyConfig {
@@ -205,13 +207,18 @@ pub enum QueryKind {
 
         #[serde(flatten)]
         cfg: FuzzyConfig,
+
+        #[serde(default)]
+        fields: FieldSelector,
     },
 
     /// The normal query search using the tantivy query parser.
     ///
     /// This will expect the given value to follow the query specification
     /// as defined in the tantivy docs.
-    Normal { ctx: DocumentValue },
+    Normal {
+        ctx: DocumentValue,
+    },
 
     /// Gets similar documents based on the reference document.
     ///
@@ -345,6 +352,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v.to_string()),
                         cfg: Default::default(),
+                        fields: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -355,6 +363,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v),
                         cfg: Default::default(),
+                        fields: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -450,18 +459,35 @@ impl QueryBuilder {
     pub(crate) async fn build_query(
         &self,
         selector: QuerySelector,
-    ) -> Result<Box<dyn Query>> {
+    ) -> Result<(Box<dyn Query>, Vec<Box<dyn Query>>)> {
         let queries = selector.into_queries();
 
-        let mut parts = Vec::with_capacity(queries.len());
+        let mut single_stage = vec![];
+        let mut multi_stage: Vec<Vec<(tantivy::query::Occur, Box<dyn Query>)>> = vec![];
+
         for query in queries {
             let occur = query.occur.as_tantivy_value();
-            let built = self.get_query_from_payload(query).await?;
+            let mut built = self.get_query_from_payload(query).await?;
 
-            parts.push((occur, built));
+            if built.len() == 1 {
+                single_stage.push((occur, built.remove(0)))
+            } else {
+                for (i, stage) in built.into_iter().enumerate() {
+                    match multi_stage.get_mut(i) {
+                        Some(stages) => stages.push((occur, stage)),
+                        None => multi_stage.push(vec![(occur, stage)]),
+                    };
+                }
+            }
         }
 
-        Ok(Box::new(BooleanQuery::new(parts)))
+        let single_stage = Box::new(BooleanQuery::new(single_stage)) as Box<dyn Query>;
+        let mut secondary_stages = vec![];
+        for stage in multi_stage {
+            secondary_stages.push(Box::new(BooleanQuery::new(stage)) as Box<dyn Query>);
+        }
+
+        Ok((single_stage, secondary_stages))
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
@@ -476,15 +502,15 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query payload.
-    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
+    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Vec<Box<dyn Query>>> {
         match qry.kind {
-            QueryKind::Fuzzy { ctx: query, cfg } => self.make_fuzzy_query(query, cfg),
-            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
+            QueryKind::Fuzzy { ctx: query, cfg, fields } => self.make_fuzzy_query(query, cfg, fields),
+            QueryKind::Normal { ctx: query } => Ok(vec![self.make_normal_query(query)?]),
             QueryKind::MoreLikeThis { ctx: query, cfg } => {
-                self.make_more_like_this_query(query, cfg).await
+                Ok(vec![self.make_more_like_this_query(query, cfg).await?])
             },
             QueryKind::Term { ctx: query, fields } => {
-                self.make_term_query(query, fields)
+                Ok(vec![self.make_term_query(query, fields)?])
             },
         }
     }
@@ -500,7 +526,8 @@ impl QueryBuilder {
         &self,
         value: DocumentValue,
         cfg: FuzzyConfig,
-    ) -> Result<Box<dyn Query>> {
+        fields: FieldSelector,
+    ) -> Result<Vec<Box<dyn Query>>> {
         use tantivy::query::Occur;
 
         if self.ctx.fuzzy_search_fields.is_empty() {
@@ -512,7 +539,7 @@ impl QueryBuilder {
 
         let mut query = value.as_string();
         if query.is_empty() {
-            return Ok(Box::new(EmptyQuery {}));
+            return Ok(vec![Box::new(EmptyQuery {})]);
         }
 
         if self.ctx.use_fast_fuzzy {
@@ -582,7 +609,7 @@ impl QueryBuilder {
             }
         }
 
-        Ok(Box::new(BooleanQuery::new(parts)))
+        Ok(vec![Box::new(BooleanQuery::new(parts))])
     }
 
     /// Makes a new query by feeding the value into the tantivy QueryParser.
