@@ -224,6 +224,7 @@ macro_rules! execute_staged_search {
 
             Ok::<_, anyhow::Error>((results, count))
         } else {
+            info!("Got a baby!");
             let mut approx_count = 0;
             let mut past_addresses = HashSet::new();
             let mut result_addresses = vec![];
@@ -586,10 +587,12 @@ impl Reader {
                         executor,
                     )?
                 } else {
-                    let collector = TopDocs::with_limit(limit);
+                    let collector = TopDocs::with_limit(limit + offset);
                     let out: (Vec<(Score, DocAddress)>, usize) = execute_staged_search!(
                         queries, searcher, collector, executor, limit, offset
                     )?;
+
+
                     (
                         process_search(ctx.as_ref(), &searcher, schema, out.0)?,
                         out.1,

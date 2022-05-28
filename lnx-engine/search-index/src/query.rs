@@ -1,6 +1,7 @@
 use core::fmt;
 use std::convert::TryInto;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Error, Result};
 use hashbrown::HashMap;
@@ -8,16 +9,7 @@ use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use tantivy::collector::TopDocs;
-use tantivy::query::{
-    BooleanQuery,
-    BoostQuery,
-    EmptyQuery,
-    FuzzyTermQuery,
-    MoreLikeThisQuery,
-    Query,
-    QueryParser,
-    TermQuery,
-};
+use tantivy::query::{AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, MoreLikeThisQuery, Query, QueryParser, TermQuery};
 use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 use tantivy::schema::{
     Facet,
@@ -486,7 +478,12 @@ impl QueryBuilder {
             }
         }
 
-        let single_stage = Box::new(BooleanQuery::new(single_stage)) as Box<dyn Query>;
+        let single_stage = if !single_stage.is_empty() {
+            Box::new(BooleanQuery::new(single_stage)) as Box<dyn Query>
+        } else {
+            Box::new(AllQuery{}) as Box<dyn Query>
+        };
+
         let mut secondary_stages = vec![];
         for stage in multi_stage {
             secondary_stages.push(Box::new(BooleanQuery::new(stage)) as Box<dyn Query>);
@@ -547,13 +544,9 @@ impl QueryBuilder {
             ));
         }
 
-        let mut query = value.as_string();
+        let query = value.as_string();
         if query.is_empty() {
             return Ok(vec![Box::new(EmptyQuery {})]);
-        }
-
-        if self.ctx.use_fast_fuzzy {
-            query = self.corrections.correct(&query);
         }
 
         let mut words = vec![];
@@ -614,7 +607,6 @@ impl QueryBuilder {
             corrections: &self.corrections,
         };
 
-        debug!("Building fuzzy query {:?}", &words);
         let mut stages = vec![];
         add_if_exists!(
             stages,
