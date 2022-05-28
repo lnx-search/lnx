@@ -25,7 +25,7 @@ impl SymSpellManager {
     pub(crate) fn correct(&self, sentence: &str) -> String {
         self.sym.load().lookup_compound(sentence, 2)
     }
-    
+
     pub(crate) fn terms(&self, term: &str, dist: i64) -> Vec<Suggestion> {
         self.sym.load().lookup(term, Verbosity::Top, dist)
     }

@@ -18,6 +18,7 @@ use tantivy::query::{
     QueryParser,
     TermQuery,
 };
+use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 use tantivy::schema::{
     Facet,
     FacetParseError,
@@ -29,7 +30,6 @@ use tantivy::schema::{
 };
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{DateTime, Index, Score, Term};
-use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
@@ -100,7 +100,6 @@ pub struct FuzzyConfig {
 
     #[serde(default)]
     transposition_costs_two: bool,
-
 }
 
 impl Default for FuzzyConfig {
@@ -216,9 +215,7 @@ pub enum QueryKind {
     ///
     /// This will expect the given value to follow the query specification
     /// as defined in the tantivy docs.
-    Normal {
-        ctx: DocumentValue,
-    },
+    Normal { ctx: DocumentValue },
 
     /// Gets similar documents based on the reference document.
     ///
@@ -510,9 +507,16 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query payload.
-    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Vec<Box<dyn Query>>> {
+    async fn get_query_from_payload(
+        &self,
+        qry: QueryData,
+    ) -> Result<Vec<Box<dyn Query>>> {
         match qry.kind {
-            QueryKind::Fuzzy { ctx: query, cfg, fields } => self.make_fuzzy_query(query, cfg, fields),
+            QueryKind::Fuzzy {
+                ctx: query,
+                cfg,
+                fields,
+            } => self.make_fuzzy_query(query, cfg, fields),
             QueryKind::Normal { ctx: query } => Ok(vec![self.make_normal_query(query)?]),
             QueryKind::MoreLikeThis { ctx: query, cfg } => {
                 Ok(vec![self.make_more_like_this_query(query, cfg).await?])
@@ -577,25 +581,27 @@ impl QueryBuilder {
             FieldSelector::DefaultFields => self.ctx.fuzzy_search_fields.clone(),
             FieldSelector::Multi(fields) => fields
                 .into_iter()
-                .flat_map(|v| {
-                    self.schema.get_field(&v)
-                        .map(|field| (field, 0.0f32))
-                })
+                .flat_map(|v| self.schema.get_field(&v).map(|field| (field, 0.0f32)))
                 .collect::<Vec<_>>(),
             FieldSelector::MultiWithBoost(fields) => fields
                 .into_iter()
-                .flat_map(|(v, s)| {
-                    self.schema.get_field(&v)
-                        .map(|field| (field, s))
-                })
+                .flat_map(|(v, s)| self.schema.get_field(&v).map(|field| (field, s)))
                 .collect::<Vec<_>>(),
             FieldSelector::Single(v) => {
-                let field = self.schema.get_field(&v)
+                let field = self
+                    .schema
+                    .get_field(&v)
                     .map(|field| (field, 0.0f32))
-                    .ok_or_else(|| anyhow!("Unknown field {:?} in fuzzy query config {:?}.", v, &cfg))?;
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Unknown field {:?} in fuzzy query config {:?}.",
+                            v,
+                            &cfg
+                        )
+                    })?;
 
                 vec![field]
-            }
+            },
         };
 
         let stop_words = StopWordsCfg {
@@ -610,9 +616,42 @@ impl QueryBuilder {
 
         debug!("Building fuzzy query {:?}", &words);
         let mut stages = vec![];
-        add_if_exists!(stages, build_fuzzy_stage(0, 0, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
-        add_if_exists!(stages, build_fuzzy_stage(1, cfg.min_length_distance1, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
-        add_if_exists!(stages, build_fuzzy_stage(2, cfg.min_length_distance2, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                0,
+                0,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                1,
+                cfg.min_length_distance1,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                2,
+                cfg.min_length_distance2,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
 
         Ok(stages)
     }
@@ -859,7 +898,6 @@ fn build_fuzzy_stage<'a>(
         inner
     };
 
-
     let tokens = if fast_fuzzy.use_fast_fuzzy {
         let mut terms = vec![];
         for token in tokens {
@@ -867,9 +905,7 @@ fn build_fuzzy_stage<'a>(
                 continue;
             }
 
-            let suggestions = fast_fuzzy
-                .corrections
-                .terms(token, dist as i64);
+            let suggestions = fast_fuzzy.corrections.terms(token, dist as i64);
 
             terms.extend(suggestions.into_iter().map(|v| v.term));
         }
@@ -890,7 +926,11 @@ fn build_fuzzy_stage<'a>(
             let query = if fast_fuzzy.use_fast_fuzzy {
                 Box::new(TermQuery::new(term, WithFreqsAndPositions)) as Box<dyn Query>
             } else {
-                Box::new(FuzzyTermQuery::new_prefix(term, dist, !transposition_costs_two)) as Box<dyn Query>
+                Box::new(FuzzyTermQuery::new_prefix(
+                    term,
+                    dist,
+                    !transposition_costs_two,
+                )) as Box<dyn Query>
             };
 
             let query = if boost == 0.0 {
@@ -899,10 +939,7 @@ fn build_fuzzy_stage<'a>(
                 Box::new(BoostQuery::new(query, boost)) as Box<dyn Query>
             };
 
-            stage[i].push((
-                Occur::Should,
-                query,
-            ));
+            stage[i].push((Occur::Should, query));
         }
     }
 
