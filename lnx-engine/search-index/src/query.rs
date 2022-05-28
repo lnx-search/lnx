@@ -29,6 +29,7 @@ use tantivy::schema::{
 };
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{DateTime, Index, Score, Term};
+use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
@@ -597,11 +598,21 @@ impl QueryBuilder {
             }
         };
 
+        let stop_words = StopWordsCfg {
+            stop_words: &self.stop_words,
+            ignore_stop_words,
+        };
+
+        let fast_fuzzy = FastFuzzyCfg {
+            use_fast_fuzzy: self.ctx.use_fast_fuzzy,
+            corrections: &self.corrections,
+        };
+
         debug!("Building fuzzy query {:?}", &words);
         let mut stages = vec![];
-        add_if_exists!(stages, build_fuzzy_stage(0, 0, &fields, &words, ignore_stop_words, &self.stop_words, cfg.transposition_costs_two));
-        add_if_exists!(stages, build_fuzzy_stage(1, cfg.min_length_distance1, &fields, &words, ignore_stop_words, &self.stop_words, cfg.transposition_costs_two));
-        add_if_exists!(stages, build_fuzzy_stage(2, cfg.min_length_distance2, &fields, &words, ignore_stop_words, &self.stop_words, cfg.transposition_costs_two));
+        add_if_exists!(stages, build_fuzzy_stage(0, 0, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
+        add_if_exists!(stages, build_fuzzy_stage(1, cfg.min_length_distance1, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
+        add_if_exists!(stages, build_fuzzy_stage(2, cfg.min_length_distance2, &fields, &words, cfg.transposition_costs_two, &stop_words, &fast_fuzzy));
 
         Ok(stages)
     }
@@ -818,14 +829,24 @@ fn convert_to_term(
     Ok(term)
 }
 
-fn build_fuzzy_stage(
+pub struct StopWordsCfg<'a> {
+    stop_words: &'a StopWordManager,
+    ignore_stop_words: bool,
+}
+
+pub struct FastFuzzyCfg<'a> {
+    corrections: &'a SymSpellCorrectionManager,
+    use_fast_fuzzy: bool,
+}
+
+fn build_fuzzy_stage<'a>(
     dist: u8,
     length_cut_off: usize,
     fields: &[(Field, Score)],
     tokens: &[String],
-    ignore_stop_words: bool,
-    stop_words: &StopWordManager,
     transposition_costs_two: bool,
+    stop_words: &StopWordsCfg<'a>,
+    fast_fuzzy: &FastFuzzyCfg<'a>,
 ) -> Option<Box<dyn Query>> {
     use tantivy::query::Occur;
 
@@ -838,18 +859,39 @@ fn build_fuzzy_stage(
         inner
     };
 
-    for token in tokens {
-        if ignore_stop_words && stop_words.is_stop_word(token) {
-            continue;
+
+    let tokens = if fast_fuzzy.use_fast_fuzzy {
+        let mut terms = vec![];
+        for token in tokens {
+            if token.len() < length_cut_off {
+                continue;
+            }
+
+            let suggestions = fast_fuzzy
+                .corrections
+                .terms(token, dist as i64);
+
+            terms.extend(suggestions.into_iter().map(|v| v.term));
         }
 
-        if token.len() < length_cut_off {
+        terms
+    } else {
+        tokens.to_vec()
+    };
+
+    for token in tokens {
+        if stop_words.ignore_stop_words && stop_words.stop_words.is_stop_word(&token) {
             continue;
         }
 
         for (i, (field, boost)) in fields.iter().copied().enumerate() {
-            let term = Term::from_field_text(field, token);
-            let query = Box::new(FuzzyTermQuery::new_prefix(term, dist, !transposition_costs_two)) as Box<dyn Query>;
+            let term = Term::from_field_text(field, &token);
+
+            let query = if fast_fuzzy.use_fast_fuzzy {
+                Box::new(TermQuery::new(term, WithFreqsAndPositions)) as Box<dyn Query>
+            } else {
+                Box::new(FuzzyTermQuery::new_prefix(term, dist, !transposition_costs_two)) as Box<dyn Query>
+            };
 
             let query = if boost == 0.0 {
                 query
