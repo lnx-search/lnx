@@ -9,7 +9,7 @@ description = "The adaptable deployment of the tantivy search engine. Standing o
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "rt", "signal", "parking_lot"] }
+tokio = { version = "1", features = ["rt-multi-thread", "rt", "signal", "parking_lot", "macros"] }
 fern = { version = "0.6", features = ["colored"] }
 chrono = { version = "0.4", features = ["serde"] }
 hashbrown = { version = "0.11", features = ["serde"] }

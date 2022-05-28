@@ -9,6 +9,7 @@ use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use tantivy::collector::TopDocs;
 use tantivy::query::{
+    AllQuery,
     BooleanQuery,
     BoostQuery,
     EmptyQuery,
@@ -18,6 +19,7 @@ use tantivy::query::{
     QueryParser,
     TermQuery,
 };
+use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 use tantivy::schema::{
     Facet,
     FacetParseError,
@@ -205,6 +207,9 @@ pub enum QueryKind {
 
         #[serde(flatten)]
         cfg: FuzzyConfig,
+
+        #[serde(default)]
+        fields: FieldSelector,
     },
 
     /// The normal query search using the tantivy query parser.
@@ -345,6 +350,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v.to_string()),
                         cfg: Default::default(),
+                        fields: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -355,6 +361,7 @@ impl<'de> Deserialize<'de> for QuerySelector {
                     kind: QueryKind::Fuzzy {
                         ctx: DocumentValue::Text(v),
                         cfg: Default::default(),
+                        fields: Default::default(),
                     },
                     occur: Occur::default(),
                 }))
@@ -379,6 +386,14 @@ impl<'de> Deserialize<'de> for QuerySelector {
 
         deserializer.deserialize_any(QuerySelectorVisitor)
     }
+}
+
+macro_rules! add_if_exists {
+    ($collector:expr, $qry:expr) => {{
+        if let Some(query) = $qry {
+            $collector.push(query);
+        }
+    }};
 }
 
 /// A factory that builds a tantivy query based off of a given
@@ -450,18 +465,40 @@ impl QueryBuilder {
     pub(crate) async fn build_query(
         &self,
         selector: QuerySelector,
-    ) -> Result<Box<dyn Query>> {
+    ) -> Result<(Box<dyn Query>, Vec<Box<dyn Query>>)> {
         let queries = selector.into_queries();
 
-        let mut parts = Vec::with_capacity(queries.len());
+        let mut single_stage = vec![];
+        let mut multi_stage: Vec<Vec<(tantivy::query::Occur, Box<dyn Query>)>> = vec![];
+
         for query in queries {
             let occur = query.occur.as_tantivy_value();
-            let built = self.get_query_from_payload(query).await?;
+            let mut built = self.get_query_from_payload(query).await?;
 
-            parts.push((occur, built));
+            if built.len() == 1 {
+                single_stage.push((occur, built.remove(0)))
+            } else {
+                for (i, stage) in built.into_iter().enumerate() {
+                    match multi_stage.get_mut(i) {
+                        Some(stages) => stages.push((occur, stage)),
+                        None => multi_stage.push(vec![(occur, stage)]),
+                    };
+                }
+            }
         }
 
-        Ok(Box::new(BooleanQuery::new(parts)))
+        let single_stage = if !single_stage.is_empty() {
+            Box::new(BooleanQuery::new(single_stage)) as Box<dyn Query>
+        } else {
+            Box::new(AllQuery {}) as Box<dyn Query>
+        };
+
+        let mut secondary_stages = vec![];
+        for stage in multi_stage {
+            secondary_stages.push(Box::new(BooleanQuery::new(stage)) as Box<dyn Query>);
+        }
+
+        Ok((single_stage, secondary_stages))
     }
 
     /// Gets a list of suggested corrections based off of the index corpus.
@@ -476,15 +513,22 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query payload.
-    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
+    async fn get_query_from_payload(
+        &self,
+        qry: QueryData,
+    ) -> Result<Vec<Box<dyn Query>>> {
         match qry.kind {
-            QueryKind::Fuzzy { ctx: query, cfg } => self.make_fuzzy_query(query, cfg),
-            QueryKind::Normal { ctx: query } => self.make_normal_query(query),
+            QueryKind::Fuzzy {
+                ctx: query,
+                cfg,
+                fields,
+            } => self.make_fuzzy_query(query, cfg, fields),
+            QueryKind::Normal { ctx: query } => Ok(vec![self.make_normal_query(query)?]),
             QueryKind::MoreLikeThis { ctx: query, cfg } => {
-                self.make_more_like_this_query(query, cfg).await
+                Ok(vec![self.make_more_like_this_query(query, cfg).await?])
             },
             QueryKind::Term { ctx: query, fields } => {
-                self.make_term_query(query, fields)
+                Ok(vec![self.make_term_query(query, fields)?])
             },
         }
     }
@@ -500,9 +544,8 @@ impl QueryBuilder {
         &self,
         value: DocumentValue,
         cfg: FuzzyConfig,
-    ) -> Result<Box<dyn Query>> {
-        use tantivy::query::Occur;
-
+        fields: FieldSelector,
+    ) -> Result<Vec<Box<dyn Query>>> {
         if self.ctx.fuzzy_search_fields.is_empty() {
             return Err(anyhow!(
                 "no string/text fields have been marked as search fields, \
@@ -510,16 +553,11 @@ impl QueryBuilder {
             ));
         }
 
-        let mut query = value.as_string();
+        let query = value.as_string();
         if query.is_empty() {
-            return Ok(Box::new(EmptyQuery {}));
+            return Ok(vec![Box::new(EmptyQuery {})]);
         }
 
-        if self.ctx.use_fast_fuzzy {
-            query = self.corrections.correct(&query);
-        }
-
-        let mut parts: Vec<(Occur, Box<dyn Query>)> = Vec::new();
         let mut words = vec![];
         let mut tokens = self.tokenizer.token_stream(&query);
         let mut ignore_stop_words = false;
@@ -541,48 +579,82 @@ impl QueryBuilder {
             }
         }
 
-        debug!("building fuzzy query {:?}", &words);
-        for search_term in words.iter() {
-            if ignore_stop_words && self.stop_words.is_stop_word(search_term) {
-                continue;
-            }
+        let fields = match fields {
+            FieldSelector::DefaultFields => self.ctx.fuzzy_search_fields.clone(),
+            FieldSelector::Multi(fields) => fields
+                .into_iter()
+                .flat_map(|v| self.schema.get_field(&v).map(|field| (field, 0.0f32)))
+                .collect::<Vec<_>>(),
+            FieldSelector::MultiWithBoost(fields) => fields
+                .into_iter()
+                .flat_map(|(v, s)| self.schema.get_field(&v).map(|field| (field, s)))
+                .collect::<Vec<_>>(),
+            FieldSelector::Single(v) => {
+                let field = self
+                    .schema
+                    .get_field(&v)
+                    .map(|field| (field, 0.0f32))
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Unknown field {:?} in fuzzy query config {:?}.",
+                            v,
+                            &cfg
+                        )
+                    })?;
 
-            for (field, boost) in self.ctx.fuzzy_search_fields.iter() {
-                let term = Term::from_field_text(*field, search_term);
+                vec![field]
+            },
+        };
 
-                let query: Box<dyn Query> = if self.ctx.use_fast_fuzzy {
-                    Box::new(TermQuery::new(
-                        term,
-                        IndexRecordOption::WithFreqsAndPositions,
-                    ))
-                } else {
-                    let edit_distance = if search_term.len() >= cfg.min_length_distance2
-                    {
-                        2
-                    } else if search_term.len() >= cfg.min_length_distance1 {
-                        1
-                    } else {
-                        0
-                    };
+        let stop_words = StopWordsCfg {
+            stop_words: &self.stop_words,
+            ignore_stop_words,
+        };
 
-                    Box::new(FuzzyTermQuery::new_prefix(
-                        term,
-                        edit_distance,
-                        !cfg.transposition_costs_two,
-                    ))
-                };
+        let fast_fuzzy = FastFuzzyCfg {
+            use_fast_fuzzy: self.ctx.use_fast_fuzzy,
+            corrections: &self.corrections,
+        };
 
-                if *boost > 0.0f32 {
-                    parts
-                        .push((Occur::Should, Box::new(BoostQuery::new(query, *boost))));
-                    continue;
-                }
+        let mut stages = vec![];
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                0,
+                0,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                1,
+                cfg.min_length_distance1,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
+        add_if_exists!(
+            stages,
+            build_fuzzy_stage(
+                2,
+                cfg.min_length_distance2,
+                &fields,
+                &words,
+                cfg.transposition_costs_two,
+                &stop_words,
+                &fast_fuzzy
+            )
+        );
 
-                parts.push((Occur::Should, query));
-            }
-        }
-
-        Ok(Box::new(BooleanQuery::new(parts)))
+        Ok(stages)
     }
 
     /// Makes a new query by feeding the value into the tantivy QueryParser.
@@ -795,4 +867,93 @@ fn convert_to_term(
     };
 
     Ok(term)
+}
+
+pub struct StopWordsCfg<'a> {
+    stop_words: &'a StopWordManager,
+    ignore_stop_words: bool,
+}
+
+pub struct FastFuzzyCfg<'a> {
+    corrections: &'a SymSpellCorrectionManager,
+    use_fast_fuzzy: bool,
+}
+
+fn build_fuzzy_stage<'a>(
+    dist: u8,
+    length_cut_off: usize,
+    fields: &[(Field, Score)],
+    tokens: &[String],
+    transposition_costs_two: bool,
+    stop_words: &StopWordsCfg<'a>,
+    fast_fuzzy: &FastFuzzyCfg<'a>,
+) -> Option<Box<dyn Query>> {
+    use tantivy::query::Occur;
+
+    let mut stage = {
+        let mut inner = vec![];
+        for _ in 0..fields.len() {
+            inner.push(vec![]);
+        }
+
+        inner
+    };
+
+    let tokens = if fast_fuzzy.use_fast_fuzzy {
+        let mut terms = vec![];
+        for token in tokens {
+            if token.len() < length_cut_off {
+                continue;
+            }
+
+            let suggestions = fast_fuzzy.corrections.terms(token, dist as i64);
+
+            terms.extend(suggestions.into_iter().map(|v| v.term));
+        }
+
+        terms
+    } else {
+        tokens.to_vec()
+    };
+
+    for token in tokens {
+        if stop_words.ignore_stop_words && stop_words.stop_words.is_stop_word(&token) {
+            continue;
+        }
+
+        for (i, (field, boost)) in fields.iter().copied().enumerate() {
+            let term = Term::from_field_text(field, &token);
+
+            let query = if fast_fuzzy.use_fast_fuzzy {
+                Box::new(TermQuery::new(term, WithFreqsAndPositions)) as Box<dyn Query>
+            } else {
+                Box::new(FuzzyTermQuery::new_prefix(
+                    term,
+                    dist,
+                    !transposition_costs_two,
+                )) as Box<dyn Query>
+            };
+
+            let query = if boost == 0.0 {
+                query
+            } else {
+                Box::new(BoostQuery::new(query, boost)) as Box<dyn Query>
+            };
+
+            stage[i].push((Occur::Should, query));
+        }
+    }
+
+    if stage[0].is_empty() {
+        return None;
+    }
+
+    let mut built_queries = vec![];
+    for field_stage in stage {
+        let query = Box::new(BooleanQuery::new(field_stage));
+
+        built_queries.push((Occur::Should, query as Box<dyn Query>));
+    }
+
+    Some(Box::new(BooleanQuery::new(built_queries)))
 }
