@@ -591,7 +591,6 @@ impl Reader {
                         queries, searcher, collector, executor, limit, offset
                     )?;
 
-
                     (
                         process_search(ctx.as_ref(), &searcher, schema, out.0)?,
                         out.1,

@@ -8,7 +8,17 @@ use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use tantivy::collector::TopDocs;
-use tantivy::query::{AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, MoreLikeThisQuery, Query, QueryParser, TermQuery};
+use tantivy::query::{
+    AllQuery,
+    BooleanQuery,
+    BoostQuery,
+    EmptyQuery,
+    FuzzyTermQuery,
+    MoreLikeThisQuery,
+    Query,
+    QueryParser,
+    TermQuery,
+};
 use tantivy::schema::IndexRecordOption::WithFreqsAndPositions;
 use tantivy::schema::{
     Facet,
@@ -480,7 +490,7 @@ impl QueryBuilder {
         let single_stage = if !single_stage.is_empty() {
             Box::new(BooleanQuery::new(single_stage)) as Box<dyn Query>
         } else {
-            Box::new(AllQuery{}) as Box<dyn Query>
+            Box::new(AllQuery {}) as Box<dyn Query>
         };
 
         let mut secondary_stages = vec![];
