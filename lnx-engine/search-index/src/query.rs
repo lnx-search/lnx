@@ -1,7 +1,6 @@
 use core::fmt;
 use std::convert::TryInto;
 use std::sync::Arc;
-use std::time::Instant;
 
 use anyhow::{anyhow, Error, Result};
 use hashbrown::HashMap;
