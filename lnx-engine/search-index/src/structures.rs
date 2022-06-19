@@ -10,16 +10,9 @@ use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tantivy::fastfield::FastValue;
-use tantivy::schema::{
-    Facet,
-    FacetParseError,
-    Field,
-    FieldType,
-    Schema,
-    Value,
-};
-use tantivy::{DateTime, Document as InternalDocument, Index, Score};
+use tantivy::schema::{Facet, FacetParseError, Field, FieldType, Schema, Value};
 use tantivy::time::OffsetDateTime;
+use tantivy::{DateTime, Document as InternalDocument, Index, Score};
 use time::format_description::well_known::Rfc3339;
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
@@ -363,8 +356,8 @@ impl TryInto<DateTime> for DocumentValue {
                     return Ok(dt);
                 }
 
-                let offset = time::OffsetDateTime::parse(&v, &Rfc3339)
-                    .map_err(|_| {
+                let offset =
+                    time::OffsetDateTime::parse(&v, &Rfc3339).map_err(|_| {
                         Error::msg(
                             "cannot convert value into a datetime value, \
                             datetime should be formatted in RFC 3339, a u64 \
@@ -600,7 +593,9 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
                 if let Ok(dt) = time::OffsetDateTime::parse(v, &Rfc3339) {
-                    return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(tantivy::DateTime::from_utc(dt))));
+                    return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(
+                        tantivy::DateTime::from_utc(dt),
+                    )));
                 }
 
                 Ok(DocumentValueOptions::Single(DocumentValue::Text(
@@ -610,7 +605,9 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
                 if let Ok(dt) = time::OffsetDateTime::parse(&v, &Rfc3339) {
-                    return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(tantivy::DateTime::from_utc(dt))));
+                    return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(
+                        tantivy::DateTime::from_utc(dt),
+                    )));
                 }
 
                 Ok(DocumentValueOptions::Single(DocumentValue::Text(v)))

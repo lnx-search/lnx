@@ -388,7 +388,6 @@ impl<'de> Deserialize<'de> for QuerySelector {
     }
 }
 
-
 /// A factory that builds a tantivy query based off of a given
 /// payload.
 #[derive(Clone)]
@@ -488,10 +487,7 @@ impl QueryBuilder {
     }
 
     /// Builds a query from the given query payload.
-    async fn get_query_from_payload(
-        &self,
-        qry: QueryData,
-    ) -> Result<Box<dyn Query>> {
+    async fn get_query_from_payload(&self, qry: QueryData) -> Result<Box<dyn Query>> {
         match qry.kind {
             QueryKind::Fuzzy {
                 ctx: query,
@@ -537,9 +533,7 @@ impl QueryBuilder {
         let mut tokens = self.tokenizer.token_stream(&query);
 
         while let Some(token) = tokens.next() {
-            if self.ctx.strip_stop_words
-                && self.stop_words.is_stop_word(&token.text)
-            {
+            if self.ctx.strip_stop_words && self.stop_words.is_stop_word(&token.text) {
                 continue;
             }
 
@@ -589,7 +583,11 @@ impl QueryBuilder {
                 };
 
                 let suggestions = self.corrections.terms(&token, dist);
-                terms.extend(suggestions.into_iter().map(|v| (v.term, (2 - v.distance) as f32)));
+                terms.extend(
+                    suggestions
+                        .into_iter()
+                        .map(|v| (v.term, (2 - v.distance) as f32)),
+                );
             }
 
             terms
@@ -622,11 +620,23 @@ impl QueryBuilder {
 
                 let term = Term::from_field_text(field, term);
                 let qry = if self.ctx.use_fast_fuzzy {
-                    Box::new(PreScoredQuery::new(term, *distance,IndexRecordOption::WithFreqs)) as Box<dyn Query>
+                    Box::new(PreScoredQuery::new(
+                        term,
+                        *distance,
+                        IndexRecordOption::WithFreqs,
+                    )) as Box<dyn Query>
                 } else if is_last_term {
-                    Box::new(FuzzyTermQuery::new_prefix(term, *distance as u8, !cfg.transposition_costs_two)) as Box<dyn Query>
+                    Box::new(FuzzyTermQuery::new_prefix(
+                        term,
+                        *distance as u8,
+                        !cfg.transposition_costs_two,
+                    )) as Box<dyn Query>
                 } else {
-                    Box::new(FuzzyTermQuery::new(term, *distance as u8, !cfg.transposition_costs_two)) as Box<dyn Query>
+                    Box::new(FuzzyTermQuery::new(
+                        term,
+                        *distance as u8,
+                        !cfg.transposition_costs_two,
+                    )) as Box<dyn Query>
                 };
 
                 field_terms.push((tantivy::query::Occur::Should, qry));
