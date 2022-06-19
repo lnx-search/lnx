@@ -3,21 +3,7 @@ use std::iter::FromIterator;
 use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{
-    Cardinality,
-    FacetOptions,
-    Field,
-    FieldType,
-    IndexRecordOption,
-    IntOptions,
-    Schema,
-    SchemaBuilder,
-    TextFieldIndexing,
-    TextOptions,
-    FAST,
-    INDEXED,
-    STORED,
-};
+use tantivy::schema::{Cardinality, FacetOptions, Field, FieldType, IndexRecordOption, Schema, SchemaBuilder, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED, NumericOptions};
 use tantivy::Score;
 
 use crate::helpers::{Calculated, Validate};
@@ -430,9 +416,9 @@ pub struct CalculatedIntOptions {
     base: BaseFieldOptions,
 }
 
-impl From<CalculatedIntOptions> for IntOptions {
+impl From<CalculatedIntOptions> for NumericOptions {
     fn from(v: CalculatedIntOptions) -> Self {
-        let mut opts = IntOptions::default();
+        let mut opts = NumericOptions::default();
 
         if v.indexed {
             opts = opts.set_indexed();

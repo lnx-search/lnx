@@ -861,7 +861,7 @@ fn convert_to_term(
         },
         FieldType::Date(_) => {
             let dt: DateTime = value.try_into()?;
-            Term::from_field_date(field, &dt)
+            Term::from_field_date(field, dt)
         },
         _ => return Err(Error::msg("the given field is a unsupported type")),
     };
@@ -940,7 +940,7 @@ fn build_fuzzy_stage<'a>(
                 Box::new(BoostQuery::new(query, boost)) as Box<dyn Query>
             };
 
-            stage[i].push((Occur::Should, query));
+            stage[i].push((Occur::Must, query));
         }
     }
 
