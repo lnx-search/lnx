@@ -620,10 +620,12 @@ impl QueryBuilder {
 
                 let term = Term::from_field_text(field, term);
                 let qry = if self.ctx.use_fast_fuzzy {
-                    Box::new(PreScoredQuery::new(
-                        term,
+                    Box::new(BoostQuery::new(
+                        Box::new(TermQuery::new(
+                            term,
+                            IndexRecordOption::WithFreqs,
+                        )),
                         *distance,
-                        IndexRecordOption::WithFreqs,
                     )) as Box<dyn Query>
                 } else if is_last_term {
                     Box::new(FuzzyTermQuery::new_prefix(
