@@ -463,6 +463,7 @@ impl QueryBuilder {
         for query in selector.into_queries() {
             let occur = query.occur.as_tantivy_value();
             let built = self.get_query_from_payload(query).await?;
+
             stages.push((occur, built));
         }
 
@@ -537,7 +538,7 @@ impl QueryBuilder {
 
         while let Some(token) = tokens.next() {
             if self.ctx.strip_stop_words
-                && !self.stop_words.is_stop_word(&token.text)
+                && self.stop_words.is_stop_word(&token.text)
             {
                 continue;
             }
@@ -548,7 +549,6 @@ impl QueryBuilder {
 
             words.push(token.text.clone());
         }
-
 
         let fields = match fields {
             FieldSelector::DefaultFields => self.ctx.fuzzy_search_fields.clone(),
@@ -589,7 +589,7 @@ impl QueryBuilder {
                 };
 
                 let suggestions = self.corrections.terms(&token, dist);
-                terms.extend(suggestions.into_iter().map(|v| (v.term, v.distance as f32)));
+                terms.extend(suggestions.into_iter().map(|v| (v.term, (2 - v.distance) as f32)));
             }
 
             terms
@@ -609,6 +609,10 @@ impl QueryBuilder {
                 })
                 .collect::<Vec<_>>()
         };
+
+        if query_terms.is_empty() {
+            return Ok(Box::new(EmptyQuery {}));
+        }
 
         let mut queries = vec![];
         for (field, boost) in fields {
