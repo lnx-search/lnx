@@ -30,7 +30,6 @@ use tantivy::schema::{
 };
 use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
 use tantivy::{DateTime, Index, Score, Term};
-use tantivy_utils::queries::pre_scored::PreScoredQuery;
 
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
