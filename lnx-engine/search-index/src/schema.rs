@@ -9,7 +9,7 @@ use tantivy::schema::{
     Field,
     FieldType,
     IndexRecordOption,
-    IntOptions,
+    NumericOptions,
     Schema,
     SchemaBuilder,
     TextFieldIndexing,
@@ -430,9 +430,9 @@ pub struct CalculatedIntOptions {
     base: BaseFieldOptions,
 }
 
-impl From<CalculatedIntOptions> for IntOptions {
+impl From<CalculatedIntOptions> for NumericOptions {
     fn from(v: CalculatedIntOptions) -> Self {
-        let mut opts = IntOptions::default();
+        let mut opts = NumericOptions::default();
 
         if v.indexed {
             opts = opts.set_indexed();

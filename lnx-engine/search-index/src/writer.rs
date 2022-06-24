@@ -9,7 +9,7 @@ use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use sysinfo::SystemExt;
 use tantivy::schema::{Field, Schema};
-use tantivy::{IndexWriter, Opstamp, TantivyError, Term};
+use tantivy::{IndexWriter, Opstamp, Term};
 use tokio::sync::oneshot;
 use tokio::time::Duration;
 
@@ -415,11 +415,8 @@ impl IndexWriterWorker {
         let mut map: HashMap<String, u32> = HashMap::new();
         for reader in searcher.segment_readers() {
             for field in self.fuzzy_fields.iter() {
-                let dict = match reader.term_dict(*field) {
-                    Ok(dict) => dict,
-                    Err(TantivyError::DataCorruption(_)) => continue,
-                    Err(e) => return Err(e.into()),
-                };
+                let index = reader.inverted_index(*field)?;
+                let dict = index.terms();
                 let mut stream = dict.stream()?;
 
                 // We assume every term is a string, it wouldn't make sense for fuzzy fields

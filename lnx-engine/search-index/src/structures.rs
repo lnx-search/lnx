@@ -2,26 +2,18 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::fmt;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error, Result};
-use chrono::{NaiveDateTime, Utc};
 use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use tantivy::fastfield::FastValue;
-use tantivy::schema::{
-    Facet,
-    FacetParseError,
-    Field,
-    FieldType,
-    FieldValue,
-    Schema,
-    Value,
-};
+use tantivy::schema::{Facet, FacetParseError, Field, FieldType, Schema, Value};
+use tantivy::time::OffsetDateTime;
 use tantivy::{DateTime, Document as InternalDocument, Index, Score};
+use time::format_description::well_known::Rfc3339;
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
 use crate::helpers::{cr32_hash, Calculated, Validate};
@@ -290,7 +282,10 @@ impl DocumentValue {
             Self::I64(v) => v.to_string(),
             Self::F64(v) => v.to_string(),
             Self::U64(v) => v.to_string(),
-            Self::Datetime(v) => v.to_string(),
+            Self::Datetime(v) => {
+                let utc = v.into_utc();
+                utc.format(&Rfc3339).unwrap_or_else(|_| utc.to_string())
+            },
             Self::Text(v) => v.to_string(),
         }
     }
@@ -335,14 +330,14 @@ impl TryInto<DateTime> for DocumentValue {
     fn try_into(self) -> Result<DateTime> {
         let v = match self.clone() {
             Self::I64(v) => {
-                let dt = NaiveDateTime::from_timestamp_opt(v, 0)
-                    .ok_or_else(|| Error::msg("invalid i64 timestamp given"))?;
-                DateTime::from_utc(dt, Utc)
+                let offset = OffsetDateTime::from_unix_timestamp(v)
+                    .map_err(|_| Error::msg("invalid i64 timestamp given"))?;
+                DateTime::from_utc(offset)
             },
             Self::U64(v) => {
-                let dt = NaiveDateTime::from_timestamp_opt(v as i64, 0)
-                    .ok_or_else(|| Error::msg("invalid i64 timestamp given"))?;
-                DateTime::from_utc(dt, Utc)
+                let offset = OffsetDateTime::from_unix_timestamp(v as i64)
+                    .map_err(|_| Error::msg("invalid u64 timestamp given"))?;
+                DateTime::from_utc(offset)
             },
             Self::F64(_) => {
                 return Err(Error::msg(
@@ -361,13 +356,16 @@ impl TryInto<DateTime> for DocumentValue {
                     return Ok(dt);
                 }
 
-                DateTime::from_str(&v).map_err(|_| {
-                    Error::msg(
-                        "cannot convert value into a datetime value, \
-                        datetime should be formatted in RFC 3339, a u64 \
-                        timestamp or a i64 timestamp",
-                    )
-                })?
+                let offset =
+                    time::OffsetDateTime::parse(&v, &Rfc3339).map_err(|_| {
+                        Error::msg(
+                            "cannot convert value into a datetime value, \
+                            datetime should be formatted in RFC 3339, a u64 \
+                            timestamp or a i64 timestamp",
+                        )
+                    })?;
+
+                DateTime::from_utc(offset)
             },
         };
 
@@ -520,17 +518,18 @@ impl<'de> Deserialize<'de> for DocumentValue {
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(v) {
-                    return Ok(DocumentValue::Datetime(dt));
+                if let Ok(dt) = time::OffsetDateTime::parse(v, &Rfc3339) {
+                    return Ok(DocumentValue::Datetime(tantivy::DateTime::from_utc(dt)));
                 }
 
                 Ok(DocumentValue::Text(v.to_owned()))
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
-                    return Ok(DocumentValue::Datetime(dt));
+                if let Ok(dt) = time::OffsetDateTime::parse(&v, &Rfc3339) {
+                    return Ok(DocumentValue::Datetime(tantivy::DateTime::from_utc(dt)));
                 }
+
                 Ok(DocumentValue::Text(v))
             }
         }
@@ -593,9 +592,9 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(v) {
+                if let Ok(dt) = time::OffsetDateTime::parse(v, &Rfc3339) {
                     return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(
-                        dt,
+                        tantivy::DateTime::from_utc(dt),
                     )));
                 }
 
@@ -605,9 +604,9 @@ impl<'de> Deserialize<'de> for DocumentValueOptions {
             }
 
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E> {
-                if let Ok(dt) = tantivy::DateTime::from_str(&v) {
+                if let Ok(dt) = time::OffsetDateTime::parse(&v, &Rfc3339) {
                     return Ok(DocumentValueOptions::Single(DocumentValue::Datetime(
-                        dt,
+                        tantivy::DateTime::from_utc(dt),
                     )));
                 }
 
@@ -706,22 +705,21 @@ impl DocumentPayload {
         value: DocumentValue,
         doc: &mut InternalDocument,
     ) -> Result<()> {
-        match field_type {
-            FieldType::U64(_) => doc.add_u64(field, value.try_into()?),
-            FieldType::I64(_) => doc.add_i64(field, value.try_into()?),
-            FieldType::F64(_) => doc.add_f64(field, value.try_into()?),
+        let value = match field_type {
+            FieldType::U64(_) => Value::U64(value.try_into()?),
+            FieldType::I64(_) => Value::I64(value.try_into()?),
+            FieldType::F64(_) => Value::F64(value.try_into()?),
             FieldType::Date(_) => {
                 let value: DateTime = value.try_into()?;
-                doc.add_date(field, &value)
+                Value::Date(value)
             },
             FieldType::Str(_) => {
                 let value: String = value.try_into()?;
-                doc.add_text(field, &value)
+                Value::Str(value)
             },
             FieldType::Facet(_) => {
                 let facet: Facet = value.try_into()?;
-                let val = FieldValue::new(field, Value::Facet(facet));
-                doc.add(val)
+                Value::Facet(facet)
             },
             _ => {
                 return Err(anyhow!(
@@ -729,7 +727,9 @@ impl DocumentPayload {
                     key,
                 ))
             },
-        }
+        };
+
+        doc.add_field_value(field, value);
 
         Ok(())
     }
@@ -911,7 +911,8 @@ mod test_doc_value {
         let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
-        let sample = DocumentValue::Text(Utc::now().timestamp().to_string());
+        let ts = time::OffsetDateTime::now_utc();
+        let sample = DocumentValue::Text(ts.unix_timestamp().to_string());
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 
@@ -932,7 +933,8 @@ mod test_doc_value {
 
     #[test]
     fn test_into_raw_values_from_datetime() -> Result<()> {
-        let sample = DocumentValue::Datetime(Utc::now());
+        let ts = time::OffsetDateTime::now_utc();
+        let sample = DocumentValue::Datetime(DateTime::from_utc(ts));
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 
