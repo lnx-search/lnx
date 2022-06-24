@@ -911,7 +911,8 @@ mod test_doc_value {
         let res: Result<f64> = sample.try_into();
         assert!(res.is_ok());
 
-        let sample = DocumentValue::Text(Utc::now().timestamp().to_string());
+        let ts = time::OffsetDateTime::now_utc();
+        let sample = DocumentValue::Text(ts.unix_timestamp().to_string());
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 
@@ -932,7 +933,8 @@ mod test_doc_value {
 
     #[test]
     fn test_into_raw_values_from_datetime() -> Result<()> {
-        let sample = DocumentValue::Datetime(Utc::now());
+        let ts = time::OffsetDateTime::now_utc();
+        let sample = DocumentValue::Datetime(DateTime::from_utc(ts));
         let res: Result<String> = sample.clone().try_into();
         assert!(res.is_ok());
 

@@ -388,7 +388,7 @@ mod tests {
     use crate::structures::{DocumentValue, IndexDeclaration};
 
     fn init_state() {
-        let _ = std::env::set_var("RUST_LOG", "debug");
+        let _ = std::env::set_var("RUST_LOG", "debug,sled=info");
         let _ = pretty_env_logger::try_init_timed();
     }
 
@@ -1932,7 +1932,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
-                "fuzzy": {"ctx": "ol"},
+                "fuzzy": {"ctx": "ol man"},
             },
         }))?;
 
