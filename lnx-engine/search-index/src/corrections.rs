@@ -2,8 +2,8 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use hashbrown::HashMap;
 use compose::{Suggestion, SymSpell, Verbosity};
+use hashbrown::HashMap;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
@@ -15,7 +15,7 @@ pub(crate) struct SymSpellManager {
 impl SymSpellManager {
     pub(crate) fn new() -> Self {
         let sym = SymSpell::default();
-        let sym =ArcSwap::from_pointee(sym);
+        let sym = ArcSwap::from_pointee(sym);
         Self { sym }
     }
 
@@ -40,7 +40,8 @@ impl SymSpellManager {
 
         let frequencies = frequencies
             .into_iter()
-            .map(|(k, v)| (k.clone(), *v as i64)).collect();
+            .map(|(k, v)| (k.clone(), *v as i64))
+            .collect();
 
         let mut symspell = SymSpell::default();
 
