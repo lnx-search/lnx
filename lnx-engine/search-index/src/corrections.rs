@@ -3,19 +3,19 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use hashbrown::HashMap;
-use symspell::{AsciiStringStrategy, Suggestion, SymSpell, Verbosity};
+use compose::{Suggestion, SymSpell, Verbosity};
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
 /// The manager around the sym spell fuzzy searching system.
 pub(crate) struct SymSpellManager {
-    sym: Arc<ArcSwap<SymSpell<AsciiStringStrategy>>>,
+    sym: ArcSwap<SymSpell>,
 }
 
 impl SymSpellManager {
     pub(crate) fn new() -> Self {
         let sym = SymSpell::default();
-        let sym = Arc::new(ArcSwap::from_pointee(sym));
+        let sym =ArcSwap::from_pointee(sym);
         Self { sym }
     }
 
@@ -38,13 +38,16 @@ impl SymSpellManager {
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &HashMap<String, u32>) {
         info!("adjusting spell correction system to new frequency count, this may take a while...");
 
-        let mut symspell: SymSpell<AsciiStringStrategy> = SymSpell::default();
-        symspell.using_dictionary_frequencies(
-            frequencies
-                .into_iter()
-                .map(|(k, v)| (k.clone(), *v as i64))
-                .collect(),
-        );
+        let frequencies = frequencies
+            .into_iter()
+            .map(|(k, v)| (k.clone(), *v as i64)).collect();
+
+        let mut symspell = SymSpell::default();
+
+        // SAFETY:
+        //  This is safe as long as the keys being passed are ASCII. If this uses UTF-8 characters
+        //  there is a chance this can make the algorithm become UB when accessing the wordmap.
+        unsafe { symspell.using_dictionary_frequencies(frequencies, false) };
 
         self.sym.store(Arc::from(symspell))
     }
