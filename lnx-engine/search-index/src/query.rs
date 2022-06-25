@@ -28,13 +28,14 @@ use tantivy::schema::{
     IndexRecordOption,
     Schema,
 };
-use tantivy::tokenizer::{LowerCaser, SimpleTokenizer, TextAnalyzer};
+use tantivy::tokenizer::TokenStream;
 use tantivy::{DateTime, Index, Score, Term};
 
 use crate::corrections::SymSpellCorrectionManager;
 use crate::stop_words::StopWordManager;
 use crate::structures::DocumentValue;
 use crate::synonyms::SynonymsManager;
+use crate::tokenizer::SimpleUnicodeTokenizer;
 
 pub type DocumentId = u64;
 
@@ -413,7 +414,7 @@ pub(crate) struct QueryBuilder {
     pool: crate::ReaderExecutor,
 
     /// A basic word tokenizers for fuzzy queries.
-    tokenizer: TextAnalyzer,
+    tokenizer: SimpleUnicodeTokenizer,
 }
 
 impl QueryBuilder {
@@ -427,7 +428,7 @@ impl QueryBuilder {
         pool: crate::ReaderExecutor,
     ) -> Self {
         let parser = get_parser(&ctx, index);
-        let tokenizer = TextAnalyzer::from(SimpleTokenizer).filter(LowerCaser);
+        let tokenizer = SimpleUnicodeTokenizer::with_limit(16);
 
         Self {
             ctx: Arc::new(ctx),

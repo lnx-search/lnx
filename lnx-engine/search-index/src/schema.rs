@@ -287,7 +287,7 @@ impl SchemaContext {
     }
 
     /// Generates a new schema from the given fields.
-    pub fn as_tantivy_schema(&self) -> tantivy::schema::Schema {
+    pub fn as_tantivy_schema(&self) -> Schema {
         let mut schema = SchemaBuilder::new();
         schema.add_u64_field(PRIMARY_KEY, FAST | STORED | INDEXED);
 

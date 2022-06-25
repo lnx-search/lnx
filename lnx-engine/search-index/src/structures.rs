@@ -25,6 +25,7 @@ use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::synonyms::SynonymsManager;
 use crate::writer::WriterContext;
 use crate::DocumentId;
+use crate::tokenizer::SimpleUnicodeTokenizer;
 
 pub static ROOT_PATH: &str = "./index";
 pub static INDEX_STORAGE_SUB_PATH: &str = "index-storage";
@@ -183,6 +184,10 @@ impl IndexDeclaration {
 
         let corrections = Arc::new(SymSpellManager::new());
         let storage = StorageBackend::using_conn(dir);
+
+        index
+            .tokenizers()
+            .register("default", SimpleUnicodeTokenizer::default());
 
         Ok(IndexContext {
             name: self.name.clone(),
