@@ -23,6 +23,7 @@ use crate::schema::{SchemaContext, PRIMARY_KEY};
 use crate::stop_words::StopWordManager;
 use crate::storage::{OpenType, SledBackedDirectory, StorageBackend};
 use crate::synonyms::SynonymsManager;
+use crate::tokenizer::SimpleUnicodeTokenizer;
 use crate::writer::WriterContext;
 use crate::DocumentId;
 
@@ -183,6 +184,10 @@ impl IndexDeclaration {
 
         let corrections = Arc::new(SymSpellManager::new());
         let storage = StorageBackend::using_conn(dir);
+
+        index
+            .tokenizers()
+            .register("default", SimpleUnicodeTokenizer::default());
 
         Ok(IndexContext {
             name: self.name.clone(),
