@@ -12,6 +12,12 @@
 </p>
 <p align="center"><a href="https://lnx.rs">✨ Feature Rich | ⚡ Insanely Fast</a></p>
 <p align="center">An ultra-fast, adaptable deployment of the tantivy search engine via REST.</p>
+<p align="center">
+  Join our community for support, updates and more:
+</p>
+<p align="center">
+  <a href="https://discord.gg/hPr7BQGgb4"><img src="https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white"/></a>  
+</p>
 
 ### 🌟 Standing On The Shoulders of Giants
 lnx is built to not re-invent the wheel, it stands on top of the [**tokio-rs**](https://tokio.rs) work-stealing runtime, [**hyper**](https://hyper.rs/) web framework combined with the raw compute power of the [**tantivy search engine**](https://github.com/tantivy-search/tantivy).
