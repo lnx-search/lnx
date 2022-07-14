@@ -4,8 +4,19 @@ use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{
-    Cardinality, FacetOptions, Field, FieldType, IndexRecordOption, NumericOptions,
-    Schema, SchemaBuilder, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED,
+    Cardinality,
+    FacetOptions,
+    Field,
+    FieldType,
+    IndexRecordOption,
+    NumericOptions,
+    Schema,
+    SchemaBuilder,
+    TextFieldIndexing,
+    TextOptions,
+    FAST,
+    INDEXED,
+    STORED,
 };
 use tantivy::Score;
 
