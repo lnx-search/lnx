@@ -4,19 +4,8 @@ use anyhow::{anyhow, Error, Result};
 use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{
-    Cardinality,
-    FacetOptions,
-    Field,
-    FieldType,
-    IndexRecordOption,
-    NumericOptions,
-    Schema,
-    SchemaBuilder,
-    TextFieldIndexing,
-    TextOptions,
-    FAST,
-    INDEXED,
-    STORED,
+    Cardinality, FacetOptions, Field, FieldType, IndexRecordOption, NumericOptions,
+    Schema, SchemaBuilder, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED,
 };
 use tantivy::Score;
 
@@ -556,6 +545,19 @@ impl FieldDeclaration {
             FieldDeclaration::Text { .. } => true,
             FieldDeclaration::String { .. } => true,
             FieldDeclaration::Facet { .. } => true,
+        }
+    }
+
+    #[inline]
+    pub fn is_stored(&self) -> bool {
+        match self {
+            FieldDeclaration::F64 { opts } => opts.base.stored,
+            FieldDeclaration::U64 { opts } => opts.base.stored,
+            FieldDeclaration::I64 { opts } => opts.base.stored,
+            FieldDeclaration::Date { opts } => opts.base.stored,
+            FieldDeclaration::Text { opts } => opts.stored,
+            FieldDeclaration::String { opts } => opts.stored,
+            FieldDeclaration::Facet { opts } => opts.stored,
         }
     }
 }
