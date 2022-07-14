@@ -558,4 +558,17 @@ impl FieldDeclaration {
             FieldDeclaration::Facet { .. } => true,
         }
     }
+
+    #[inline]
+    pub fn is_stored(&self) -> bool {
+        match self {
+            FieldDeclaration::F64 { opts } => opts.base.stored,
+            FieldDeclaration::U64 { opts } => opts.base.stored,
+            FieldDeclaration::I64 { opts } => opts.base.stored,
+            FieldDeclaration::Date { opts } => opts.base.stored,
+            FieldDeclaration::Text { opts } => opts.stored,
+            FieldDeclaration::String { opts } => opts.stored,
+            FieldDeclaration::Facet { opts } => opts.stored,
+        }
+    }
 }

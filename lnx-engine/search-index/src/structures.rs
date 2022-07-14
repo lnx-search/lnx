@@ -852,6 +852,10 @@ impl DocumentHit {
     ) -> Self {
         let mut compliant = HashMap::with_capacity(doc.0.len());
         for (name, info) in ctx.fields() {
+            if !info.is_stored() {
+                continue;
+            }
+
             let val = match doc.0.remove(name) {
                 Some(mut val) => {
                     if info.is_multi() {
