@@ -1,14 +1,21 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+mod metadata;
+mod readonly;
+mod writer;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use readonly::ReadOnlyDirectory;
+pub use writer::DirectoryWriter;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("IO Error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("The index segment is corrupted. Unable to proceed.")]
+    Corrupted,
+
+    #[error("Deserialization Error: {0}")]
+    DeserializationError(String),
+
+    #[error("Serialization Error: {0}")]
+    SerializationError(String),
 }
