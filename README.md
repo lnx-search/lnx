@@ -1,7 +1,10 @@
 <p align="center">
-  <img width="30%" src="https://user-images.githubusercontent.com/57491488/156235904-5c0f956f-1bd7-4b7e-8cd0-fd344db7e632.png" alt="lnx Logo">
+    <h1>lnx v0.10.0-alpha</h1>
 </p>
 
+<p align="center">
+  <img width="30%" src="https://user-images.githubusercontent.com/57491488/156235904-5c0f956f-1bd7-4b7e-8cd0-fd344db7e632.png" alt="lnx Logo">
+</p>
 
 #
 <p align="center">

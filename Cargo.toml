@@ -1,11 +1,5 @@
 [workspace]
 members = [
-    "lnx-engine/engine",
-    "lnx-engine/aexecutor",
-    "lnx-engine/search-index",
-    "lnx-server",
+    "lnx-storage",
+    "lnx"
 ]
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
