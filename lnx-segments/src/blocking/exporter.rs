@@ -60,7 +60,80 @@ impl BlockingExporter {
     pub async fn finalise(self) -> io::Result<File> {
         self.writer.finalise().await
     }
+
+    pub async fn abort(self) -> io::Result<()> {
+        self.writer.abort().await
+    }
 }
 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env::temp_dir;
+    use std::io::SeekFrom;
+    use datacake_crdt::get_unix_timestamp_ms;
+    use tokio::io::AsyncSeekExt;
+    use crate::blocking::utils::read_metadata;
+    use crate::METADATA_HEADER_SIZE;
 
+    #[tokio::test]
+    async fn test_exporter_create_and_finalise() -> io::Result<()> {
+        let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let path = temp_dir().join("exported-file-finalise.segment");
+
+        let exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        let mut file = exporter.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+        assert_eq!(metadata.index(), "test-index", "Expected metadata index to be the same as what is provided to exporter.");
+        assert!(metadata.files().is_empty(), "Expected metadata files index to be empty.");
+        assert_eq!(metadata.segment_id(), segment_id, "Expected segment id to match provided id.");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_exporter_create_and_abort() -> io::Result<()> {
+        let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let path = temp_dir().join("exported-file-abort.segment");
+
+        let exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        exporter.abort().await?;
+
+        assert!(!path.exists(), "Expected segment to no longer exist after abort.");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_exporter() -> io::Result<()> {
+        let sample_file = temp_dir().join("sample.txt");
+        fs::write(&sample_file, b"Hello, world!").await?;
+
+        let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let path = temp_dir().join("exported-file-test.segment");
+
+        let mut exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        exporter.write_file(&sample_file).await?;
+        let mut file = exporter.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+        assert_eq!(metadata.index(), "test-index", "Expected metadata index to be the same as what is provided to exporter.");
+        assert_eq!(
+            metadata.files().get(sample_file.to_string_lossy().as_ref()),
+            Some(&(METADATA_HEADER_SIZE as u64..METADATA_HEADER_SIZE as u64 + 13)),
+            "Expected metadata files index to be empty.",
+        );
+        assert_eq!(metadata.segment_id(), segment_id, "Expected segment id to match provided id.");
+
+        Ok(())
+    }
+
+}

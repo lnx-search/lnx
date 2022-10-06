@@ -1,21 +1,24 @@
 use std::io;
 use std::io::SeekFrom;
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use datacake_crdt::HLCTimestamp;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use crate::{Metadata, METADATA_HEADER_SIZE};
+use crate::metadata::write_metadata_offsets;
 
 pub mod exporter;
 pub mod combiner;
+mod utils;
 
 
 pub(crate) struct BlockingWriter {
     writer: BufWriter<File>,
     num_bytes_written: u64,
     metadata: Metadata,
+    path: PathBuf,
 }
 
 impl Deref for BlockingWriter {
@@ -59,6 +62,7 @@ impl BlockingWriter {
             writer,
             metadata,
             num_bytes_written: METADATA_HEADER_SIZE as u64,
+            path: path.to_path_buf(),
         })
     }
 
@@ -88,10 +92,7 @@ impl BlockingWriter {
         // Seek to the start of the file to write the header.
         file.seek(SeekFrom::Start(0)).await?;
 
-        // Write the start of the metadata.
-        file.write_u64(self.num_bytes_written).await?;
-        // Write the length of the metadata.
-        file.write_u64(raw.len() as u64).await?;
+        write_metadata_offsets(&mut file, self.num_bytes_written, raw.len() as u64).await?;
 
         // Advance the cursor now the header is written.
         self.num_bytes_written += raw.len() as u64;
@@ -100,5 +101,14 @@ impl BlockingWriter {
         file.sync_all().await?;
 
         Ok(file)
+    }
+
+    pub async fn abort(self) -> io::Result<()> {
+        drop(self.writer);
+
+        let path = self.path;
+        fs::remove_file(path).await?;
+
+        Ok(())
     }
 }

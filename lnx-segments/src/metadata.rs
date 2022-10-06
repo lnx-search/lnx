@@ -8,8 +8,10 @@ use std::io::ErrorKind;
 use bytecheck::CheckBytes;
 use datacake_crdt::HLCTimestamp;
 use rkyv::{AlignedVec, Archive, Deserialize, Serialize};
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
-pub const METADATA_HEADER_SIZE: usize = mem::size_of::<u64>();
+pub const METADATA_HEADER_SIZE: usize = mem::size_of::<u64>() * 2;
 
 #[derive(Debug, Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
@@ -83,9 +85,16 @@ impl Metadata {
 
 pub fn get_metadata_offsets(mut offset_slice: &[u8]) -> Result<(u64, u64), TryFromSliceError> {
     let start = read_be_u64(&mut offset_slice)? as u64;
-    let end = read_be_u64(&mut offset_slice)? as u64;
+    let len = read_be_u64(&mut offset_slice)? as u64;
 
-    Ok((start, end))
+    Ok((start, len))
+}
+
+pub async fn write_metadata_offsets(file: &mut File, start: u64, len: u64) -> io::Result<()> {
+    file.write_u64(start).await?;
+    file.write_u64(len).await?;
+
+    Ok(())
 }
 
 fn read_be_u64(input: &mut &[u8]) -> Result<u64, TryFromSliceError> {

@@ -14,3 +14,5 @@ rkyv = { version = "0.7.39", features = ["validation"] }
 tokio = { version = "1", features = ["fs", "io-util"] }
 datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
