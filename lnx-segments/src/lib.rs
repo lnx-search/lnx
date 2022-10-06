@@ -1,12 +1,11 @@
 mod aio;
 mod blocking;
 
+mod deletes;
 mod meta_merger;
 mod metadata;
-mod deletes;
 
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
-
 
 pub type Exporter = blocking::exporter::BlockingExporter;
 pub type Combiner = blocking::combiner::BlockingCombiner;

@@ -54,10 +54,10 @@ impl BlockingExporter {
         Ok(())
     }
 
-     /// Write a new file to the exporter.
-     ///
-     /// Unlike the `write_file` method, this method takes a raw buffer which gets
-     /// written out instead.
+    /// Write a new file to the exporter.
+    ///
+    /// Unlike the `write_file` method, this method takes a raw buffer which gets
+    /// written out instead.
     pub async fn write_raw(&mut self, path: &Path, buf: &[u8]) -> io::Result<()> {
         let start = self.writer.current_pos();
         self.writer.write_all(buf).await?;
@@ -85,8 +85,8 @@ mod tests {
     use std::io::SeekFrom;
 
     use datacake_crdt::get_unix_timestamp_ms;
-    use tokio::io::AsyncSeekExt;
     use tokio::fs;
+    use tokio::io::AsyncSeekExt;
 
     use super::*;
     use crate::blocking::utils::read_metadata;

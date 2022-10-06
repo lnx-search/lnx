@@ -1,7 +1,8 @@
-use std::{io, mem};
 use std::io::ErrorKind;
-use rkyv::{Archive, Serialize, Deserialize};
+use std::{io, mem};
+
 use bytecheck::CheckBytes;
+use rkyv::{Archive, Deserialize, Serialize};
 
 #[derive(Debug, Default, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
@@ -13,7 +14,8 @@ impl Deletes {
         tokio::task::spawn_blocking(move || {
             let slice = buf.len() - mem::size_of::<u64>();
 
-            let length_bytes: [u8; mem::size_of::<u64>()] = buf[slice..].try_into().unwrap();
+            let length_bytes: [u8; mem::size_of::<u64>()] =
+                buf[slice..].try_into().unwrap();
             let length = u64::from_be_bytes(length_bytes) as usize;
 
             let buf = lz4_flex::decompress(&buf[..slice], length)
@@ -21,8 +23,9 @@ impl Deletes {
 
             rkyv::from_bytes(&buf)
                 .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-
-        }).await.expect("spawn background thread")
+        })
+        .await
+        .expect("spawn background thread")
     }
 
     /// Serializes the meta file to a buffer.
@@ -38,7 +41,9 @@ impl Deletes {
             buf.extend_from_slice(&length_bytes);
 
             Ok(buf)
-        }).await.expect("spawn background thread")
+        })
+        .await
+        .expect("spawn background thread")
     }
 
     /// Merges another managed file with the current managed file.
@@ -46,5 +51,3 @@ impl Deletes {
         self.0.extend(other.0)
     }
 }
-
-
