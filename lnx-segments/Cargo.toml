@@ -9,7 +9,10 @@ edition = "2021"
 tantivy = "0.18.0"
 bytecheck = "0.6.9"
 byteorder = "1.4.3"
+serde_json = "1"
 
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.39", features = ["validation"] }
 tokio = { version = "1", features = ["fs", "io-util"] }
 datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }

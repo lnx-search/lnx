@@ -389,8 +389,11 @@ dependencies = [
  "byteorder",
  "datacake-crdt",
  "rkyv",
+ "serde",
+ "serde_json",
  "tantivy",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
