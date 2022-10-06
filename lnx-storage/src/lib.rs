@@ -1,4 +1,3 @@
-mod metadata;
 mod readonly;
 mod writer;
 

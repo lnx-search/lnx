@@ -19,8 +19,7 @@ use tantivy::directory::{
     WritePtr,
 };
 use tantivy::{Directory, HasLen};
-
-use crate::metadata::Metadata;
+use lnx_segments::{Metadata, get_metadata_offsets, METADATA_HEADER_SIZE};
 
 #[derive(Clone)]
 /// A [tantivy::Directory] implementation that maps a single index file/segment
@@ -41,13 +40,11 @@ impl ReadOnlyDirectory {
 
         let file = unsafe { memmap2::Mmap::map(&file)? };
 
-        let offsets_start = file.len() - (std::mem::size_of::<u32>() * 2);
-        let mut offset_slice = &file[offsets_start..];
+        let offset_slice = &file[..METADATA_HEADER_SIZE as usize];
+        let (start, len) = get_metadata_offsets(offset_slice)
+            .map_err(|_| crate::StorageError::Corrupted)?;
 
-        let start = read_le_u32(&mut offset_slice)? as usize;
-        let end = read_le_u32(&mut offset_slice)? as usize;
-
-        let metadata = Metadata::from_bytes(&file[start..end])?;
+        let metadata = Metadata::from_bytes(&file[start as usize..(start + len) as usize])?;
 
         Ok(Self {
             file: Arc::new(file),
@@ -62,7 +59,7 @@ impl Debug for ReadOnlyDirectory {
         write!(
             f,
             "ReadOnlyDirectory(index={}, segment_id={})",
-            self.metadata.index_name, self.metadata.segment_id
+            self.metadata.index(), self.metadata.segment_id()
         )
     }
 }
@@ -211,13 +208,3 @@ impl TerminatingWrite for NoOpWriter {
     }
 }
 
-fn read_le_u32(input: &mut &[u8]) -> Result<u32, crate::StorageError> {
-    let (int_bytes, rest) = input.split_at(std::mem::size_of::<u32>());
-    *input = rest;
-
-    let converted = int_bytes
-        .try_into()
-        .map_err(|_| crate::StorageError::Corrupted)?;
-
-    Ok(u32::from_le_bytes(converted))
-}

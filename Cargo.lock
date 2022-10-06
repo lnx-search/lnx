@@ -94,6 +94,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
+name = "bytes"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec8a7b6a70fde80372154c65702f00a0f56f3e1c36abbc6c440484be248856db"
+
+[[package]]
 name = "cc"
 version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -376,15 +382,26 @@ name = "lnx"
 version = "0.1.0"
 
 [[package]]
-name = "lnx-storage"
+name = "lnx-segments"
 version = "0.1.0"
 dependencies = [
  "bytecheck",
  "byteorder",
  "datacake-crdt",
+ "rkyv",
+ "tantivy",
+ "tokio",
+]
+
+[[package]]
+name = "lnx-storage"
+version = "0.1.0"
+dependencies = [
+ "bytecheck",
+ "datacake-crdt",
+ "lnx-segments",
  "memmap2",
  "parking_lot",
- "rkyv",
  "stable_deref_trait",
  "tantivy",
  "thiserror",
@@ -1014,6 +1031,18 @@ dependencies = [
  "libc",
  "num_threads",
  "serde",
+]
+
+[[package]]
+name = "tokio"
+version = "1.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9e03c497dc955702ba729190dc4aac6f2a0ce97f913e5b1b5912fc5039d9099"
+dependencies = [
+ "autocfg",
+ "bytes",
+ "memchr",
+ "pin-project-lite",
 ]
 
 [[package]]
