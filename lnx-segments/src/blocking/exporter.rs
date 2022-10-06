@@ -1,11 +1,12 @@
 use std::io;
 use std::path::Path;
+
 use datacake_crdt::HLCTimestamp;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-use crate::blocking::BlockingWriter;
 
+use crate::blocking::BlockingWriter;
 use crate::metadata::Metadata;
 
 /// A directory exporter built around traditional blocking IO wrapped by tokio.
@@ -26,9 +27,7 @@ impl BlockingExporter {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, size_hint, index, segment_id).await?;
 
-        Ok(Self {
-            writer,
-        })
+        Ok(Self { writer })
     }
 
     /// Write a new file to the exporter. The file path will be read and streamed from into
@@ -66,14 +65,15 @@ impl BlockingExporter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env::temp_dir;
     use std::io::SeekFrom;
+
     use datacake_crdt::get_unix_timestamp_ms;
     use tokio::io::AsyncSeekExt;
+
+    use super::*;
     use crate::blocking::utils::read_metadata;
     use crate::METADATA_HEADER_SIZE;
 
@@ -82,16 +82,29 @@ mod tests {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
         let path = temp_dir().join("exported-file-finalise.segment");
 
-        let exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        let exporter =
+            BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                .await?;
         let mut file = exporter.finalise().await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
         let metadata = read_metadata(&mut file).await?;
 
-        assert_eq!(metadata.index(), "test-index", "Expected metadata index to be the same as what is provided to exporter.");
-        assert!(metadata.files().is_empty(), "Expected metadata files index to be empty.");
-        assert_eq!(metadata.segment_id(), segment_id, "Expected segment id to match provided id.");
+        assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to exporter."
+        );
+        assert!(
+            metadata.files().is_empty(),
+            "Expected metadata files index to be empty."
+        );
+        assert_eq!(
+            metadata.segment_id(),
+            segment_id,
+            "Expected segment id to match provided id."
+        );
 
         Ok(())
     }
@@ -101,10 +114,15 @@ mod tests {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
         let path = temp_dir().join("exported-file-abort.segment");
 
-        let exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        let exporter =
+            BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                .await?;
         exporter.abort().await?;
 
-        assert!(!path.exists(), "Expected segment to no longer exist after abort.");
+        assert!(
+            !path.exists(),
+            "Expected segment to no longer exist after abort."
+        );
 
         Ok(())
     }
@@ -117,7 +135,9 @@ mod tests {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
         let path = temp_dir().join("exported-file-test.segment");
 
-        let mut exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id).await?;
+        let mut exporter =
+            BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                .await?;
         exporter.write_file(&sample_file).await?;
         let mut file = exporter.finalise().await?;
 
@@ -125,15 +145,22 @@ mod tests {
         file.seek(SeekFrom::Start(0)).await?;
         let metadata = read_metadata(&mut file).await?;
 
-        assert_eq!(metadata.index(), "test-index", "Expected metadata index to be the same as what is provided to exporter.");
+        assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to exporter."
+        );
         assert_eq!(
             metadata.files().get(sample_file.to_string_lossy().as_ref()),
             Some(&(METADATA_HEADER_SIZE as u64..METADATA_HEADER_SIZE as u64 + 13)),
             "Expected metadata files index to be empty.",
         );
-        assert_eq!(metadata.segment_id(), segment_id, "Expected segment id to match provided id.");
+        assert_eq!(
+            metadata.segment_id(),
+            segment_id,
+            "Expected segment id to match provided id."
+        );
 
         Ok(())
     }
-
 }
