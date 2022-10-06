@@ -23,7 +23,7 @@ The following files are ignored from the original tantivy index:
 - `.tantivy-*.lock`
 - `.tmp*`
 
-![segment structure](/assets/segment-file-layout.png)
+![file layout](/assets/segment-file-layout.png)
 
 ### Metadata
 Metadata is currently a serialized view of the `Metadata` struct, which intern contains each file path stored within
