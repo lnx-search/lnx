@@ -2,20 +2,21 @@ use std::io;
 use std::io::SeekFrom;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+
 use datacake_crdt::HLCTimestamp;
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
-use crate::{Metadata, METADATA_HEADER_SIZE};
-use crate::metadata::write_metadata_offsets;
 
-pub mod exporter;
+use crate::metadata::write_metadata_offsets;
+use crate::{Metadata, METADATA_HEADER_SIZE};
+
 pub mod combiner;
+pub mod exporter;
 mod utils;
 
-
 pub(crate) struct BlockingWriter {
-    writer: BufWriter<File>,
+    inner: BufWriter<File>,
     num_bytes_written: u64,
     metadata: Metadata,
     path: PathBuf,
@@ -59,7 +60,7 @@ impl BlockingWriter {
         let metadata = Metadata::new(index, segment_id);
 
         Ok(Self {
-            writer,
+            inner: writer,
             metadata,
             num_bytes_written: METADATA_HEADER_SIZE as u64,
             path: path.to_path_buf(),
@@ -72,9 +73,8 @@ impl BlockingWriter {
         self.num_bytes_written
     }
 
-
     pub async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.writer.write_all(buf).await?;
+        self.inner.write_all(buf).await?;
         self.num_bytes_written += buf.len() as u64;
 
         Ok(())
@@ -83,16 +83,17 @@ impl BlockingWriter {
     pub async fn finalise(mut self) -> io::Result<File> {
         // Write the header to the end of the file buffer.
         let raw = self.metadata.to_bytes()?;
-        self.writer.write_all(&raw).await?;
+        self.inner.write_all(&raw).await?;
 
-        self.writer.flush().await?;
+        self.inner.flush().await?;
 
-        let mut file = self.writer.into_inner();
+        let mut file = self.inner.into_inner();
 
         // Seek to the start of the file to write the header.
         file.seek(SeekFrom::Start(0)).await?;
 
-        write_metadata_offsets(&mut file, self.num_bytes_written, raw.len() as u64).await?;
+        write_metadata_offsets(&mut file, self.num_bytes_written, raw.len() as u64)
+            .await?;
 
         // Advance the cursor now the header is written.
         self.num_bytes_written += raw.len() as u64;
@@ -104,7 +105,7 @@ impl BlockingWriter {
     }
 
     pub async fn abort(self) -> io::Result<()> {
-        drop(self.writer);
+        drop(self.inner);
 
         let path = self.path;
         fs::remove_file(path).await?;

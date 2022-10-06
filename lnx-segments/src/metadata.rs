@@ -1,9 +1,9 @@
 use std::array::TryFromSliceError;
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
 use std::{io, mem};
-use std::io::ErrorKind;
 
 use bytecheck::CheckBytes;
 use datacake_crdt::HLCTimestamp;
@@ -62,7 +62,9 @@ impl Metadata {
     /// If the file does not exist `None` is returned.
     pub fn get_file_bounds(&self, path: &Path) -> Option<Range<usize>> {
         let path = path.to_string_lossy();
-        self.files.get(path.as_ref()).map(|range| (range.start as usize)..(range.end as usize))
+        self.files
+            .get(path.as_ref())
+            .map(|range| (range.start as usize)..(range.end as usize))
     }
 
     /// Deserializes a metadata object from the given buffer.
@@ -82,15 +84,20 @@ impl Metadata {
     }
 }
 
-
-pub fn get_metadata_offsets(mut offset_slice: &[u8]) -> Result<(u64, u64), TryFromSliceError> {
+pub fn get_metadata_offsets(
+    mut offset_slice: &[u8],
+) -> Result<(u64, u64), TryFromSliceError> {
     let start = read_be_u64(&mut offset_slice)? as u64;
     let len = read_be_u64(&mut offset_slice)? as u64;
 
     Ok((start, len))
 }
 
-pub async fn write_metadata_offsets(file: &mut File, start: u64, len: u64) -> io::Result<()> {
+pub async fn write_metadata_offsets(
+    file: &mut File,
+    start: u64,
+    len: u64,
+) -> io::Result<()> {
     file.write_u64(start).await?;
     file.write_u64(len).await?;
 
@@ -101,8 +108,7 @@ fn read_be_u64(input: &mut &[u8]) -> Result<u64, TryFromSliceError> {
     let (int_bytes, rest) = input.split_at(mem::size_of::<u64>());
     *input = rest;
 
-    let converted = int_bytes
-        .try_into()?;
+    let converted = int_bytes.try_into()?;
 
     Ok(u64::from_be_bytes(converted))
 }

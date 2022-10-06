@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::{fs, io};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::{fs, io};
 
+use lnx_segments::Exporter;
 use parking_lot::RwLock;
 use tantivy::directory::error::{
     DeleteError,
@@ -23,7 +24,6 @@ use tantivy::directory::{
     WritePtr,
 };
 use tantivy::Directory;
-use lnx_segments::Exporter;
 
 type BytesCounter = Arc<AtomicUsize>;
 
@@ -43,16 +43,17 @@ pub struct DirectoryWriter {
     /// The current existing files written to the directory and each file's
     /// estimated size.
     live_files: Arc<RwLock<HashMap<PathBuf, BytesCounter>>>,
-    
+
     /// The path where all the files are currently located.
     base_path: PathBuf,
 }
 
 impl DirectoryWriter {
     /// Creates a new writer directory within the temp file system.
-    pub fn create(base_path: &Path) -> Result<Self, OpenDirectoryError> {     
-        fs::create_dir_all(base_path)
-            .map_err(|e| OpenDirectoryError::wrap_io_error(e, base_path.to_path_buf()))?;
+    pub fn create(base_path: &Path) -> Result<Self, OpenDirectoryError> {
+        fs::create_dir_all(base_path).map_err(|e| {
+            OpenDirectoryError::wrap_io_error(e, base_path.to_path_buf())
+        })?;
         let dir = MmapDirectory::open(base_path)?;
 
         Ok(Self {
@@ -75,7 +76,7 @@ impl DirectoryWriter {
             .get(path)
             .map(|v| v.load(Ordering::Relaxed))
     }
-    
+
     #[inline]
     pub fn exported_files(&self) -> &Path {
         &self.base_path

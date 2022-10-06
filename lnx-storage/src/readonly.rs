@@ -5,6 +5,7 @@ use std::ops::{Deref, Range};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use lnx_segments::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 use parking_lot::Mutex;
 use stable_deref_trait::StableDeref;
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
@@ -19,7 +20,6 @@ use tantivy::directory::{
     WritePtr,
 };
 use tantivy::{Directory, HasLen};
-use lnx_segments::{Metadata, get_metadata_offsets, METADATA_HEADER_SIZE};
 
 #[derive(Clone)]
 /// A [tantivy::Directory] implementation that maps a single index file/segment
@@ -44,7 +44,8 @@ impl ReadOnlyDirectory {
         let (start, len) = get_metadata_offsets(offset_slice)
             .map_err(|_| crate::StorageError::Corrupted)?;
 
-        let metadata = Metadata::from_bytes(&file[start as usize..(start + len) as usize])?;
+        let metadata =
+            Metadata::from_bytes(&file[start as usize..(start + len) as usize])?;
 
         Ok(Self {
             file: Arc::new(file),
@@ -59,7 +60,8 @@ impl Debug for ReadOnlyDirectory {
         write!(
             f,
             "ReadOnlyDirectory(index={}, segment_id={})",
-            self.metadata.index(), self.metadata.segment_id()
+            self.metadata.index(),
+            self.metadata.segment_id()
         )
     }
 }
@@ -207,4 +209,3 @@ impl TerminatingWrite for NoOpWriter {
         Ok(())
     }
 }
-
