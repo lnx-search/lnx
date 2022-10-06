@@ -1,27 +1,24 @@
-use std::env::temp_dir;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{cmp, io};
 
 use datacake_crdt::HLCTimestamp;
-use tokio::fs;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use uuid::Uuid;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::blocking::utils::read_metadata;
 use crate::blocking::BlockingWriter;
 use crate::meta_merger::{ManagedMeta, MetaFile};
-use crate::{MANAGED_FILE, METADATA_HEADER_SIZE, META_FILE, SPECIAL_FILES};
+use crate::{MANAGED_FILE, METADATA_HEADER_SIZE, META_FILE, SPECIAL_FILES, DELETES_FILE};
+use crate::deletes::Deletes;
 
 const BUFFER_SIZE: usize = 64 << 10;
 
 pub struct BlockingCombiner {
     writer: BlockingWriter,
-    deletes_tmp_file: File,
-    deletes_tmp_path: PathBuf,
 
+    deletes: Deletes,
     meta_file: MetaFile,
     managed_file: ManagedMeta,
 }
@@ -35,18 +32,9 @@ impl BlockingCombiner {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, 0, index, segment_id).await?;
 
-        let deletes_tmp_path = temp_dir().join(Uuid::new_v4().to_string());
-        let deletes_tmp_file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .read(true)
-            .open(&deletes_tmp_path)
-            .await?;
-
         Ok(Self {
             writer,
-            deletes_tmp_file,
-            deletes_tmp_path,
+            deletes: Deletes::default(),
             meta_file: MetaFile::default(),
             managed_file: ManagedMeta::default(),
         })
@@ -107,6 +95,11 @@ impl BlockingCombiner {
             .to_json()
             .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
+        let deletes = self
+            .deletes
+            .to_compressed_bytes()
+            .await?;
+
         let meta_start = self.writer.current_pos();
         self.writer.write_all(&meta).await?;
         let meta_range = meta_start..self.writer.current_pos();
@@ -115,19 +108,18 @@ impl BlockingCombiner {
         self.writer.write_all(&managed).await?;
         let managed_range = managed_start..self.writer.current_pos();
 
-        self.writer.add_file("meta.json", meta_range);
-        self.writer.add_file(".managed.json", managed_range);
+        let deletes_start = self.writer.current_pos();
+        self.writer.write_all(&deletes).await?;
+        let deletes_range = deletes_start..self.writer.current_pos();
 
-        self.deletes_tmp_file.seek(SeekFrom::Start(0)).await?;
-        copy_data(&mut self.writer.inner, &mut self.deletes_tmp_file).await?;
+        self.writer.add_file(META_FILE, meta_range);
+        self.writer.add_file(MANAGED_FILE, managed_range);
+        self.writer.add_file(DELETES_FILE, deletes_range);
 
         self.writer.finalise().await
     }
 
     pub async fn abort(self) -> io::Result<()> {
-        drop(self.deletes_tmp_file);
-
-        let _ = fs::remove_file(&self.deletes_tmp_path).await;
         self.writer.abort().await
     }
 
@@ -181,6 +173,13 @@ impl BlockingCombiner {
 
                 self.managed_file.merge(meta);
             },
+            p if p == DELETES_FILE => {
+                let data = read_range(reader, range.clone()).await?;
+
+                let deletes = Deletes::from_compressed_bytes(data).await?;
+
+                self.deletes.merge(deletes);
+            },
             _ => return Ok(()),
         };
 
@@ -213,21 +212,3 @@ async fn read_range(reader: &mut File, range: Range<u64>) -> io::Result<Vec<u8>>
     Ok(data)
 }
 
-async fn copy_data<W: tokio::io::AsyncWrite + Unpin>(
-    writer: &mut W,
-    reader: &mut File,
-) -> io::Result<()> {
-    let mut buffer = [0; BUFFER_SIZE];
-
-    loop {
-        let n = reader.read(&mut buffer[..]).await?;
-
-        if n == 0 {
-            break;
-        }
-
-        writer.write_all(&buffer).await?;
-    }
-
-    Ok(())
-}

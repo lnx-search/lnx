@@ -2,12 +2,10 @@ use std::io;
 use std::path::Path;
 
 use datacake_crdt::HLCTimestamp;
-use tokio::fs;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, BufReader};
 
 use crate::blocking::BlockingWriter;
-use crate::metadata::Metadata;
 
 /// A directory exporter built around traditional blocking IO wrapped by tokio.
 ///
@@ -72,6 +70,7 @@ mod tests {
 
     use datacake_crdt::get_unix_timestamp_ms;
     use tokio::io::AsyncSeekExt;
+    use tokio::fs;
 
     use super::*;
     use crate::blocking::utils::read_metadata;
