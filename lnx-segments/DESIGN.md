@@ -31,3 +31,30 @@ the segment and the positions for where that file lies.
 
 A unique `HLCTimestamp` is also stored within the metadata which is the segment's unique ID, along with a `index_name`
 field which stores the index name that the segment belongs to.
+
+## Producing Segments
+Segments are produced by first creating a standard tantivy index which is managed by the `lnx-storage` crate.
+The files produced by tantivy are then fed into the `Exporter`, which reads each file in the index and adds
+them to the single file sequentially. 
+
+*Note: Files are read separately so that there is room for optimisations on linux 
+with the aio file system, see the `aio` directory to see this.*
+
+A new segment is produced for every commit in the system or when 4GB (approx) have been written, this is done to
+avoid segments becoming excessively large and hard to manage. 
+
+![segment producing](/assets/segment-producing.png)
+
+## Combining Segments
+Because segments are produced on every commit, this can lead to lots of small segments being produced which leads to
+too many files being opened at once, and the system being relatively inefficient. 
+
+To mitigate this issue, two or more segments can be combined into a new segment, effectively turning several indexes 
+into one larger index.
+
+It's worth noting that the combiner does not invoke tantivy's merging system for the index files, instead they are simply
+just joined together as if you copied two folders over into a new folder. Merging of the full index data itself is
+handled by the merging system which is a separate handler.
+
+![segment combining](/assets/segment-combining.png)
+
