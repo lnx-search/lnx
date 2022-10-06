@@ -23,15 +23,27 @@ pub struct Metadata {
     /// The unique ID of the segment.
     segment_id: HLCTimestamp,
 
+    /// A history of the segments that this segment was built from.
+    derived_from: Vec<HLCTimestamp>,
+
     /// The specific positions of where each 'file' lies within the blob.
     files: HashMap<String, Range<u64>>,
 }
 
 impl Metadata {
     pub fn new(index_name: String, segment_id: HLCTimestamp) -> Self {
+        Self::new_with_history(index_name, segment_id, vec![])
+    }
+
+    pub fn new_with_history(
+        index_name: String,
+        segment_id: HLCTimestamp,
+        history: Vec<HLCTimestamp>,
+    ) -> Self {
         Self {
             index_name,
             segment_id,
+            derived_from: history,
             files: HashMap::default(),
         }
     }
@@ -42,6 +54,11 @@ impl Metadata {
     }
 
     #[inline]
+    pub fn history(&self) -> &[HLCTimestamp] {
+        &self.derived_from
+    }
+
+    #[inline]
     pub fn segment_id(&self) -> HLCTimestamp {
         self.segment_id
     }
@@ -49,6 +66,10 @@ impl Metadata {
     #[inline]
     pub fn files(&self) -> &HashMap<String, Range<u64>> {
         &self.files
+    }
+
+    pub(crate) fn add_history(&mut self, segment_id: HLCTimestamp) {
+        self.derived_from.push(segment_id);
     }
 
     /// Add a file to the metadata with a given set of positions.

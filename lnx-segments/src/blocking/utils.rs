@@ -18,14 +18,14 @@ pub(crate) async fn read_metadata(file: &mut File) -> io::Result<Metadata> {
 
     let mut buffer = vec![];
     while buffer.len() < len as usize {
-        let mut buff = [0; 1024];
-        let n = file.read(&mut buff).await?;
+        let mut buf = [0; 1024];
+        let n = file.read(&mut buf).await?;
 
         if n == 0 {
             break;
         }
 
-        buffer.extend_from_slice(&buff[..n]);
+        buffer.extend_from_slice(&buf[..n]);
     }
 
     let metadata = Metadata::from_bytes(&buffer[..len as usize])?;

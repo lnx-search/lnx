@@ -5,7 +5,7 @@ use bytecheck::CheckBytes;
 
 #[derive(Debug, Default, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
-pub struct Deletes(Vec<String>);
+pub struct Deletes(pub(crate) Vec<String>);
 
 impl Deletes {
     /// Loads a given metafile from a buffer.
@@ -16,7 +16,7 @@ impl Deletes {
             let length_bytes: [u8; mem::size_of::<u64>()] = buf[slice..].try_into().unwrap();
             let length = u64::from_be_bytes(length_bytes) as usize;
 
-            let buf = lz4_flex::decompress(&buf[8..], length)
+            let buf = lz4_flex::decompress(&buf[..slice], length)
                 .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
 
             rkyv::from_bytes(&buf)

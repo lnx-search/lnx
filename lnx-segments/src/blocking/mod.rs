@@ -91,7 +91,6 @@ impl BlockingWriter {
 
         // Seek to the start of the file to write the header.
         file.seek(SeekFrom::Start(0)).await?;
-
         write_metadata_offsets(&mut file, self.num_bytes_written, raw.len() as u64)
             .await?;
 

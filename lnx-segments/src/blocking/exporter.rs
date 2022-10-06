@@ -48,6 +48,21 @@ impl BlockingExporter {
         }
 
         let end = self.writer.current_pos();
+
+        self.writer.add_file(path, start..end);
+
+        Ok(())
+    }
+
+     /// Write a new file to the exporter.
+     ///
+     /// Unlike the `write_file` method, this method takes a raw buffer which gets
+     /// written out instead.
+    pub async fn write_raw(&mut self, path: &Path, buf: &[u8]) -> io::Result<()> {
+        let start = self.writer.current_pos();
+        self.writer.write_all(buf).await?;
+        let end = self.writer.current_pos();
+
         self.writer.add_file(path, start..end);
 
         Ok(())
@@ -58,6 +73,7 @@ impl BlockingExporter {
         self.writer.finalise().await
     }
 
+    /// Abort the segment creation.
     pub async fn abort(self) -> io::Result<()> {
         self.writer.abort().await
     }

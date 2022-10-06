@@ -40,7 +40,7 @@ impl MetaFile {
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct ManagedMeta(Vec<String>);
+pub struct ManagedMeta(pub(crate) Vec<String>);
 
 impl ManagedMeta {
     /// Loads a given metafile from a JSON buffer.

@@ -15,6 +15,13 @@ use crate::deletes::Deletes;
 
 const BUFFER_SIZE: usize = 64 << 10;
 
+/// Combines two or more existing segments into a single, larger segment.
+///
+/// This is the blocking variant of the combiners which wraps the `tokio::fs` system
+/// which internally wraps the `std::fs` system in a threadpool.
+///
+/// This system is not the most efficient approach, it is designed for compatibility with
+/// all operating systems rather than for performance.
 pub struct BlockingCombiner {
     writer: BlockingWriter,
 
@@ -80,6 +87,13 @@ impl BlockingCombiner {
             self.writer.add_file(&path, start..end);
         }
 
+        // Add the history of the data. This lets us work out
+        // what bits of segment data are where even after a merge.
+        self.writer.add_history(metadata.segment_id());
+        for historic_id in metadata.history() {
+            self.writer.add_history(*historic_id);
+        }
+
         Ok(())
     }
 
@@ -110,6 +124,7 @@ impl BlockingCombiner {
 
         let deletes_start = self.writer.current_pos();
         self.writer.write_all(&deletes).await?;
+
         let deletes_range = deletes_start..self.writer.current_pos();
 
         self.writer.add_file(META_FILE, meta_range);
@@ -119,6 +134,7 @@ impl BlockingCombiner {
         self.writer.finalise().await
     }
 
+    /// Abort the segment creation.
     pub async fn abort(self) -> io::Result<()> {
         self.writer.abort().await
     }
@@ -190,7 +206,14 @@ impl BlockingCombiner {
     }
 }
 
+/// Reads a set of bytes from the given file and makes sure the cursor is correctly
+/// repositioned if more than the required amount of bytes are read.
+///
+/// NOTE:
+///  The start of the `range` is ignored.
 async fn read_range(reader: &mut File, range: Range<u64>) -> io::Result<Vec<u8>> {
+    reader.seek(SeekFrom::Start(range.start)).await?;
+
     let mut data = vec![];
 
     let len = range.end - range.start;
@@ -212,3 +235,303 @@ async fn read_range(reader: &mut File, range: Range<u64>) -> io::Result<Vec<u8>>
     Ok(data)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use std::env::temp_dir;
+    use std::path::PathBuf;
+    use datacake_crdt::get_unix_timestamp_ms;
+
+    use crate::blocking::exporter::BlockingExporter;
+    use super::*;
+
+    async fn create_test_segments(prefix: &str, num: usize, clock: &mut HLCTimestamp) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>, Vec<HLCTimestamp>)> {
+        let mut segments = vec![];
+        let mut sample_files = vec![];
+        let mut history = vec![];
+
+        for i in 0..num {
+            let sample_file = temp_dir().join(format!("{}-sample-{}.txt", prefix, i));
+
+            let segment_id = clock.send().unwrap();
+            let path = temp_dir().join(format!("combined-seg-{}-{}-test.segment", prefix, i));
+
+            let mut exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                    .await?;
+
+            exporter.write_raw(&sample_file, b"Hello, World!").await?;
+            exporter.finalise().await?;
+
+            history.push(segment_id);
+            sample_files.push(sample_file);
+            segments.push(path);
+        }
+
+        Ok((segments, sample_files, history))
+    }
+
+    #[tokio::test]
+    async fn test_single_merge_combiner() -> io::Result<()> {
+        let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let segment_id = clock.send().unwrap();
+
+        let (segments, expected_files, history) = create_test_segments("single-merge", 2, &mut clock).await?;
+
+        let combiner_file = temp_dir().join("combiner-single.segment");
+        let mut combiner = BlockingCombiner::create(&combiner_file, "test-index".to_string(), segment_id).await?;
+
+        for segment_path in segments {
+            combiner.combine_segment(&segment_path).await?;
+        }
+
+        let mut file = combiner.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+        assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to combiner."
+        );
+
+        for expected_file in expected_files {
+            let file = metadata.get_file_bounds(&expected_file);
+            assert!(file.is_some(), "Expected file to be transferred during combining {:?}", expected_file);
+        }
+
+        assert_eq!(metadata.history(), &history, "Expected segment history to match.");
+
+        assert_eq!(
+            metadata.segment_id(),
+            segment_id,
+            "Expected segment id to match provided id."
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_multi_merge_combiner() -> io::Result<()> {
+        let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let segment_id = clock.send().unwrap();
+
+        let (segments, expected_files, history) = create_test_segments("multi-merge", 5, &mut clock).await?;
+
+        let combiner_file = temp_dir().join("combiner-single.segment");
+        let mut combiner = BlockingCombiner::create(&combiner_file, "test-index".to_string(), segment_id).await?;
+
+        for segment_path in segments {
+            combiner.combine_segment(&segment_path).await?;
+        }
+
+        let mut file = combiner.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+        assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to combiner."
+        );
+
+        for expected_file in expected_files {
+            let file = metadata.get_file_bounds(&expected_file);
+            assert!(file.is_some(), "Expected file to be transferred during combining {:?}", expected_file);
+        }
+
+        assert_eq!(metadata.history(), &history, "Expected segment history to match.");
+
+        assert_eq!(
+            metadata.segment_id(),
+            segment_id,
+            "Expected segment id to match provided id."
+        );
+
+        Ok(())
+    }
+
+    async fn create_segment_with(
+        name: &str,
+        segment_id: HLCTimestamp,
+        meta: Option<MetaFile>,
+        managed: Option<ManagedMeta>,
+        deletes: Option<Deletes>,
+    ) -> io::Result<PathBuf> {
+        let dir = temp_dir();
+
+        let path = dir.join(format!("combined-seg-{}-test.segment", name));
+        let mut exporter = BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                .await?;
+
+        if let Some(meta) = meta {
+            exporter.write_raw(Path::new(META_FILE), &meta.to_json().unwrap()).await?;
+        }
+
+        if let Some(managed) = managed {
+            exporter.write_raw(Path::new(MANAGED_FILE), &managed.to_json().unwrap()).await?;
+        }
+
+        if let Some(deletes) = deletes {
+            let buf = deletes.to_compressed_bytes().await?;
+            exporter.write_raw(Path::new(DELETES_FILE), &buf).await?;
+        }
+
+        exporter.finalise().await?;
+
+        Ok(path)
+    }
+
+
+    #[tokio::test]
+    async fn test_meta_combiner() -> io::Result<()> {
+        let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+
+        let meta_1 = MetaFile {
+            segments: vec![serde_json::Value::String("node-1-field".into())],
+            opstamp: 1,
+            ..Default::default()
+        };
+
+        let meta_2 = MetaFile {
+            segments: vec![serde_json::Value::String("node-2-field".into())],
+            opstamp: 4,
+            ..Default::default()
+        };
+
+        let segment_1 = create_segment_with("meta-segment-1", clock.send().unwrap(), Some(meta_1), None, None).await?;
+        let segment_2 = create_segment_with("meta-segment-2", clock.send().unwrap(), Some(meta_2), None, None).await?;
+
+        let path = temp_dir().join("combined-seg-combiner-meta-test.segment");
+        let mut combiner = BlockingCombiner::create(&path, "test-index".to_string(), clock.send().unwrap()).await?;
+        combiner.combine_segment(&segment_1).await?;
+        combiner.combine_segment(&segment_2).await?;
+
+        let mut file = combiner.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+         assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to ."
+        );
+
+        let ranger = metadata.get_file_bounds(Path::new(META_FILE))
+            .expect("Expected meta file to exist within new segment.");
+
+        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
+        let meta = MetaFile::from_json(&file).expect("Meta file should not be corrupt.");
+
+        assert_eq!(meta.opstamp, 4, "Expected higher opstamp to be taken when merging meta.json");
+        assert_eq!(
+            meta.segments,
+            vec![
+                serde_json::Value::String("node-1-field".into()),
+                serde_json::Value::String("node-2-field".into()),
+            ],
+            "Expected merged segments to match provided example.",
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_managed_combiner() -> io::Result<()> {
+        let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+
+        let managed_1 = ManagedMeta(vec!["node-1-field".to_string()]);
+        let managed_2 = ManagedMeta(vec!["node-2-field".to_string()]);
+
+        let segment_1 = create_segment_with("managed-segment-1", clock.send().unwrap(), None, Some(managed_1), None).await?;
+        let segment_2 = create_segment_with("managed-segment-2", clock.send().unwrap(), None, Some(managed_2), None).await?;
+
+        let path = temp_dir().join("combined-seg-combiner-managed-test.segment");
+        let mut combiner = BlockingCombiner::create(&path, "test-index".to_string(), clock.send().unwrap()).await?;
+        combiner.combine_segment(&segment_1).await?;
+        combiner.combine_segment(&segment_2).await?;
+
+        let mut file = combiner.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+         assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to ."
+        );
+
+
+        let ranger = metadata.get_file_bounds(Path::new(MANAGED_FILE))
+            .expect("Expected managed file to exist within new segment.");
+
+        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
+        let managed = ManagedMeta::from_json(&file).expect("Managed file should not be corrupt.");
+
+        assert_eq!(
+            managed.0,
+            vec![
+                "node-1-field".to_string(),
+                "node-2-field".to_string(),
+            ],
+            "Expected merged segments to match provided example.",
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_deletes_combiner() -> io::Result<()> {
+        let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+
+        let deletes_1 = Deletes(vec!["node-1-field".to_string()]);
+        let deletes_2 = Deletes(vec!["node-2-field".to_string()]);
+
+        let segment_1 = create_segment_with("deletes-segment-1", clock.send().unwrap(), None, None, Some(deletes_1)).await?;
+        let segment_2 = create_segment_with("deletes-segment-2", clock.send().unwrap(), None,  None, Some(deletes_2)).await?;
+
+        let path = temp_dir().join("combined-seg-combiner-deletes-test.segment");
+
+        let mut combiner = BlockingCombiner::create(&path, "test-index".to_string(), clock.send().unwrap()).await?;
+        combiner.combine_segment(&segment_1).await?;
+        combiner.combine_segment(&segment_2).await?;
+
+        let mut file = combiner.finalise().await?;
+
+        // Read it like a new file.
+        file.seek(SeekFrom::Start(0)).await?;
+        let metadata = read_metadata(&mut file).await?;
+
+        assert_eq!(
+            metadata.index(),
+            "test-index",
+            "Expected metadata index to be the same as what is provided to ."
+        );
+
+        let ranger = metadata.get_file_bounds(Path::new(DELETES_FILE))
+            .expect("Expected managed file to exist within new segment.");
+
+        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
+
+        let managed = Deletes::from_compressed_bytes(file).await
+           .expect("Deletes file should not be corrupt.");
+
+        assert_eq!(
+            managed.0,
+            vec![
+                "node-1-field".to_string(),
+                "node-2-field".to_string(),
+            ],
+            "Expected merged segments to match provided example.",
+        );
+
+        Ok(())
+    }
+}

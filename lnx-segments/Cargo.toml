@@ -19,3 +19,4 @@ datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+bytes = "1"

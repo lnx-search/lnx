@@ -387,6 +387,7 @@ version = "0.1.0"
 dependencies = [
  "bytecheck",
  "byteorder",
+ "bytes",
  "datacake-crdt",
  "lz4_flex",
  "rkyv",
