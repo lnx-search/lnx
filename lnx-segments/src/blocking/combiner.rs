@@ -7,6 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter};
 
 use crate::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 use crate::blocking::BlockingWriter;
+use crate::blocking::utils::read_metadata;
 
 pub struct BlockingCombiner {
     writer: BlockingWriter,
@@ -30,7 +31,7 @@ impl BlockingCombiner {
     /// larger segment.
     pub async fn combine_segment(&mut self, segment_file: &Path) -> io::Result<()> {
         let mut segment = File::open(segment_file).await?;
-        let metadata = reader_metadata(&mut segment).await?;
+        let metadata = read_metadata(&mut segment).await?;
 
         // Set the seek position back to the end of the metadata.
         segment.seek(SeekFrom::Start(METADATA_HEADER_SIZE as u64)).await?;
@@ -73,31 +74,8 @@ impl BlockingCombiner {
     pub async fn finalise(self) -> io::Result<File> {
         self.writer.finalise().await
     }
-}
 
-
-async fn reader_metadata(file: &mut File) -> io::Result<Metadata> {
-     let mut buffer = [0; METADATA_HEADER_SIZE];
-    file.read_exact(&mut buffer).await?;
-
-    let (start, len) = get_metadata_offsets(&buffer)
-        .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Unable to read index metadata."))?;
-
-    file.seek(SeekFrom::Start(start)).await?;
-
-    let mut buffer = vec![];
-    while buffer.len() < len as usize {
-        let mut buff = [0; 1024];
-        let n = file.read(&mut buff).await?;
-
-        if n == 0 {
-            break;
-        }
-
-        buffer.extend_from_slice(&buff[..n]);
+    pub async fn abort(self) -> io::Result<()> {
+        self.writer.abort().await
     }
-
-    let metadata = Metadata::from_bytes(&buffer[..len as usize])?;
-
-    Ok(metadata)
 }
