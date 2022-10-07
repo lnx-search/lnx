@@ -9,7 +9,6 @@ use bytecheck::CheckBytes;
 use datacake_crdt::HLCTimestamp;
 use rkyv::{AlignedVec, Archive, Deserialize, Serialize};
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 
 pub const METADATA_HEADER_SIZE: usize = mem::size_of::<u64>() * 2;
 
@@ -119,8 +118,29 @@ pub async fn write_metadata_offsets(
     start: u64,
     len: u64,
 ) -> io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+
+    println!("writing: {} - {}", start, len);
+
     file.write_u64(start).await?;
     file.write_u64(len).await?;
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub async fn write_metadata_offsets_aio(
+    file: &mut glommio::io::DmaStreamWriter,
+    start: u64,
+    len: u64,
+) -> io::Result<()> {
+    use futures_lite::AsyncWriteExt;
+
+    let start_bytes = start.to_be_bytes();
+    let len_bytes = len.to_be_bytes();
+
+    file.write_all(&start_bytes).await?;
+    file.write_all(&len_bytes).await?;
 
     Ok(())
 }

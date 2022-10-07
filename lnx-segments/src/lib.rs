@@ -1,13 +1,23 @@
+#[cfg(target_os = "linux")]
 mod aio;
+
 mod blocking;
 
 mod deletes;
 mod meta_merger;
 mod metadata;
+mod selector;
 
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 
+#[cfg(not(target_os = "linux"))]
 pub type Exporter = blocking::exporter::BlockingExporter;
+#[cfg(not(target_os = "linux"))]
+pub type Combiner = blocking::combiner::BlockingCombiner;
+
+#[cfg(target_os = "linux")]
+pub type Exporter = blocking::exporter::BlockingExporter;
+#[cfg(target_os = "linux")]
 pub type Combiner = blocking::combiner::BlockingCombiner;
 
 pub static IGNORED_PREFIX: &str = ".tmp";

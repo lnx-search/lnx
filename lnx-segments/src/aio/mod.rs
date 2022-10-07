@@ -1,1 +1,99 @@
+mod runtime;
+
+use std::io;
+use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
+use datacake_crdt::HLCTimestamp;
+use futures_lite::AsyncWriteExt;
+use glommio::io::{DmaFile, DmaStreamWriter, DmaStreamWriterBuilder};
+pub use runtime::try_init;
+use crate::Metadata;
+use crate::metadata::write_metadata_offsets_aio;
+
+pub struct AioWriter {
+    inner: DmaStreamWriter,
+    metadata: Metadata,
+    path: PathBuf,
+}
+
+impl Deref for AioWriter {
+    type Target = Metadata;
+
+    fn deref(&self) -> &Self::Target {
+        &self.metadata
+    }
+}
+
+impl DerefMut for AioWriter {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.metadata
+    }
+}
+
+impl AioWriter {
+    /// Create a new aio writer.
+    pub async fn create(
+        path: &Path,
+        size_hint: usize,
+        index: String,
+        segment_id: HLCTimestamp,
+    ) -> io::Result<Self> {
+        let file = glommio::io::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .dma_open(path)
+            .await?;
+
+        file.pre_allocate(size_hint as u64).await?;
+
+        let writer = DmaStreamWriterBuilder::new(file)
+            .with_write_behind(10)
+            .with_buffer_size(512 << 10)
+            .build();
+
+        let metadata = Metadata::new(index, segment_id);
+
+        Ok(Self {
+            inner: writer,
+            metadata,
+            path: path.to_path_buf(),
+        })
+    }
+
+    #[inline]
+    /// The current position of the writer.
+    pub fn current_pos(&self) -> u64 {
+        self.inner.current_pos()
+    }
+
+    pub async fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.inner.write_all(buf).await?;
+        Ok(())
+    }
+
+    pub async fn finalise(mut self) -> io::Result<PathBuf> {
+        // Write the header to the end of the file buffer.
+        let raw = self.metadata.to_bytes()?;
+        let start = self.inner.current_pos();
+
+        self.inner.write_all(&raw).await?;
+
+        write_metadata_offsets_aio(&mut self.inner, start, raw.len() as u64)
+            .await?;
+
+        Ok(self.path)
+    }
+
+    pub async fn abort(self) -> io::Result<()> {
+        drop(self.inner);
+
+        // TODO: Change to use async variant.
+        let path = self.path;
+        let _ = std::fs::remove_file(path);
+
+        Ok(())
+    }
+}
+
+
 
