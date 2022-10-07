@@ -53,16 +53,13 @@ impl BlockingWriter {
 
         file.set_len(size_hint as u64).await?;
 
-        // Metadata header.
-        file.write_all(&[0; METADATA_HEADER_SIZE]).await?;
-
         let writer = BufWriter::new(file);
         let metadata = Metadata::new(index, segment_id);
 
         Ok(Self {
             inner: writer,
             metadata,
-            num_bytes_written: METADATA_HEADER_SIZE as u64,
+            num_bytes_written: 0,
             path: path.to_path_buf(),
         })
     }
@@ -80,7 +77,7 @@ impl BlockingWriter {
         Ok(())
     }
 
-    pub async fn finalise(mut self) -> io::Result<File> {
+    pub async fn finalise(mut self) -> io::Result<PathBuf> {
         // Write the header to the end of the file buffer.
         let raw = self.metadata.to_bytes()?;
         self.inner.write_all(&raw).await?;
@@ -89,18 +86,16 @@ impl BlockingWriter {
 
         let mut file = self.inner.into_inner();
 
-        // Seek to the start of the file to write the header.
-        file.seek(SeekFrom::Start(0)).await?;
         write_metadata_offsets(&mut file, self.num_bytes_written, raw.len() as u64)
             .await?;
 
         // Advance the cursor now the header is written.
         self.num_bytes_written += raw.len() as u64;
 
-        file.set_len(self.num_bytes_written as u64).await?;
+        file.set_len(self.num_bytes_written + METADATA_HEADER_SIZE as u64).await?;
         file.sync_all().await?;
 
-        Ok(file)
+        Ok(self.path)
     }
 
     pub async fn abort(self) -> io::Result<()> {

@@ -1,6 +1,6 @@
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{cmp, io};
 
 use datacake_crdt::HLCTimestamp;
@@ -104,7 +104,7 @@ impl BlockingCombiner {
     }
 
     /// Finalises any remaining buffers so that file is safely persisted to disk.
-    pub async fn finalise(mut self) -> io::Result<File> {
+    pub async fn finalise(mut self) -> io::Result<PathBuf> {
         let meta = self
             .meta_file
             .to_json()
@@ -299,7 +299,8 @@ mod tests {
             combiner.combine_segment(&segment_path).await?;
         }
 
-        let mut file = combiner.finalise().await?;
+        let file = combiner.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -355,7 +356,8 @@ mod tests {
             combiner.combine_segment(&segment_path).await?;
         }
 
-        let mut file = combiner.finalise().await?;
+        let file = combiner.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -470,7 +472,8 @@ mod tests {
         combiner.combine_segment(&segment_1).await?;
         combiner.combine_segment(&segment_2).await?;
 
-        let mut file = combiner.finalise().await?;
+        let file = combiner.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -539,7 +542,8 @@ mod tests {
         combiner.combine_segment(&segment_1).await?;
         combiner.combine_segment(&segment_2).await?;
 
-        let mut file = combiner.finalise().await?;
+        let file = combiner.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -603,7 +607,8 @@ mod tests {
         combiner.combine_segment(&segment_1).await?;
         combiner.combine_segment(&segment_2).await?;
 
-        let mut file = combiner.finalise().await?;
+        let file = combiner.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;

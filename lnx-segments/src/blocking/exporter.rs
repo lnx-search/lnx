@@ -1,5 +1,5 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use datacake_crdt::HLCTimestamp;
 use tokio::fs::File;
@@ -78,7 +78,7 @@ impl BlockingExporter {
     }
 
     /// Finalises any remaining buffers so that file is safely persisted to disk.
-    pub async fn finalise(self) -> io::Result<File> {
+    pub async fn finalise(self) -> io::Result<PathBuf> {
         self.writer.finalise().await
     }
 
@@ -109,7 +109,9 @@ mod tests {
         let exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                 .await?;
-        let mut file = exporter.finalise().await?;
+
+        let file = exporter.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -163,7 +165,9 @@ mod tests {
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                 .await?;
         exporter.write_file(&sample_file).await?;
-        let mut file = exporter.finalise().await?;
+
+        let file = exporter.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -176,7 +180,7 @@ mod tests {
         );
         assert_eq!(
             metadata.files().get(sample_file.to_string_lossy().as_ref()),
-            Some(&(METADATA_HEADER_SIZE as u64..METADATA_HEADER_SIZE as u64 + 13)),
+            Some(&(0..13)),
             "Expected metadata files index to be empty.",
         );
         assert_eq!(
