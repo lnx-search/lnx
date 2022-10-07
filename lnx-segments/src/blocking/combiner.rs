@@ -604,6 +604,7 @@ mod tests {
             clock.send().unwrap(),
         )
         .await?;
+
         combiner.combine_segment(&segment_1).await?;
         combiner.combine_segment(&segment_2).await?;
 
