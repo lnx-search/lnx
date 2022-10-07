@@ -393,7 +393,6 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
- "tantivy",
  "tokio",
 ]
 

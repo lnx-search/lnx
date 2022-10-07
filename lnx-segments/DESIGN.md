@@ -58,3 +58,11 @@ handled by the merging system which is a separate handler.
 
 ![segment combining](/assets/segment-combining.png)
 
+#### Combining Rules
+
+There are certain rules which must be followed in order for segments to maintain state correctly and not create
+issues when distributed:
+
+- Only segments created by the same node can be merged.
+- Segments must not exceed 4GB in size (+-5%)
+
