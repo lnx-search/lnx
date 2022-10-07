@@ -1,0 +1,21 @@
+[package]
+name = "lnx-segments"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytecheck = "0.6.9"
+byteorder = "1.4.3"
+serde_json = "1"
+lz4_flex = "0.9.5"
+
+serde = { version = "1", features = ["derive"] }
+rkyv = { version = "0.7.39", features = ["validation"] }
+tokio = { version = "1", features = ["fs", "io-util"] }
+datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+bytes = "1"

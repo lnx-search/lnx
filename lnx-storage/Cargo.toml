@@ -9,10 +9,10 @@ edition = "2021"
 tantivy = "0.18.0"
 memmap2 = "0.5.7"
 bytecheck = "0.6.9"
-byteorder = "1.4.3"
 thiserror = "1"
 parking_lot = "0.12"
 stable_deref_trait = "1.2.0"
 
-datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }
-rkyv = { version = "0.7.39", features = ["validation"] }
+datacake-crdt = "0.1.2"
+
+lnx-segments = { path = "../lnx-segments" }

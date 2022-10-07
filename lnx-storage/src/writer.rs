@@ -4,7 +4,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::{fs, io};
 
+use lnx_segments::Exporter;
 use parking_lot::RwLock;
 use tantivy::directory::error::{
     DeleteError,
@@ -41,37 +43,24 @@ pub struct DirectoryWriter {
     /// The current existing files written to the directory and each file's
     /// estimated size.
     live_files: Arc<RwLock<HashMap<PathBuf, BytesCounter>>>,
+
+    /// The path where all the files are currently located.
+    base_path: PathBuf,
 }
 
 impl DirectoryWriter {
     /// Creates a new writer directory within the temp file system.
-    pub fn create_from_tempdir() -> Result<Self, crate::StorageError> {
-        let res = MmapDirectory::create_from_tempdir();
-        let dir = match res {
-            Ok(dir) => dir,
-            Err(OpenDirectoryError::IoError { io_error, .. }) => {
-                return Err(crate::StorageError::IoError(io_error))
-            },
-            Err(OpenDirectoryError::NotADirectory(_)) => {
-                panic!(
-                    "Writer was unable to be created due to the targeted path not being a directory,\
-                     despite using the temp file system. This is a bug."
-                );
-            },
-            Err(OpenDirectoryError::DoesNotExist(_)) => {
-                panic!(
-                    "Writer was unable to be created despite using the temp file system. This is a bug."
-                );
-            },
-            Err(OpenDirectoryError::FailedToCreateTempDir(io_error)) => {
-                return Err(crate::StorageError::IoError(io_error))
-            },
-        };
+    pub fn create(base_path: &Path) -> Result<Self, OpenDirectoryError> {
+        fs::create_dir_all(base_path).map_err(|e| {
+            OpenDirectoryError::wrap_io_error(e, base_path.to_path_buf())
+        })?;
+        let dir = MmapDirectory::open(base_path)?;
 
         Ok(Self {
             inner: dir,
             estimated_disk_usage: Default::default(),
             live_files: Default::default(),
+            base_path: base_path.to_path_buf(),
         })
     }
 
@@ -86,6 +75,11 @@ impl DirectoryWriter {
             .read()
             .get(path)
             .map(|v| v.load(Ordering::Relaxed))
+    }
+
+    #[inline]
+    pub fn exported_files(&self) -> &Path {
+        &self.base_path
     }
 }
 
