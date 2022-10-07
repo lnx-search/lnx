@@ -34,8 +34,10 @@ impl BlockingExporter {
     pub async fn write_file(&mut self, path: &Path) -> io::Result<()> {
         let path_str = path.to_string_lossy();
 
-        if path_str.starts_with(IGNORED_PREFIX) || IGNORED_FILES.contains(&path_str.as_ref()) {
-            return Ok(())
+        if path_str.starts_with(IGNORED_PREFIX)
+            || IGNORED_FILES.contains(&path_str.as_ref())
+        {
+            return Ok(());
         }
 
         let file = File::open(path).await?;
