@@ -120,8 +120,6 @@ pub async fn write_metadata_offsets(
 ) -> io::Result<()> {
     use tokio::io::AsyncWriteExt;
 
-    println!("writing: {} - {}", start, len);
-
     file.write_u64(start).await?;
     file.write_u64(len).await?;
 
