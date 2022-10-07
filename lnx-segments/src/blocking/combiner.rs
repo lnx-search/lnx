@@ -61,10 +61,6 @@ impl BlockingCombiner {
         let mut segment = File::open(segment_file).await?;
         let metadata = read_metadata(&mut segment).await?;
 
-        // Set the seek position back to the end of the metadata.
-        segment
-            .seek(SeekFrom::Start(METADATA_HEADER_SIZE as u64))
-            .await?;
 
         let mut files = metadata
             .files()
@@ -75,12 +71,20 @@ impl BlockingCombiner {
         // We want to sort them by starting index so we minimise seeking overhead.
         files.sort_by_key(|v| v.0.start);
 
+        // Set the seek position back to the end of the metadata.
+        let mut cursor = 0;
+        segment
+            .seek(SeekFrom::Start(cursor))
+            .await?;
+
         for (range, path) in files {
             let start = self.writer.current_pos();
 
-            if range.start != start {
+            if range.start != cursor {
                 segment.seek(SeekFrom::Start(range.start)).await?;
             }
+
+            cursor += range.end - range.start;
 
             if SPECIAL_FILES.contains(&path.as_str()) {
                 self.merge_special_files(&mut segment, range, &path).await?;
