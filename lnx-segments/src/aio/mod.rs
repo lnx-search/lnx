@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use datacake_crdt::HLCTimestamp;
 use futures_lite::AsyncWriteExt;
-use glommio::io::{DmaFile, DmaStreamWriter, DmaStreamWriterBuilder};
+use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 pub use runtime::try_init;
 use crate::Metadata;
 use crate::metadata::write_metadata_offsets_aio;
@@ -89,7 +89,7 @@ impl AioWriter {
 
         // TODO: Change to use async variant.
         let path = self.path;
-        let _ = std::fs::remove_file(path);
+        glommio::io::remove(path).await?;
 
         Ok(())
     }
