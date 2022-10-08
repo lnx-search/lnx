@@ -48,7 +48,10 @@ impl AioWriter {
             .dma_open(path)
             .await?;
 
-        file.pre_allocate(size_hint as u64).await?;
+        let allocate = (size_hint % 1024) * 1024;
+        if allocate != 0 {
+            file.pre_allocate(allocate as u64).await?;
+        }
 
         let writer = DmaStreamWriterBuilder::new(file)
             .with_write_behind(10)
