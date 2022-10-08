@@ -7,14 +7,12 @@ use datacake_crdt::HLCTimestamp;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use crate::blocking::utils::read_metadata;
 use crate::blocking::BlockingWriter;
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
 use crate::{
     DELETES_FILE,
     MANAGED_FILE,
-    METADATA_HEADER_SIZE,
     META_FILE,
     SPECIAL_FILES,
 };
@@ -59,8 +57,7 @@ impl BlockingCombiner {
     /// larger segment.
     pub async fn combine_segment(&mut self, segment_file: &Path) -> io::Result<()> {
         let mut segment = File::open(segment_file).await?;
-        let metadata = read_metadata(&mut segment).await?;
-
+        let metadata = super::utils::read_metadata(&mut segment).await?;
 
         let mut files = metadata
             .files()
@@ -251,6 +248,7 @@ mod tests {
 
     use super::*;
     use crate::blocking::exporter::BlockingExporter;
+    use crate::blocking::utils::read_metadata;
 
     async fn create_test_segments(
         prefix: &str,
