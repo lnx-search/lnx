@@ -1,4 +1,6 @@
 mod runtime;
+mod combiner;
+mod utils;
 
 use std::io;
 use std::ops::{Deref, DerefMut};
@@ -9,6 +11,8 @@ use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 pub use runtime::try_init;
 use crate::Metadata;
 use crate::metadata::write_metadata_offsets_aio;
+
+pub(crate) const BUFFER_SIZE: usize = 512 << 10;
 
 pub struct AioWriter {
     inner: DmaStreamWriter,
