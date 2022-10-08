@@ -1,5 +1,5 @@
 #[cfg(target_os = "linux")]
-mod aio;
+pub mod aio;
 
 mod blocking;
 
@@ -18,7 +18,7 @@ pub type Combiner = blocking::combiner::BlockingCombiner;
 #[cfg(target_os = "linux")]
 pub type Exporter = blocking::exporter::BlockingExporter;
 #[cfg(target_os = "linux")]
-pub type Combiner = blocking::combiner::BlockingCombiner;
+pub type Combiner = aio::combiner::AioCombiner;
 
 pub static IGNORED_PREFIX: &str = ".tmp";
 pub static IGNORED_FILES: &[&str] = &[".tantivy-meta.lock", ".tantivy-write.lock"];

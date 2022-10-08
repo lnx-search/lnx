@@ -1,5 +1,5 @@
 mod runtime;
-mod combiner;
+pub mod combiner;
 mod utils;
 
 use std::io;
@@ -8,11 +8,19 @@ use std::path::{Path, PathBuf};
 use datacake_crdt::HLCTimestamp;
 use futures_lite::AsyncWriteExt;
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
+
 pub use runtime::try_init;
+
 use crate::Metadata;
 use crate::metadata::write_metadata_offsets_aio;
 
 pub(crate) const BUFFER_SIZE: usize = 512 << 10;
+
+pub(super) fn new_buffer() -> Box<[u8]> {
+    let mut buf = vec![];
+    buf.resize(BUFFER_SIZE, 0);
+    buf.into_boxed_slice()
+}
 
 pub struct AioWriter {
     inner: DmaStreamWriter,
@@ -103,4 +111,15 @@ impl AioWriter {
 }
 
 
-
+#[cfg(test)]
+#[cfg_attr(test, macro_export)]
+macro_rules! run_aio {
+    ($fut:expr, $name:expr) => {{
+        glommio::LocalExecutorBuilder::default()
+            .name($name)
+            .spawn($fut)
+            .expect("failed to spawn local executor")
+            .join()
+            .expect("join runtime.")
+    }};
+}

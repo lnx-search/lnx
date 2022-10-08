@@ -167,25 +167,14 @@ fn retain_excess(
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
-    use std::path::Path;
     use datacake_crdt::{get_unix_timestamp_ms, HLCTimestamp};
     use glommio::ByteSliceMutExt;
     use glommio::io::{DmaFile, DmaStreamReaderBuilder};
     use crate::aio::BUFFER_SIZE;
+    use crate::run_aio;
     use super::*;
 
     static BUFFER_SAMPLE: &[u8] = b"Hello, world!";
-
-    macro_rules! run {
-        ($fut:expr, $name:expr) => {{
-            glommio::LocalExecutorBuilder::default()
-                .name($name)
-                .spawn($fut)
-                .expect("failed to spawn local executor")
-                .join()
-                .expect("join runtime.")
-        }};
-    }
 
     async fn get_temp_file(name: &str) -> io::Result<DmaFile> {
         let fp = temp_dir().join(name);
@@ -234,7 +223,7 @@ mod tests {
             Ok::<_, io::Error>(())
         };
 
-        run!(fut, "ensure-reader-start")
+        run_aio!(fut, "ensure-reader-start")
     }
 
     #[test]
@@ -258,7 +247,7 @@ mod tests {
             Ok::<_, io::Error>(())
         };
 
-        run!(fut, "test-read-bytes")
+        run_aio!(fut, "test-read-bytes")
     }
 
     #[test]
@@ -267,17 +256,14 @@ mod tests {
             let fp = temp_dir().join("copy-data-writer");
             let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
-            println!("gfoo");
             let mut writer = AioWriter::create(
                 &fp,
                 0,
                 "test-index".to_string(),
                 segment_id
             ).await?;
-            println!("gfoo");
 
             let file = get_temp_file("copy-data.txt").await?;
-            println!("ki");
             let mut reader = DmaStreamReaderBuilder::new(file).build();
 
             let mut buffer = Box::new([0; BUFFER_SIZE]);
@@ -301,6 +287,6 @@ mod tests {
             Ok::<_, io::Error>(())
         };
 
-        run!(fut, "test-copy-data")
+        run_aio!(fut, "test-copy-data")
     }
 }
