@@ -270,7 +270,7 @@ mod tests {
                 BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                     .await?;
 
-            exporter.write_raw(&sample_file, b"Hello, World!").await?;
+            exporter.write_raw(&sample_file, b"Hello, World!".to_vec()).await?;
             exporter.finalise().await?;
 
             history.push(segment_id);
@@ -411,19 +411,19 @@ mod tests {
 
         if let Some(meta) = meta {
             exporter
-                .write_raw(Path::new(META_FILE), &meta.to_json().unwrap())
+                .write_raw(Path::new(META_FILE), meta.to_json().unwrap())
                 .await?;
         }
 
         if let Some(managed) = managed {
             exporter
-                .write_raw(Path::new(MANAGED_FILE), &managed.to_json().unwrap())
+                .write_raw(Path::new(MANAGED_FILE), managed.to_json().unwrap())
                 .await?;
         }
 
         if let Some(deletes) = deletes {
             let buf = deletes.to_compressed_bytes().await?;
-            exporter.write_raw(Path::new(DELETES_FILE), &buf).await?;
+            exporter.write_raw(Path::new(DELETES_FILE), buf).await?;
         }
 
         exporter.finalise().await?;

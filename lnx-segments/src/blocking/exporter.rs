@@ -67,9 +67,9 @@ impl BlockingExporter {
     ///
     /// Unlike the `write_file` method, this method takes a raw buffer which gets
     /// written out instead.
-    pub async fn write_raw(&mut self, path: &Path, buf: &[u8]) -> io::Result<()> {
+    pub async fn write_raw(&mut self, path: &Path, buf: Vec<u8>) -> io::Result<()> {
         let start = self.writer.current_pos();
-        self.writer.write_all(buf).await?;
+        self.writer.write_all(&buf).await?;
         let end = self.writer.current_pos();
 
         self.writer.add_file(path, start..end);
