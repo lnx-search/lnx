@@ -9,6 +9,8 @@ mod metadata;
 mod selector;
 
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
+use crate::deletes::Deletes;
+use crate::meta_merger::{ManagedMeta, MetaFile};
 
 #[cfg(not(target_os = "linux"))]
 pub type Exporter = blocking::exporter::BlockingExporter;
@@ -16,7 +18,7 @@ pub type Exporter = blocking::exporter::BlockingExporter;
 pub type Combiner = blocking::combiner::BlockingCombiner;
 
 #[cfg(target_os = "linux")]
-pub type Exporter = blocking::exporter::BlockingExporter;
+pub type Exporter = aio::exporter::AioExporter;
 #[cfg(target_os = "linux")]
 pub type Combiner = aio::combiner::AioCombiner;
 
