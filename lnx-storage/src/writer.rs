@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::fs;
 
 use parking_lot::RwLock;
 use tantivy::directory::error::{
