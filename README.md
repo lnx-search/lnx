@@ -67,3 +67,27 @@ As much as lnx provides a wide range of features, it can not do it all being suc
 - lnx is not distributed (yet) so this really does just scale vertically.
 - Simple but not too simple, lnx can't offer the same level of ease of use compared to MeiliSearch due to its schema-full nature and wide range of tuning options. With more tuning comes more settings, unfortunately.
 - Metrics (yet)
+
+### Local Development
+
+Setup and usage is overall, as simple as cloning the repo and running `cargo build` or `cargo run` but on linux there
+is an additional caveat due to the DIRECT_IO implementation requirements:
+
+lnx requires a kernel with a recent enough io_uring support, at least current enough to run discovery probes. The minimum version at this time is 5.8.
+
+Please also note lnx requires at least 512 KiB of locked memory for io_uring to work. You can increase the memlock resource limit (rlimit) as follows:
+```
+$ vi /etc/security/limits.conf
+*    hard    memlock        512
+*    soft    memlock        512
+```
+
+> Please note that 512 KiB is the minimum needed to spawn a single executor. 
+> Spawning multiple executors (multi-core runtime) may require you to raise the limit accordingly.
+
+To make the new limits effective, you need to log in to the machine again. You can verify that the limits are updated by running the following:
+
+```shell
+$ ulimit -l
+512
+```

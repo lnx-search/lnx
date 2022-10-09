@@ -11,6 +11,11 @@ pub struct MetaFile {
 }
 
 impl MetaFile {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.segments.is_empty()
+    }
+
     /// Loads a given metafile from a JSON buffer.
     pub fn from_json(buf: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(buf)
@@ -43,6 +48,11 @@ impl MetaFile {
 pub struct ManagedMeta(pub(crate) Vec<String>);
 
 impl ManagedMeta {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Loads a given metafile from a JSON buffer.
     pub fn from_json(buf: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(buf)

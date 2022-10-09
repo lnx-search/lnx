@@ -1,48 +1,156 @@
-use std::io::{ErrorKind, SeekFrom};
+use std::io;
+use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::{cmp, io};
 
 use datacake_crdt::HLCTimestamp;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use glommio::io::DmaStreamReader;
+use tokio::sync::oneshot;
 
-use super::utils::read_range;
-use crate::blocking::BlockingWriter;
+use crate::aio::runtime::{AioRuntime, AioTask};
+use crate::aio::AioWriter;
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
 use crate::{SpecialFile, DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES};
 
-/// Combines two or more existing segments into a single, larger segment.
-///
-/// This is the blocking variant of the combiners which wraps the `tokio::fs` system
-/// which internally wraps the `std::fs` system in a threadpool.
-///
-/// This system is not the most efficient approach, it is designed for compatibility with
-/// all operating systems rather than for performance.
-pub struct BlockingCombiner {
-    writer: BlockingWriter,
+pub struct AioCombiner {
+    tx: flume::Sender<Op>,
 }
 
-impl BlockingCombiner {
-    /// Create a new [BlockingCombiner] instance writing to the provided path.
+impl AioCombiner {
+    /// Create a new [AioCombiner] instance writing to the provided path.
     pub async fn create(
+        rt: &AioRuntime,
         path: &Path,
         index: String,
         segment_id: HLCTimestamp,
     ) -> io::Result<Self> {
-        let writer = BlockingWriter::create(path, 0, index, segment_id).await?;
+        let (tx, rx) = flume::bounded(1);
+        let setup = AioCombinerActorSetup {
+            path: path.to_path_buf(),
+            index,
+            segment_id,
+            rx,
+        };
 
-        Ok(Self { writer })
+        let task = AioTask::from(setup);
+
+        rt.spawn_actor(task).await.map_err(|_| {
+            io::Error::new(
+                ErrorKind::Other,
+                "The IO scheduler and runtime is not currently running.",
+            )
+        })?;
+
+        Ok(Self { tx })
     }
 
-    /// Combines a segment into the new segment.
-    ///
-    /// This can be called multiple times, combining several smaller segments into a single,
-    /// larger segment.
+    /// Ingests a segment file and writes it to the new segment.
     pub async fn combine_segment(&mut self, segment_file: &Path) -> io::Result<()> {
-        let mut segment = File::open(segment_file).await?;
-        let metadata = super::utils::read_metadata(&mut segment).await?;
+        let (tx, rx) = oneshot::channel();
+
+        self.tx
+            .send_async(Op::Combine {
+                tx,
+                fp: segment_file.to_path_buf(),
+            })
+            .await
+            .map_err(|_| {
+                io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+            })?;
+
+        rx.await
+            .expect("Background actor died while handling task.")
+    }
+
+    /// Finalises any remaining buffers so that file is safely persisted to disk.
+    pub async fn finalise(self) -> io::Result<PathBuf> {
+        let (tx, rx) = oneshot::channel();
+
+        self.tx.send_async(Op::Finalise { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
+
+        rx.await
+            .expect("Background actor died while handling task.")
+    }
+
+    /// Abort the segment creation.
+    pub async fn abort(self) -> io::Result<()> {
+        let (tx, rx) = oneshot::channel();
+
+        self.tx.send_async(Op::Abort { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
+
+        rx.await
+            .expect("Background actor died while handling task.")
+    }
+}
+
+pub(super) struct AioCombinerActorSetup {
+    path: PathBuf,
+    index: String,
+    segment_id: HLCTimestamp,
+    rx: flume::Receiver<Op>,
+}
+
+impl AioCombinerActorSetup {
+    pub(super) async fn run_actor(self) -> io::Result<()> {
+        let writer =
+            AioWriter::create(&self.path, 0, self.index, self.segment_id).await?;
+
+        let actor = AioCombinerActor {
+            rx: self.rx,
+            writer,
+        };
+
+        actor.run_actor().await;
+
+        Ok(())
+    }
+}
+
+pub struct AioCombinerActor {
+    rx: flume::Receiver<Op>,
+    writer: AioWriter,
+}
+
+impl AioCombinerActor {
+    pub(crate) async fn run_actor(mut self) {
+        while let Ok(op) = self.rx.recv_async().await {
+            match op {
+                Op::Abort { tx } => {
+                    let res = self.abort().await;
+                    let _ = tx.send(res);
+                    break;
+                },
+                Op::Finalise { tx } => {
+                    let res = self.finalise().await;
+                    let _ = tx.send(res);
+                    break;
+                },
+                Op::Combine { tx, fp } => {
+                    let res = self.combine_segment(&fp).await;
+                    let _ = tx.send(res);
+                },
+            }
+        }
+    }
+
+    /// Ingests a segment file and writes it to the new segment.
+    pub async fn combine_segment(&mut self, segment_file: &Path) -> io::Result<()> {
+        let segment = glommio::io::ImmutableFileBuilder::new(segment_file)
+            .build_existing()
+            .await?;
+
+        let metadata = super::utils::read_metadata(&segment).await?;
+
+        let mut segment_reader = segment
+            .stream_reader()
+            .with_read_ahead(10)
+            .with_buffer_size(crate::BUFFER_SIZE)
+            .build();
 
         let mut files = metadata
             .files()
@@ -53,27 +161,39 @@ impl BlockingCombiner {
         // We want to sort them by starting index so we minimise seeking overhead.
         files.sort_by_key(|v| v.0.start);
 
-        // Set the seek position back to the end of the metadata.
-        let mut cursor = 0;
-        segment.seek(SeekFrom::Start(cursor)).await?;
-
+        let mut buffer = crate::new_buffer();
+        let mut buffer_offset = 0;
         for (range, path) in files {
-            let start = self.writer.current_pos();
-
-            if range.start != cursor {
-                segment.seek(SeekFrom::Start(range.start)).await?;
-            }
-
-            cursor += range.end - range.start;
+            super::utils::ensure_reader_at_range_start(
+                &mut segment_reader,
+                &mut buffer[..],
+                &mut buffer_offset,
+                range.start,
+            )
+            .await?;
 
             if SPECIAL_FILES.contains(&path.as_str()) {
-                self.merge_special_files(&mut segment, range, &path).await?;
+                self.merge_special_files(
+                    &mut segment_reader,
+                    &mut buffer[..],
+                    &mut buffer_offset,
+                    range,
+                    &path,
+                )
+                .await?;
                 continue;
             }
 
-            self.write_file(&mut segment, range).await?;
-
+            let start = self.writer.current_pos();
+            self.write_file(
+                &mut segment_reader,
+                &mut buffer[..],
+                &mut buffer_offset,
+                range,
+            )
+            .await?;
             let end = self.writer.current_pos();
+
             self.writer.add_file(&path, start..end);
         }
 
@@ -97,82 +217,87 @@ impl BlockingCombiner {
         self.writer.abort().await
     }
 
+    /// Copies the given range of bytes from the reader to the writer.
     async fn write_file(
         &mut self,
-        reader: &mut File,
+        reader: &mut DmaStreamReader,
+        buffer: &mut [u8],
+        buffer_offset: &mut usize,
         range: Range<u64>,
     ) -> io::Result<()> {
-        let len = range.end - range.start;
-        let mut bytes_written = 0;
-        let mut buffer = crate::new_buffer();
-        while bytes_written < len {
-            let n = reader.read(&mut buffer[..]).await?;
-
-            if n == 0 {
-                break;
-            }
-
-            let n = cmp::min(len - bytes_written, n as u64) as usize;
-            self.writer.write_all(&buffer[..n]).await?;
-
-            bytes_written += n as u64;
-        }
-
-        // Reset the cursor incase we read over the number of bytes we wanted.
-        reader.seek(SeekFrom::Start(range.end)).await?;
+        let len = (range.end - range.start) as usize;
+        super::utils::copy_data(&mut self.writer, reader, buffer, buffer_offset, len)
+            .await?;
 
         Ok(())
     }
 
+    /// Reads the full range of data into memory to handle the file.
+    ///
+    /// Special files are typically files which are small but need to be merged in a specific way
+    /// as they will collide due to having the same name in each segment.
     async fn merge_special_files(
         &mut self,
-        reader: &mut File,
+        reader: &mut DmaStreamReader,
+        buffer: &mut [u8],
+        buffer_offset: &mut usize,
         range: Range<u64>,
         path: &str,
     ) -> io::Result<()> {
-        let data = read_range(reader, range.clone()).await?;
+        let n_bytes = (range.end - range.start) as usize;
+        let buf =
+            super::utils::read_n_bytes(reader, buffer, buffer_offset, n_bytes).await?;
 
         match path {
             p if p == META_FILE => {
-                let meta = MetaFile::from_json(&data)
+                let meta = MetaFile::from_json(&buf)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
-                self.writer.write_special_file(SpecialFile::Meta(meta));
+                self.writer.write_special_file(SpecialFile::Meta(meta))
             },
             p if p == MANAGED_FILE => {
-                let managed = ManagedMeta::from_json(&data)
+                let managed = ManagedMeta::from_json(&buf)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
                 self.writer
-                    .write_special_file(SpecialFile::Managed(managed));
+                    .write_special_file(SpecialFile::Managed(managed))
             },
             p if p == DELETES_FILE => {
-                let deletes = Deletes::from_compressed_bytes(data).await?;
+                let deletes = Deletes::from_compressed_bytes(buf).await?;
 
                 self.writer
-                    .write_special_file(SpecialFile::Deletes(deletes));
+                    .write_special_file(SpecialFile::Deletes(deletes))
             },
             _ => return Ok(()),
         };
-
-        // Reset the cursor incase we read over the number of bytes we wanted.
-        reader.seek(SeekFrom::Start(range.end)).await?;
 
         Ok(())
     }
 }
 
+pub enum Op {
+    Combine {
+        tx: oneshot::Sender<io::Result<()>>,
+        fp: PathBuf,
+    },
+    Abort {
+        tx: oneshot::Sender<io::Result<()>>,
+    },
+    Finalise {
+        tx: oneshot::Sender<io::Result<PathBuf>>,
+    },
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use datacake_crdt::get_unix_timestamp_ms;
+    use tokio::fs::File;
 
     use super::*;
-    use crate::blocking::exporter::BlockingExporter;
-    use crate::blocking::utils::read_metadata;
+    use crate::aio::exporter::AioExporter;
 
     async fn create_test_segments(
+        rt: &AioRuntime,
         num: usize,
         clock: &mut HLCTimestamp,
     ) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>, Vec<HLCTimestamp>)> {
@@ -187,7 +312,7 @@ mod tests {
             let path = crate::get_random_tmp_file();
 
             let mut exporter =
-                BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+                AioExporter::create(rt, &path, 0, "test-index".to_string(), segment_id)
                     .await?;
 
             exporter
@@ -205,15 +330,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_single_merge_combiner() -> io::Result<()> {
+        let rt = crate::aio::create_runtime(1)?;
+
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
         let segment_id = clock.send().unwrap();
 
         let (segments, expected_files, history) =
-            create_test_segments(2, &mut clock).await?;
+            create_test_segments(&rt, 2, &mut clock).await?;
 
         let combiner_file = crate::get_random_tmp_file();
-
-        let mut combiner = BlockingCombiner::create(
+        let mut combiner = AioCombiner::create(
+            &rt,
             &combiner_file,
             "test-index".to_string(),
             segment_id,
@@ -226,8 +353,7 @@ mod tests {
 
         let file = combiner.finalise().await?;
         let mut file = File::open(file).await?;
-
-        let metadata = read_metadata(&mut file).await?;
+        let metadata = crate::blocking::utils::read_metadata(&mut file).await?;
 
         assert_eq!(
             metadata.index(),
@@ -261,15 +387,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_merge_combiner() -> io::Result<()> {
+        let rt = crate::aio::create_runtime(1)?;
+
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
         let segment_id = clock.send().unwrap();
 
         let (segments, expected_files, history) =
-            create_test_segments(5, &mut clock).await?;
+            create_test_segments(&rt, 5, &mut clock).await?;
 
         let combiner_file = crate::get_random_tmp_file();
-
-        let mut combiner = BlockingCombiner::create(
+        let mut combiner = AioCombiner::create(
+            &rt,
             &combiner_file,
             "test-index".to_string(),
             segment_id,
@@ -282,8 +410,7 @@ mod tests {
 
         let file = combiner.finalise().await?;
         let mut file = File::open(file).await?;
-
-        let metadata = read_metadata(&mut file).await?;
+        let metadata = crate::blocking::utils::read_metadata(&mut file).await?;
 
         assert_eq!(
             metadata.index(),
@@ -316,6 +443,7 @@ mod tests {
     }
 
     async fn create_segment_with(
+        rt: &AioRuntime,
         segment_id: HLCTimestamp,
         meta: Option<MetaFile>,
         managed: Option<ManagedMeta>,
@@ -323,7 +451,7 @@ mod tests {
     ) -> io::Result<PathBuf> {
         let path = crate::get_random_tmp_file();
         let mut exporter =
-            BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
+            AioExporter::create(rt, &path, 0, "test-index".to_string(), segment_id)
                 .await?;
 
         if let Some(meta) = meta {
@@ -349,6 +477,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_meta_combiner() -> io::Result<()> {
+        let rt = crate::aio::create_runtime(1)?;
+
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
         let meta_1 = MetaFile {
@@ -364,13 +494,15 @@ mod tests {
         };
 
         let segment_1 =
-            create_segment_with(clock.send().unwrap(), Some(meta_1), None, None).await?;
+            create_segment_with(&rt, clock.send().unwrap(), Some(meta_1), None, None)
+                .await?;
         let segment_2 =
-            create_segment_with(clock.send().unwrap(), Some(meta_2), None, None).await?;
+            create_segment_with(&rt, clock.send().unwrap(), Some(meta_2), None, None)
+                .await?;
 
         let path = crate::get_random_tmp_file();
-
-        let mut combiner = BlockingCombiner::create(
+        let mut combiner = AioCombiner::create(
+            &rt,
             &path,
             "test-index".to_string(),
             clock.send().unwrap(),
@@ -381,8 +513,7 @@ mod tests {
 
         let file = combiner.finalise().await?;
         let mut file = File::open(file).await?;
-
-        let metadata = read_metadata(&mut file).await?;
+        let metadata = crate::blocking::utils::read_metadata(&mut file).await?;
 
         assert_eq!(
             metadata.index(),
@@ -390,12 +521,17 @@ mod tests {
             "Expected metadata index to be the same as what is provided to ."
         );
 
-        let ranger = metadata
+        let range = metadata
             .get_file_bounds(Path::new(META_FILE))
             .expect("Expected meta file to exist within new segment.");
 
-        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
-        let meta = MetaFile::from_json(&file).expect("Meta file should not be corrupt.");
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await?;
+
+        let meta = MetaFile::from_json(&data).expect("Meta file should not be corrupt.");
 
         assert_eq!(
             meta.opstamp, 4,
@@ -415,20 +551,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_managed_combiner() -> io::Result<()> {
+        let rt = crate::aio::create_runtime(1)?;
+
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
         let managed_1 = ManagedMeta(vec!["node-1-field".to_string()]);
         let managed_2 = ManagedMeta(vec!["node-2-field".to_string()]);
 
         let segment_1 =
-            create_segment_with(clock.send().unwrap(), None, Some(managed_1), None)
+            create_segment_with(&rt, clock.send().unwrap(), None, Some(managed_1), None)
                 .await?;
         let segment_2 =
-            create_segment_with(clock.send().unwrap(), None, Some(managed_2), None)
+            create_segment_with(&rt, clock.send().unwrap(), None, Some(managed_2), None)
                 .await?;
 
         let path = crate::get_random_tmp_file();
-        let mut combiner = BlockingCombiner::create(
+        let mut combiner = AioCombiner::create(
+            &rt,
             &path,
             "test-index".to_string(),
             clock.send().unwrap(),
@@ -439,8 +578,7 @@ mod tests {
 
         let file = combiner.finalise().await?;
         let mut file = File::open(file).await?;
-
-        let metadata = read_metadata(&mut file).await?;
+        let metadata = crate::blocking::utils::read_metadata(&mut file).await?;
 
         assert_eq!(
             metadata.index(),
@@ -448,13 +586,18 @@ mod tests {
             "Expected metadata index to be the same as what is provided to ."
         );
 
-        let ranger = metadata
+        let range = metadata
             .get_file_bounds(Path::new(MANAGED_FILE))
             .expect("Expected managed file to exist within new segment.");
 
-        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await?;
+
         let managed =
-            ManagedMeta::from_json(&file).expect("Managed file should not be corrupt.");
+            ManagedMeta::from_json(&data).expect("Managed file should not be corrupt.");
 
         assert_eq!(
             managed.0,
@@ -467,34 +610,49 @@ mod tests {
 
     #[tokio::test]
     async fn test_deletes_combiner() -> io::Result<()> {
+        let rt = crate::aio::create_runtime(1)?;
+
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
         let deletes_1 = Deletes(vec!["node-1-field".to_string()]);
         let deletes_2 = Deletes(vec!["node-2-field".to_string()]);
 
         let segment_1 =
-            create_segment_with(clock.send().unwrap(), None, None, Some(deletes_1))
-                .await?;
+            create_segment_with(&rt, clock.send().unwrap(), None, None, Some(deletes_1))
+                .await
+                .expect("created segment 1");
         let segment_2 =
-            create_segment_with(clock.send().unwrap(), None, None, Some(deletes_2))
-                .await?;
+            create_segment_with(&rt, clock.send().unwrap(), None, None, Some(deletes_2))
+                .await
+                .expect("created segment 2");
+        println!("Copying files");
 
         let path = crate::get_random_tmp_file();
-
-        let mut combiner = BlockingCombiner::create(
+        let mut combiner = AioCombiner::create(
+            &rt,
             &path,
             "test-index".to_string(),
             clock.send().unwrap(),
         )
-        .await?;
+        .await
+        .expect("created combiner");
 
-        combiner.combine_segment(&segment_1).await?;
-        combiner.combine_segment(&segment_2).await?;
+        println!("Copying files");
+        combiner
+            .combine_segment(&segment_1)
+            .await
+            .expect("combine segment 1");
+        combiner
+            .combine_segment(&segment_2)
+            .await
+            .expect("combine segment 2");
 
-        let file = combiner.finalise().await?;
+        println!("Finalising file");
+        let file = combiner.finalise().await.expect("finalise writer.");
         let mut file = File::open(file).await?;
-
-        let metadata = read_metadata(&mut file).await?;
+        let metadata = crate::blocking::utils::read_metadata(&mut file)
+            .await
+            .expect("read metadata");
 
         assert_eq!(
             metadata.index(),
@@ -502,13 +660,18 @@ mod tests {
             "Expected metadata index to be the same as what is provided to ."
         );
 
-        let ranger = metadata
+        let range = metadata
             .get_file_bounds(Path::new(DELETES_FILE))
             .expect("Expected managed file to exist within new segment.");
 
-        let file = read_range(&mut file, ranger.start as u64..ranger.end as u64).await?;
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await
+        .expect("get range");
 
-        let managed = Deletes::from_compressed_bytes(file)
+        let managed = Deletes::from_compressed_bytes(data)
             .await
             .expect("Deletes file should not be corrupt.");
 

@@ -40,7 +40,8 @@ impl ReadOnlyDirectory {
 
         let file = unsafe { memmap2::Mmap::map(&file)? };
 
-        let offset_slice = &file[..METADATA_HEADER_SIZE as usize];
+        let slice_at = file.len() - METADATA_HEADER_SIZE;
+        let offset_slice = &file[slice_at..];
         let (start, len) = get_metadata_offsets(offset_slice)
             .map_err(|_| crate::StorageError::Corrupted)?;
 

@@ -1,12 +1,12 @@
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use datacake_crdt::HLCTimestamp;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, BufReader};
 
 use crate::blocking::BlockingWriter;
-use crate::{IGNORED_FILES, IGNORED_PREFIX};
+use crate::{SpecialFile, IGNORED_FILES, IGNORED_PREFIX, SPECIAL_FILES};
 
 /// A directory exporter built around traditional blocking IO wrapped by tokio.
 ///
@@ -33,6 +33,11 @@ impl BlockingExporter {
     /// the new segment.
     pub async fn write_file(&mut self, path: &Path) -> io::Result<()> {
         let path_str = path.to_string_lossy();
+
+        debug_assert!(
+            !SPECIAL_FILES.contains(&path_str.as_ref()),
+            "Special files should not be written as a file.",
+        );
 
         if path_str.starts_with(IGNORED_PREFIX)
             || IGNORED_FILES.contains(&path_str.as_ref())
@@ -67,9 +72,9 @@ impl BlockingExporter {
     ///
     /// Unlike the `write_file` method, this method takes a raw buffer which gets
     /// written out instead.
-    pub async fn write_raw(&mut self, path: &Path, buf: &[u8]) -> io::Result<()> {
+    pub async fn write_raw(&mut self, path: &Path, buf: Vec<u8>) -> io::Result<()> {
         let start = self.writer.current_pos();
-        self.writer.write_all(buf).await?;
+        self.writer.write_all(&buf).await?;
         let end = self.writer.current_pos();
 
         self.writer.add_file(path, start..end);
@@ -77,8 +82,16 @@ impl BlockingExporter {
         Ok(())
     }
 
+    /// Writes a special file to the underlying writer.
+    pub async fn write_special_file(&mut self, file: SpecialFile) -> io::Result<()> {
+        self.writer.write_special_file(file);
+
+        // Must be the same as the aio version.
+        Ok(())
+    }
+
     /// Finalises any remaining buffers so that file is safely persisted to disk.
-    pub async fn finalise(self) -> io::Result<File> {
+    pub async fn finalise(self) -> io::Result<PathBuf> {
         self.writer.finalise().await
     }
 
@@ -90,7 +103,6 @@ impl BlockingExporter {
 
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
     use std::io::SeekFrom;
 
     use datacake_crdt::get_unix_timestamp_ms;
@@ -99,20 +111,19 @@ mod tests {
 
     use super::*;
     use crate::blocking::utils::read_metadata;
-    use crate::METADATA_HEADER_SIZE;
 
     #[tokio::test]
     async fn test_exporter_create_and_finalise() -> io::Result<()> {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-finalise.segment");
+        let path = crate::get_random_tmp_file();
 
         let exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                 .await?;
-        let mut file = exporter.finalise().await?;
 
-        // Read it like a new file.
-        file.seek(SeekFrom::Start(0)).await?;
+        let file = exporter.finalise().await?;
+        let mut file = File::open(file).await?;
+
         let metadata = read_metadata(&mut file).await?;
 
         assert_eq!(
@@ -136,7 +147,7 @@ mod tests {
     #[tokio::test]
     async fn test_exporter_create_and_abort() -> io::Result<()> {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-abort.segment");
+        let path = crate::get_random_tmp_file();
 
         let exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
@@ -153,17 +164,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_exporter() -> io::Result<()> {
-        let sample_file = temp_dir().join("sample.txt");
+        let sample_file = crate::get_random_tmp_file();
         fs::write(&sample_file, b"Hello, world!").await?;
 
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-test.segment");
+        let path = crate::get_random_tmp_file();
 
         let mut exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                 .await?;
         exporter.write_file(&sample_file).await?;
-        let mut file = exporter.finalise().await?;
+
+        let file = exporter.finalise().await?;
+        let mut file = File::open(file).await?;
 
         // Read it like a new file.
         file.seek(SeekFrom::Start(0)).await?;
@@ -176,7 +189,7 @@ mod tests {
         );
         assert_eq!(
             metadata.files().get(sample_file.to_string_lossy().as_ref()),
-            Some(&(METADATA_HEADER_SIZE as u64..METADATA_HEADER_SIZE as u64 + 13)),
+            Some(&(0..13)),
             "Expected metadata files index to be empty.",
         );
         assert_eq!(
