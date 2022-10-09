@@ -51,5 +51,5 @@ jobs:
     - name: Setup Env
       run: sudo -E bash -c "ulimit -Sl 65535 && ulimit -Hl 65535 && ulimit -n 65535"
 
-    - name: Run tests
-      run: cargo +stable nextest run --verbose --workspace
+    - name: Run Build
+      run: cargo +stable build --verbose
