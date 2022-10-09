@@ -1,15 +1,12 @@
 use std::io;
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Duration;
-use glommio::{LocalExecutorPoolBuilder, PoolPlacement, PoolThreadHandles};
-use once_cell::sync::OnceCell;
-use crate::aio::combiner::{AioCombinerActor, AioCombinerActorSetup};
+use glommio::{LocalExecutorPoolBuilder, PoolPlacement};
 
-static RUNTIME: OnceCell<AioRuntime> = OnceCell::new();
+use crate::aio::combiner::AioCombinerActorSetup;
+use crate::aio::exporter::AioExporterActorSetup;
 
-pub(super) async fn spawn_actor(task: AioTask) -> Result<(), DeadRuntime>{
-    let rt = RUNTIME.get().ok_or(DeadRuntime)?;
-    rt.tasks_tx.send_async(task).await.map_err(|_| DeadRuntime)
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("The runtime is not initialised or running.")]
@@ -19,26 +16,24 @@ pub struct DeadRuntime;
 ///
 /// If the runtime has already been initialised it will not replace the existing
 /// runtime.
-pub fn try_init(num_threads: usize) -> glommio::Result<(), ()> {
+pub fn create_runtime(num_threads: usize) -> glommio::Result<AioRuntime, ()> {
     let (tasks_tx, tasks_rx) = flume::unbounded();
 
-    let pool = LocalExecutorPoolBuilder::new(PoolPlacement::MaxPack(num_threads, None))
+    LocalExecutorPoolBuilder::new(PoolPlacement::MaxPack(num_threads, None))
         .spin_before_park(Duration::from_millis(10))
         .on_all_shards(move || run_tasks(tasks_rx))?;
 
-    let rt = AioRuntime {
-        pool,
+    let rt = AioRuntimeInner {
         tasks_tx,
     };
 
-    let _ = RUNTIME.set(rt);
-
-    Ok(())
+    Ok(AioRuntime(Arc::new(rt)))
 }
 
 
 pub(super) enum AioTask {
     Combiner(AioCombinerActorSetup),
+    Exporter(AioExporterActorSetup),
 }
 
 impl From<AioCombinerActorSetup> for AioTask {
@@ -47,18 +42,41 @@ impl From<AioCombinerActorSetup> for AioTask {
     }
 }
 
+impl From<AioExporterActorSetup> for AioTask {
+    fn from(v: AioExporterActorSetup) -> Self {
+        Self::Exporter(v)
+    }
+}
+
 impl AioTask {
     async fn run_actor(self) -> io::Result<()> {
         match self {
             Self::Combiner(inner) => inner.run_actor().await,
+            Self::Exporter(inner) => inner.run_actor().await,
         }
     }
 }
 
 
-struct AioRuntime {
-    pool: PoolThreadHandles<()>,
+#[derive(Clone)]
+pub struct AioRuntime(Arc<AioRuntimeInner>);
+
+impl Deref for AioRuntime {
+    type Target = AioRuntimeInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct AioRuntimeInner {
     tasks_tx: flume::Sender<AioTask>,
+}
+
+impl AioRuntimeInner {
+    pub(super) async fn spawn_actor(&self, task: AioTask) -> Result<(), DeadRuntime>{
+        self.tasks_tx.send_async(task).await.map_err(|_| DeadRuntime)
+    }
 }
 
 async fn run_tasks(tasks: flume::Receiver<AioTask>) {
