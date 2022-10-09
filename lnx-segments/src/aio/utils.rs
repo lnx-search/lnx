@@ -3,7 +3,6 @@ use std::io::ErrorKind;
 use futures_lite::AsyncReadExt;
 use glommio::io::{DmaStreamReader, ImmutableFile};
 
-
 use crate::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 use crate::aio::AioWriter;
 
@@ -11,27 +10,32 @@ pub(crate) async fn read_metadata(
     file: &ImmutableFile,
 ) -> io::Result<Metadata> {
     let file_size = file.file_size();
+
+    if file_size < METADATA_HEADER_SIZE as u64 {
+        return Err(io::Error::new(ErrorKind::InvalidData, "File size does not hold the minimum required data."));
+    }
+
     let buf = file.read_at(file_size - METADATA_HEADER_SIZE as u64, METADATA_HEADER_SIZE)
         .await?;
 
-    let (mut start, len) = get_metadata_offsets(&buf).map_err(|_| {
+    let (start, len) = get_metadata_offsets(&buf).map_err(|_| {
         io::Error::new(ErrorKind::InvalidData, "Unable to read index metadata.")
     })?;
 
-    let mut len = len as usize;
-    let mut buffer = vec![];
-    while buffer.len() < len as usize {
-        let buf = file.read_at(start, len).await?;
-
-        if buf.is_empty() {
-            break;
-        }
-
-        buffer.extend_from_slice(&buf);
-        start += buf.len() as u64;
-        len -= cmp::min(buf.len(), len);
+    if file_size <= start || len > file_size {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "Apparent metadata positions do not align with the file itself. \
+                file_size={}, metadata_start={}, len={}",
+                file_size,
+                start,
+                len,
+            )
+        ));
     }
 
+    let buffer = file.read_at(start, len as usize).await?;
     let metadata = Metadata::from_bytes(&buffer[..len as usize])?;
 
     Ok(metadata)
@@ -166,18 +170,16 @@ fn retain_excess(
 
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
     use datacake_crdt::{get_unix_timestamp_ms, HLCTimestamp};
     use glommio::ByteSliceMutExt;
-    use glommio::io::{DmaFile, DmaStreamReaderBuilder};
-    use crate::aio::BUFFER_SIZE;
+    use glommio::io::{DmaFile, DmaStreamReaderBuilder, ImmutableFileBuilder};
     use crate::run_aio;
     use super::*;
 
     static BUFFER_SAMPLE: &[u8] = b"Hello, world!";
 
-    async fn get_temp_file(name: &str) -> io::Result<DmaFile> {
-        let fp = temp_dir().join(name);
+    async fn get_temp_file() -> io::Result<DmaFile> {
+        let fp = crate::get_random_tmp_file();
 
         let file = glommio::io::OpenOptions::new()
             .create(true)
@@ -196,14 +198,44 @@ mod tests {
     }
 
     #[test]
+    fn test_metadata_reader() -> io::Result<()> {
+        let fp = crate::get_random_tmp_file();
+        let ts = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
+        let metadata = Metadata::new("test-index".to_string(), ts);
+        let mut raw_data = metadata.to_bytes()?;
+        let len = raw_data.len();
+        raw_data.extend_from_slice(&[0; 8]);
+        raw_data.extend_from_slice(&len.to_be_bytes());
+
+        std::fs::write(&fp, raw_data)?;
+
+        let fut = move || async move {
+            let file = ImmutableFileBuilder::new(fp)
+                .build_existing()
+                .await?;
+
+            let metadata = read_metadata(&file)
+                .await
+                .expect("read metadata correctly.");
+
+            assert!(metadata.files().is_empty(), "Expected metadata file to have no files linked.");
+            assert_eq!(metadata.segment_id(), ts, "Expected metadata segment ids to match.");
+
+            Ok(())
+        };
+
+        run_aio!(fut, "read-metadata")
+    }
+
+    #[test]
     fn test_ensure_reader_at_range_start() -> io::Result<()> {
         let fut = move || async move {
             const TARGET_LENGTH: u64 = 2;
 
-            let file = get_temp_file("ensure-reader-test.txt").await?;
+            let file = get_temp_file().await?;
             let mut reader = DmaStreamReaderBuilder::new(file).build();
 
-            let mut buffer = Box::new([0; BUFFER_SIZE]);
+            let mut buffer = crate::new_buffer();
             let mut buffer_offset = 0;
             ensure_reader_at_range_start(
                 &mut reader,
@@ -229,10 +261,10 @@ mod tests {
     #[test]
     fn test_read_n_bytes() -> io::Result<()> {
         let fut = move || async move {
-            let file = get_temp_file("read-n-bytes.txt").await?;
+            let file = get_temp_file().await?;
             let mut reader = DmaStreamReaderBuilder::new(file).build();
 
-            let mut buffer = Box::new([0; BUFFER_SIZE]);
+            let mut buffer = crate::new_buffer();
             let mut buffer_offset = 0;
 
             let buff = read_n_bytes(
@@ -253,7 +285,7 @@ mod tests {
     #[test]
     fn test_copy_data() -> io::Result<()> {
         let fut = move || async move {
-            let fp = temp_dir().join("copy-data-writer");
+            let fp = crate::get_random_tmp_file();
             let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
             let mut writer = AioWriter::create(
@@ -263,10 +295,10 @@ mod tests {
                 segment_id
             ).await?;
 
-            let file = get_temp_file("copy-data.txt").await?;
+            let file = get_temp_file().await?;
             let mut reader = DmaStreamReaderBuilder::new(file).build();
 
-            let mut buffer = Box::new([0; BUFFER_SIZE]);
+            let mut buffer = crate::new_buffer();
             let mut buffer_offset = 0;
 
             copy_data(
