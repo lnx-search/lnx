@@ -1,8 +1,8 @@
 pub mod combiner;
 pub mod exporter;
 mod runtime;
-mod utils;
 pub mod selector;
+mod utils;
 
 use std::io;
 use std::io::ErrorKind;

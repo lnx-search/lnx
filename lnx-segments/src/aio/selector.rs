@@ -1,12 +1,12 @@
 use std::io;
 use std::path::{Path, PathBuf};
+
 use datacake_crdt::HLCTimestamp;
 use once_cell::sync::OnceCell;
 
 use crate::aio::combiner::AioCombiner;
 use crate::aio::exporter::AioExporter;
 use crate::aio::runtime::AioRuntime;
-
 use crate::blocking::combiner::BlockingCombiner;
 use crate::blocking::exporter::BlockingExporter;
 use crate::SpecialFile;
@@ -29,20 +29,19 @@ impl AutoExporter {
         let rt = match RUNTIME.get() {
             Some(rt) => rt,
             None => match crate::aio::create_runtime(calculate_io_threads()) {
-                Ok(rt) => {
-                    RUNTIME.get_or_init(|| rt)
-                },
+                Ok(rt) => RUNTIME.get_or_init(|| rt),
                 Err(_) => {
-                    let combiner = BlockingExporter::create(path, size_hint, index, segment_id)
-                        .await?;
+                    let combiner =
+                        BlockingExporter::create(path, size_hint, index, segment_id)
+                            .await?;
 
                     return Ok(Self::Blocking(Box::new(combiner)));
                 },
             },
         };
 
-        let combiner = AioExporter::create(rt,  path, size_hint, index, segment_id)
-            .await?;
+        let combiner =
+            AioExporter::create(rt, path, size_hint, index, segment_id).await?;
 
         Ok(Self::Aio(combiner))
     }
@@ -92,12 +91,10 @@ impl AutoExporter {
     }
 }
 
-
 pub enum AutoCombiner {
     Blocking(Box<BlockingCombiner>),
     Aio(AioCombiner),
 }
-
 
 impl AutoCombiner {
     /// Create a new exporter.
@@ -106,25 +103,20 @@ impl AutoCombiner {
         index: String,
         segment_id: HLCTimestamp,
     ) -> io::Result<Self> {
-
-
         let rt = match RUNTIME.get() {
             Some(rt) => rt,
             None => match crate::aio::create_runtime(calculate_io_threads()) {
-                Ok(rt) => {
-                    RUNTIME.get_or_init(|| rt)
-                },
+                Ok(rt) => RUNTIME.get_or_init(|| rt),
                 Err(_) => {
-                    let combiner = BlockingCombiner::create(path, index, segment_id)
-                        .await?;
+                    let combiner =
+                        BlockingCombiner::create(path, index, segment_id).await?;
 
                     return Ok(Self::Blocking(Box::new(combiner)));
                 },
             },
         };
 
-        let combiner = AioCombiner::create(rt, path, index, segment_id)
-            .await?;
+        let combiner = AioCombiner::create(rt, path, index, segment_id).await?;
 
         Ok(Self::Aio(combiner))
     }
@@ -154,7 +146,6 @@ impl AutoCombiner {
         }
     }
 }
-
 
 fn calculate_io_threads() -> usize {
     let cpus = num_cpus::get();
