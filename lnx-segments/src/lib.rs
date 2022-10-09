@@ -1,6 +1,7 @@
 #[cfg(target_os = "linux")]
 pub mod aio;
 
+#[cfg_attr(target_os = "linux", allow(unused))]
 mod blocking;
 
 mod deletes;

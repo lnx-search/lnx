@@ -4,9 +4,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::{fs, io};
+use std::fs;
 
-use lnx_segments::Exporter;
 use parking_lot::RwLock;
 use tantivy::directory::error::{
     DeleteError,
