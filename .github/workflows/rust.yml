@@ -10,11 +10,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-winmac:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-latest]
+        os: [macOS-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install stable
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+
+    - uses: taiki-e/install-action@nextest
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Run tests
+      run: cargo +stable nextest run --verbose --workspace
+
+  build-linux:
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
