@@ -6,7 +6,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, BufReader};
 
 use crate::blocking::BlockingWriter;
-use crate::{IGNORED_FILES, IGNORED_PREFIX, SPECIAL_FILES, SpecialFile};
+use crate::{SpecialFile, IGNORED_FILES, IGNORED_PREFIX, SPECIAL_FILES};
 
 /// A directory exporter built around traditional blocking IO wrapped by tokio.
 ///
@@ -26,9 +26,7 @@ impl BlockingExporter {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, size_hint, index, segment_id).await?;
 
-        Ok(Self {
-            writer,
-        })
+        Ok(Self { writer })
     }
 
     /// Write a new file to the exporter. The file path will be read and streamed from into

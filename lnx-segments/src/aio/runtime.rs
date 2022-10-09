@@ -2,11 +2,11 @@ use std::io;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
+
 use glommio::{LocalExecutorPoolBuilder, PoolPlacement};
 
 use crate::aio::combiner::AioCombinerActorSetup;
 use crate::aio::exporter::AioExporterActorSetup;
-
 
 #[derive(Debug, thiserror::Error)]
 #[error("The runtime is not initialised or running.")]
@@ -23,13 +23,10 @@ pub fn create_runtime(num_threads: usize) -> glommio::Result<AioRuntime, ()> {
         .spin_before_park(Duration::from_millis(10))
         .on_all_shards(move || run_tasks(tasks_rx))?;
 
-    let rt = AioRuntimeInner {
-        tasks_tx,
-    };
+    let rt = AioRuntimeInner { tasks_tx };
 
     Ok(AioRuntime(Arc::new(rt)))
 }
-
 
 pub(super) enum AioTask {
     Combiner(AioCombinerActorSetup),
@@ -57,7 +54,6 @@ impl AioTask {
     }
 }
 
-
 #[derive(Clone)]
 pub struct AioRuntime(Arc<AioRuntimeInner>);
 
@@ -74,8 +70,11 @@ pub struct AioRuntimeInner {
 }
 
 impl AioRuntimeInner {
-    pub(super) async fn spawn_actor(&self, task: AioTask) -> Result<(), DeadRuntime>{
-        self.tasks_tx.send_async(task).await.map_err(|_| DeadRuntime)
+    pub(super) async fn spawn_actor(&self, task: AioTask) -> Result<(), DeadRuntime> {
+        self.tasks_tx
+            .send_async(task)
+            .await
+            .map_err(|_| DeadRuntime)
     }
 }
 

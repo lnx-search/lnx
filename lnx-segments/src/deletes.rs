@@ -53,12 +53,10 @@ impl Deletes {
     }
 }
 
-
 fn decompress_data(buf: Vec<u8>) -> io::Result<Deletes> {
     let slice = buf.len() - mem::size_of::<u64>();
 
-    let length_bytes: [u8; mem::size_of::<u64>()] =
-        buf[slice..].try_into().unwrap();
+    let length_bytes: [u8; mem::size_of::<u64>()] = buf[slice..].try_into().unwrap();
     let length = u64::from_be_bytes(length_bytes) as usize;
 
     let buf = lz4_flex::decompress(&buf[..slice], length)
@@ -66,7 +64,6 @@ fn decompress_data(buf: Vec<u8>) -> io::Result<Deletes> {
 
     rkyv::from_bytes(&buf)
         .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))
-
 }
 
 fn compress_data(buf: Vec<u8>) -> io::Result<Vec<u8>> {

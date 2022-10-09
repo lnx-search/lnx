@@ -1,21 +1,27 @@
-use std::{cmp, io};
 use std::io::ErrorKind;
+use std::{cmp, io};
+
 use futures_lite::AsyncReadExt;
 use glommio::io::{DmaStreamReader, ImmutableFile};
 
-use crate::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 use crate::aio::AioWriter;
+use crate::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 
-pub(crate) async fn read_metadata(
-    file: &ImmutableFile,
-) -> io::Result<Metadata> {
+pub(crate) async fn read_metadata(file: &ImmutableFile) -> io::Result<Metadata> {
     let file_size = file.file_size();
 
     if file_size < METADATA_HEADER_SIZE as u64 {
-        return Err(io::Error::new(ErrorKind::InvalidData, "File size does not hold the minimum required data."));
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "File size does not hold the minimum required data.",
+        ));
     }
 
-    let buf = file.read_at(file_size - METADATA_HEADER_SIZE as u64, METADATA_HEADER_SIZE)
+    let buf = file
+        .read_at(
+            file_size - METADATA_HEADER_SIZE as u64,
+            METADATA_HEADER_SIZE,
+        )
         .await?;
 
     let (start, len) = get_metadata_offsets(&buf).map_err(|_| {
@@ -28,10 +34,8 @@ pub(crate) async fn read_metadata(
             format!(
                 "Apparent metadata positions do not align with the file itself. \
                 file_size={}, metadata_start={}, len={}",
-                file_size,
-                start,
-                len,
-            )
+                file_size, start, len,
+            ),
         ));
     }
 
@@ -59,7 +63,7 @@ pub(super) async fn ensure_reader_at_range_start(
         );
 
         if position_diff >= *buffer_offset {
-            return Ok(())
+            return Ok(());
         }
 
         // We only want to keep the last n bytes from the offset.
@@ -67,13 +71,13 @@ pub(super) async fn ensure_reader_at_range_start(
         buffer.copy_within(retain_from..*buffer_offset, 0);
         (*buffer_offset) = position_diff;
 
-        return Ok(())
+        return Ok(());
     }
 
     if reader.current_pos() == expected_start {
         // Reset the offset as any previously saved bytes are not needed.
         (*buffer_offset) = 0;
-        return Ok(())
+        return Ok(());
     }
 
     let mut remaining_len = (expected_start - reader.current_pos()) as usize;
@@ -91,7 +95,6 @@ pub(super) async fn ensure_reader_at_range_start(
 
     Ok(())
 }
-
 
 pub(super) async fn read_n_bytes(
     reader: &mut DmaStreamReader,
@@ -171,10 +174,11 @@ fn retain_excess(
 #[cfg(test)]
 mod tests {
     use datacake_crdt::{get_unix_timestamp_ms, HLCTimestamp};
-    use glommio::ByteSliceMutExt;
     use glommio::io::{DmaFile, DmaStreamReaderBuilder, ImmutableFileBuilder};
-    use crate::run_aio;
+    use glommio::ByteSliceMutExt;
+
     use super::*;
+    use crate::run_aio;
 
     static BUFFER_SAMPLE: &[u8] = b"Hello, world!";
 
@@ -210,16 +214,21 @@ mod tests {
         std::fs::write(&fp, raw_data)?;
 
         let fut = move || async move {
-            let file = ImmutableFileBuilder::new(fp)
-                .build_existing()
-                .await?;
+            let file = ImmutableFileBuilder::new(fp).build_existing().await?;
 
             let metadata = read_metadata(&file)
                 .await
                 .expect("read metadata correctly.");
 
-            assert!(metadata.files().is_empty(), "Expected metadata file to have no files linked.");
-            assert_eq!(metadata.segment_id(), ts, "Expected metadata segment ids to match.");
+            assert!(
+                metadata.files().is_empty(),
+                "Expected metadata file to have no files linked."
+            );
+            assert_eq!(
+                metadata.segment_id(),
+                ts,
+                "Expected metadata segment ids to match."
+            );
 
             Ok(())
         };
@@ -240,16 +249,23 @@ mod tests {
             ensure_reader_at_range_start(
                 &mut reader,
                 &mut buffer[..],
-                    &mut buffer_offset,
+                &mut buffer_offset,
                 TARGET_LENGTH,
-            ).await?;
+            )
+            .await?;
 
-            assert!(reader.current_pos() >= TARGET_LENGTH, "Expected reader position to be at least upto the targeted start.");
+            assert!(
+                reader.current_pos() >= TARGET_LENGTH,
+                "Expected reader position to be at least upto the targeted start."
+            );
 
             // This is potentially flakey, but there's not a whole lot we can do about it.
             if reader.current_pos() > TARGET_LENGTH {
                 let diff = (reader.current_pos() - TARGET_LENGTH) as usize;
-                assert_eq!(buffer_offset, diff, "Expected excess read data to be reflected in the offset.");
+                assert_eq!(
+                    buffer_offset, diff,
+                    "Expected excess read data to be reflected in the offset."
+                );
             }
 
             Ok::<_, io::Error>(())
@@ -272,9 +288,13 @@ mod tests {
                 &mut buffer[..],
                 &mut buffer_offset,
                 BUFFER_SAMPLE.len(),
-            ).await?;
+            )
+            .await?;
 
-            assert_eq!(&buff, BUFFER_SAMPLE, "Expected read buffer and sample to match.");
+            assert_eq!(
+                &buff, BUFFER_SAMPLE,
+                "Expected read buffer and sample to match."
+            );
 
             Ok::<_, io::Error>(())
         };
@@ -288,12 +308,8 @@ mod tests {
             let fp = crate::get_random_tmp_file();
             let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
-            let mut writer = AioWriter::create(
-                &fp,
-                0,
-                "test-index".to_string(),
-                segment_id
-            ).await?;
+            let mut writer =
+                AioWriter::create(&fp, 0, "test-index".to_string(), segment_id).await?;
 
             let file = get_temp_file().await?;
             let mut reader = DmaStreamReaderBuilder::new(file).build();
@@ -307,7 +323,8 @@ mod tests {
                 &mut buffer[..],
                 &mut buffer_offset,
                 BUFFER_SAMPLE.len(),
-            ).await?;
+            )
+            .await?;
 
             assert_eq!(
                 writer.current_pos(),

@@ -2,16 +2,16 @@ use std::io;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+
 use datacake_crdt::HLCTimestamp;
 use glommio::io::DmaStreamReader;
 use tokio::sync::oneshot;
 
-use crate::aio::AioWriter;
 use crate::aio::runtime::{AioRuntime, AioTask};
+use crate::aio::AioWriter;
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
-use crate::{DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES, SpecialFile};
-
+use crate::{SpecialFile, DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES};
 
 pub struct AioCombiner {
     tx: flume::Sender<Op>,
@@ -35,54 +35,56 @@ impl AioCombiner {
 
         let task = AioTask::from(setup);
 
-        rt.spawn_actor(task)
-            .await
-            .map_err(|_| io::Error::new(
+        rt.spawn_actor(task).await.map_err(|_| {
+            io::Error::new(
                 ErrorKind::Other,
                 "The IO scheduler and runtime is not currently running.",
-            ))?;
+            )
+        })?;
 
-        Ok(Self {
-            tx
-        })
+        Ok(Self { tx })
     }
-
 
     /// Ingests a segment file and writes it to the new segment.
     pub async fn combine_segment(&mut self, segment_file: &Path) -> io::Result<()> {
         let (tx, rx) = oneshot::channel();
 
         self.tx
-            .send_async(Op::Combine { tx, fp: segment_file.to_path_buf() })
+            .send_async(Op::Combine {
+                tx,
+                fp: segment_file.to_path_buf(),
+            })
             .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+            .map_err(|_| {
+                io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+            })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
-
 
     /// Finalises any remaining buffers so that file is safely persisted to disk.
     pub async fn finalise(self) -> io::Result<PathBuf> {
         let (tx, rx) = oneshot::channel();
 
-        self.tx
-            .send_async(Op::Finalise { tx })
-            .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+        self.tx.send_async(Op::Finalise { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 
     /// Abort the segment creation.
     pub async fn abort(self) -> io::Result<()> {
         let (tx, rx) = oneshot::channel();
 
-        self.tx
-            .send_async(Op::Abort { tx })
-            .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+        self.tx.send_async(Op::Abort { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 }
 
@@ -94,14 +96,9 @@ pub(super) struct AioCombinerActorSetup {
 }
 
 impl AioCombinerActorSetup {
-    pub(super) async fn run_actor(self) -> io::Result<()>  {
-        let writer = AioWriter::create(
-            &self.path,
-            0,
-            self.index,
-            self.segment_id,
-        )
-            .await?;
+    pub(super) async fn run_actor(self) -> io::Result<()> {
+        let writer =
+            AioWriter::create(&self.path, 0, self.index, self.segment_id).await?;
 
         let actor = AioCombinerActor {
             rx: self.rx,
@@ -114,7 +111,6 @@ impl AioCombinerActorSetup {
     }
 }
 
-
 pub struct AioCombinerActor {
     rx: flume::Receiver<Op>,
     writer: AioWriter,
@@ -124,17 +120,17 @@ impl AioCombinerActor {
     pub(crate) async fn run_actor(mut self) {
         while let Ok(op) = self.rx.recv_async().await {
             match op {
-                Op::Abort { tx }  => {
+                Op::Abort { tx } => {
                     let res = self.abort().await;
                     let _ = tx.send(res);
                     break;
                 },
-                Op::Finalise { tx }  => {
+                Op::Finalise { tx } => {
                     let res = self.finalise().await;
                     let _ = tx.send(res);
                     break;
                 },
-                Op::Combine { tx, fp }  => {
+                Op::Combine { tx, fp } => {
                     let res = self.combine_segment(&fp).await;
                     let _ = tx.send(res);
                 },
@@ -150,7 +146,8 @@ impl AioCombinerActor {
 
         let metadata = super::utils::read_metadata(&segment).await?;
 
-        let mut segment_reader = segment.stream_reader()
+        let mut segment_reader = segment
+            .stream_reader()
             .with_read_ahead(10)
             .with_buffer_size(crate::BUFFER_SIZE)
             .build();
@@ -172,7 +169,8 @@ impl AioCombinerActor {
                 &mut buffer[..],
                 &mut buffer_offset,
                 range.start,
-            ).await?;
+            )
+            .await?;
 
             if SPECIAL_FILES.contains(&path.as_str()) {
                 self.merge_special_files(
@@ -181,7 +179,8 @@ impl AioCombinerActor {
                     &mut buffer_offset,
                     range,
                     &path,
-                ).await?;
+                )
+                .await?;
                 continue;
             }
 
@@ -191,7 +190,8 @@ impl AioCombinerActor {
                 &mut buffer[..],
                 &mut buffer_offset,
                 range,
-            ).await?;
+            )
+            .await?;
             let end = self.writer.current_pos();
 
             self.writer.add_file(&path, start..end);
@@ -226,7 +226,8 @@ impl AioCombinerActor {
         range: Range<u64>,
     ) -> io::Result<()> {
         let len = (range.end - range.start) as usize;
-        super::utils::copy_data(&mut self.writer, reader, buffer, buffer_offset, len).await?;
+        super::utils::copy_data(&mut self.writer, reader, buffer, buffer_offset, len)
+            .await?;
 
         Ok(())
     }
@@ -244,8 +245,8 @@ impl AioCombinerActor {
         path: &str,
     ) -> io::Result<()> {
         let n_bytes = (range.end - range.start) as usize;
-        let buf = super::utils::read_n_bytes(reader, buffer, buffer_offset, n_bytes)
-            .await?;
+        let buf =
+            super::utils::read_n_bytes(reader, buffer, buffer_offset, n_bytes).await?;
 
         match path {
             p if p == META_FILE => {
@@ -258,22 +259,21 @@ impl AioCombinerActor {
                 let managed = ManagedMeta::from_json(&buf)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
-                self.writer.write_special_file(SpecialFile::Managed(managed))
+                self.writer
+                    .write_special_file(SpecialFile::Managed(managed))
             },
             p if p == DELETES_FILE => {
                 let deletes = Deletes::from_compressed_bytes(buf).await?;
 
-                self.writer.write_special_file(SpecialFile::Deletes(deletes))
+                self.writer
+                    .write_special_file(SpecialFile::Deletes(deletes))
             },
             _ => return Ok(()),
         };
 
         Ok(())
     }
-
 }
-
-
 
 pub enum Op {
     Combine {
@@ -288,14 +288,13 @@ pub enum Op {
     },
 }
 
-
 #[cfg(test)]
 mod tests {
     use datacake_crdt::get_unix_timestamp_ms;
     use tokio::fs::File;
 
-    use crate::aio::exporter::AioExporter;
     use super::*;
+    use crate::aio::exporter::AioExporter;
 
     async fn create_test_segments(
         rt: &AioRuntime,
@@ -316,7 +315,9 @@ mod tests {
                 AioExporter::create(rt, &path, 0, "test-index".to_string(), segment_id)
                     .await?;
 
-            exporter.write_raw(&sample_file, b"Hello, World!".to_vec()).await?;
+            exporter
+                .write_raw(&sample_file, b"Hello, World!".to_vec())
+                .await?;
             exporter.finalise().await?;
 
             history.push(segment_id);
@@ -454,9 +455,7 @@ mod tests {
                 .await?;
 
         if let Some(meta) = meta {
-            exporter
-                .write_special_file(SpecialFile::Meta(meta))
-                .await?;
+            exporter.write_special_file(SpecialFile::Meta(meta)).await?;
         }
 
         if let Some(managed) = managed {
@@ -466,7 +465,9 @@ mod tests {
         }
 
         if let Some(deletes) = deletes {
-            exporter.write_special_file(SpecialFile::Deletes(deletes)).await?;
+            exporter
+                .write_special_file(SpecialFile::Deletes(deletes))
+                .await?;
         }
 
         exporter.finalise().await?;
@@ -492,22 +493,12 @@ mod tests {
             ..Default::default()
         };
 
-        let segment_1 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            Some(meta_1),
-            None,
-            None,
-        )
-        .await?;
-        let segment_2 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            Some(meta_2),
-            None,
-            None,
-        )
-        .await?;
+        let segment_1 =
+            create_segment_with(&rt, clock.send().unwrap(), Some(meta_1), None, None)
+                .await?;
+        let segment_2 =
+            create_segment_with(&rt, clock.send().unwrap(), Some(meta_2), None, None)
+                .await?;
 
         let path = crate::get_random_tmp_file();
         let mut combiner = AioCombiner::create(
@@ -534,7 +525,11 @@ mod tests {
             .get_file_bounds(Path::new(META_FILE))
             .expect("Expected meta file to exist within new segment.");
 
-        let data = crate::blocking::utils::read_range(&mut file, range.start as u64..range.end as u64).await?;
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await?;
 
         let meta = MetaFile::from_json(&data).expect("Meta file should not be corrupt.");
 
@@ -563,22 +558,12 @@ mod tests {
         let managed_1 = ManagedMeta(vec!["node-1-field".to_string()]);
         let managed_2 = ManagedMeta(vec!["node-2-field".to_string()]);
 
-        let segment_1 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            None,
-            Some(managed_1),
-            None,
-        )
-        .await?;
-        let segment_2 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            None,
-            Some(managed_2),
-            None,
-        )
-        .await?;
+        let segment_1 =
+            create_segment_with(&rt, clock.send().unwrap(), None, Some(managed_1), None)
+                .await?;
+        let segment_2 =
+            create_segment_with(&rt, clock.send().unwrap(), None, Some(managed_2), None)
+                .await?;
 
         let path = crate::get_random_tmp_file();
         let mut combiner = AioCombiner::create(
@@ -605,7 +590,11 @@ mod tests {
             .get_file_bounds(Path::new(MANAGED_FILE))
             .expect("Expected managed file to exist within new segment.");
 
-        let data = crate::blocking::utils::read_range(&mut file, range.start as u64..range.end as u64).await?;
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await?;
 
         let managed =
             ManagedMeta::from_json(&data).expect("Managed file should not be corrupt.");
@@ -628,22 +617,14 @@ mod tests {
         let deletes_1 = Deletes(vec!["node-1-field".to_string()]);
         let deletes_2 = Deletes(vec!["node-2-field".to_string()]);
 
-        let segment_1 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            None,
-            None,
-            Some(deletes_1),
-        )
-        .await.expect("created segment 1");
-        let segment_2 = create_segment_with(
-            &rt,
-            clock.send().unwrap(),
-            None,
-            None,
-            Some(deletes_2),
-        )
-        .await.expect("created segment 2");;
+        let segment_1 =
+            create_segment_with(&rt, clock.send().unwrap(), None, None, Some(deletes_1))
+                .await
+                .expect("created segment 1");
+        let segment_2 =
+            create_segment_with(&rt, clock.send().unwrap(), None, None, Some(deletes_2))
+                .await
+                .expect("created segment 2");
         println!("Copying files");
 
         let path = crate::get_random_tmp_file();
@@ -653,16 +634,25 @@ mod tests {
             "test-index".to_string(),
             clock.send().unwrap(),
         )
-        .await.expect("created combiner");
+        .await
+        .expect("created combiner");
 
         println!("Copying files");
-        combiner.combine_segment(&segment_1).await.expect("combine segment 1");
-        combiner.combine_segment(&segment_2).await.expect("combine segment 2");
+        combiner
+            .combine_segment(&segment_1)
+            .await
+            .expect("combine segment 1");
+        combiner
+            .combine_segment(&segment_2)
+            .await
+            .expect("combine segment 2");
 
         println!("Finalising file");
         let file = combiner.finalise().await.expect("finalise writer.");
         let mut file = File::open(file).await?;
-        let metadata = crate::blocking::utils::read_metadata(&mut file).await.expect("read metadata");
+        let metadata = crate::blocking::utils::read_metadata(&mut file)
+            .await
+            .expect("read metadata");
 
         assert_eq!(
             metadata.index(),
@@ -674,7 +664,12 @@ mod tests {
             .get_file_bounds(Path::new(DELETES_FILE))
             .expect("Expected managed file to exist within new segment.");
 
-        let data = crate::blocking::utils::read_range(&mut file, range.start as u64..range.end as u64).await.expect("get range");
+        let data = crate::blocking::utils::read_range(
+            &mut file,
+            range.start as u64..range.end as u64,
+        )
+        .await
+        .expect("get range");
 
         let managed = Deletes::from_compressed_bytes(data)
             .await

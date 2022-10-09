@@ -9,7 +9,17 @@ use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
 use crate::metadata::write_metadata_offsets;
-use crate::{Deletes, DELETES_FILE, MANAGED_FILE, ManagedMeta, META_FILE, Metadata, METADATA_HEADER_SIZE, MetaFile, SpecialFile};
+use crate::{
+    Deletes,
+    ManagedMeta,
+    MetaFile,
+    Metadata,
+    SpecialFile,
+    DELETES_FILE,
+    MANAGED_FILE,
+    METADATA_HEADER_SIZE,
+    META_FILE,
+};
 
 pub mod combiner;
 pub mod exporter;
@@ -127,10 +137,7 @@ impl BlockingWriter {
         }
 
         if !self.deletes_file.is_empty() {
-            let deletes = self
-                .deletes_file
-                .to_compressed_bytes()
-                .await?;
+            let deletes = self.deletes_file.to_compressed_bytes().await?;
 
             let deletes_start = self.current_pos();
             self.write_all(&deletes).await?;
@@ -153,7 +160,8 @@ impl BlockingWriter {
         // Advance the cursor now the header is written.
         self.num_bytes_written += raw.len() as u64;
 
-        file.set_len(self.num_bytes_written + METADATA_HEADER_SIZE as u64).await?;
+        file.set_len(self.num_bytes_written + METADATA_HEADER_SIZE as u64)
+            .await?;
         file.sync_all().await?;
 
         Ok(self.path)

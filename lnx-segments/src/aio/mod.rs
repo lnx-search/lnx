@@ -1,21 +1,29 @@
-mod runtime;
 pub mod combiner;
-mod utils;
 pub mod exporter;
+mod runtime;
+mod utils;
 
 use std::io;
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
+
 use datacake_crdt::HLCTimestamp;
 use futures_lite::AsyncWriteExt;
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
-
 pub use runtime::create_runtime;
 
-use crate::{Deletes, DELETES_FILE, MANAGED_FILE, ManagedMeta, META_FILE, Metadata, MetaFile, SpecialFile};
 use crate::metadata::write_metadata_offsets_aio;
-
+use crate::{
+    Deletes,
+    ManagedMeta,
+    MetaFile,
+    Metadata,
+    SpecialFile,
+    DELETES_FILE,
+    MANAGED_FILE,
+    META_FILE,
+};
 
 pub struct AioWriter {
     inner: DmaStreamWriter,
@@ -131,10 +139,7 @@ impl AioWriter {
         }
 
         if !self.deletes_file.is_empty() {
-            let deletes = self
-                .deletes_file
-                .to_compressed_bytes()
-                .await?;
+            let deletes = self.deletes_file.to_compressed_bytes().await?;
 
             let deletes_start = self.current_pos();
             self.write_all(&deletes).await?;
@@ -150,8 +155,7 @@ impl AioWriter {
         self.inner.write_all(&raw).await?;
 
         dbg!(start, raw.len(), self.current_pos());
-        write_metadata_offsets_aio(&mut self.inner, start, raw.len() as u64)
-            .await?;
+        write_metadata_offsets_aio(&mut self.inner, start, raw.len() as u64).await?;
 
         self.inner.flush().await?;
         Ok(self.path)
@@ -166,7 +170,6 @@ impl AioWriter {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 #[cfg_attr(test, macro_export)]

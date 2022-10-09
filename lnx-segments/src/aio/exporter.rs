@@ -1,11 +1,13 @@
 use std::io;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+
 use datacake_crdt::HLCTimestamp;
 use tokio::sync::oneshot;
-use crate::aio::AioWriter;
-use crate::{IGNORED_FILES, IGNORED_PREFIX, SPECIAL_FILES, SpecialFile};
+
 use crate::aio::runtime::{AioRuntime, AioTask};
+use crate::aio::AioWriter;
+use crate::{SpecialFile, IGNORED_FILES, IGNORED_PREFIX, SPECIAL_FILES};
 
 pub struct AioExporter {
     tx: flume::Sender<Op>,
@@ -31,16 +33,14 @@ impl AioExporter {
 
         let task = AioTask::from(setup);
 
-        rt.spawn_actor(task)
-            .await
-            .map_err(|_| io::Error::new(
+        rt.spawn_actor(task).await.map_err(|_| {
+            io::Error::new(
                 ErrorKind::Other,
                 "The IO scheduler and runtime is not currently running.",
-            ))?;
+            )
+        })?;
 
-        Ok(Self {
-            tx
-        })
+        Ok(Self { tx })
     }
 
     /// Write a new file to the exporter. The file path will be read and streamed from into
@@ -49,11 +49,17 @@ impl AioExporter {
         let (tx, rx) = oneshot::channel();
 
         self.tx
-            .send_async(Op::AddFile { tx, fp: path.to_path_buf() })
+            .send_async(Op::AddFile {
+                tx,
+                fp: path.to_path_buf(),
+            })
             .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+            .map_err(|_| {
+                io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+            })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 
     /// Write a new file to the exporter.
@@ -64,11 +70,18 @@ impl AioExporter {
         let (tx, rx) = oneshot::channel();
 
         self.tx
-            .send_async(Op::AddBuffer { tx, buff, fp: path.to_path_buf() })
+            .send_async(Op::AddBuffer {
+                tx,
+                buff,
+                fp: path.to_path_buf(),
+            })
             .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+            .map_err(|_| {
+                io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+            })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 
     /// Writes a special file to the underlying writer.
@@ -83,24 +96,24 @@ impl AioExporter {
     pub async fn finalise(self) -> io::Result<PathBuf> {
         let (tx, rx) = oneshot::channel();
 
-        self.tx
-            .send_async(Op::Finalise { tx })
-            .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+        self.tx.send_async(Op::Finalise { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 
     /// Abort the segment creation.
     pub async fn abort(self) -> io::Result<()> {
         let (tx, rx) = oneshot::channel();
 
-        self.tx
-            .send_async(Op::Abort { tx })
-            .await
-            .map_err(|_| io::Error::new(ErrorKind::Other, "Background actor shutdown."))?;
+        self.tx.send_async(Op::Abort { tx }).await.map_err(|_| {
+            io::Error::new(ErrorKind::Other, "Background actor shutdown.")
+        })?;
 
-        rx.await.expect("Background actor died while handling task.")
+        rx.await
+            .expect("Background actor died while handling task.")
     }
 }
 
@@ -113,14 +126,10 @@ pub(super) struct AioExporterActorSetup {
 }
 
 impl AioExporterActorSetup {
-    pub(super) async fn run_actor(self) -> io::Result<()>  {
-        let writer = AioWriter::create(
-            &self.path,
-            self.size_hint,
-            self.index,
-            self.segment_id,
-        )
-            .await?;
+    pub(super) async fn run_actor(self) -> io::Result<()> {
+        let writer =
+            AioWriter::create(&self.path, self.size_hint, self.index, self.segment_id)
+                .await?;
 
         let actor = AioExporterActor {
             rx: self.rx,
@@ -162,7 +171,7 @@ impl AioExporterActor {
                 },
                 Op::AddSpecialFile { file } => {
                     self.write_special_file(file);
-                }
+                },
             }
         }
     }
@@ -187,7 +196,8 @@ impl AioExporterActor {
             .build_existing()
             .await?;
 
-        let mut reader = segment.stream_reader()
+        let mut reader = segment
+            .stream_reader()
             .with_read_ahead(10)
             .with_buffer_size(crate::BUFFER_SIZE)
             .build();
@@ -202,7 +212,8 @@ impl AioExporterActor {
             &mut buffer[..],
             &mut buffer_offset,
             segment.file_size() as usize,
-        ).await?;
+        )
+        .await?;
 
         let end = self.writer.current_pos();
 
@@ -210,7 +221,6 @@ impl AioExporterActor {
 
         Ok(())
     }
-
 
     /// Write a new file to the exporter.
     ///

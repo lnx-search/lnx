@@ -7,11 +7,11 @@ use datacake_crdt::HLCTimestamp;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+use super::utils::read_range;
 use crate::blocking::BlockingWriter;
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
-use crate::{DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES, SpecialFile};
-use super::utils::read_range;
+use crate::{SpecialFile, DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES};
 
 /// Combines two or more existing segments into a single, larger segment.
 ///
@@ -33,9 +33,7 @@ impl BlockingCombiner {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, 0, index, segment_id).await?;
 
-        Ok(Self {
-            writer,
-        })
+        Ok(Self { writer })
     }
 
     /// Combines a segment into the new segment.
@@ -57,9 +55,7 @@ impl BlockingCombiner {
 
         // Set the seek position back to the end of the metadata.
         let mut cursor = 0;
-        segment
-            .seek(SeekFrom::Start(cursor))
-            .await?;
+        segment.seek(SeekFrom::Start(cursor)).await?;
 
         for (range, path) in files {
             let start = self.writer.current_pos();
@@ -147,12 +143,14 @@ impl BlockingCombiner {
                 let managed = ManagedMeta::from_json(&data)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
-                self.writer.write_special_file(SpecialFile::Managed(managed));
+                self.writer
+                    .write_special_file(SpecialFile::Managed(managed));
             },
             p if p == DELETES_FILE => {
                 let deletes = Deletes::from_compressed_bytes(data).await?;
 
-                self.writer.write_special_file(SpecialFile::Deletes(deletes));
+                self.writer
+                    .write_special_file(SpecialFile::Deletes(deletes));
             },
             _ => return Ok(()),
         };
@@ -163,8 +161,6 @@ impl BlockingCombiner {
         Ok(())
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -194,7 +190,9 @@ mod tests {
                 BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
                     .await?;
 
-            exporter.write_raw(&sample_file, b"Hello, World!".to_vec()).await?;
+            exporter
+                .write_raw(&sample_file, b"Hello, World!".to_vec())
+                .await?;
             exporter.finalise().await?;
 
             history.push(segment_id);
@@ -329,9 +327,7 @@ mod tests {
                 .await?;
 
         if let Some(meta) = meta {
-            exporter
-                .write_special_file(SpecialFile::Meta(meta))
-                .await?;
+            exporter.write_special_file(SpecialFile::Meta(meta)).await?;
         }
 
         if let Some(managed) = managed {
@@ -341,7 +337,9 @@ mod tests {
         }
 
         if let Some(deletes) = deletes {
-            exporter.write_special_file(SpecialFile::Deletes(deletes)).await?;
+            exporter
+                .write_special_file(SpecialFile::Deletes(deletes))
+                .await?;
         }
 
         exporter.finalise().await?;
@@ -365,20 +363,10 @@ mod tests {
             ..Default::default()
         };
 
-        let segment_1 = create_segment_with(
-            clock.send().unwrap(),
-            Some(meta_1),
-            None,
-            None,
-        )
-        .await?;
-        let segment_2 = create_segment_with(
-            clock.send().unwrap(),
-            Some(meta_2),
-            None,
-            None,
-        )
-        .await?;
+        let segment_1 =
+            create_segment_with(clock.send().unwrap(), Some(meta_1), None, None).await?;
+        let segment_2 =
+            create_segment_with(clock.send().unwrap(), Some(meta_2), None, None).await?;
 
         let path = crate::get_random_tmp_file();
 
@@ -432,20 +420,12 @@ mod tests {
         let managed_1 = ManagedMeta(vec!["node-1-field".to_string()]);
         let managed_2 = ManagedMeta(vec!["node-2-field".to_string()]);
 
-        let segment_1 = create_segment_with(
-            clock.send().unwrap(),
-            None,
-            Some(managed_1),
-            None,
-        )
-        .await?;
-        let segment_2 = create_segment_with(
-            clock.send().unwrap(),
-            None,
-            Some(managed_2),
-            None,
-        )
-        .await?;
+        let segment_1 =
+            create_segment_with(clock.send().unwrap(), None, Some(managed_1), None)
+                .await?;
+        let segment_2 =
+            create_segment_with(clock.send().unwrap(), None, Some(managed_2), None)
+                .await?;
 
         let path = crate::get_random_tmp_file();
         let mut combiner = BlockingCombiner::create(
@@ -492,20 +472,12 @@ mod tests {
         let deletes_1 = Deletes(vec!["node-1-field".to_string()]);
         let deletes_2 = Deletes(vec!["node-2-field".to_string()]);
 
-        let segment_1 = create_segment_with(
-            clock.send().unwrap(),
-            None,
-            None,
-            Some(deletes_1),
-        )
-        .await?;
-        let segment_2 = create_segment_with(
-            clock.send().unwrap(),
-            None,
-            None,
-            Some(deletes_2),
-        )
-        .await?;
+        let segment_1 =
+            create_segment_with(clock.send().unwrap(), None, None, Some(deletes_1))
+                .await?;
+        let segment_2 =
+            create_segment_with(clock.send().unwrap(), None, None, Some(deletes_2))
+                .await?;
 
         let path = crate::get_random_tmp_file();
 

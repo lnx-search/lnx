@@ -9,6 +9,7 @@ mod metadata;
 mod selector;
 
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
+
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
 
@@ -28,7 +29,6 @@ pub static META_FILE: &str = "meta.json";
 pub static MANAGED_FILE: &str = ".managed.json";
 pub static DELETES_FILE: &str = ".lnx-deletes";
 pub static SPECIAL_FILES: &[&str] = &[META_FILE, MANAGED_FILE, DELETES_FILE];
-
 
 pub enum SpecialFile {
     Meta(MetaFile),
