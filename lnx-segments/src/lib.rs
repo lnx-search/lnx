@@ -28,3 +28,23 @@ pub static META_FILE: &str = "meta.json";
 pub static MANAGED_FILE: &str = ".managed.json";
 pub static DELETES_FILE: &str = ".lnx-deletes";
 pub static SPECIAL_FILES: &[&str] = &[META_FILE, MANAGED_FILE, DELETES_FILE];
+
+
+pub enum SpecialFile {
+    Meta(MetaFile),
+    Managed(ManagedMeta),
+    Deletes(Deletes),
+}
+
+pub(crate) const BUFFER_SIZE: usize = 512 << 10;
+
+pub(crate) fn new_buffer() -> Box<[u8]> {
+    let mut buf = vec![];
+    buf.resize(BUFFER_SIZE, 0);
+    buf.into_boxed_slice()
+}
+
+#[cfg(test)]
+pub(crate) fn get_random_tmp_file() -> std::path::PathBuf {
+    std::env::temp_dir().join(uuid::Uuid::new_v4().to_string())
+}
