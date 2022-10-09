@@ -1,31 +1,30 @@
 mod runtime;
 pub mod combiner;
 mod utils;
+pub mod exporter;
 
 use std::io;
+use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use datacake_crdt::HLCTimestamp;
 use futures_lite::AsyncWriteExt;
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 
-pub use runtime::try_init;
+pub use runtime::create_runtime;
 
-use crate::Metadata;
+use crate::{Deletes, DELETES_FILE, MANAGED_FILE, ManagedMeta, META_FILE, Metadata, MetaFile, SpecialFile};
 use crate::metadata::write_metadata_offsets_aio;
 
-pub(crate) const BUFFER_SIZE: usize = 512 << 10;
-
-pub(super) fn new_buffer() -> Box<[u8]> {
-    let mut buf = vec![];
-    buf.resize(BUFFER_SIZE, 0);
-    buf.into_boxed_slice()
-}
 
 pub struct AioWriter {
     inner: DmaStreamWriter,
     metadata: Metadata,
     path: PathBuf,
+
+    deletes_file: Deletes,
+    meta_file: MetaFile,
+    managed_file: ManagedMeta,
 }
 
 impl Deref for AioWriter {
@@ -72,6 +71,9 @@ impl AioWriter {
             inner: writer,
             metadata,
             path: path.to_path_buf(),
+            deletes_file: Default::default(),
+            meta_file: Default::default(),
+            managed_file: Default::default(),
         })
     }
 
@@ -86,23 +88,78 @@ impl AioWriter {
         Ok(())
     }
 
+    /// Merges a special file into the current segment state.
+    pub fn write_special_file(&mut self, special: SpecialFile) {
+        match special {
+            SpecialFile::Deletes(deletes) => {
+                self.deletes_file.merge(deletes);
+            },
+            SpecialFile::Managed(managed) => {
+                self.managed_file.merge(managed);
+            },
+            SpecialFile::Meta(meta) => {
+                self.meta_file.merge(meta);
+            },
+        };
+    }
+
     pub async fn finalise(mut self) -> io::Result<PathBuf> {
+        if !self.meta_file.is_empty() {
+            let meta = self
+                .meta_file
+                .to_json()
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+
+            let meta_start = self.current_pos();
+            self.write_all(&meta).await?;
+            let meta_range = meta_start..self.current_pos();
+
+            self.add_file(META_FILE, meta_range);
+        }
+
+        if !self.managed_file.is_empty() {
+            let managed = self
+                .managed_file
+                .to_json()
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+
+            let managed_start = self.current_pos();
+            self.write_all(&managed).await?;
+            let managed_range = managed_start..self.current_pos();
+
+            self.add_file(MANAGED_FILE, managed_range);
+        }
+
+        if !self.deletes_file.is_empty() {
+            let deletes = self
+                .deletes_file
+                .to_compressed_bytes()
+                .await?;
+
+            let deletes_start = self.current_pos();
+            self.write_all(&deletes).await?;
+            let deletes_range = deletes_start..self.current_pos();
+
+            self.add_file(DELETES_FILE, deletes_range);
+        }
+
         // Write the header to the end of the file buffer.
         let raw = self.metadata.to_bytes()?;
         let start = self.inner.current_pos();
 
         self.inner.write_all(&raw).await?;
 
+        dbg!(start, raw.len(), self.current_pos());
         write_metadata_offsets_aio(&mut self.inner, start, raw.len() as u64)
             .await?;
 
+        self.inner.flush().await?;
         Ok(self.path)
     }
 
     pub async fn abort(self) -> io::Result<()> {
         drop(self.inner);
 
-        // TODO: Change to use async variant.
         let path = self.path;
         glommio::io::remove(path).await?;
 
