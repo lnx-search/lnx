@@ -589,6 +589,7 @@ dependencies = [
  "futures-lite",
  "glommio",
  "lz4_flex",
+ "num_cpus",
  "once_cell",
  "rkyv",
  "serde",

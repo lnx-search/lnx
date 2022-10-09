@@ -1,6 +1,7 @@
 pub mod combiner;
 pub mod exporter;
 mod runtime;
+pub mod selector;
 mod utils;
 
 use std::io;

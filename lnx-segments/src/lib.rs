@@ -1,13 +1,11 @@
 #[cfg(target_os = "linux")]
 pub mod aio;
 
-#[cfg_attr(target_os = "linux", allow(unused))]
 mod blocking;
 
 mod deletes;
 mod meta_merger;
 mod metadata;
-mod selector;
 
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 
@@ -20,9 +18,9 @@ pub type Exporter = blocking::exporter::BlockingExporter;
 pub type Combiner = blocking::combiner::BlockingCombiner;
 
 #[cfg(target_os = "linux")]
-pub type Exporter = aio::exporter::AioExporter;
+pub type Exporter = aio::selector::AutoExporter;
 #[cfg(target_os = "linux")]
-pub type Combiner = aio::combiner::AioCombiner;
+pub type Combiner = aio::selector::AutoCombiner;
 
 pub static IGNORED_PREFIX: &str = ".tmp";
 pub static IGNORED_FILES: &[&str] = &[".tantivy-meta.lock", ".tantivy-write.lock"];
