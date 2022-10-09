@@ -7,11 +7,14 @@ mod deletes;
 mod meta_merger;
 mod metadata;
 
-pub(crate) use metadata::{get_metadata_offsets, METADATA_HEADER_SIZE};
+use std::io;
+use std::io::ErrorKind;
+use std::path::Path;
+pub use metadata::{get_metadata_offsets, METADATA_HEADER_SIZE};
 pub use metadata::Metadata;
+pub use deletes::Deletes;
+pub use meta_merger::{ManagedMeta, MetaFile};
 
-use crate::deletes::Deletes;
-use crate::meta_merger::{ManagedMeta, MetaFile};
 
 #[cfg(not(target_os = "linux"))]
 pub type Exporter = blocking::exporter::BlockingExporter;
@@ -47,4 +50,33 @@ pub(crate) fn new_buffer() -> Box<[u8]> {
 #[cfg(test)]
 pub(crate) fn get_random_tmp_file() -> std::path::PathBuf {
     std::env::temp_dir().join(uuid::Uuid::new_v4().to_string())
+}
+
+pub(crate) async fn deserialize_special_file(
+    data: Vec<u8>,
+    fp: &Path,
+) -> io::Result<SpecialFile> {
+    let path = fp.to_string_lossy();
+
+    let file = match path.as_ref() {
+        p if p == META_FILE => {
+            let meta = MetaFile::from_json(&data)
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+
+            SpecialFile::Meta(meta)
+        },
+        p if p == MANAGED_FILE => {
+            let managed = ManagedMeta::from_json(&data)
+                .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
+
+            SpecialFile::Managed(managed)
+        },
+        p if p == DELETES_FILE => {
+            let deletes = Deletes::from_compressed_bytes(data).await?;
+            SpecialFile::Deletes(deletes)
+        },
+        _ => return Err(io::Error::new(ErrorKind::Unsupported, format!("Special file {:?} unknown.", fp))),
+    };
+
+    Ok(file)
 }

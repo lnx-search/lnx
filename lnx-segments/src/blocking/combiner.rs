@@ -1,4 +1,4 @@
-use std::io::{ErrorKind, SeekFrom};
+use std::io::SeekFrom;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::{cmp, io};
@@ -9,9 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::utils::read_range;
 use crate::blocking::BlockingWriter;
-use crate::deletes::Deletes;
-use crate::meta_merger::{ManagedMeta, MetaFile};
-use crate::{SpecialFile, DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES};
+use crate::SPECIAL_FILES;
 
 /// Combines two or more existing segments into a single, larger segment.
 ///
@@ -67,7 +65,7 @@ impl BlockingCombiner {
             cursor += range.end - range.start;
 
             if SPECIAL_FILES.contains(&path.as_str()) {
-                self.merge_special_files(&mut segment, range, &path).await?;
+                self.merge_special_files(&mut segment, range, Path::new(path.as_str())).await?;
                 continue;
             }
 
@@ -128,35 +126,13 @@ impl BlockingCombiner {
         &mut self,
         reader: &mut File,
         range: Range<u64>,
-        path: &str,
+        path: &Path,
     ) -> io::Result<()> {
         let data = read_range(reader, range.clone()).await?;
 
-        match path {
-            p if p == META_FILE => {
-                let meta = MetaFile::from_json(&data)
-                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
-
-                self.writer.write_special_file(SpecialFile::Meta(meta));
-            },
-            p if p == MANAGED_FILE => {
-                let managed = ManagedMeta::from_json(&data)
-                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
-
-                self.writer
-                    .write_special_file(SpecialFile::Managed(managed));
-            },
-            p if p == DELETES_FILE => {
-                let deletes = Deletes::from_compressed_bytes(data).await?;
-
-                self.writer
-                    .write_special_file(SpecialFile::Deletes(deletes));
-            },
-            _ => return Ok(()),
-        };
-
-        // Reset the cursor incase we read over the number of bytes we wanted.
-        reader.seek(SeekFrom::Start(range.end)).await?;
+        let file = crate::deserialize_special_file(data, path)
+            .await?;
+        self.writer.write_special_file(file);
 
         Ok(())
     }
@@ -168,6 +144,7 @@ mod tests {
 
     use datacake_crdt::get_unix_timestamp_ms;
 
+    use crate::{MANAGED_FILE, META_FILE, DELETES_FILE, MetaFile, ManagedMeta, Deletes, SpecialFile};
     use super::*;
     use crate::blocking::exporter::BlockingExporter;
     use crate::blocking::utils::read_metadata;
