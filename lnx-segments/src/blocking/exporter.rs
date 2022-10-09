@@ -90,7 +90,6 @@ impl BlockingExporter {
 
 #[cfg(test)]
 mod tests {
-    use std::env::temp_dir;
     use std::io::SeekFrom;
 
     use datacake_crdt::get_unix_timestamp_ms;
@@ -99,12 +98,11 @@ mod tests {
 
     use super::*;
     use crate::blocking::utils::read_metadata;
-    use crate::METADATA_HEADER_SIZE;
 
     #[tokio::test]
     async fn test_exporter_create_and_finalise() -> io::Result<()> {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-finalise.segment");
+        let path = crate::get_random_tmp_file();
 
         let exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
@@ -113,8 +111,6 @@ mod tests {
         let file = exporter.finalise().await?;
         let mut file = File::open(file).await?;
 
-        // Read it like a new file.
-        file.seek(SeekFrom::Start(0)).await?;
         let metadata = read_metadata(&mut file).await?;
 
         assert_eq!(
@@ -138,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn test_exporter_create_and_abort() -> io::Result<()> {
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-abort.segment");
+        let path = crate::get_random_tmp_file();
 
         let exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
@@ -155,11 +151,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_exporter() -> io::Result<()> {
-        let sample_file = temp_dir().join("sample.txt");
+        let sample_file = crate::get_random_tmp_file();
         fs::write(&sample_file, b"Hello, world!").await?;
 
         let segment_id = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
-        let path = temp_dir().join("exported-file-test.segment");
+        let path = crate::get_random_tmp_file();
 
         let mut exporter =
             BlockingExporter::create(&path, 0, "test-index".to_string(), segment_id)
