@@ -2,6 +2,7 @@ pub mod combiner;
 pub mod exporter;
 mod runtime;
 mod utils;
+pub mod selector;
 
 use std::io;
 use std::io::ErrorKind;
