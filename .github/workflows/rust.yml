@@ -29,5 +29,8 @@ jobs:
     - uses: taiki-e/install-action@nextest
     - uses: Swatinem/rust-cache@v2
 
+    - name: Setup Env
+      run: sudo -E bash -c "ulimit -Sl 512 && ulimit -Hl 512"
+
     - name: Run tests
       run: cargo +stable nextest run --verbose --workspace
