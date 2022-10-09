@@ -30,4 +30,4 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     - name: Run tests
-      run: cargo +stable nextest run --features ${{ matrix.features.flags }} --verbose --workspace
+      run: cargo +stable nextest run --verbose --workspace
