@@ -10,6 +10,11 @@ use tokio::sync::oneshot;
 pub struct Deletes(pub(crate) Vec<String>);
 
 impl Deletes {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// Loads a given metafile from a buffer.
     ///
     /// This is compatible with both the glommio and tokio runtime contexts.
