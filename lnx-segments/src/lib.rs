@@ -1,13 +1,14 @@
 #[cfg(target_os = "linux")]
-pub mod aio;
+mod aio;
 
-mod blocking;
+pub mod blocking;
 
 mod deletes;
 mod meta_merger;
 mod metadata;
 
-pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
+pub(crate) use metadata::{get_metadata_offsets, METADATA_HEADER_SIZE};
+pub use metadata::Metadata;
 
 use crate::deletes::Deletes;
 use crate::meta_merger::{ManagedMeta, MetaFile};
