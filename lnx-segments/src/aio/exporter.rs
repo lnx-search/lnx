@@ -193,9 +193,10 @@ impl AioExporterActor {
 
         if SPECIAL_FILES.contains(&path_str.as_ref()) {
             let buf = segment.read_at(0, segment.file_size() as usize).await?;
-            let file = crate::deserialize_special_file(buf.as_ref().to_vec(), path).await?;
+            let file =
+                crate::deserialize_special_file(buf.as_ref().to_vec(), path).await?;
             self.write_special_file(file);
-            return Ok(())
+            return Ok(());
         }
 
         let mut reader = segment

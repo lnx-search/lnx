@@ -44,7 +44,7 @@ impl BlockingExporter {
             let data = tokio::fs::read(path).await?;
             let file = crate::deserialize_special_file(data, path).await?;
             self.write_special_file(file).await?;
-            return Ok(())
+            return Ok(());
         }
 
         let file = File::open(path).await?;

@@ -191,14 +191,14 @@ impl TerminatingWrite for ByteCountingWriter {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
-    use tantivy::{doc, Index, IndexSettings};
-    use super::*;
 
     use tantivy::schema::{Schema, STORED, TEXT};
+    use tantivy::{doc, Index, IndexSettings};
+
+    use super::*;
 
     #[test]
     fn test_writer_directory() {
@@ -211,11 +211,10 @@ mod tests {
         let dir = DirectoryWriter::create(&temp_dir().join("writer-test"))
             .expect("Create new directory.");
 
-        let index = Index::create(dir, schema, IndexSettings::default())
-            .expect("Create index.");
+        let index =
+            Index::create(dir, schema, IndexSettings::default()).expect("Create index.");
 
-        let mut index_writer = index.writer(50_000_000)
-            .expect("Create index writer.");
+        let mut index_writer = index.writer(50_000_000).expect("Create index writer.");
 
         index_writer.add_document(doc!(
             title => "Of Mice and Men",
@@ -228,7 +227,6 @@ mod tests {
                     debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
                     limbs and branches that arch over the pool"
         )).expect("Add document.");
-
 
         index_writer.add_document(doc!(
             title => "Frankenstein",

@@ -246,8 +246,7 @@ impl AioCombinerActor {
         let data =
             super::utils::read_n_bytes(reader, buffer, buffer_offset, n_bytes).await?;
 
-        let file = crate::deserialize_special_file(data, path)
-            .await?;
+        let file = crate::deserialize_special_file(data, path).await?;
         self.writer.write_special_file(file);
 
         Ok(())
@@ -272,9 +271,17 @@ mod tests {
     use datacake_crdt::get_unix_timestamp_ms;
     use tokio::fs::File;
 
-    use crate::{ManagedMeta, MetaFile, Deletes, MANAGED_FILE, META_FILE, DELETES_FILE, SpecialFile};
     use super::*;
     use crate::aio::exporter::AioExporter;
+    use crate::{
+        Deletes,
+        ManagedMeta,
+        MetaFile,
+        SpecialFile,
+        DELETES_FILE,
+        MANAGED_FILE,
+        META_FILE,
+    };
 
     async fn create_test_segments(
         rt: &AioRuntime,

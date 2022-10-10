@@ -10,11 +10,10 @@ mod metadata;
 use std::io;
 use std::io::ErrorKind;
 use std::path::Path;
-pub use metadata::{get_metadata_offsets, METADATA_HEADER_SIZE};
-pub use metadata::Metadata;
+
 pub use deletes::Deletes;
 pub use meta_merger::{ManagedMeta, MetaFile};
-
+pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 
 #[cfg(not(target_os = "linux"))]
 pub type Exporter = blocking::exporter::BlockingExporter;
@@ -75,7 +74,12 @@ pub(crate) async fn deserialize_special_file(
             let deletes = Deletes::from_compressed_bytes(data).await?;
             SpecialFile::Deletes(deletes)
         },
-        _ => return Err(io::Error::new(ErrorKind::Unsupported, format!("Special file {:?} unknown.", fp))),
+        _ => {
+            return Err(io::Error::new(
+                ErrorKind::Unsupported,
+                format!("Special file {:?} unknown.", fp),
+            ))
+        },
     };
 
     Ok(file)

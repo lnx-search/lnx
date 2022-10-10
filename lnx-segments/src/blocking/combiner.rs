@@ -65,7 +65,8 @@ impl BlockingCombiner {
             cursor += range.end - range.start;
 
             if SPECIAL_FILES.contains(&path.as_str()) {
-                self.merge_special_files(&mut segment, range, Path::new(path.as_str())).await?;
+                self.merge_special_files(&mut segment, range, Path::new(path.as_str()))
+                    .await?;
                 continue;
             }
 
@@ -130,8 +131,7 @@ impl BlockingCombiner {
     ) -> io::Result<()> {
         let data = read_range(reader, range.clone()).await?;
 
-        let file = crate::deserialize_special_file(data, path)
-            .await?;
+        let file = crate::deserialize_special_file(data, path).await?;
         self.writer.write_special_file(file);
 
         Ok(())
@@ -144,10 +144,18 @@ mod tests {
 
     use datacake_crdt::get_unix_timestamp_ms;
 
-    use crate::{MANAGED_FILE, META_FILE, DELETES_FILE, MetaFile, ManagedMeta, Deletes, SpecialFile};
     use super::*;
     use crate::blocking::exporter::BlockingExporter;
     use crate::blocking::utils::read_metadata;
+    use crate::{
+        Deletes,
+        ManagedMeta,
+        MetaFile,
+        SpecialFile,
+        DELETES_FILE,
+        MANAGED_FILE,
+        META_FILE,
+    };
 
     async fn create_test_segments(
         num: usize,
