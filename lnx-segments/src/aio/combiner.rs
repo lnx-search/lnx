@@ -9,9 +9,7 @@ use tokio::sync::oneshot;
 
 use crate::aio::runtime::{AioRuntime, AioTask};
 use crate::aio::AioWriter;
-use crate::deletes::Deletes;
-use crate::meta_merger::{ManagedMeta, MetaFile};
-use crate::{SpecialFile, DELETES_FILE, MANAGED_FILE, META_FILE, SPECIAL_FILES};
+use crate::SPECIAL_FILES;
 
 pub struct AioCombiner {
     tx: flume::Sender<Op>,
@@ -178,7 +176,7 @@ impl AioCombinerActor {
                     &mut buffer[..],
                     &mut buffer_offset,
                     range,
-                    &path,
+                    Path::new(path.as_str()),
                 )
                 .await?;
                 continue;
@@ -242,34 +240,14 @@ impl AioCombinerActor {
         buffer: &mut [u8],
         buffer_offset: &mut usize,
         range: Range<u64>,
-        path: &str,
+        path: &Path,
     ) -> io::Result<()> {
         let n_bytes = (range.end - range.start) as usize;
-        let buf =
+        let data =
             super::utils::read_n_bytes(reader, buffer, buffer_offset, n_bytes).await?;
 
-        match path {
-            p if p == META_FILE => {
-                let meta = MetaFile::from_json(&buf)
-                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
-
-                self.writer.write_special_file(SpecialFile::Meta(meta))
-            },
-            p if p == MANAGED_FILE => {
-                let managed = ManagedMeta::from_json(&buf)
-                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
-
-                self.writer
-                    .write_special_file(SpecialFile::Managed(managed))
-            },
-            p if p == DELETES_FILE => {
-                let deletes = Deletes::from_compressed_bytes(buf).await?;
-
-                self.writer
-                    .write_special_file(SpecialFile::Deletes(deletes))
-            },
-            _ => return Ok(()),
-        };
+        let file = crate::deserialize_special_file(data, path).await?;
+        self.writer.write_special_file(file);
 
         Ok(())
     }
@@ -295,6 +273,15 @@ mod tests {
 
     use super::*;
     use crate::aio::exporter::AioExporter;
+    use crate::{
+        Deletes,
+        ManagedMeta,
+        MetaFile,
+        SpecialFile,
+        DELETES_FILE,
+        MANAGED_FILE,
+        META_FILE,
+    };
 
     async fn create_test_segments(
         rt: &AioRuntime,

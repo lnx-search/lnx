@@ -18,7 +18,7 @@ num_cpus = "1.13.1"
 
 serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.39", features = ["validation"] }
-tokio = { version = "1", features = ["fs", "io-util"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync"] }
 datacake-crdt = { version = "0.1.2", features = ["rkyv-support"] }
 
 [dev-dependencies]

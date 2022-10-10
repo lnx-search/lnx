@@ -181,11 +181,6 @@ impl AioExporterActor {
     async fn write_file(&mut self, path: &Path) -> io::Result<()> {
         let path_str = path.to_string_lossy();
 
-        debug_assert!(
-            !SPECIAL_FILES.contains(&path_str.as_ref()),
-            "Special files should not be written as a file.",
-        );
-
         if path_str.starts_with(IGNORED_PREFIX)
             || IGNORED_FILES.contains(&path_str.as_ref())
         {
@@ -195,6 +190,14 @@ impl AioExporterActor {
         let segment = glommio::io::ImmutableFileBuilder::new(path)
             .build_existing()
             .await?;
+
+        if SPECIAL_FILES.contains(&path_str.as_ref()) {
+            let buf = segment.read_at(0, segment.file_size() as usize).await?;
+            let file =
+                crate::deserialize_special_file(buf.as_ref().to_vec(), path).await?;
+            self.write_special_file(file);
+            return Ok(());
+        }
 
         let mut reader = segment
             .stream_reader()

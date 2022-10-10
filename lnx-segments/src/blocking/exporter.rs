@@ -34,14 +34,16 @@ impl BlockingExporter {
     pub async fn write_file(&mut self, path: &Path) -> io::Result<()> {
         let path_str = path.to_string_lossy();
 
-        debug_assert!(
-            !SPECIAL_FILES.contains(&path_str.as_ref()),
-            "Special files should not be written as a file.",
-        );
-
         if path_str.starts_with(IGNORED_PREFIX)
             || IGNORED_FILES.contains(&path_str.as_ref())
         {
+            return Ok(());
+        }
+
+        if SPECIAL_FILES.contains(&path_str.as_ref()) {
+            let data = tokio::fs::read(path).await?;
+            let file = crate::deserialize_special_file(data, path).await?;
+            self.write_special_file(file).await?;
             return Ok(());
         }
 
