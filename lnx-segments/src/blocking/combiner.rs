@@ -148,6 +148,8 @@ mod tests {
     use crate::blocking::exporter::BlockingExporter;
     use crate::blocking::utils::read_metadata;
     use crate::{
+        Delete,
+        DeleteValue,
         Deletes,
         ManagedMeta,
         MetaFile,
@@ -454,8 +456,19 @@ mod tests {
     async fn test_deletes_combiner() -> io::Result<()> {
         let mut clock = HLCTimestamp::new(get_unix_timestamp_ms(), 0, 0);
 
-        let deletes_1 = Deletes(vec!["node-1-field".to_string()]);
-        let deletes_2 = Deletes(vec!["node-2-field".to_string()]);
+        let expected_deletes = vec![
+            Delete {
+                field: "node-1-field".to_string(),
+                value: DeleteValue::U64(0),
+            },
+            Delete {
+                field: "node-2-field".to_string(),
+                value: DeleteValue::U64(0),
+            },
+        ];
+
+        let deletes_1 = Deletes(vec![expected_deletes[0].clone()]);
+        let deletes_2 = Deletes(vec![expected_deletes[1].clone()]);
 
         let segment_1 =
             create_segment_with(clock.send().unwrap(), None, None, Some(deletes_1))
@@ -498,8 +511,7 @@ mod tests {
             .expect("Deletes file should not be corrupt.");
 
         assert_eq!(
-            managed.0,
-            vec!["node-1-field".to_string(), "node-2-field".to_string(),],
+            managed.0, expected_deletes,
             "Expected merged segments to match provided example.",
         );
 

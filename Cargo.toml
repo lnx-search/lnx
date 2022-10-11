@@ -2,5 +2,7 @@
 members = [
     "lnx-storage",
     "lnx-segments",
+    "lnx-writer",
+    "lnx-common",
     "lnx"
 ]

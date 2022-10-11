@@ -11,7 +11,7 @@ use std::io;
 use std::io::ErrorKind;
 use std::path::Path;
 
-pub use deletes::Deletes;
+pub use deletes::{Delete, DeleteValue, Deletes};
 pub use meta_merger::{ManagedMeta, MetaFile};
 pub use metadata::{get_metadata_offsets, Metadata, METADATA_HEADER_SIZE};
 

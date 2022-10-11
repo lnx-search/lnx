@@ -1,0 +1,31 @@
+[package]
+name = "lnx-writer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tantivy = "0.18.0"
+bytecheck = "0.6.9"
+utoipa = "2.2.0"
+tracing = "0.1.36"
+thiserror = "1"
+serde_json = "1"
+num_cpus = "1.13.1"
+flume = "0.10.14"
+datacake-crdt = "0.1.2"
+once_cell = "1.15.0"
+parse-size = "1.0.0"
+humansize = "2.1.0"
+humantime = "2.1.0"
+
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
+rkyv = { version = "0.7", features = ["validation"] }
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+
+lnx-common = { path = "../lnx-common" }
+lnx-segments = { path = "../lnx-segments" }
+lnx-storage = { path = "../lnx-storage" }
+
