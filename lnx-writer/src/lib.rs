@@ -9,8 +9,9 @@ mod finalizer;
 mod indexer;
 mod writer;
 
-pub(crate) use clock::clock;
+pub use clock::clock;
 pub use finalizer::subscribe;
+pub use writer::Writer;
 
 /// 50MB default per thread.
 const DEFAULT_BUFFER_SIZE: usize = 50 << 20;

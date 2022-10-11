@@ -44,7 +44,7 @@ pub(crate) async fn init(base_path: &Path) {
 ///
 /// If the queue is currently full this will block until their is
 /// an available slot.
-pub fn submit_indexer(indexer: Indexer) -> Result<(), DeadActor> {
+pub(crate) fn submit_indexer(indexer: Indexer) -> Result<(), DeadActor> {
     let finalizer = FINALIZER.get().ok_or(DeadActor)?;
 
     finalizer.segments.send(indexer).map_err(|_| DeadActor)?;

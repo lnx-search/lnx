@@ -1,15 +1,17 @@
 use std::time::Duration;
 
 use datacake_crdt::{get_unix_timestamp_ms, HLCTimestamp};
-use tokio::sync::{oneshot, OnceCell};
+use tokio::sync::oneshot;
+use once_cell::sync::OnceCell;
 
 static CLOCK: OnceCell<Clock> = OnceCell::new();
 
 pub(crate) async fn init(node_id: u32) {
-    CLOCK.get_or_init(|| async { Clock::new(node_id) }).await;
+    let clock = Clock::new(node_id);
+    CLOCK.get_or_init(|| clock);
 }
 
-pub(crate) fn clock() -> &'static Clock {
+pub fn clock() -> &'static Clock {
     CLOCK
         .get()
         .expect("Clock not initialised, unable to proceed.")
