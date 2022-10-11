@@ -8,10 +8,10 @@ use lnx_storage::DirectoryWriter;
 use tantivy::schema::Schema;
 use tantivy::{Document, Index, IndexSettings, IndexWriter};
 
-use crate::{WriterError, WriterSettings};
+use crate::{WriterError, WriterSettings, WriterStatistics};
 
 /// The maximum capacity the segment should hold.
-pub const MAX_INITIAL_SEGMENT_SIZE: usize = 3 << 30;
+pub const MAX_INITIAL_SEGMENT_SIZE: usize = if cfg!(test) { 1 << 10 } else { 3 << 30 };
 
 #[derive(Debug, Clone)]
 pub struct IndexerFactory {
@@ -110,15 +110,20 @@ impl Indexer {
 pub(crate) struct IndexerPipeline {
     factory: IndexerFactory,
     live_indexer: Indexer,
+    stats: WriterStatistics,
 }
 
 impl IndexerPipeline {
-    pub fn create(factory: IndexerFactory) -> Result<Self, WriterError> {
+    pub fn create(
+        factory: IndexerFactory,
+        stats: WriterStatistics,
+    ) -> Result<Self, WriterError> {
         let live_indexer = factory.new_indexer()?;
 
         Ok(Self {
             factory,
             live_indexer,
+            stats,
         })
     }
 
@@ -140,6 +145,7 @@ impl IndexerPipeline {
             self.live_indexer.add_document(doc)?;
         }
         self.live_indexer.register_docs(num_docs);
+        self.stats.inc_documents_by(num_docs);
 
         let segment_id = self.live_indexer.segment_id;
 
@@ -154,6 +160,7 @@ impl IndexerPipeline {
     ) -> Result<HLCTimestamp, WriterError> {
         let segment_id = self.live_indexer.segment_id;
 
+        self.stats.inc_documents_by(deletes.len());
         for delete in deletes {
             self.live_indexer.add_delete(delete);
         }
@@ -165,6 +172,7 @@ impl IndexerPipeline {
 
     pub fn flush_segment(&mut self) -> Result<(), WriterError> {
         let new_segment = self.factory.new_indexer()?;
+        self.stats.inc_segments();
 
         let old_segment = mem::replace(&mut self.live_indexer, new_segment);
 
