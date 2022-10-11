@@ -6,7 +6,7 @@ use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 use tokio::sync::oneshot;
 
-#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
 pub enum DeleteValue {
     I64(i64),
@@ -16,7 +16,7 @@ pub enum DeleteValue {
     Bytes(Vec<u8>),
 }
 
-#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
 pub struct Delete {
     pub field: String,
