@@ -1,18 +1,59 @@
 use std::io::ErrorKind;
+use std::ops::{Deref, DerefMut};
 use std::{io, mem};
 
 use bytecheck::CheckBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 use tokio::sync::oneshot;
 
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes, Debug))]
+pub enum DeleteValue {
+    I64(i64),
+    U64(u64),
+    F64(f64),
+    String(String),
+    Bytes(Vec<u8>),
+}
+
+#[derive(Debug, Clone, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(CheckBytes, Debug))]
+pub struct Delete {
+    pub field: String,
+    pub value: DeleteValue,
+}
+
 #[derive(Debug, Default, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
-pub struct Deletes(pub(crate) Vec<String>);
+pub struct Deletes(pub(crate) Vec<Delete>);
+
+impl Deref for Deletes {
+    type Target = Vec<Delete>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Deletes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 impl Deletes {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    #[inline]
+    /// The estimated amount of space this structure will take up
+    /// on disk.
+    pub fn estimated_size_on_disk(&self) -> usize {
+        rkyv::to_bytes::<_, 2048>(self)
+            .map(|v| v.len())
+            .unwrap_or(0)
     }
 
     /// Loads a given metafile from a buffer.
