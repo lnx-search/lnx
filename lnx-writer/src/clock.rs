@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use datacake_crdt::{get_unix_timestamp_ms, HLCTimestamp};
-use tokio::sync::oneshot;
 use once_cell::sync::OnceCell;
+use tokio::sync::oneshot;
 
 static CLOCK: OnceCell<Clock> = OnceCell::new();
 
