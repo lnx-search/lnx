@@ -35,14 +35,12 @@ impl AioCombiner {
         let task = AioTask::from(setup);
 
         let (set_ready, ready) = oneshot::channel();
-        rt.spawn_actor(task, set_ready)
-            .await
-            .map_err(|_| {
-                io::Error::new(
-                    ErrorKind::Other,
-                    "The IO scheduler and runtime is not currently running.",
-                )
-            })?;
+        rt.spawn_actor(task, set_ready).await.map_err(|_| {
+            io::Error::new(
+                ErrorKind::Other,
+                "The IO scheduler and runtime is not currently running.",
+            )
+        })?;
 
         ready.await.expect("Task was unexpectedly dropped.")?;
 

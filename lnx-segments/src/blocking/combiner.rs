@@ -33,7 +33,7 @@ impl BlockingCombiner {
         let writer = BlockingWriter::create(path, 0, index, segment_id).await?;
 
         info!("New combiner created!");
-        
+
         Ok(Self { writer })
     }
 

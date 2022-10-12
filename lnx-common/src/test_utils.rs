@@ -1,5 +1,7 @@
 use std::env::temp_dir;
+
 use tantivy::schema::{Field, Schema, STORED, TEXT};
+
 use crate::{AppContext, AppContextInner, IndexContext, IndexContextInner};
 
 pub fn test_index_ctx() -> (IndexContext, Field, Field) {
@@ -24,5 +26,4 @@ pub fn test_app_ctx() -> AppContext {
     AppContext::from(AppContextInner {
         tmp_path: temp_dir(),
     })
-
 }

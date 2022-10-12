@@ -1,8 +1,9 @@
 use std::env::temp_dir;
 use std::time::Duration;
+
+use lnx_writer::{SegmentStatus, WriterSettings};
 use tantivy::doc;
 use tokio::time::timeout;
-use lnx_writer::{SegmentStatus, WriterSettings};
 
 #[tokio::test]
 async fn test_segment_flushing() {
@@ -40,5 +41,9 @@ async fn test_segment_flushing() {
         .expect("Get latest change.");
 
     assert_eq!(segment_id.node(), 0, "Node id should match provided id.");
-    assert_eq!(status, SegmentStatus::Success, "Segment status should be marked as a success.");
+    assert_eq!(
+        status,
+        SegmentStatus::Success,
+        "Segment status should be marked as a success."
+    );
 }

@@ -28,7 +28,7 @@ impl BlockingExporter {
         let writer = BlockingWriter::create(path, size_hint, index, segment_id).await?;
 
         info!("New exporter created!");
-        
+
         Ok(Self { writer })
     }
 

@@ -92,7 +92,8 @@ impl FinalizerActor {
                 "Beginning finalization of segment."
             );
 
-            let path = self.base_export_path
+            let path = self
+                .base_export_path
                 .join(segment_id.to_string())
                 .with_extension("segment");
 
@@ -135,7 +136,10 @@ impl FinalizerActor {
     skip(indexer),
     fields(segment_id = %indexer.segment_id)
 )]
-async fn finalize_segment(export_path: &Path, indexer: Indexer) -> Result<(), WriterError> {
+async fn finalize_segment(
+    export_path: &Path,
+    indexer: Indexer,
+) -> Result<(), WriterError> {
     let size_hint = indexer.estimated_disk_usage();
     let files_location = indexer.dir.exported_files().to_path_buf();
 
@@ -147,9 +151,13 @@ async fn finalize_segment(export_path: &Path, indexer: Indexer) -> Result<(), Wr
     .await
     .expect("Spawn background thread")?;
 
-    let mut exporter =
-        Exporter::create(export_path, size_hint, indexer.index_name, indexer.segment_id)
-            .await?;
+    let mut exporter = Exporter::create(
+        export_path,
+        size_hint,
+        indexer.index_name,
+        indexer.segment_id,
+    )
+    .await?;
 
     let deletes_raw = indexer.deletes.to_compressed_bytes().await?;
     exporter

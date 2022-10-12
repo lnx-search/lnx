@@ -28,9 +28,7 @@ pub fn create_runtime(num_threads: usize) -> glommio::Result<AioRuntime, ()> {
 
     LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(num_threads))
         .spin_before_park(Duration::from_millis(10))
-        .on_all_shards(move || {
-            run_tasks(tasks_rx)
-        })?;
+        .on_all_shards(move || run_tasks(tasks_rx))?;
 
     let rt = AioRuntimeInner { tasks_tx };
 
@@ -79,7 +77,11 @@ pub struct AioRuntimeInner {
 }
 
 impl AioRuntimeInner {
-    pub(super) async fn spawn_actor(&self, task: AioTask, responder: Responder) -> Result<(), DeadRuntime> {
+    pub(super) async fn spawn_actor(
+        &self,
+        task: AioTask,
+        responder: Responder,
+    ) -> Result<(), DeadRuntime> {
         self.tasks_tx
             .send_async((task, responder))
             .await
@@ -92,6 +94,7 @@ async fn run_tasks(tasks: flume::Receiver<(AioTask, Responder)>) {
         glommio::spawn_local(async move {
             let res = task.spawn_actor().await;
             let _ = responder.send(res);
-        }).detach();
+        })
+        .detach();
     }
 }
