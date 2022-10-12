@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
+mod schema;
 
 #[derive(Debug, Clone)]
 pub struct IndexContext(Arc<IndexContextInner>);
