@@ -69,7 +69,7 @@ pub(crate) struct Finalizer {
     changes_notifier: broadcast::Receiver<(HLCTimestamp, SegmentStatus)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SegmentStatus {
     Success,
     Failure(String),
@@ -92,8 +92,12 @@ impl FinalizerActor {
                 "Beginning finalization of segment."
             );
 
+            let path = self.base_export_path
+                .join(segment_id.to_string())
+                .with_extension("segment");
+
             let start = std::time::Instant::now();
-            let result = finalize_segment(&self.base_export_path, indexer).await;
+            let result = finalize_segment(&path, indexer).await;
             let elapsed = start.elapsed();
 
             self.acknowledge_segment(segment_id, elapsed, result);
@@ -102,6 +106,7 @@ impl FinalizerActor {
         info!("Segment finalizer shutting down!");
     }
 
+    #[instrument(name = "segment-finalizer", skip(self, result))]
     fn acknowledge_segment(
         &self,
         segment_id: HLCTimestamp,
@@ -110,19 +115,13 @@ impl FinalizerActor {
     ) {
         let status = if let Err(e) = result {
             error!(
-                segment_id = %segment_id,
-                elapsed_time = ?elapsed,
                 error = ?e,
                 "Failed to finalize segment due to error.",
             );
 
             SegmentStatus::Failure(e.to_string())
         } else {
-            info!(
-                segment_id = %segment_id,
-                elapsed_time = ?elapsed,
-                "Successfully finalised segment.",
-            );
+            info!("Successfully finalised segment.");
 
             SegmentStatus::Success
         };
@@ -131,7 +130,12 @@ impl FinalizerActor {
     }
 }
 
-async fn finalize_segment(path: &Path, indexer: Indexer) -> Result<(), WriterError> {
+#[instrument(
+    name = "segment-finalizer",
+    skip(indexer),
+    fields(segment_id = %indexer.segment_id)
+)]
+async fn finalize_segment(export_path: &Path, indexer: Indexer) -> Result<(), WriterError> {
     let size_hint = indexer.estimated_disk_usage();
     let files_location = indexer.dir.exported_files().to_path_buf();
 
@@ -144,7 +148,7 @@ async fn finalize_segment(path: &Path, indexer: Indexer) -> Result<(), WriterErr
     .expect("Spawn background thread")?;
 
     let mut exporter =
-        Exporter::create(path, size_hint, indexer.index_name, indexer.segment_id)
+        Exporter::create(export_path, size_hint, indexer.index_name, indexer.segment_id)
             .await?;
 
     let deletes_raw = indexer.deletes.to_compressed_bytes().await?;
@@ -152,9 +156,13 @@ async fn finalize_segment(path: &Path, indexer: Indexer) -> Result<(), WriterErr
         .write_raw(Path::new(DELETES_FILE), deletes_raw)
         .await?;
 
-    for fp in files {
+    let total = files.len();
+    for (i, fp) in files.into_iter().enumerate() {
         exporter.write_file(&fp).await?;
+        info!(target_file = ?fp, "Exported file [{}/{}]", i + 1, total);
     }
+
+    exporter.finalise().await?;
 
     Ok(())
 }

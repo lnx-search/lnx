@@ -17,6 +17,7 @@ pub struct BlockingExporter {
 }
 
 impl BlockingExporter {
+    #[instrument(name = "blocking-exporter")]
     /// Create a new blocking exporter.
     pub async fn create(
         path: &Path,
@@ -26,6 +27,8 @@ impl BlockingExporter {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, size_hint, index, segment_id).await?;
 
+        info!("New exporter created!");
+        
         Ok(Self { writer })
     }
 

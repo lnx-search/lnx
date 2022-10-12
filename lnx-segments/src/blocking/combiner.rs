@@ -23,6 +23,7 @@ pub struct BlockingCombiner {
 }
 
 impl BlockingCombiner {
+    #[instrument(name = "blocking-combiner")]
     /// Create a new [BlockingCombiner] instance writing to the provided path.
     pub async fn create(
         path: &Path,
@@ -31,6 +32,8 @@ impl BlockingCombiner {
     ) -> io::Result<Self> {
         let writer = BlockingWriter::create(path, 0, index, segment_id).await?;
 
+        info!("New combiner created!");
+        
         Ok(Self { writer })
     }
 

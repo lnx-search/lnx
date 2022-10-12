@@ -47,7 +47,12 @@ impl Writer {
         );
 
         let stats = WriterStatistics::default();
-        let pipeline = IndexerPipeline::create(factory, stats.clone())?;
+        let pipeline = {
+            let stats = stats.clone();
+            tokio::task::spawn_blocking(move || IndexerPipeline::create(factory, stats))
+                .await
+                .expect("Spawn background thread")?
+        };
 
         tokio::spawn(auto_commit_timer(duration.clone(), ops_tx.clone()));
         std::thread::Builder::new()

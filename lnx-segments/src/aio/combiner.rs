@@ -16,6 +16,7 @@ pub struct AioCombiner {
 }
 
 impl AioCombiner {
+    #[instrument(name = "aio-combiner", skip(rt))]
     /// Create a new [AioCombiner] instance writing to the provided path.
     pub async fn create(
         rt: &AioRuntime,
@@ -33,12 +34,19 @@ impl AioCombiner {
 
         let task = AioTask::from(setup);
 
-        rt.spawn_actor(task).await.map_err(|_| {
-            io::Error::new(
-                ErrorKind::Other,
-                "The IO scheduler and runtime is not currently running.",
-            )
-        })?;
+        let (set_ready, ready) = oneshot::channel();
+        rt.spawn_actor(task, set_ready)
+            .await
+            .map_err(|_| {
+                io::Error::new(
+                    ErrorKind::Other,
+                    "The IO scheduler and runtime is not currently running.",
+                )
+            })?;
+
+        ready.await.expect("Task was unexpectedly dropped.")?;
+
+        info!("New combiner created!");
 
         Ok(Self { tx })
     }
@@ -103,7 +111,7 @@ impl AioCombinerActorSetup {
             writer,
         };
 
-        actor.run_actor().await;
+        glommio::spawn_local(actor.run_actor()).detach();
 
         Ok(())
     }

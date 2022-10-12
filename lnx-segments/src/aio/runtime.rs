@@ -3,10 +3,13 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use glommio::{LocalExecutorPoolBuilder, PoolPlacement};
+use glommio::{LocalExecutorBuilder, LocalExecutorPoolBuilder, PoolPlacement};
+use tokio::sync::oneshot;
 
 use crate::aio::combiner::AioCombinerActorSetup;
 use crate::aio::exporter::AioExporterActorSetup;
+
+type Responder = oneshot::Sender<io::Result<()>>;
 
 #[derive(Debug, thiserror::Error)]
 #[error("The runtime is not initialised or running.")]
@@ -19,9 +22,15 @@ pub struct DeadRuntime;
 pub fn create_runtime(num_threads: usize) -> glommio::Result<AioRuntime, ()> {
     let (tasks_tx, tasks_rx) = flume::unbounded();
 
-    LocalExecutorPoolBuilder::new(PoolPlacement::MaxPack(num_threads, None))
+    // Check to see if our runtime can start ok.
+    let handle = LocalExecutorBuilder::default().spawn(|| async {})?;
+    handle.join()?;
+
+    LocalExecutorPoolBuilder::new(PoolPlacement::Unbound(num_threads))
         .spin_before_park(Duration::from_millis(10))
-        .on_all_shards(move || run_tasks(tasks_rx))?;
+        .on_all_shards(move || {
+            run_tasks(tasks_rx)
+        })?;
 
     let rt = AioRuntimeInner { tasks_tx };
 
@@ -46,7 +55,7 @@ impl From<AioExporterActorSetup> for AioTask {
 }
 
 impl AioTask {
-    async fn run_actor(self) -> io::Result<()> {
+    async fn spawn_actor(self) -> io::Result<()> {
         match self {
             Self::Combiner(inner) => inner.run_actor().await,
             Self::Exporter(inner) => inner.run_actor().await,
@@ -66,20 +75,23 @@ impl Deref for AioRuntime {
 }
 
 pub struct AioRuntimeInner {
-    tasks_tx: flume::Sender<AioTask>,
+    tasks_tx: flume::Sender<(AioTask, Responder)>,
 }
 
 impl AioRuntimeInner {
-    pub(super) async fn spawn_actor(&self, task: AioTask) -> Result<(), DeadRuntime> {
+    pub(super) async fn spawn_actor(&self, task: AioTask, responder: Responder) -> Result<(), DeadRuntime> {
         self.tasks_tx
-            .send_async(task)
+            .send_async((task, responder))
             .await
             .map_err(|_| DeadRuntime)
     }
 }
 
-async fn run_tasks(tasks: flume::Receiver<AioTask>) {
-    while let Ok(task) = tasks.recv_async().await {
-        glommio::spawn_local(task.run_actor()).detach();
+async fn run_tasks(tasks: flume::Receiver<(AioTask, Responder)>) {
+    while let Ok((task, responder)) = tasks.recv_async().await {
+        glommio::spawn_local(async move {
+            let res = task.spawn_actor().await;
+            let _ = responder.send(res);
+        }).detach();
     }
 }

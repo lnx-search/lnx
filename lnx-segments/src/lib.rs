@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate tracing;
+
 #[cfg(target_os = "linux")]
 mod aio;
 

@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
-use std::io;
+use std::{cmp, io};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,7 +12,7 @@ mod indexer;
 mod writer;
 
 pub use clock::clock;
-pub use finalizer::subscribe;
+pub use finalizer::{subscribe, SegmentStatus};
 pub use writer::Writer;
 
 /// 50MB default per thread.
@@ -53,7 +53,7 @@ impl WriterStatistics {
     pub fn deletes_registered(&self) -> usize {
         self.deletes_registered.load(Ordering::Relaxed)
     }
-    
+
     #[inline]
     pub fn inc_segments(&self) {
         self.segments_produced.fetch_add(1, Ordering::Relaxed);
@@ -63,7 +63,7 @@ impl WriterStatistics {
     pub fn inc_documents_by(&self, n: usize) {
         self.documents_ingested.fetch_add(n, Ordering::Relaxed);
     }
-    
+
     #[inline]
     pub fn inc_deletes_by(&self, n: usize) {
         self.deletes_registered.fetch_add(n, Ordering::Relaxed);
@@ -72,9 +72,25 @@ impl WriterStatistics {
 
 #[derive(Debug, Copy, Clone)]
 pub struct WriterSettings {
+    /// The duration of inactivity to elapse before flushing a segment.
     pub auto_commit_duration: u64,
+
+    /// The number of indexing threads to use.
     pub num_threads: usize,
+
+    /// The size of the memory buffer to use in total across the number of indexing threads.
     pub memory_buffer_size: usize,
+}
+
+impl Default for WriterSettings {
+    fn default() -> Self {
+        let threads = cmp::min(num_cpus::get(), 8);
+        Self {
+            auto_commit_duration: AUTO_COMMIT_DEFAULT,
+            num_threads: threads,
+            memory_buffer_size: DEFAULT_BUFFER_SIZE * threads,
+        }
+    }
 }
 
 impl From<WriterSettingsSchema> for WriterSettings {
@@ -131,7 +147,7 @@ pub struct WriterSettingsSchema {
     #[schema(default = "<calculated: num_logical_cores>", example = 8)]
     /// The number of threads the writer should use.
     ///
-    /// If this is set to `None` it uses the number of cores available
+    /// If this is not specified, it uses the number of cores available
     /// on the machine but is limited at upto 8 threads.
     pub num_threads: usize,
 
@@ -158,6 +174,16 @@ pub struct WriterSettingsSchema {
     ///
     /// This duration must be greater than 1 second but less than 24 hours.
     pub auto_commit_duration: Option<u64>,
+}
+
+impl Default for WriterSettingsSchema {
+    fn default() -> Self {
+        Self {
+            num_threads: cmp::min(num_cpus::get(), 8),
+            memory_buffer_size: None,
+            auto_commit_duration: None,
+        }
+    }
 }
 
 impl WriterSettingsSchema {
@@ -221,26 +247,4 @@ pub enum WriterError {
 
     #[error("{0}")]
     Other(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use utoipa::OpenApi;
-
-    use super::*;
-
-    #[test]
-    fn test_utopia() {
-        #[derive(OpenApi)]
-        #[openapi(
-            components(schemas(WriterSettingsSchema)),
-            tags(
-                (name = "todo", description = "Todo items management API")
-            )
-        )]
-        struct ApiDoc;
-
-        let doc = ApiDoc::openapi();
-        println!("{}", doc.to_pretty_json().unwrap());
-    }
 }

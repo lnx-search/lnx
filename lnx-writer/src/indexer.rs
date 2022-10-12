@@ -119,6 +119,7 @@ impl IndexerPipeline {
         stats: WriterStatistics,
     ) -> Result<Self, WriterError> {
         let live_indexer = factory.new_indexer()?;
+        stats.inc_segments();
 
         Ok(Self {
             factory,
@@ -160,7 +161,7 @@ impl IndexerPipeline {
     ) -> Result<HLCTimestamp, WriterError> {
         let segment_id = self.live_indexer.segment_id;
 
-        self.stats.inc_documents_by(deletes.len());
+        self.stats.inc_deletes_by(deletes.len());
         for delete in deletes {
             self.live_indexer.add_delete(delete);
         }
