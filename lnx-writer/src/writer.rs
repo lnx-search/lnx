@@ -9,7 +9,7 @@ use tantivy::Document;
 use tokio::sync::oneshot;
 
 use crate::indexer::{IndexerFactory, IndexerPipeline};
-use crate::{WriterError, WriterSettings};
+use crate::{WriterError, WriterSettings, WriterStatistics};
 
 type Responder = oneshot::Sender<Result<HLCTimestamp, WriterError>>;
 
@@ -26,6 +26,7 @@ pub struct Writer {
     settings: WriterSettings,
     duration: Arc<AtomicU64>,
     ops_tx: flume::Sender<Op>,
+    stats: WriterStatistics,
 }
 
 impl Writer {
@@ -42,10 +43,16 @@ impl Writer {
             index_ctx.name.clone(),
             index_ctx.tantivy_schema(),
             app_ctx.tmp_path.clone(),
-            settings.clone(),
+            settings,
         );
 
-        let pipeline = IndexerPipeline::create(factory)?;
+        let stats = WriterStatistics::default();
+        let pipeline = {
+            let stats = stats.clone();
+            tokio::task::spawn_blocking(move || IndexerPipeline::create(factory, stats))
+                .await
+                .expect("Spawn background thread")?
+        };
 
         tokio::spawn(auto_commit_timer(duration.clone(), ops_tx.clone()));
         std::thread::Builder::new()
@@ -59,7 +66,14 @@ impl Writer {
             settings,
             duration,
             ops_tx,
+            stats,
         })
+    }
+
+    #[inline]
+    /// The statistics associated with this writer.
+    pub fn stats(&self) -> WriterStatistics {
+        self.stats.clone()
     }
 
     /// Attempts to create a new writer as the current writer task has shutdown.
@@ -70,10 +84,10 @@ impl Writer {
             self.index_ctx.name.clone(),
             self.index_ctx.tantivy_schema(),
             self.app_ctx.tmp_path.clone(),
-            self.settings.clone(),
+            self.settings,
         );
 
-        let pipeline = IndexerPipeline::create(factory)?;
+        let pipeline = IndexerPipeline::create(factory, self.stats.clone())?;
 
         tokio::spawn(auto_commit_timer(self.duration.clone(), ops_tx.clone()));
         std::thread::Builder::new()
@@ -108,7 +122,7 @@ impl Writer {
         &mut self,
         settings: WriterSettings,
     ) -> Result<(), WriterError> {
-        self.settings = settings.clone();
+        self.settings = settings;
         self.duration
             .store(settings.auto_commit_duration, Ordering::Relaxed);
 

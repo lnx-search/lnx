@@ -2,8 +2,17 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
+
 #[derive(Debug, Clone)]
 pub struct IndexContext(Arc<IndexContextInner>);
+
+impl From<IndexContextInner> for IndexContext {
+    fn from(ctx: IndexContextInner) -> Self {
+        Self(Arc::new(ctx))
+    }
+}
 
 impl Deref for IndexContext {
     type Target = IndexContextInner;
@@ -16,7 +25,7 @@ impl Deref for IndexContext {
 #[derive(Debug)]
 pub struct IndexContextInner {
     pub name: String,
-    schema: tantivy::schema::Schema,
+    pub schema: tantivy::schema::Schema,
 }
 
 impl IndexContextInner {
@@ -28,6 +37,12 @@ impl IndexContextInner {
 
 #[derive(Debug, Clone)]
 pub struct AppContext(Arc<AppContextInner>);
+
+impl From<AppContextInner> for AppContext {
+    fn from(ctx: AppContextInner) -> Self {
+        Self(Arc::new(ctx))
+    }
+}
 
 impl Deref for AppContext {
     type Target = AppContextInner;

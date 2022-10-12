@@ -155,7 +155,6 @@ impl AioWriter {
 
         self.inner.write_all(&raw).await?;
 
-        dbg!(start, raw.len(), self.current_pos());
         write_metadata_offsets_aio(&mut self.inner, start, raw.len() as u64).await?;
 
         self.inner.flush().await?;

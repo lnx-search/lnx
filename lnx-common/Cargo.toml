@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 tantivy = "0.18.0"
+
+[features]
+test-utils = []

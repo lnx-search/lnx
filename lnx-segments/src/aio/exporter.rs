@@ -14,6 +14,7 @@ pub struct AioExporter {
 }
 
 impl AioExporter {
+    #[instrument(name = "aio-exporter", skip(rt))]
     /// Create a new [AioCombiner] instance writing to the provided path.
     pub async fn create(
         rt: &AioRuntime,
@@ -33,12 +34,17 @@ impl AioExporter {
 
         let task = AioTask::from(setup);
 
-        rt.spawn_actor(task).await.map_err(|_| {
+        let (set_ready, ready) = oneshot::channel();
+        rt.spawn_actor(task, set_ready).await.map_err(|_| {
             io::Error::new(
                 ErrorKind::Other,
                 "The IO scheduler and runtime is not currently running.",
             )
         })?;
+
+        ready.await.expect("Task was unexpectedly dropped.")?;
+
+        info!("New exporter created!");
 
         Ok(Self { tx })
     }
@@ -136,7 +142,7 @@ impl AioExporterActorSetup {
             writer,
         };
 
-        actor.run_actor().await;
+        glommio::spawn_local(actor.run_actor()).detach();
 
         Ok(())
     }

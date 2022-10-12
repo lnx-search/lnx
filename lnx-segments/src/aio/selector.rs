@@ -30,7 +30,11 @@ impl AutoExporter {
             Some(rt) => rt,
             None => match crate::aio::create_runtime(calculate_io_threads()) {
                 Ok(rt) => RUNTIME.get_or_init(|| rt),
-                Err(_) => {
+                Err(e) => {
+                    info!(
+                        error = ?e,
+                        "Using compatibility API for export and combiner due to failure of the AIO system."
+                    );
                     let combiner =
                         BlockingExporter::create(path, size_hint, index, segment_id)
                             .await?;
@@ -147,6 +151,12 @@ impl AutoCombiner {
     }
 }
 
+#[cfg(feature = "test-runtime")]
+fn calculate_io_threads() -> usize {
+    1
+}
+
+#[cfg(not(feature = "test-runtime"))]
 fn calculate_io_threads() -> usize {
     let cpus = num_cpus::get();
 
