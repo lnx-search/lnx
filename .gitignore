@@ -5,3 +5,4 @@ lnx-engine/search-index/index
 .idea
 /meta
 /index/
+/.cargo
