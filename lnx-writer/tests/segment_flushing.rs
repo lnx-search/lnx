@@ -1,7 +1,8 @@
 use std::env::temp_dir;
 use std::time::Duration;
 
-use lnx_writer::{SegmentStatus, WriterSettings};
+use lnx_common::schema::WriterSettings;
+use lnx_writer::SegmentStatus;
 use tantivy::doc;
 use tokio::time::timeout;
 

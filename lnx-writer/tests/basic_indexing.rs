@@ -1,8 +1,8 @@
 use std::env::temp_dir;
 use std::time::Duration;
 
+use lnx_common::schema::WriterSettings;
 use lnx_segments::{Delete, DeleteValue};
-use lnx_writer::WriterSettings;
 use tantivy::doc;
 
 #[tokio::test]
