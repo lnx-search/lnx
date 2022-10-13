@@ -676,6 +676,17 @@ dependencies = [
 [[package]]
 name = "lnx-reader"
 version = "0.1.0"
+dependencies = [
+ "datacake-crdt",
+ "flume",
+ "lnx-common",
+ "lnx-segments",
+ "lnx-storage",
+ "tantivy",
+ "thiserror",
+ "tracing",
+ "tracing-futures",
+]
 
 [[package]]
 name = "lnx-segments"
@@ -719,27 +730,19 @@ dependencies = [
 name = "lnx-writer"
 version = "0.1.0"
 dependencies = [
- "bytecheck",
  "datacake-crdt",
  "flume",
  "humansize",
- "humantime",
  "lnx-common",
  "lnx-segments",
  "lnx-storage",
- "num_cpus",
  "once_cell",
- "parse-size",
- "rkyv",
- "serde",
- "serde_json",
  "tantivy",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-futures",
  "tracing-subscriber",
- "utoipa",
  "uuid",
 ]
 

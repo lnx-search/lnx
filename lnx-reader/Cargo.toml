@@ -6,3 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tantivy = "0.18.0"
+tracing = "0.1.36"
+tracing-futures = "0.2.5"
+thiserror = "1"
+flume = "0.10.14"
+datacake-crdt = "0.1.2"
+
+lnx-common = { path = "../lnx-common" }
+lnx-segments = { path = "../lnx-segments" }
+lnx-storage = { path = "../lnx-storage" }
