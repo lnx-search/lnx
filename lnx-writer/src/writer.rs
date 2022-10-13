@@ -3,13 +3,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use datacake_crdt::HLCTimestamp;
+use lnx_common::schema::WriterSettings;
 use lnx_common::{AppContext, IndexContext};
 use lnx_segments::Delete;
 use tantivy::Document;
 use tokio::sync::oneshot;
 
 use crate::indexer::{IndexerFactory, IndexerPipeline};
-use crate::{WriterError, WriterSettings, WriterStatistics};
+use crate::{WriterError, WriterStatistics};
 
 type Responder = oneshot::Sender<Result<HLCTimestamp, WriterError>>;
 

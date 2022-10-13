@@ -3,12 +3,13 @@ use std::ops::Deref;
 use std::path::PathBuf;
 
 use datacake_crdt::HLCTimestamp;
+use lnx_common::schema::WriterSettings;
 use lnx_segments::{Delete, Deletes};
 use lnx_storage::DirectoryWriter;
 use tantivy::schema::Schema;
 use tantivy::{Document, Index, IndexSettings, IndexWriter};
 
-use crate::{WriterError, WriterSettings, WriterStatistics};
+use crate::{WriterError, WriterStatistics};
 
 /// The maximum capacity the segment should hold.
 pub const MAX_INITIAL_SEGMENT_SIZE: usize = if cfg!(test) { 1 << 10 } else { 3 << 30 };
@@ -106,7 +107,7 @@ impl Indexer {
 ///
 /// This manages creating and writing out a new segment to disk.
 /// Once an existing segment is nearly full it will be sent off to a background
-/// handler to finalise the commit and generate a new segment.
+/// handler to finalize the commit and generate a new segment.
 pub(crate) struct IndexerPipeline {
     factory: IndexerFactory,
     live_indexer: Indexer,
