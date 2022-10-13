@@ -1,14 +1,9 @@
 mod field;
 mod writer;
 
-use std::{collections::BTreeMap, ops::Deref};
+use std::collections::BTreeMap;
 
-pub use field::{
-    BaseOptions,
-    Field,
-    NumericFieldOptions,
-    TextOptions,
-};
+pub use field::{BaseOptions, Field, NumericFieldOptions, TextOptions};
 use tantivy::Score;
 pub use writer::WriterSettings;
 
@@ -71,16 +66,15 @@ pub struct Schema {
     pub boosted_fields: BTreeMap<String, Score>,
 }
 
-
 mod validators {
-    use std::{borrow::Cow, collections::HashSet};
-    use std::collections::BTreeMap;
+    use std::borrow::Cow;
+    use std::collections::{BTreeMap, HashSet};
 
     use serde_json::{json, Value};
     use tantivy::Score;
     use validator::ValidationError;
 
-    use super::{Schema, Field};
+    use super::{Field, Schema};
 
     pub fn validate_schema(schema: &Schema) -> Result<(), ValidationError> {
         let fields = match &schema.fields {
@@ -92,11 +86,8 @@ mod validators {
         error.message = Some(Cow::Borrowed(
             "Search fields and boost fields must be defined within the `fields` property when not using the schema-less system.",
         ));
-        
-        let keys = fields
-            .keys()
-            .cloned()
-            .collect::<HashSet<String>>();
+
+        let keys = fields.keys().cloned().collect::<HashSet<String>>();
 
         let param_key = Cow::Borrowed("search_fields");
         let mut is_fail = false;
@@ -142,14 +133,16 @@ mod validators {
         Ok(())
     }
 
-    pub fn validate_schema_fields(fields: &BTreeMap<String, Field>) -> Result<(), ValidationError> {
+    pub fn validate_schema_fields(
+        fields: &BTreeMap<String, Field>,
+    ) -> Result<(), ValidationError> {
         let mut error = ValidationError::new("bad_field_name");
 
         if fields.is_empty() {
             error.message = Some(Cow::Borrowed(
                 "Must contain at least one field or be set to `null`.",
             ));
-            return Err(error)    
+            return Err(error);
         }
 
         error.message = Some(Cow::Borrowed(
@@ -159,15 +152,15 @@ mod validators {
         let param_key = Cow::Borrowed("keys");
         let mut is_fail = false;
         for field_name in fields.keys() {
-            if field_name.starts_with('-') 
-                || field_name.starts_with('_')          
-                || field_name.ends_with('-') 
-                || field_name.ends_with('_')  
+            if field_name.starts_with('-')
+                || field_name.starts_with('_')
+                || field_name.ends_with('-')
+                || field_name.ends_with('_')
                 || field_name
                     .chars()
                     .any(|c| !(c.is_alphanumeric() || c == '-' || c == '_'))
             {
-                is_fail = true;      
+                is_fail = true;
                 error
                     .params
                     .entry(param_key.clone())

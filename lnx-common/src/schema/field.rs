@@ -106,7 +106,7 @@ impl Field {
     }
 
     /// Is the field stored or not.
-    pub fn is_stored(&self) -> bool {        
+    pub fn is_stored(&self) -> bool {
         match self {
             Field::Text(opts) => opts.base.stored,
             Field::RawStr(opts) => opts.stored,
