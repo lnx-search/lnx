@@ -32,7 +32,7 @@ pub enum Field {
     /// A document can be associated to any number of facets.
     /// The hierarchy implicitly implies that a document belonging to a facet also belongs to the ancestor of its facet.
     /// In the example above, `/electronics/tv_and_video/` and `/electronics`.
-    Facet(FacetFieldOptions),
+    Facet(BaseOptions),
 
     /// A unsigned 64 bit integer field.
     U64(NumericFieldOptions),
@@ -74,6 +74,50 @@ pub enum Field {
     /// If returned or uploaded as a JSON object this field expects data to be submitted
     /// in the form of a `base64` encoded string and will be returned as such.
     Bytes(NumericFieldOptions),
+}
+
+impl Field {
+    /// Is the field required or not.
+    pub fn is_required(&self) -> bool {
+        match self {
+            Field::Text(opts) => opts.base.required,
+            Field::RawStr(opts) => opts.required,
+            Field::Facet(opts) => opts.required,
+            Field::U64(opts) => opts.base.required,
+            Field::I64(opts) => opts.base.required,
+            Field::F64(opts) => opts.base.required,
+            Field::Json(opts) => opts.required,
+            Field::Bytes(opts) => opts.base.required,
+        }
+    }
+
+    /// Can the field support multiple values or just a single value.
+    pub fn is_multi(&self) -> bool {
+        match self {
+            Field::Text(opts) => opts.base.multi,
+            Field::RawStr(opts) => opts.multi,
+            Field::Facet(opts) => opts.multi,
+            Field::U64(opts) => opts.base.multi,
+            Field::I64(opts) => opts.base.multi,
+            Field::F64(opts) => opts.base.multi,
+            Field::Json(opts) => opts.multi,
+            Field::Bytes(opts) => opts.base.multi,
+        }
+    }
+
+    /// Is the field stored or not.
+    pub fn is_stored(&self) -> bool {        
+        match self {
+            Field::Text(opts) => opts.base.stored,
+            Field::RawStr(opts) => opts.stored,
+            Field::Facet(opts) => opts.stored,
+            Field::U64(opts) => opts.base.stored,
+            Field::I64(opts) => opts.base.stored,
+            Field::F64(opts) => opts.base.stored,
+            Field::Json(opts) => opts.stored,
+            Field::Bytes(opts) => opts.base.stored,
+        }
+    }
 }
 
 #[derive(
@@ -192,26 +236,6 @@ struct NumericFieldOptionsSchema {
 
     #[serde(flatten, default)]
     base: BaseOptions,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    serde::Serialize,
-    serde::Deserialize,
-    rkyv::Archive,
-    rkyv::Serialize,
-    rkyv::Deserialize,
-    utoipa::ToSchema,
-)]
-pub struct FacetFieldOptions {
-    #[schema(default = "false", example = json!(false))]
-    #[serde(default)]
-    /// Should the field be included in the stored and compressed document.
-    ///
-    /// If this is `false`, the  field will not be returned as part of the
-    /// original document, but can still be used for searching.
-    pub stored: bool,
 }
 
 // This is a hack to default to true for serde.
