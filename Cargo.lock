@@ -659,10 +659,16 @@ name = "lnx-common"
 version = "0.1.0"
 dependencies = [
  "bytecheck",
+ "humansize",
+ "humantime",
+ "num_cpus",
+ "parse-size",
  "rkyv",
  "serde",
  "serde_json",
  "tantivy",
+ "tracing",
+ "tracing-futures",
  "utoipa",
  "validator",
 ]

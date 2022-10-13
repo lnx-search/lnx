@@ -1,10 +1,13 @@
+#[macro_use]
+extern crate tracing;
+
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub mod schema;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
-mod schema;
 
 #[derive(Debug, Clone)]
 pub struct IndexContext(Arc<IndexContextInner>);

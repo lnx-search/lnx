@@ -9,6 +9,12 @@ edition = "2021"
 tantivy = "0.18.0"
 serde_json = "1"
 bytecheck = "0.6.9"
+num_cpus = "1.13.1"
+parse-size = "1.0.0"
+humansize = "2.1.0"
+humantime = "2.1.0"
+tracing = "0.1.36"
+tracing-futures = "0.2.5"
 
 utoipa = { version = "2.2.0", features = ["json"] }
 validator = { version = "0.15", features = ["derive"] }

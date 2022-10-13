@@ -1,9 +1,17 @@
 mod field;
+mod writer;
 
 use std::collections::BTreeMap;
-use tantivy::Score;
 
-use field::Field;
+pub use field::{
+    BaseOptions,
+    FacetFieldOptions,
+    Field,
+    NumericFieldOptions,
+    TextOptions,
+};
+use tantivy::Score;
+pub use writer::WriterSettings;
 
 #[derive(
     Debug,
@@ -16,7 +24,10 @@ use field::Field;
     rkyv::Deserialize,
     utoipa::ToSchema,
 )]
-#[validate(schema(function = "validators::validate_schema", skip_on_field_errors = false))]
+#[validate(schema(
+    function = "validators::validate_schema",
+    skip_on_field_errors = false
+))]
 /// A index schema.
 ///
 /// The schema contains all the information required to create
@@ -29,10 +40,13 @@ pub struct Schema {
     /// This can be made up of alpha-numeric characters, `-` and `_`.
     pub name: String,
 
+    /// Options and configuration for indexing documents.
+    pub indexing_options: WriterSettings,
+
     #[serde(default)]
     /// The schema's fields.
     ///
-    /// If this is set to `null` the system will become schemaless.
+    /// If this is set to `null` the system will become schema-less.
     /// This is not recommended for most production systems but is useful for
     /// prototyping.
     pub fields: Option<BTreeMap<String, Field>>,
@@ -56,10 +70,10 @@ pub struct Schema {
     pub boosted_fields: BTreeMap<String, Score>,
 }
 
-
 mod validators {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
+
     use serde_json::{json, Value};
     use tantivy::Score;
     use validator::ValidationError;
@@ -67,8 +81,6 @@ mod validators {
     use super::Schema;
 
     pub fn validate_schema(schema: &Schema) -> Result<(), ValidationError> {
-
-
         Ok(())
     }
 
@@ -76,34 +88,44 @@ mod validators {
         let mut err = ValidationError::new("bad_str");
         err.params.insert(Cow::Borrowed("value"), json!(value));
 
-        if value.chars().any(|c| !(c.is_alphanumeric() || c == '-' || c == '_')) {
-            err.message = Some(Cow::Borrowed("Value must only contain alpha-numeric characters, `-` or `_`"));
+        if value
+            .chars()
+            .any(|c| !(c.is_alphanumeric() || c == '-' || c == '_'))
+        {
+            err.message = Some(Cow::Borrowed(
+                "Value must only contain alpha-numeric characters, `-` or `_`",
+            ));
 
-            return Err(err)
+            return Err(err);
         }
 
         if value.starts_with('-') || value.starts_with('_') {
             err.message = Some(Cow::Borrowed("Value must not start with `-` or `_`"));
-            return Err(err)
+            return Err(err);
         }
 
         if value.ends_with('-') || value.ends_with('_') {
             err.message = Some(Cow::Borrowed("Value must not end with `-` or `_`"));
-            return Err(err)
+            return Err(err);
         }
 
         Ok(())
     }
 
-    pub fn validate_boost_fields(map: &BTreeMap<String, Score>) -> Result<(), ValidationError> {
+    pub fn validate_boost_fields(
+        map: &BTreeMap<String, Score>,
+    ) -> Result<(), ValidationError> {
         let mut error = ValidationError::new("bad_str");
-        error.message = Some(Cow::Borrowed("The boosting multiplier must be greater than `0.0`."));
+        error.message = Some(Cow::Borrowed(
+            "The boosting multiplier must be greater than `0.0`.",
+        ));
 
         let param_key = Cow::Borrowed("fields");
 
         for (field, &score) in map {
             if score < 0.0f32 {
-                error.params
+                error
+                    .params
                     .entry(param_key.clone())
                     .and_modify(|v| {
                         if let Value::Array(inner) = v {
@@ -118,11 +140,9 @@ mod validators {
     }
 }
 
-
-
-
 #[cfg(test)]
 mod tests {
+    use field::{BaseOptions, FacetFieldOptions, NumericFieldOptions};
     use utoipa::OpenApi;
 
     use super::*;
@@ -131,14 +151,12 @@ mod tests {
     fn test_utopia() {
         #[derive(OpenApi)]
         #[openapi(
-            components(schemas(Schema)),
+            components(schemas(Schema, WriterSettings, Field, BaseOptions, NumericFieldOptions, FacetFieldOptions)),
             tags(
                 (name = "todo", description = "Todo items management API")
             )
         )]
         struct ApiDoc;
-
-        tantivy::schema::BytesOptions::default();
 
         let doc = ApiDoc::openapi();
         println!("{}", doc.to_pretty_json().unwrap());
