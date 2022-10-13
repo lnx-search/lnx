@@ -235,26 +235,3 @@ mod validators {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use field::{BaseOptions, NumericFieldOptions};
-    use utoipa::OpenApi;
-
-    use super::*;
-
-    #[test]
-    fn test_utopia() {
-        #[derive(OpenApi)]
-        #[openapi(
-            components(schemas(Schema, WriterSettings, Field, BaseOptions, NumericFieldOptions)),
-            tags(
-                (name = "todo", description = "Todo items management API")
-            )
-        )]
-        struct ApiDoc;
-
-        let doc = ApiDoc::openapi();
-        println!("{}", doc.to_pretty_json().unwrap());
-    }
-}
