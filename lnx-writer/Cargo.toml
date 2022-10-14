@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tantivy = "0.18.0"
 tracing = "0.1.36"
 tracing-futures = "0.2.5"
 thiserror = "1"
@@ -17,6 +16,7 @@ humansize = "2.1.0"
 
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync", "time", "rt"] }
+tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "f39cce2"}
 
 lnx-common = { path = "../lnx-common" }
 lnx-segments = { path = "../lnx-segments" }
