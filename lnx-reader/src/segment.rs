@@ -18,9 +18,7 @@ use crate::ReaderError;
 const FILTER_SIZE_TO_DOC_COUNT_RATIO: f64 = 0.35;
 
 /// A tantivy index reader for single file segments.
-pub(crate) struct SegmentIndex {
-    dir: ReadOnlyDirectory,
-    index: Index,
+pub struct SegmentIndex {
     reader: IndexReader,
     doc_id_field: Field,
     deletes: Arc<ArcSwap<DeletesFilter>>,
@@ -28,7 +26,7 @@ pub(crate) struct SegmentIndex {
 
 impl SegmentIndex {
     /// Open a new index reader for the given segment.
-    pub(crate) async fn open(path: &Path) -> Result<Self, ReaderError> {
+    pub async fn open(path: &Path) -> Result<Self, ReaderError> {
         let dir = ReadOnlyDirectory::open(path)?;
 
         // TODO: Handle error better.
@@ -42,7 +40,7 @@ impl SegmentIndex {
         let schema = index.schema();
         let doc_id_field = schema
             .get_field(RESERVED_DOCUMENT_ID_FIELD)
-            .ok_or_else(|| ReaderError::Unsupported)?;
+            .ok_or(ReaderError::Unsupported)?;
 
         let reader = index
             .reader_builder()
@@ -57,8 +55,6 @@ impl SegmentIndex {
         .expect("Spawn background task")?;
 
         Ok(Self {
-            dir,
-            index,
             reader,
             doc_id_field,
             deletes: Arc::new(ArcSwap::from_pointee(deletes)),
@@ -66,7 +62,7 @@ impl SegmentIndex {
     }
 
     /// Creates a new searcher for the given index.
-    pub(crate) fn reader(&self) -> SegmentReader {
+    pub fn reader(&self) -> SegmentReader {
         let searcher = self.reader.searcher();
         let deletes = self.deletes.clone();
         let doc_id_field = self.doc_id_field;
@@ -99,7 +95,7 @@ impl SegmentReader {
     /// Executes a given search query.
     ///
     /// This takes into account any marked deletes within the index.
-    pub fn execute<Q, C>(&self, query: &Q, collector: C) -> Result<(), ReaderError>
+    pub fn execute<Q, C>(&self, _query: &Q, collector: C) -> Result<(), ReaderError>
     where
         Q: Query,
         C: Collector,
@@ -110,7 +106,7 @@ impl SegmentReader {
             guard.is_deleted(id)
         };
 
-        let filter = FilterCollector::new(self.doc_id_field, predicate, collector);
+        let _filter = FilterCollector::new(self.doc_id_field, predicate, collector);
 
         Ok(())
     }

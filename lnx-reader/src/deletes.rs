@@ -63,7 +63,7 @@ impl Collector for DeletesCollector {
 
     fn for_segment(
         &self,
-        segment_local_id: tantivy::SegmentOrdinal,
+        _segment_local_id: tantivy::SegmentOrdinal,
         segment: &tantivy::SegmentReader,
     ) -> tantivy::Result<Self::Child> {
         let column = segment.fast_fields().u64(self.doc_id_field)?;

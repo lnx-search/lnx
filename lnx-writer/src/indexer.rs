@@ -6,7 +6,7 @@ use datacake_crdt::HLCTimestamp;
 use lnx_common::schema::WriterSettings;
 use lnx_segments::{Delete, Deletes};
 use lnx_storage::DirectoryWriter;
-use tantivy::schema::{Field, Schema};
+use tantivy::schema::Schema;
 use tantivy::{Document, Index, IndexSettings, IndexWriter};
 
 use crate::{WriterError, WriterStatistics};

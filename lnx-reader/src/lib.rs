@@ -4,6 +4,8 @@ use tantivy::TantivyError;
 mod deletes;
 mod segment;
 
+pub use segment::{SegmentIndex, SegmentReader};
+
 #[derive(Debug, thiserror::Error)]
 pub enum ReaderError {
     #[error("{0}")]

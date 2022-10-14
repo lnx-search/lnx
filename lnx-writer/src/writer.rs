@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use datacake_crdt::HLCTimestamp;
-use lnx_common::schema::{WriterSettings, RESERVED_DOCUMENT_ID_FIELD};
+use lnx_common::schema::WriterSettings;
 use lnx_common::{AppContext, IndexContext};
 use lnx_segments::Delete;
 use tantivy::Document;
