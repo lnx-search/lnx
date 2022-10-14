@@ -7,6 +7,8 @@ pub use field::{BaseOptions, Field, NumericFieldOptions, TextOptions};
 use tantivy::Score;
 pub use writer::WriterSettings;
 
+pub static RESERVED_DOCUMENT_ID_FIELD: &str = "_lnx_doc_id";
+
 #[derive(
     Debug,
     Clone,
