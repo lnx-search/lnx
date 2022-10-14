@@ -1,14 +1,20 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+use lnx_storage::StorageError;
+use tantivy::TantivyError;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod deletes;
+mod segment;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum ReaderError {
+    #[error("{0}")]
+    StorageError(#[from] StorageError),
+
+    #[error("{0}")]
+    TantivyError(#[from] TantivyError),
+
+    #[error("Io Error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("The segment data format is unsupported for this version of lnx.")]
+    Unsupported,
 }

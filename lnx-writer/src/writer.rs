@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use datacake_crdt::HLCTimestamp;
-use lnx_common::schema::WriterSettings;
+use lnx_common::schema::{WriterSettings, RESERVED_DOCUMENT_ID_FIELD};
 use lnx_common::{AppContext, IndexContext};
 use lnx_segments::Delete;
 use tantivy::Document;
@@ -77,17 +77,22 @@ impl Writer {
         self.stats.clone()
     }
 
+    fn get_new_factory(&self) -> IndexerFactory {
+        let schema = self.index_ctx.tantivy_schema();
+
+        IndexerFactory::new(
+            self.index_ctx.name.clone(),
+            schema,
+            self.app_ctx.tmp_path.clone(),
+            self.settings,
+        )
+    }
+
     /// Attempts to create a new writer as the current writer task has shutdown.
     async fn recreate(&mut self) -> Result<(), WriterError> {
         let (ops_tx, ops_rx) = flume::bounded(5);
 
-        let factory = IndexerFactory::new(
-            self.index_ctx.name.clone(),
-            self.index_ctx.tantivy_schema(),
-            self.app_ctx.tmp_path.clone(),
-            self.settings,
-        );
-
+        let factory = self.get_new_factory();
         let pipeline = IndexerPipeline::create(factory, self.stats.clone())?;
 
         tokio::spawn(auto_commit_timer(self.duration.clone(), ops_tx.clone()));
@@ -127,13 +132,7 @@ impl Writer {
         self.duration
             .store(settings.auto_commit_duration, Ordering::Relaxed);
 
-        let factory = IndexerFactory::new(
-            self.index_ctx.name.clone(),
-            self.index_ctx.tantivy_schema(),
-            self.app_ctx.tmp_path.clone(),
-            settings,
-        );
-
+        let factory = self.get_new_factory();
         self.ensure_alive_and_send(Op::SetFactory { factory })
             .await?;
 

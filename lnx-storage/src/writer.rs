@@ -97,7 +97,7 @@ impl Directory for DirectoryWriter {
     fn get_file_handle(
         &self,
         path: &Path,
-    ) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    ) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         self.inner.get_file_handle(path)
     }
 
