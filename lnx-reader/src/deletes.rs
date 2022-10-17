@@ -1,46 +1,58 @@
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use bitvec::prelude::*;
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::fastfield::Column;
 use tantivy::schema::Field;
 
+/// The ratio of the number of docs to the size of the bloom filter.
+const FILTER_SIZE_TO_DOC_COUNT_RATIO: f64 = 0.35;
+
+#[derive(Clone)]
 pub(crate) struct DeletesFilter {
-    bloom_filter: BitVec,
-    deletes: hashbrown::HashSet<u64>,
+    bloom_filter: Arc<ArcSwap<BitVec>>,
+    deletes: Arc<ArcSwap<hashbrown::HashSet<u64>>>,
 }
 
 impl DeletesFilter {
-    /// Creates a new set of deletes with a bloom filter of a given size.
-    pub fn new_blank(num_docs: usize) -> Self {
-        let mut bloom_filter = BitVec::with_capacity(num_docs);
-        bloom_filter.resize(num_docs, false);
-
+    /// Creates a new set of deletes with a empty bloom filter.
+    pub fn new() -> Self {
         Self {
-            bloom_filter,
-            deletes: Default::default(),
+            bloom_filter: Arc::new(ArcSwap::from_pointee(BitVec::new())),
+            deletes: Arc::new(ArcSwap::from_pointee(hashbrown::HashSet::new())),
         }
     }
 
     /// Marks a given document as deleted.
-    pub fn mark_deleted(&mut self, doc_id: u64) {
-        self.deletes.insert(doc_id);
+    pub fn mark_doc_ids_deleted(&self, doc_ids: impl Iterator<Item = u64>) {
+        let mut slf_clone = self.deletes.load().as_ref().clone();
 
-        let position = (doc_id % self.bloom_filter.len() as u64) as usize;
-        self.bloom_filter.set(position, true);
+        for doc_id in doc_ids {
+            slf_clone.insert(doc_id);
+        }
+
+        let new_size = calculate_bloom_capacity(slf_clone.len());
+
+        let mut bloom_filter = BitVec::with_capacity(new_size);
+        bloom_filter.resize(new_size, false);
+
+        self.bloom_filter.store(Arc::new(bloom_filter));
     }
 
     #[inline(always)]
     /// Checks if the given document is deleted or not.
     pub fn is_deleted(&self, doc_id: u64) -> bool {
-        let position = (doc_id % self.bloom_filter.len() as u64) as usize;
+        let filter_guard = self.bloom_filter.load();
+        let position = (doc_id % filter_guard.len() as u64) as usize;
 
         // It's not in the filter which means that it's definitely not deleted.
-        if !self.bloom_filter[position] {
+        if !filter_guard[position] {
             return false;
         }
 
-        self.deletes.contains(&doc_id)
+        let slf_clone = self.deletes.load();
+        slf_clone.contains(&doc_id)
     }
 }
 
@@ -102,4 +114,15 @@ impl SegmentCollector for DeletesSegmentCollector {
     fn harvest(self) -> Self::Fruit {
         self.values
     }
+}
+
+pub(crate) fn calculate_bloom_capacity(num_docs: usize) -> usize {
+    // A roughly calculated threshold where the additional memory usage
+    // isn't worth the potential performance trade off due to the extra
+    // hashing being done.
+    if num_docs <= 250_000 {
+        return num_docs;
+    }
+
+    (num_docs as f64 * FILTER_SIZE_TO_DOC_COUNT_RATIO) as usize
 }

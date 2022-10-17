@@ -1,8 +1,6 @@
 use std::io::{self, ErrorKind};
 use std::path::Path;
-use std::sync::Arc;
 
-use arc_swap::ArcSwap;
 use lnx_common::schema::RESERVED_DOCUMENT_ID_FIELD;
 use lnx_segments::{DeleteValue, DELETES_FILE};
 use lnx_storage::ReadOnlyDirectory;
@@ -14,14 +12,12 @@ use tantivy::{Directory, DocAddress, Index, IndexReader, ReloadPolicy, Searcher,
 use crate::deletes::{DeletesCollector, DeletesFilter};
 use crate::ReaderError;
 
-/// The ratio of the number of docs to the size of the bloom filter.
-const FILTER_SIZE_TO_DOC_COUNT_RATIO: f64 = 0.35;
-
 /// A tantivy index reader for single file segments.
 pub struct SegmentIndex {
+    dir: ReadOnlyDirectory,
     reader: IndexReader,
     doc_id_field: Field,
-    deletes: Arc<ArcSwap<DeletesFilter>>,
+    deletes: DeletesFilter,
 }
 
 impl SegmentIndex {
@@ -49,16 +45,51 @@ impl SegmentIndex {
 
         let searcher = reader.searcher();
         let deletes = tokio::task::spawn_blocking(move || {
-            search_for_deletes(searcher, deletes, doc_id_field)
+            find_initial_deletes(searcher, deletes, doc_id_field)
         })
         .await
         .expect("Spawn background task")?;
 
         Ok(Self {
+            dir,
             reader,
             doc_id_field,
-            deletes: Arc::new(ArcSwap::from_pointee(deletes)),
+            deletes,
         })
+    }
+
+    /// Reads the segment delete information.
+    pub async fn read_deletes_file(&self) -> Result<lnx_segments::Deletes, ReaderError> {
+        let deletes_raw = self
+            .dir
+            .atomic_read(Path::new(DELETES_FILE))
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?;
+
+        let deletes = lnx_segments::Deletes::from_compressed_bytes(deletes_raw).await?;
+
+        Ok(deletes)
+    }
+
+    /// Registers a new set of deletes fro the segment.
+    ///
+    /// This will perform a search to get all the documents matching the current deletes.
+    pub async fn register_deletes(
+        &self,
+        deletes: lnx_segments::Deletes,
+    ) -> Result<(), ReaderError> {
+        let searcher = self.reader.searcher();
+        let doc_id_field = self.doc_id_field;
+
+        let segment_deletes = tokio::task::spawn_blocking(move || {
+            search_for_deletes(searcher, deletes, doc_id_field)
+        })
+        .await
+        .expect("Spawn background thread")?;
+
+        let iter = segment_deletes.into_iter().flatten();
+        self.deletes.mark_doc_ids_deleted(iter);
+
+        Ok(())
     }
 
     /// Creates a new searcher for the given index.
@@ -78,7 +109,7 @@ impl SegmentIndex {
 pub struct SegmentReader {
     searcher: Searcher,
     doc_id_field: Field,
-    deletes: Arc<ArcSwap<DeletesFilter>>,
+    deletes: DeletesFilter,
 }
 
 impl SegmentReader {
@@ -101,10 +132,7 @@ impl SegmentReader {
         C: Collector,
     {
         let deletes = self.deletes.clone();
-        let predicate = move |id: u64| {
-            let guard = deletes.load();
-            guard.is_deleted(id)
-        };
+        let predicate = move |id: u64| deletes.is_deleted(id);
 
         let _filter = FilterCollector::new(self.doc_id_field, predicate, collector);
 
@@ -121,11 +149,26 @@ macro_rules! get_or_continue {
     }};
 }
 
-fn search_for_deletes(
+fn find_initial_deletes(
     searcher: Searcher,
     deletes: lnx_segments::Deletes,
     doc_id_field: Field,
 ) -> Result<DeletesFilter, tantivy::TantivyError> {
+    let segment_deletes = search_for_deletes(searcher, deletes, doc_id_field)?;
+
+    let deletes_filter = DeletesFilter::new();
+
+    let iter = segment_deletes.into_iter().flatten();
+    deletes_filter.mark_doc_ids_deleted(iter);
+
+    Ok(deletes_filter)
+}
+
+fn search_for_deletes(
+    searcher: Searcher,
+    deletes: lnx_segments::Deletes,
+    doc_id_field: Field,
+) -> Result<Vec<Vec<u64>>, tantivy::TantivyError> {
     let schema = searcher.schema();
 
     let mut query_parts = vec![];
@@ -153,27 +196,6 @@ fn search_for_deletes(
     let collector = DeletesCollector::new(doc_id_field);
 
     let segment_deletes = searcher.search(&query, &collector)?;
-    let num_docs: usize = segment_deletes.iter().map(|v| v.len()).sum();
 
-    let size = calculate_bloom_capacity(num_docs);
-    let mut deletes_filter = DeletesFilter::new_blank(size);
-
-    for segment in segment_deletes {
-        for doc_id in segment {
-            deletes_filter.mark_deleted(doc_id);
-        }
-    }
-
-    Ok(deletes_filter)
-}
-
-fn calculate_bloom_capacity(num_docs: usize) -> usize {
-    // A roughly calculated threshold where the additional memory usage
-    // isn't worth the potential performance trade off due to the extra
-    // hashing being done.
-    if num_docs <= 250_000 {
-        return num_docs;
-    }
-
-    (num_docs as f64 * FILTER_SIZE_TO_DOC_COUNT_RATIO) as usize
+    Ok(segment_deletes)
 }
