@@ -6,13 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tantivy = "0.18.0"
 memmap2 = "0.5.7"
 bytecheck = "0.6.9"
 thiserror = "1"
 parking_lot = "0.12"
 stable_deref_trait = "1.2.0"
-
 datacake-crdt = "0.1.2"
+
+tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "f39cce2"}
 
 lnx-segments = { path = "../lnx-segments" }

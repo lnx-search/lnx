@@ -71,7 +71,7 @@ impl Directory for ReadOnlyDirectory {
     fn get_file_handle(
         &self,
         path: &Path,
-    ) -> Result<Box<dyn FileHandle>, OpenReadError> {
+    ) -> Result<Arc<dyn FileHandle>, OpenReadError> {
         let bounds = self
             .metadata
             .get_file_bounds(path)
@@ -83,7 +83,7 @@ impl Directory for ReadOnlyDirectory {
             file_bounds: bounds,
         };
 
-        Ok(Box::new(reader))
+        Ok(Arc::new(reader))
     }
 
     fn delete(&self, path: &Path) -> Result<(), DeleteError> {

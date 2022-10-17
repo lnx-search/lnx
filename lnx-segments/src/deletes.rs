@@ -25,7 +25,7 @@ pub struct Delete {
 
 #[derive(Debug, Default, Archive, Serialize, Deserialize)]
 #[archive_attr(derive(CheckBytes, Debug))]
-pub struct Deletes(pub(crate) Vec<Delete>);
+pub struct Deletes(pub Vec<Delete>);
 
 impl Deref for Deletes {
     type Target = Vec<Delete>;

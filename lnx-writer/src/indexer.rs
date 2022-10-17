@@ -98,8 +98,8 @@ impl Indexer {
         self.deletes.push(delete);
     }
 
-    fn register_docs(&mut self, count: usize) {
-        self.num_documents += count;
+    fn inc_doc_count(&mut self) {
+        self.num_documents += 1;
     }
 }
 
@@ -145,8 +145,9 @@ impl IndexerPipeline {
         let num_docs = docs.len();
         for doc in docs {
             self.live_indexer.add_document(doc)?;
+            self.live_indexer.inc_doc_count();
         }
-        self.live_indexer.register_docs(num_docs);
+
         self.stats.inc_documents_by(num_docs);
 
         let segment_id = self.live_indexer.segment_id;
