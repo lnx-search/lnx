@@ -123,9 +123,9 @@ impl TryInto<u64> for TermValue {
 
     fn try_into(self) -> Result<u64, Self::Error> {
         match self {
-            Self::U64(val) => val.try_into().map_err(InvalidTermValue::from),
+            Self::U64(val) => Ok(val),
             Self::I64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::F64(val) => val.try_into().map_err(InvalidTermValue::from),
+            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'u64'.")),
             Self::Text(val) => val.parse().map_err(InvalidTermValue::from),
         }
     }
@@ -137,8 +137,8 @@ impl TryInto<i64> for TermValue {
     fn try_into(self) -> Result<i64, Self::Error> {
         match self {
             Self::U64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::I64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::F64(val) => val.try_into().map_err(InvalidTermValue::from),
+            Self::I64(val) => Ok(val),
+            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'i64'.")),
             Self::Text(val) => val.parse().map_err(InvalidTermValue::from),
         }
     }
@@ -149,10 +149,10 @@ impl TryInto<f64> for TermValue {
 
     fn try_into(self) -> Result<f64, Self::Error> {
         match self {
-            Self::U64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::I64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::F64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::Text(val) => val.parse::<u64>().map_err(InvalidTermValue::from),
+            Self::U64(_) => Err(InvalidTermValue::from("cannot convert type 'u64' to 'f64'.")),
+            Self::I64(_) => Err(InvalidTermValue::from("cannot convert type 'i64' to 'f64'.")),
+            Self::F64(val) => Ok(val),
+            Self::Text(val) => val.parse::<f64>().map_err(InvalidTermValue::from),
         }
     }
 }
@@ -175,9 +175,9 @@ impl TryInto<Vec<u8>> for TermValue {
 
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         match self {
-            Self::U64(val) => Err(InvalidTermValue::from("cannot convert type 'u64' to 'bytes'.")),
-            Self::I64(val) => Err(InvalidTermValue::from("cannot convert type 'i64' to 'bytes'.")),
-            Self::F64(val) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'bytes'.")),
+            Self::U64(_) => Err(InvalidTermValue::from("cannot convert type 'u64' to 'bytes'.")),
+            Self::I64(_) => Err(InvalidTermValue::from("cannot convert type 'i64' to 'bytes'.")),
+            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'bytes'.")),
             Self::Text(val) => {
                 base64::decode(val)
                     .map_err(|_| InvalidTermValue::from("invalid base64 encoded string given for 'bytes' field."))
@@ -204,7 +204,7 @@ impl TryInto<DateTime> for TermValue {
 
                 Ok(tantivy::DateTime::from_utc(dt))
             },
-            Self::F64(val) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'datetime'.")),
+            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'datetime'.")),
             Self::Text(val) => {
                 let dt = time::OffsetDateTime::parse(&val, &Rfc3339)
                     .map_err(InvalidTermValue::from)?;

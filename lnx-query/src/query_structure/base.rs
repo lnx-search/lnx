@@ -7,8 +7,8 @@ use tantivy::{schema::{Field, FieldEntry}, Term, query::Query};
 #[error("Invalid value for term: {0}")]
 pub struct InvalidTermValue(pub String);
 
-impl<T: Display> From<T> for InvalidTermValue {
-    fn from(v: T) -> Self {
+impl InvalidTermValue {
+    pub fn from(v: impl Display) -> Self {
         Self(v.to_string())
     }
 }
