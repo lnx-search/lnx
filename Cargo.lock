@@ -691,6 +691,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-query"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "thiserror",
+ "time",
+ "utoipa",
+ "validator",
+]
+
+[[package]]
 name = "lnx-reader"
 version = "0.1.0"
 dependencies = [

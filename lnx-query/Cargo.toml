@@ -1,0 +1,17 @@
+[package]
+name = "lnx-query"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde_json = "1"
+thiserror = "1"
+base64 = "0.13.0"
+
+tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "f39cce2"}
+utoipa = { version = "2.2.0", features = ["json"] }
+validator = { version = "0.15", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+time = "0.3.15"
