@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, de::Visitor};
 
 use super::{AsQueryTerm, base::{AsQuery, InvalidTermValue}};
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 /// The required values / context for a `range` query.
 pub struct Range {
     #[schema(inline)]
@@ -49,7 +49,7 @@ impl AsQuery for Range {
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 pub enum GreaterBounds {
     #[serde(rename = "$gt")]
     /// Greater than (`>`)
@@ -75,7 +75,7 @@ impl GreaterBounds {
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 pub enum LesserBounds {
     #[serde(rename = "$lt")]
     /// Less than (`<`)

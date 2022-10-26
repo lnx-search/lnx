@@ -695,6 +695,7 @@ name = "lnx-query"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "lnx-common",
  "serde",
  "serde_json",
  "tantivy",

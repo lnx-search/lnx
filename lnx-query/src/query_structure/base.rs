@@ -24,3 +24,12 @@ pub trait AsQueryTerm {
 pub trait AsQuery {
     fn as_query(&self, field: Field, entry: &FieldEntry) -> Result<Box<dyn Query>, InvalidTermValue>;
 }
+
+
+
+// Default impl's
+impl AsQueryTerm for String {
+    fn as_term(&self, field: Field, _entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
+        Ok(Term::from_field_text(field, self))
+    }
+}

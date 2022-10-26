@@ -26,6 +26,12 @@ pub enum TermValue {
     F64(f64),
 }
 
+impl From<String> for TermValue {
+    fn from(v: String) -> Self {
+        Self::Text(v)
+    }
+}
+
 impl AsQueryTerm for TermValue {
     fn as_term(&self, field: Field, entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
         match entry.field_type() {

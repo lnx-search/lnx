@@ -2,14 +2,14 @@ use utoipa::ToSchema;
 use serde::Deserialize;
 
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(untagged)]
 pub enum ValueSelector<V> {
     Single(V),
     Multi(Vec<V>),
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(untagged)]
 pub enum Selector<D: Into<Q>, Q> {
     #[schema(example = "Hello, world")]
