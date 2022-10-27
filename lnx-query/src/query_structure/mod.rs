@@ -1,8 +1,10 @@
-mod selector;
 mod range;
 mod base;
 mod term_value;
+mod fuzzy;
+mod fast_fuzzy;
 
+use std::borrow::Cow;
 use tantivy::Score;
 use utoipa::ToSchema;
 use serde::Deserialize;
@@ -10,8 +12,9 @@ use validator::Validate;
 
 use self::{range::Range, term_value::TermValue};
 
-pub use base::AsQueryTerm;
-
+pub use fuzzy::FuzzyQueryContext;
+pub use fast_fuzzy::FastFuzzyQueryContext;
+pub use base::{AsQueryTerm, InvalidTermValue, BuildQueryError, AsQuery};
 
 #[derive(Debug, Clone, Validate, Deserialize, ToSchema)]
 #[validate(schema(function = "validators::validate_ops", arg = "&'v_a mut validators::ValidationConfig"))]
@@ -37,10 +40,6 @@ pub struct QueryLayer {
     /// and will not build a query that goes beyond the set max depth (defaults to `3`).
     pub pipeline: Option<Box<HelperOps>>,
 
-    #[serde(default, rename = "$occur")]
-    /// Describes whether documents must match, should match or must not match.
-    pub occur: Occur,
-
     #[schema(inline)]
     #[serde(flatten)]
     pub fields: Option<FieldSelector>,
@@ -48,7 +47,7 @@ pub struct QueryLayer {
     #[schema(example = json!(1.5))]
     #[serde(default, rename = "$boost")]
     /// An optional score multiplier to adjust bias towards the query.
-    pub boost: Score,
+    pub boost: Option<Score>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -84,7 +83,7 @@ pub enum QueryKind {
     /// 
     /// This does not perform any scoring, it simply selects
     /// all documents that contain the given term.
-    Term(QuerySelector<TermValue>),
+    Term(MultiValueSelector<TermValue>),
 
     /// A query that matches all documents.
     All {},
@@ -112,13 +111,13 @@ pub enum QueryKind {
     /// 
     /// Wildcard queries (e.g. `ho*se`) can be achieved by converting them to their 
     /// regex counterparts.
-    Regex(QuerySelector<String>),
+    Regex(MultiValueSelector<QuerySelector<String>>),
 
     /// A query that matches all documents that have at least one term within
     /// a defined range.
     /// 
     /// Matched document will all get a constant Score of one.
-    Range(Range),
+    Range(MultiValueSelector<Range>),
 
     /// A query that matches all of the documents containing a specific
     /// set of terms that is within Levenshtein distance for each term. 
@@ -126,7 +125,7 @@ pub enum QueryKind {
     /// 
     /// This is typically what you want for user facing search queries when
     /// `fast-fuzzy` is unsuitable or unable to be used due to system resources constraints.
-    Fuzzy(QuerySelector<String>),
+    Fuzzy(MultiValueSelector<QuerySelector<FuzzyQueryContext>>),
     
     /// A query that behaves similarly to the `fuzzy` query except using a pre-computation
     /// based algorithm.
@@ -134,28 +133,7 @@ pub enum QueryKind {
     /// This query requires `fast-fuzzy` mode being enabled on the index settings itself 
     /// (disabled by default) as this requires more memory when indexing and potentially
     /// when searching.
-    FastFuzzy(QuerySelector<String>),
-}
-
-
-#[derive(Debug, Clone, Deserialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Occur {
-    /// The documents in the doc set should match the query but it is not strictly required if another
-    /// query matches as well.
-    Should,
-
-    /// The documents in the doc set must match the query.
-    Must,
-
-    /// The document in the doc set must not match the query.
-    MustNot,
-}
-
-impl Default for Occur {
-    fn default() -> Self {
-        Self::Should
-    }
+    FastFuzzy(MultiValueSelector<QuerySelector<FastFuzzyQueryContext>>),
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -169,23 +147,59 @@ pub enum FieldSelector {
     Multi(Vec<String>),
 }
 
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(untagged)]
+pub enum MultiValueSelector<V> {
+    Single(V),
+    Multi(Vec<V>),
+}
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(untagged)]
-pub enum QuerySelector<Q: From<String>> {
+pub enum QuerySelector<Q: From<String> + Clone> {
     Str(String),
     Detailed(Q)
 }
 
-impl<Q: From<String>> QuerySelector<Q> {
+impl<Q: From<String> + Clone> QuerySelector<Q> {
     /// Converts the `Str` variant to the default 
     /// inner version of the query if applicable.
-    pub fn into_inner_query(self) -> Q {
+    pub fn as_inner_query<'a>(&self) -> Cow<'a, Q> {
         match self {
-            QuerySelector::Str(v) => Q::from(v),
-            QuerySelector::Detailed(q) => q,
+            QuerySelector::Str(v) => Cow::Owned(Q::from(v.clone())),
+            QuerySelector::Detailed(q) => Cow::Borrowed(q),
         }
     } 
+}
+
+#[derive(Debug, Copy, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Occur {
+    /// The value *should* appear in the document but is not required to be contained
+    /// within a document if another term matched instead. (default)
+    Should,
+
+    /// The value *must* appear in the document.
+    Must,
+
+    /// The value *must not* appear in the document.
+    MustNot,
+}
+
+impl Occur {
+    pub fn into_tantivy_occur(self) -> tantivy::query::Occur {
+        match self {
+            Occur::Should => tantivy::query::Occur::Should,
+            Occur::Must => tantivy::query::Occur::Must,
+            Occur::MustNot => tantivy::query::Occur::MustNot,
+        }
+    }
+}
+
+impl Default for Occur {
+    fn default() -> Self {
+        Self::Should
+    }
 }
 
 

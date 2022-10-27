@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use tantivy::Score;
-use tantivy::query::{Query, AllQuery, Occur};
-use tantivy::schema::{Schema, Field};
+use tantivy::{Index, Score};
+use tantivy::query::{Query, AllQuery, Occur, BooleanQuery, TermQuery, PhraseQuery, FuzzyTermQuery, RegexQuery};
+use tantivy::schema::{Schema, Field, FieldEntry, IndexRecordOption};
 
-use crate::query_structure::{QueryLayer, QueryKind, HelperOps};
+use crate::query_structure::{QueryLayer, QueryKind, HelperOps, FieldSelector, AsQueryTerm, InvalidTermValue, MultiValueSelector, AsQuery, QuerySelector, FuzzyQueryContext, FastFuzzyQueryContext};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryBuildError {
@@ -13,84 +13,182 @@ pub enum QueryBuildError {
 
     #[error("The Query is invalid.")]
     InvalidQuery,
+
+    #[error("The value of the query is invalid: {0}")]
+    BadValue(String),
+
+    #[error("{0}")]
+    InvalidTermValue(#[from] InvalidTermValue),
+
+    #[error("{0}")]
+    TantivyError(#[from] tantivy::TantivyError),
 }
 
-
+pub struct BuilderSettings<'a> {
+    pub index: &'a Index,
+    pub schema: &'a Schema,
+    pub default_query_occur: Occur,
+}
 
 pub fn build_query(
-    query: QueryLayer, 
-    schema: &Schema,
+    query: &QueryLayer,
+    settings: &BuilderSettings<'_>,
     default_fields: &[Field],
-    default_boost_factors: &HashMap<String, Score>,
+    boost_factors: &HashMap<String, Score>,
 ) -> Result<Box<dyn Query>, QueryBuildError> {
-    if let Some(kind) = query.query {
-        let (_, query) = build_kind_layer(kind, schema, default_fields, default_boost_factors)?;
-        return Ok(query);
+    if let Some(kind) = query.query.as_ref() {
+        let fields = query.fields
+            .as_ref()
+            .map(|selector| get_fields(selector, settings.schema))
+            .transpose()?;
+
+        let mut queries = vec![];
+        for field in fields.as_deref().unwrap_or(default_fields) {
+            let entry = settings.schema.get_field_entry(*field);
+            let query = build_kind_layer(kind, settings, *field, entry)?;
+
+            queries.push((Occur::Should, query))
+        }
+
+        return Ok(Box::new(BooleanQuery::new(queries)));
     } 
 
-    if let Some(pipeline) = query.pipeline {
-        return build_pipeline_op(*pipeline, schema, default_fields, default_boost_factors)
+    if let Some(pipeline) = query.pipeline.as_ref() {
+        return build_pipeline_op(pipeline, settings, default_fields, boost_factors)
     }
 
     Ok(Box::new(AllQuery{}))
 }
 
-fn build_query_inner(
-    query: QueryLayer, 
-    schema: &Schema,
-    default_fields: &[Field],
-    default_boost_factors: &HashMap<String, Score>,
-) -> Result<(Occur, Box<dyn Query>), QueryBuildError> {
-    if let Some(kind) = query.query {
-        return build_kind_layer(kind, schema, default_fields, default_boost_factors);
-    } 
+fn get_fields(selector: &FieldSelector, schema: &Schema) -> Result<Vec<Field>, QueryBuildError> {
+    match selector {
+        FieldSelector::Single(field) => {
+            let field = schema.get_field(&field)
+                .ok_or(QueryBuildError::UnknownField(field.clone()))?;
 
-    if let Some(pipeline) = query.pipeline {
-        return Ok((Occur::Should, build_pipeline_op(*pipeline, schema, default_fields, default_boost_factors)?));
+            Ok(vec![field])
+        },
+        FieldSelector::Multi(fields) => {
+            let mut schema_fields = vec![];
+            for field in fields {
+                let field = schema.get_field(&field)
+                    .ok_or(QueryBuildError::UnknownField(field.clone()))?;
+
+                schema_fields.push(field);
+            }
+
+            Ok(schema_fields)
+        },
     }
-
-    Ok((Occur::Should, Box::new(AllQuery{})))
 }
 
-
 fn build_kind_layer(
-    layer: QueryKind,
-    schema: &Schema,
-    default_fields: &[Field],
-    default_boost_factors: &HashMap<String, Score>,
-) -> Result<(Occur, Box<dyn Query>), QueryBuildError> {
-    let res: (Occur, Box<dyn Query>) = match layer {
-        QueryKind::Term(selector) => {
-            let ctx = selector.into_inner_query();
+    layer: &QueryKind,
+    settings: &BuilderSettings<'_>,
+    field: Field,
+    field_entry: &FieldEntry,
+) -> Result<Box<dyn Query>, QueryBuildError> {
+    let res: Box<dyn Query> = match layer {
+        QueryKind::Term(selector) => match selector {
+            MultiValueSelector::Single(value) => {
+                let term = value.as_term(field, field_entry)?;
+                Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs))
+            },
+            MultiValueSelector::Multi(values) => {
+                let mut queries = vec![];
+                for value in values {
+                    let term = value.as_term(field, field_entry)?;
+                    let query = Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs));
+                    queries.push((Occur::Should, query as Box<dyn Query>));
+                }
 
-            todo!()
+                Box::new(BooleanQuery::new(queries))
+            },
         },
-        QueryKind::All {  } => (Occur::Should, Box::new(AllQuery {})),
+        QueryKind::All {  } => Box::new(AllQuery {}),
         QueryKind::Phrase(selector) => {
-            let ctx = selector.into_inner_query();
+            let query = selector.as_inner_query();
+            let tokenizer = settings.index.tokenizer_for_field(field)?;
+            let mut stream = tokenizer.token_stream(&query);
 
-            todo!()
+            let mut terms = vec![];
+            while let Some(token) = stream.next() {
+                let term = token.text.as_term(field, field_entry)?;
+                terms.push(term);
+            }
+
+            Box::new(PhraseQuery::new(terms))
         },
-        QueryKind::Regex(selector) => {
-            let ctx = selector.into_inner_query();
+        QueryKind::Regex(selector) => match selector {
+            MultiValueSelector::Single(selector) => {
+                let query = selector.as_inner_query();
+                let regex = RegexQuery::from_pattern(&query, field)
+                    .map_err(|e| QueryBuildError::BadValue(e.to_string()))?;
 
-            todo!()
+                Box::new(regex)
+            },
+            MultiValueSelector::Multi(values) => {
+                let mut queries = vec![];
+                for selector in values {
+                    let query = selector.as_inner_query();
+                    let regex = RegexQuery::from_pattern(&query, field)
+                        .map_err(|e| QueryBuildError::BadValue(e.to_string()))?;
+
+                    queries.push((Occur::Should, Box::new(regex) as Box<dyn Query>));
+                }
+
+                Box::new(BooleanQuery::new(queries))
+            },
         },
-        QueryKind::Range(ctx) => {
+        QueryKind::Range(selector) => match selector {
+            MultiValueSelector::Single(value) => value.as_query(field, field_entry)?,
+            MultiValueSelector::Multi(values) => {
+                let mut queries = vec![];
+                for value in values {
+                    let query = value.as_query(field, field_entry)?;
+                    queries.push((Occur::Should, query as Box<dyn Query>));
+                }
 
-            todo!()
+                Box::new(BooleanQuery::new(queries))
+            },
         },
-        QueryKind::Fuzzy(selector) => {
-            let ctx = selector.into_inner_query();
+        QueryKind::Fuzzy(selector) => match selector {
+            MultiValueSelector::Single(selector) => {
+                build_fuzzy_query(
+                    selector,
+                    settings,
+                    field,
+                    field_entry,
+                )?
+            },
+            MultiValueSelector::Multi(values) => {
+                let mut queries = vec![];
+                for selector in values {
+                    let query = build_fuzzy_query(selector, settings, field, field_entry)?;
+                    queries.push((Occur::Should, query));
+                }
 
-            todo!()
+                Box::new(BooleanQuery::new(queries))
+            },
         },
-        QueryKind::FastFuzzy(selector) => {
-            let ctx = selector.into_inner_query();
+        QueryKind::FastFuzzy(selector) =>  match selector {
+            MultiValueSelector::Single(selector) => {
+                build_fast_fuzzy_query(
+                    selector,
+                    settings,
+                    field,
+                    field_entry,
+                )?
+            },
+            MultiValueSelector::Multi(values) => {
+                let mut queries = vec![];
+                for selector in values {
+                    let query = build_fast_fuzzy_query(selector, settings, field, field_entry)?;
+                    queries.push((Occur::Should, query));
+                }
 
-            
-
-            todo!()
+                Box::new(BooleanQuery::new(queries))
+            },
         },
     };
 
@@ -98,22 +196,74 @@ fn build_kind_layer(
 }
 
 fn build_pipeline_op(
-    pipeline: HelperOps,
-    schema: &Schema,
-    default_fields: &[Field],
-    default_boost_factors: &HashMap<String, Score>,
+    pipeline: &HelperOps,
+    settings: &BuilderSettings<'_>,
+    fields: &[Field],
+    boost_factors: &HashMap<String, Score>,
 ) -> Result<Box<dyn Query>, QueryBuildError> {
-    let queries: Vec<(Occur, Box<dyn Query>)> = match pipeline {
-        HelperOps::All(inner) => {
-
+    let mut queries: Vec<(Occur, Box<dyn Query>)> = vec![];
+    match pipeline {
+        HelperOps::All(layers) => {
+            for layer in layers {
+                let query = build_query(layer, settings, fields, boost_factors)?;
+                queries.push((Occur::Must, query));
+            }
         },
-        HelperOps::Any(inner) => {
-
+        HelperOps::Any(layers) => {
+            for layer in layers {
+                let query = build_query(layer, settings, fields, boost_factors)?;
+                queries.push((Occur::Should, query));
+            }
         },
-        HelperOps::None(inner) => {
-
+        HelperOps::None(layers) => {
+            for layer in layers {
+                let query = build_query(layer, settings, fields, boost_factors)?;
+                queries.push((Occur::MustNot, query));
+            }
         },
     };
 
-    Ok(todo!())
+    Ok(Box::new(BooleanQuery::new(queries)))
+}
+
+fn build_fuzzy_query(
+    selector: &QuerySelector<FuzzyQueryContext>,
+    settings: &BuilderSettings,
+    field: Field,
+    field_entry: &FieldEntry,
+) -> Result<Box<dyn Query>, QueryBuildError> {
+    let query = selector.as_inner_query();
+    let occur = query.word_occurrence.into_tantivy_occur();
+    let tokenizer = settings.index.tokenizer_for_field(field)?;
+    let mut stream = tokenizer.token_stream(&query.value);
+
+    let mut queries = vec![];
+    while let Some(token) = stream.next() {
+        let term = token.text.as_term(field, field_entry)?;
+        let query = Box::new(FuzzyTermQuery::new(term, 2, !query.transposition_costs_two));
+        queries.push((occur, query as Box<dyn Query>));
+    }
+
+    Ok(Box::new(BooleanQuery::new(queries)))
+}
+
+fn build_fast_fuzzy_query(
+    selector: &QuerySelector<FastFuzzyQueryContext>,
+    settings: &BuilderSettings,
+    field: Field,
+    field_entry: &FieldEntry,
+) -> Result<Box<dyn Query>, QueryBuildError> {
+    let query = selector.as_inner_query();
+    let occur = query.word_occurrence.into_tantivy_occur();
+    let tokenizer = settings.index.tokenizer_for_field(field)?;
+    let mut stream = tokenizer.token_stream(&query.value);
+
+    let mut queries = vec![];
+    while let Some(token) = stream.next() {
+        let term = token.text.as_term(field, field_entry)?;
+        let query = Box::new(FuzzyTermQuery::new(term, 2, true));
+        queries.push((occur, query as Box<dyn Query>));
+    }
+
+    Ok(Box::new(BooleanQuery::new(queries)))
 }
