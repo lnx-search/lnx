@@ -8,13 +8,13 @@ use utoipa::ToSchema;
 use serde::Deserialize;
 use validator::Validate;
 
-use self::{selector::ValueSelector, range::Range, term_value::TermValue};
+use self::{range::Range, term_value::TermValue};
 
 pub use base::AsQueryTerm;
 
 
 #[derive(Debug, Clone, Validate, Deserialize, ToSchema)]
-#[validate(schema(function = "validators::validate_ops", arg = "(usize, usize)"))]
+#[validate(schema(function = "validators::validate_ops", arg = "&'v_a mut validators::ValidationConfig"))]
 /// A `QueryLayer` is a potentially recursive structure that allows
 /// contains the actual query logic and builders but is not schema-aware.
 pub struct QueryLayer {
@@ -37,6 +37,18 @@ pub struct QueryLayer {
     /// and will not build a query that goes beyond the set max depth (defaults to `3`).
     pub pipeline: Option<Box<HelperOps>>,
 
+    #[serde(default, rename = "$occur")]
+    /// Describes whether documents must match, should match or must not match.
+    pub occur: Occur,
+
+    #[schema(inline)]
+    #[serde(flatten)]
+    pub fields: Option<FieldSelector>,
+
+    #[schema(example = json!(1.5))]
+    #[serde(default, rename = "$boost")]
+    /// An optional score multiplier to adjust bias towards the query.
+    pub boost: Score,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -54,6 +66,16 @@ pub enum HelperOps {
     None(Vec<QueryLayer>),
 }
 
+impl HelperOps {
+    pub fn as_layers(&self) -> &[QueryLayer] {
+        match self {
+            HelperOps::All(layers) => layers,
+            HelperOps::Any(layers) => layers,
+            HelperOps::None(layers) => layers,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[schema(example = json!({ "text": { "$should": "Hello, world" } }))]
@@ -62,7 +84,7 @@ pub enum QueryKind {
     /// 
     /// This does not perform any scoring, it simply selects
     /// all documents that contain the given term.
-    Term(QuerySelector<QueryContext<TermValue>>),
+    Term(QuerySelector<TermValue>),
 
     /// A query that matches all documents.
     All {},
@@ -83,20 +105,20 @@ pub enum QueryKind {
     /// 
     /// Slop can be provided with the query to adjust whether some terms can be missing
     /// or not from the phrase and still match.
-    Phrase(QuerySelector<QueryContext<String>>),
+    Phrase(QuerySelector<String>),
 
     /// A `regex` query matches all of the documents containing a specific term that
     ///  matches a regex pattern.
     /// 
     /// Wildcard queries (e.g. `ho*se`) can be achieved by converting them to their 
     /// regex counterparts.
-    Regex(QuerySelector<QueryContext<String>>),
+    Regex(QuerySelector<String>),
 
     /// A query that matches all documents that have at least one term within
     /// a defined range.
     /// 
     /// Matched document will all get a constant Score of one.
-    Range(QueryContext<Range>),
+    Range(Range),
 
     /// A query that matches all of the documents containing a specific
     /// set of terms that is within Levenshtein distance for each term. 
@@ -104,7 +126,7 @@ pub enum QueryKind {
     /// 
     /// This is typically what you want for user facing search queries when
     /// `fast-fuzzy` is unsuitable or unable to be used due to system resources constraints.
-    Fuzzy(QuerySelector<QueryContext<String>>),
+    Fuzzy(QuerySelector<String>),
     
     /// A query that behaves similarly to the `fuzzy` query except using a pre-computation
     /// based algorithm.
@@ -112,49 +134,27 @@ pub enum QueryKind {
     /// This query requires `fast-fuzzy` mode being enabled on the index settings itself 
     /// (disabled by default) as this requires more memory when indexing and potentially
     /// when searching.
-    FastFuzzy(QuerySelector<QueryContext<String>>),
+    FastFuzzy(QuerySelector<String>),
 }
 
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
-pub enum Occur<V> {
-    #[serde(rename = "$should")]
+#[serde(rename_all = "snake_case")]
+pub enum Occur {
     /// The documents in the doc set should match the query but it is not strictly required if another
     /// query matches as well.
-    Should(V),
+    Should,
 
-    #[serde(rename = "$must")]
     /// The documents in the doc set must match the query.
-    Must(V),
+    Must,
 
-    #[serde(rename = "$not")]
     /// The document in the doc set must not match the query.
-    MustNot(V),
+    MustNot,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
-pub struct QueryContext<V> {
-    #[schema(inline)]
-    #[serde(flatten)]
-    pub occur: Occur<ValueSelector<V>>,
-
-    #[schema(inline)]
-    #[serde(flatten)]
-    pub fields: Option<FieldSelector>,
-
-    #[schema(example = json!(1.5))]
-    #[serde(default, rename = "$boost")]
-    /// An optional score multiplier to adjust bias towards the query.
-    pub boost: Score,
-}
-
-impl<V: From<String>> From<String> for QueryContext<V> {
-    fn from(v: String) -> Self {
-        Self {
-            occur: Occur::Should(ValueSelector::Single(V::from(v))),
-            fields: None,
-            boost: 0.0
-        }
+impl Default for Occur {
+    fn default() -> Self {
+        Self::Should
     }
 }
 
@@ -195,28 +195,63 @@ mod validators {
     use super::*;
     use validator::ValidationError;
 
+    #[derive(Copy, Clone)]
+    pub struct ValidationConfig {
+        pub max_depth: usize,
+        pub current_depth: usize,
+        pub max_pipeline_queries: usize,
+        pub max_sub_queries_total: usize,
+        pub sub_queries_counter: usize,
+    }
+
+    impl ValidationConfig {
+        fn inc_depth(&mut self) {
+            self.current_depth += 1;
+        }
+
+        fn inc_sub_queries(&mut self) {
+            self.sub_queries_counter += 1;
+        }
+    }
+
     /// Checks ops and the recursion limit.
     /// 
     /// Technically this does not prevent the system from deserializing the JSON recursively
     /// but it does provide protection against building an incredibly expensive query.
-    pub fn validate_ops(layer: &QueryLayer, depth_tracker: (usize, usize)) -> Result<(), ValidationError> {
-        let (max_depth, current_depth) = depth_tracker;
+    pub fn validate_ops(layer: &QueryLayer, cfg: &mut ValidationConfig) -> Result<(), ValidationError> {
+        let mut error = ValidationError::new("bad_query");
 
-        if current_depth >= max_depth {
-            let mut error = ValidationError::new("bad_query");
+        if cfg.current_depth >= cfg.max_depth {
             error.message = Some(Cow::Borrowed("Maximum allowed query depth has been reached."));
-            error.add_param(Cow::Borrowed("max_depth"), &max_depth);
+            error.add_param(Cow::Borrowed("max_depth"), &cfg.max_depth);
             return Err(error)
         }
 
         if layer.query.is_none() && layer.pipeline.is_none() {
-            let mut error = ValidationError::new("bad_query");
             error.message = Some(Cow::Borrowed("Either a pipeline operation must be specified ('$all', '$any', '$none') or a query field specified."));
             return Err(error)
         }
 
         if let Some(inner_layer) = layer.pipeline.as_ref() {
-            validate_ops(inner_layer, (max_depth, current_depth + 1))?;
+
+            let layers = inner_layer.as_layers();
+
+            if layers.len() > cfg.max_pipeline_queries {
+                error.message = Some(Cow::Borrowed("Too many sub queries."));
+                error.add_param(Cow::Borrowed("max_sub_queries_per_pipeline"), &cfg.max_pipeline_queries);
+                error.add_param(Cow::Borrowed("current_sub_queries_per_pipeline"), &layers.len());
+                error.add_param(Cow::Borrowed("max_sub_queries_total"), &cfg.max_sub_queries_total);
+                error.add_param(Cow::Borrowed("current_sub_queries_total"), &cfg.sub_queries_counter);
+                return Err(error)
+            }
+
+            cfg.inc_depth();
+
+            for layer in layers {
+                cfg.inc_sub_queries();
+
+                validate_ops(layer, cfg)?;
+            }
         }        
 
         Ok(())

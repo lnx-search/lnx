@@ -26,7 +26,6 @@ pub trait AsQuery {
 }
 
 
-
 // Default impl's
 impl AsQueryTerm for String {
     fn as_term(&self, field: Field, _entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
