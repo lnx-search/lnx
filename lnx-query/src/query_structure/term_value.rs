@@ -1,14 +1,17 @@
 use std::fmt;
 
-use serde::{Deserialize, Deserializer, de::Visitor};
-use tantivy::{Term, schema::{FieldEntry, Field, FieldType}, DateTime};
-use time::{format_description::well_known::Rfc3339};
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer};
+use tantivy::schema::{Field, FieldEntry, FieldType};
+use tantivy::{DateTime, Term};
+use time::format_description::well_known::Rfc3339;
 use utoipa::ToSchema;
 
-use super::{AsQueryTerm, base::InvalidTermValue};
+use super::base::InvalidTermValue;
+use super::AsQueryTerm;
 
 #[derive(Debug, Clone, ToSchema)]
-pub enum TermValue {    
+pub enum TermValue {
     #[schema(example = "Hello, world")]
     /// Plain UTF-8 encoded string.
     Text(String),
@@ -33,7 +36,11 @@ impl From<String> for TermValue {
 }
 
 impl AsQueryTerm for TermValue {
-    fn as_term(&self, field: Field, entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
+    fn as_term(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Term, InvalidTermValue> {
         match entry.field_type() {
             FieldType::Str(_) => {
                 let val: String = self.clone().try_into()?;
@@ -42,25 +49,26 @@ impl AsQueryTerm for TermValue {
             FieldType::U64(_) => {
                 let val: u64 = self.clone().try_into()?;
                 Ok(Term::from_field_u64(field, val))
-
             },
             FieldType::I64(_) => {
                 let val: i64 = self.clone().try_into()?;
                 Ok(Term::from_field_i64(field, val))
-                
             },
             FieldType::F64(_) => {
                 let val: f64 = self.clone().try_into()?;
                 Ok(Term::from_field_f64(field, val))
-                
             },
-            FieldType::Facet(_) => {
-                match self {
-                    Self::U64(_) => Err(InvalidTermValue("invalid type expected 'str' got 'f64'.".to_string())),
-                    Self::I64(_) => Err(InvalidTermValue("invalid type expected 'str' got 'i64'.".to_string())),
-                    Self::F64(_) => Err(InvalidTermValue("invalid type expected 'str' got 'u64'.".to_string())),
-                    Self::Text(val) => Ok(Term::from_field_text(field, val)),
-                }                
+            FieldType::Facet(_) => match self {
+                Self::U64(_) => Err(InvalidTermValue(
+                    "invalid type expected 'str' got 'f64'.".to_string(),
+                )),
+                Self::I64(_) => Err(InvalidTermValue(
+                    "invalid type expected 'str' got 'i64'.".to_string(),
+                )),
+                Self::F64(_) => Err(InvalidTermValue(
+                    "invalid type expected 'str' got 'u64'.".to_string(),
+                )),
+                Self::Text(val) => Ok(Term::from_field_text(field, val)),
             },
             FieldType::JsonObject(_) => {
                 let field = match self {
@@ -69,7 +77,7 @@ impl AsQueryTerm for TermValue {
                     Self::F64(val) => Term::from_field_f64(field, *val),
                     Self::Text(val) => Term::from_field_text(field, val),
                 };
-                
+
                 Ok(field)
             },
             FieldType::Bytes(_) => {
@@ -78,7 +86,7 @@ impl AsQueryTerm for TermValue {
             },
             FieldType::Date(_) => {
                 let val: DateTime = self.clone().try_into()?;
-                Ok(Term::from_field_date(field, val))                
+                Ok(Term::from_field_date(field, val))
             },
             _ => unimplemented!("Unsupported field types for conversion."),
         }
@@ -115,7 +123,10 @@ impl<'de> Deserialize<'de> for TermValue {
                 Ok(TermValue::Text(v.to_string()))
             }
 
-            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
+            fn visit_string<E: serde::de::Error>(
+                self,
+                v: String,
+            ) -> Result<Self::Value, E> {
                 Ok(TermValue::Text(v))
             }
         }
@@ -131,7 +142,9 @@ impl TryInto<u64> for TermValue {
         match self {
             Self::U64(val) => Ok(val),
             Self::I64(val) => val.try_into().map_err(InvalidTermValue::from),
-            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'u64'.")),
+            Self::F64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'f64' to 'u64'.",
+            )),
             Self::Text(val) => val.parse().map_err(InvalidTermValue::from),
         }
     }
@@ -144,7 +157,9 @@ impl TryInto<i64> for TermValue {
         match self {
             Self::U64(val) => val.try_into().map_err(InvalidTermValue::from),
             Self::I64(val) => Ok(val),
-            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'i64'.")),
+            Self::F64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'f64' to 'i64'.",
+            )),
             Self::Text(val) => val.parse().map_err(InvalidTermValue::from),
         }
     }
@@ -155,8 +170,12 @@ impl TryInto<f64> for TermValue {
 
     fn try_into(self) -> Result<f64, Self::Error> {
         match self {
-            Self::U64(_) => Err(InvalidTermValue::from("cannot convert type 'u64' to 'f64'.")),
-            Self::I64(_) => Err(InvalidTermValue::from("cannot convert type 'i64' to 'f64'.")),
+            Self::U64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'u64' to 'f64'.",
+            )),
+            Self::I64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'i64' to 'f64'.",
+            )),
             Self::F64(val) => Ok(val),
             Self::Text(val) => val.parse::<f64>().map_err(InvalidTermValue::from),
         }
@@ -181,13 +200,20 @@ impl TryInto<Vec<u8>> for TermValue {
 
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         match self {
-            Self::U64(_) => Err(InvalidTermValue::from("cannot convert type 'u64' to 'bytes'.")),
-            Self::I64(_) => Err(InvalidTermValue::from("cannot convert type 'i64' to 'bytes'.")),
-            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'bytes'.")),
-            Self::Text(val) => {
-                base64::decode(val)
-                    .map_err(|_| InvalidTermValue::from("invalid base64 encoded string given for 'bytes' field."))
-            },
+            Self::U64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'u64' to 'bytes'.",
+            )),
+            Self::I64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'i64' to 'bytes'.",
+            )),
+            Self::F64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'f64' to 'bytes'.",
+            )),
+            Self::Text(val) => base64::decode(val).map_err(|_| {
+                InvalidTermValue::from(
+                    "invalid base64 encoded string given for 'bytes' field.",
+                )
+            }),
         }
     }
 }
@@ -201,7 +227,7 @@ impl TryInto<DateTime> for TermValue {
                 let val: i64 = val.try_into().map_err(InvalidTermValue::from)?;
                 let dt = time::OffsetDateTime::from_unix_timestamp(val)
                     .map_err(InvalidTermValue::from)?;
-                
+
                 Ok(tantivy::DateTime::from_utc(dt))
             },
             Self::I64(val) => {
@@ -210,7 +236,9 @@ impl TryInto<DateTime> for TermValue {
 
                 Ok(tantivy::DateTime::from_utc(dt))
             },
-            Self::F64(_) => Err(InvalidTermValue::from("cannot convert type 'f64' to 'datetime'.")),
+            Self::F64(_) => Err(InvalidTermValue::from(
+                "cannot convert type 'f64' to 'datetime'.",
+            )),
             Self::Text(val) => {
                 let dt = time::OffsetDateTime::parse(&val, &Rfc3339)
                     .map_err(InvalidTermValue::from)?;

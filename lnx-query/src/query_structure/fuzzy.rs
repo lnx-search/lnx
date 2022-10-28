@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
+
 use crate::query_structure::Occur;
 
 #[derive(Debug, Default, Clone, ToSchema, Deserialize)]

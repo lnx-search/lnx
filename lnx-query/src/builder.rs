@@ -1,10 +1,31 @@
 use std::collections::HashMap;
 
+use tantivy::query::{
+    AllQuery,
+    BooleanQuery,
+    FuzzyTermQuery,
+    Occur,
+    PhraseQuery,
+    Query,
+    RegexQuery,
+    TermQuery,
+};
+use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema};
 use tantivy::{Index, Score};
-use tantivy::query::{Query, AllQuery, Occur, BooleanQuery, TermQuery, PhraseQuery, FuzzyTermQuery, RegexQuery};
-use tantivy::schema::{Schema, Field, FieldEntry, IndexRecordOption};
 
-use crate::query_structure::{QueryLayer, QueryKind, HelperOps, FieldSelector, AsQueryTerm, InvalidTermValue, MultiValueSelector, AsQuery, QuerySelector, FuzzyQueryContext, FastFuzzyQueryContext};
+use crate::query_structure::{
+    AsQuery,
+    AsQueryTerm,
+    FastFuzzyQueryContext,
+    FieldSelector,
+    FuzzyQueryContext,
+    HelperOps,
+    InvalidTermValue,
+    MultiValueSelector,
+    QueryKind,
+    QueryLayer,
+    QuerySelector,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueryBuildError {
@@ -37,7 +58,8 @@ pub fn build_query(
     boost_factors: &HashMap<String, Score>,
 ) -> Result<Box<dyn Query>, QueryBuildError> {
     if let Some(kind) = query.query.as_ref() {
-        let fields = query.fields
+        let fields = query
+            .fields
             .as_ref()
             .map(|selector| get_fields(selector, settings.schema))
             .transpose()?;
@@ -51,19 +73,23 @@ pub fn build_query(
         }
 
         return Ok(Box::new(BooleanQuery::new(queries)));
-    } 
-
-    if let Some(pipeline) = query.pipeline.as_ref() {
-        return build_pipeline_op(pipeline, settings, default_fields, boost_factors)
     }
 
-    Ok(Box::new(AllQuery{}))
+    if let Some(pipeline) = query.pipeline.as_ref() {
+        return build_pipeline_op(pipeline, settings, default_fields, boost_factors);
+    }
+
+    Ok(Box::new(AllQuery {}))
 }
 
-fn get_fields(selector: &FieldSelector, schema: &Schema) -> Result<Vec<Field>, QueryBuildError> {
+fn get_fields(
+    selector: &FieldSelector,
+    schema: &Schema,
+) -> Result<Vec<Field>, QueryBuildError> {
     match selector {
         FieldSelector::Single(field) => {
-            let field = schema.get_field(field)
+            let field = schema
+                .get_field(field)
                 .ok_or_else(|| QueryBuildError::UnknownField(field.clone()))?;
 
             Ok(vec![field])
@@ -71,7 +97,8 @@ fn get_fields(selector: &FieldSelector, schema: &Schema) -> Result<Vec<Field>, Q
         FieldSelector::Multi(fields) => {
             let mut schema_fields = vec![];
             for field in fields {
-                let field = schema.get_field(field)
+                let field = schema
+                    .get_field(field)
                     .ok_or_else(|| QueryBuildError::UnknownField(field.clone()))?;
 
                 schema_fields.push(field);
@@ -98,14 +125,15 @@ fn build_kind_layer(
                 let mut queries = vec![];
                 for value in values {
                     let term = value.as_term(field, field_entry)?;
-                    let query = Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs));
+                    let query =
+                        Box::new(TermQuery::new(term, IndexRecordOption::WithFreqs));
                     queries.push((Occur::Should, query as Box<dyn Query>));
                 }
 
                 Box::new(BooleanQuery::new(queries))
             },
         },
-        QueryKind::All {  } => Box::new(AllQuery {}),
+        QueryKind::All {} => Box::new(AllQuery {}),
         QueryKind::Phrase(selector) => {
             let query = selector.as_inner_query();
             let tokenizer = settings.index.tokenizer_for_field(field)?;
@@ -154,36 +182,28 @@ fn build_kind_layer(
         },
         QueryKind::Fuzzy(selector) => match selector {
             MultiValueSelector::Single(selector) => {
-                build_fuzzy_query(
-                    selector,
-                    settings,
-                    field,
-                    field_entry,
-                )?
+                build_fuzzy_query(selector, settings, field, field_entry)?
             },
             MultiValueSelector::Multi(values) => {
                 let mut queries = vec![];
                 for selector in values {
-                    let query = build_fuzzy_query(selector, settings, field, field_entry)?;
+                    let query =
+                        build_fuzzy_query(selector, settings, field, field_entry)?;
                     queries.push((Occur::Should, query));
                 }
 
                 Box::new(BooleanQuery::new(queries))
             },
         },
-        QueryKind::FastFuzzy(selector) =>  match selector {
+        QueryKind::FastFuzzy(selector) => match selector {
             MultiValueSelector::Single(selector) => {
-                build_fast_fuzzy_query(
-                    selector,
-                    settings,
-                    field,
-                    field_entry,
-                )?
+                build_fast_fuzzy_query(selector, settings, field, field_entry)?
             },
             MultiValueSelector::Multi(values) => {
                 let mut queries = vec![];
                 for selector in values {
-                    let query = build_fast_fuzzy_query(selector, settings, field, field_entry)?;
+                    let query =
+                        build_fast_fuzzy_query(selector, settings, field, field_entry)?;
                     queries.push((Occur::Should, query));
                 }
 
@@ -240,7 +260,8 @@ fn build_fuzzy_query(
     let mut queries = vec![];
     while let Some(token) = stream.next() {
         let term = token.text.as_term(field, field_entry)?;
-        let query = Box::new(FuzzyTermQuery::new(term, 2, !query.transposition_costs_two));
+        let query =
+            Box::new(FuzzyTermQuery::new(term, 2, !query.transposition_costs_two));
         queries.push((occur, query as Box<dyn Query>));
     }
 

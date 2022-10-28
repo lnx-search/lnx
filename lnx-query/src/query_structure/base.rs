@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
-use tantivy::{schema::{Field, FieldEntry}, Term, query::Query};
-
+use tantivy::query::Query;
+use tantivy::schema::{Field, FieldEntry};
+use tantivy::Term;
 
 #[derive(Debug, thiserror::Error)]
 #[error("Invalid value for term: {0}")]
@@ -18,17 +19,28 @@ impl InvalidTermValue {
 pub struct BuildQueryError(pub String);
 
 pub trait AsQueryTerm {
-    fn as_term(&self, field: Field, entry: &FieldEntry) -> Result<Term, InvalidTermValue>;
+    fn as_term(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Term, InvalidTermValue>;
 }
 
 pub trait AsQuery {
-    fn as_query(&self, field: Field, entry: &FieldEntry) -> Result<Box<dyn Query>, InvalidTermValue>;
+    fn as_query(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Box<dyn Query>, InvalidTermValue>;
 }
-
 
 // Default impl's
 impl AsQueryTerm for String {
-    fn as_term(&self, field: Field, _entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
+    fn as_term(
+        &self,
+        field: Field,
+        _entry: &FieldEntry,
+    ) -> Result<Term, InvalidTermValue> {
         Ok(Term::from_field_text(field, self))
     }
 }

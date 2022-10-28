@@ -1,11 +1,16 @@
-use std::{fmt, ops::Bound};
+use std::fmt;
+use std::ops::Bound;
 
-use tantivy::{DateTime, Term, schema::{Field, FieldEntry}, query::RangeQuery};
+use serde::de::Visitor;
+use serde::{Deserialize, Deserializer};
+use tantivy::query::RangeQuery;
+use tantivy::schema::{Field, FieldEntry};
+use tantivy::{DateTime, Term};
 use time::format_description::well_known::Rfc3339;
 use utoipa::ToSchema;
-use serde::{Deserialize, Deserializer, de::Visitor};
 
-use super::{AsQueryTerm, base::{AsQuery, InvalidTermValue}};
+use super::base::{AsQuery, InvalidTermValue};
+use super::AsQueryTerm;
 
 #[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 /// The required values / context for a `range` query.
@@ -13,37 +18,39 @@ pub struct Range {
     #[schema(inline)]
     #[serde(flatten)]
     /// The gt/ge bounds.
-    /// 
+    ///
     /// These are grouped together because they are mutually exclusive.
     pub greater_bound: Option<GreaterBounds>,
 
     #[schema(inline)]
     #[serde(flatten)]
     /// The lt/le bounds.
-    /// 
+    ///
     /// These are grouped together because they are mutually exclusive.
     pub lesser_bounds: Option<LesserBounds>,
 }
 
 impl AsQuery for Range {
-    fn as_query(&self, field: Field, entry: &FieldEntry) -> Result<Box<dyn tantivy::query::Query>, InvalidTermValue> {
-        let left_bound = self.greater_bound
+    fn as_query(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Box<dyn tantivy::query::Query>, InvalidTermValue> {
+        let left_bound = self
+            .greater_bound
             .as_ref()
             .map(|v| v.as_bound(field, entry))
             .unwrap_or(Ok(Bound::Unbounded))?;
 
-        let right_bound = self.lesser_bounds
+        let right_bound = self
+            .lesser_bounds
             .as_ref()
             .map(|v| v.as_bound(field, entry))
             .unwrap_or(Ok(Bound::Unbounded))?;
 
         let value_type = entry.field_type().value_type();
-        let qry = RangeQuery::new_term_bounds(
-            field, 
-            value_type, 
-            &left_bound, 
-            &right_bound,
-        );
+        let qry =
+            RangeQuery::new_term_bounds(field, value_type, &left_bound, &right_bound);
 
         Ok(Box::new(qry))
     }
@@ -61,7 +68,11 @@ pub enum GreaterBounds {
 }
 
 impl GreaterBounds {
-    fn as_bound(&self, field: Field, entry: &FieldEntry) -> Result<Bound<Term>, InvalidTermValue> {
+    fn as_bound(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Bound<Term>, InvalidTermValue> {
         match self {
             GreaterBounds::Gt(val) => {
                 let term = val.as_term(field, entry)?;
@@ -87,7 +98,11 @@ pub enum LesserBounds {
 }
 
 impl LesserBounds {
-    fn as_bound(&self, field: Field, entry: &FieldEntry) -> Result<Bound<Term>, InvalidTermValue> {
+    fn as_bound(
+        &self,
+        field: Field,
+        entry: &FieldEntry,
+    ) -> Result<Bound<Term>, InvalidTermValue> {
         match self {
             LesserBounds::Lt(val) => {
                 let term = val.as_term(field, entry)?;
@@ -97,10 +112,9 @@ impl LesserBounds {
                 let term = val.as_term(field, entry)?;
                 Ok(Bound::Included(term))
             },
-        }        
+        }
     }
 }
-
 
 #[derive(Debug, ToSchema, Clone, Copy)]
 pub enum RangeValue {
@@ -118,14 +132,18 @@ pub enum RangeValue {
 
     #[schema(example = "2002-10-02T15:00:00.05Z")]
     /// A date-time value.
-    /// 
-    /// This expects to be in the format of a `RFC 3339` formatted date time 
+    ///
+    /// This expects to be in the format of a `RFC 3339` formatted date time
     /// string which is assumed to be in the UTC timezone.
-    DateTime(DateTime)
+    DateTime(DateTime),
 }
 
 impl AsQueryTerm for RangeValue {
-    fn as_term(&self, field: Field, _entry: &FieldEntry) -> Result<Term, InvalidTermValue> {
+    fn as_term(
+        &self,
+        field: Field,
+        _entry: &FieldEntry,
+    ) -> Result<Term, InvalidTermValue> {
         let term = match *self {
             RangeValue::U64(val) => Term::from_field_u64(field, val),
             RangeValue::I64(val) => Term::from_field_i64(field, val),
@@ -169,23 +187,22 @@ impl<'de> Deserialize<'de> for RangeValue {
                 }
 
                 if let Ok(int) = v.parse::<u64>() {
-                    return Ok(RangeValue::U64(int))
+                    return Ok(RangeValue::U64(int));
                 }
 
                 if let Ok(int) = v.parse::<i64>() {
-                    return Ok(RangeValue::I64(int))
+                    return Ok(RangeValue::I64(int));
                 }
 
                 if let Ok(int) = v.parse::<f64>() {
-                    return Ok(RangeValue::F64(int))
+                    return Ok(RangeValue::F64(int));
                 }
 
                 Err(serde::de::Error::invalid_value(
-                        serde::de::Unexpected::Str(v),
-                        &"2002-10-02T15:00:00.05Z"
-                    ))
+                    serde::de::Unexpected::Str(v),
+                    &"2002-10-02T15:00:00.05Z",
+                ))
             }
-
         }
 
         deserializer.deserialize_any(ValueVisitor)
