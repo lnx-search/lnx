@@ -63,16 +63,16 @@ pub fn build_query(
 fn get_fields(selector: &FieldSelector, schema: &Schema) -> Result<Vec<Field>, QueryBuildError> {
     match selector {
         FieldSelector::Single(field) => {
-            let field = schema.get_field(&field)
-                .ok_or(QueryBuildError::UnknownField(field.clone()))?;
+            let field = schema.get_field(field)
+                .ok_or_else(|| QueryBuildError::UnknownField(field.clone()))?;
 
             Ok(vec![field])
         },
         FieldSelector::Multi(fields) => {
             let mut schema_fields = vec![];
             for field in fields {
-                let field = schema.get_field(&field)
-                    .ok_or(QueryBuildError::UnknownField(field.clone()))?;
+                let field = schema.get_field(field)
+                    .ok_or_else(|| QueryBuildError::UnknownField(field.clone()))?;
 
                 schema_fields.push(field);
             }

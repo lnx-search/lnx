@@ -164,7 +164,7 @@ pub enum QuerySelector<Q: From<String> + Clone> {
 impl<Q: From<String> + Clone> QuerySelector<Q> {
     /// Converts the `Str` variant to the default 
     /// inner version of the query if applicable.
-    pub fn as_inner_query<'a>(&self) -> Cow<'a, Q> {
+    pub fn as_inner_query(&self) -> Cow<Q> {
         match self {
             QuerySelector::Str(v) => Cow::Owned(Q::from(v.clone())),
             QuerySelector::Detailed(q) => Cow::Borrowed(q),
