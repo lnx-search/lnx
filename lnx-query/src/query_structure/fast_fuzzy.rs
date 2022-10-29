@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-use crate::query_structure::Occur;
 use super::fuzzy::EditDistanceBounds;
+use crate::query_structure::Occur;
 
 #[derive(Debug, Default, Clone, ToSchema, Deserialize)]
 pub struct FastFuzzyQueryContext {
