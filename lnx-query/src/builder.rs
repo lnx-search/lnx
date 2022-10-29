@@ -260,8 +260,12 @@ fn build_fuzzy_query(
     let mut queries = vec![];
     while let Some(token) = stream.next() {
         let term = token.text.as_term(field, field_entry)?;
-        let query =
-            Box::new(FuzzyTermQuery::new(term, 2, !query.transposition_costs_two));
+        let distance = query.edit_distance_bounds.get_word_distance(&token.text);
+        let query = Box::new(FuzzyTermQuery::new(
+            term,
+            distance,
+            !query.transposition_costs_two,
+        ));
         queries.push((occur, query as Box<dyn Query>));
     }
 
@@ -282,7 +286,8 @@ fn build_fast_fuzzy_query(
     let mut queries = vec![];
     while let Some(token) = stream.next() {
         let term = token.text.as_term(field, field_entry)?;
-        let query = Box::new(FuzzyTermQuery::new(term, 2, true));
+        let distance = query.edit_distance_bounds.get_word_distance(&token.text);
+        let query = Box::new(FuzzyTermQuery::new(term, distance, true));
         queries.push((occur, query as Box<dyn Query>));
     }
 

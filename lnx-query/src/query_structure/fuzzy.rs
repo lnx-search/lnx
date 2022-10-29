@@ -45,7 +45,6 @@ impl From<String> for FuzzyQueryContext {
     }
 }
 
-
 #[derive(Debug, Clone, ToSchema, Deserialize)]
 /// The word length bounds associated with the maximum edit distance.
 ///
@@ -85,11 +84,22 @@ impl Default for EditDistanceBounds {
 }
 
 impl EditDistanceBounds {
-    pub fn default_min_length_d1() -> usize {
+    #[inline]
+    pub fn get_word_distance(&self, term: &str) -> u8 {
+        if term.len() < self.distance_of_1_bound {
+            0
+        } else if term.len() < self.distance_of_2_bound {
+            1
+        } else {
+            2
+        }
+    }
+
+    pub const fn default_min_length_d1() -> usize {
         5
     }
 
-    pub fn default_min_length_d2() -> usize {
+    pub const fn default_min_length_d2() -> usize {
         8
     }
 }
