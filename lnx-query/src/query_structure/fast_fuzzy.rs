@@ -2,6 +2,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::query_structure::Occur;
+use super::fuzzy::EditDistanceBounds;
 
 #[derive(Debug, Default, Clone, ToSchema, Deserialize)]
 pub struct FastFuzzyQueryContext {
@@ -23,6 +24,9 @@ pub struct FastFuzzyQueryContext {
     /// in the document. By default this is set to `should` so some words may be missing and
     /// still match a given document.
     pub word_occurrence: Occur,
+
+    #[serde(default, rename = "$edit_distance_bounds")]
+    pub edit_distance_bounds: EditDistanceBounds,
 }
 
 impl From<String> for FastFuzzyQueryContext {
