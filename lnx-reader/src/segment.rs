@@ -8,11 +8,14 @@ use tantivy::collector::{Collector, FilterCollector};
 use tantivy::query::{BooleanQuery, Occur, Query, TermQuery};
 use tantivy::schema::Field;
 use tantivy::{Directory, DocAddress, Index, IndexReader, ReloadPolicy, Searcher, Term};
+use tantivy::directory::OwnedBytes;
 
 use crate::deletes::{DeletesCollector, DeletesFilter};
 use crate::ReaderError;
 
-/// A tantivy index reader for single file segments.
+/// A segment reader for single file segments.
+///
+/// This acts both as the tantivy index and the general directory reader.
 pub struct SegmentIndex {
     dir: ReadOnlyDirectory,
     reader: IndexReader,
@@ -56,6 +59,14 @@ impl SegmentIndex {
             doc_id_field,
             deletes,
         })
+    }
+
+    /// Opens a file view to be read.
+    pub fn open_read(&self, file_name: impl AsRef<Path>) -> io::Result<OwnedBytes> {
+        self.dir
+            .open_read(file_name.as_ref())
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, e.to_string()))?
+            .read_bytes()
     }
 
     /// Reads the segment delete information.

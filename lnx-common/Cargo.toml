@@ -12,14 +12,18 @@ num_cpus = "1.13.1"
 parse-size = "1.0.0"
 humansize = "2.1.0"
 humantime = "2.1.0"
+hashbrown = "0.12.3"
 tracing = "0.1.36"
 tracing-futures = "0.2.5"
+thiserror = "1"
+
+utoipa = { version = "2.2.0", features = ["json"] }
+validator = { version = "0.16.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+rkyv = { version = "0.7", features = ["validation", "hashbrown"] }
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy.git", rev = "f39cce2"}
-utoipa = { version = "2.2.0", features = ["json"] }
-validator = { version = "0.15", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-rkyv = { version = "0.7", features = ["validation"] }
+compose = { git = "https://github.com/lnx-search/compose.git", version = "0.3.0" }
 
 [features]
 test-utils = []

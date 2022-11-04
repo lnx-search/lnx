@@ -6,8 +6,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub mod schema;
+pub mod stop_words;
+pub mod fast_fuzzy;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
+
+#[derive(Debug, thiserror::Error)]
+#[error("The provided data is corrupted or unable to be deserialized.")]
+pub struct CorruptedData;
 
 #[derive(Debug, Clone)]
 pub struct IndexContext(Arc<IndexContextInner>);
