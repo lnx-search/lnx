@@ -1,10 +1,20 @@
 use std::collections::HashMap;
 
-use tantivy::query::{AllQuery, BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, RegexQuery, TermQuery};
-use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema};
-use tantivy::{Index, Score};
 use lnx_common::fast_fuzzy::FastFuzzyCorrector;
 use lnx_common::stop_words::StopWords;
+use tantivy::query::{
+    AllQuery,
+    BooleanQuery,
+    BoostQuery,
+    FuzzyTermQuery,
+    Occur,
+    PhraseQuery,
+    Query,
+    RegexQuery,
+    TermQuery,
+};
+use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema};
+use tantivy::{Index, Score};
 
 use crate::query_structure::{
     AsQuery,
@@ -78,7 +88,8 @@ pub fn build_query(
         let mut queries = vec![];
         for field in fields.as_deref().unwrap_or(default_fields) {
             let entry = segment_context.schema.get_field_entry(*field);
-            let query = build_kind_layer(kind, global_context, segment_context, *field, entry)?;
+            let query =
+                build_kind_layer(kind, global_context, segment_context, *field, entry)?;
 
             queries.push((Occur::Should, query))
         }
@@ -87,7 +98,13 @@ pub fn build_query(
     }
 
     if let Some(pipeline) = query.pipeline.as_ref() {
-        return build_pipeline_op(pipeline, global_context, segment_context, default_fields, boost_factors);
+        return build_pipeline_op(
+            pipeline,
+            global_context,
+            segment_context,
+            default_fields,
+            boost_factors,
+        );
     }
 
     Ok(Box::new(AllQuery {}))
@@ -199,8 +216,12 @@ fn build_kind_layer(
             MultiValueSelector::Multi(values) => {
                 let mut queries = vec![];
                 for selector in values {
-                    let query =
-                        build_fuzzy_query(selector, segment_context, field, field_entry)?;
+                    let query = build_fuzzy_query(
+                        selector,
+                        segment_context,
+                        field,
+                        field_entry,
+                    )?;
                     queries.push((Occur::Should, query));
                 }
 
@@ -208,14 +229,23 @@ fn build_kind_layer(
             },
         },
         QueryKind::FastFuzzy(selector) => match selector {
-            MultiValueSelector::Single(selector) => {
-                build_fast_fuzzy_query(selector, global_context, segment_context, field, field_entry)?
-            },
+            MultiValueSelector::Single(selector) => build_fast_fuzzy_query(
+                selector,
+                global_context,
+                segment_context,
+                field,
+                field_entry,
+            )?,
             MultiValueSelector::Multi(values) => {
                 let mut queries = vec![];
                 for selector in values {
-                    let query =
-                        build_fast_fuzzy_query(selector, global_context, segment_context, field, field_entry)?;
+                    let query = build_fast_fuzzy_query(
+                        selector,
+                        global_context,
+                        segment_context,
+                        field,
+                        field_entry,
+                    )?;
                     queries.push((Occur::Should, query));
                 }
 
@@ -238,19 +268,37 @@ fn build_pipeline_op(
     match pipeline {
         HelperOps::All(layers) => {
             for layer in layers {
-                let query = build_query(layer, settings, segment_context, fields, boost_factors)?;
+                let query = build_query(
+                    layer,
+                    settings,
+                    segment_context,
+                    fields,
+                    boost_factors,
+                )?;
                 queries.push((Occur::Must, query));
             }
         },
         HelperOps::Any(layers) => {
             for layer in layers {
-                let query = build_query(layer, settings, segment_context, fields, boost_factors)?;
+                let query = build_query(
+                    layer,
+                    settings,
+                    segment_context,
+                    fields,
+                    boost_factors,
+                )?;
                 queries.push((Occur::Should, query));
             }
         },
         HelperOps::None(layers) => {
             for layer in layers {
-                let query = build_query(layer, settings, segment_context, fields, boost_factors)?;
+                let query = build_query(
+                    layer,
+                    settings,
+                    segment_context,
+                    fields,
+                    boost_factors,
+                )?;
                 queries.push((Occur::MustNot, query));
             }
         },
@@ -300,7 +348,7 @@ fn build_fast_fuzzy_query(
     let mut queries = vec![];
     while let Some(token) = stream.next() {
         if global_context.stop_words.is_stop_word(&token.text) {
-            continue
+            continue;
         }
 
         let distance = query.edit_distance_bounds.get_word_distance(&token.text);
@@ -309,10 +357,10 @@ fn build_fast_fuzzy_query(
         for (token, multiplier) in corrections {
             let term = token.as_term(field, field_entry)?;
             let inner_query = Box::new(FuzzyTermQuery::new(term, distance, true));
-            let query = Box::new(BoostQuery::new(inner_query, (distance - multiplier) as f32));
+            let query =
+                Box::new(BoostQuery::new(inner_query, (distance - multiplier) as f32));
             queries.push((occur, query as Box<dyn Query>));
         }
-
     }
 
     Ok(Box::new(BooleanQuery::new(queries)))

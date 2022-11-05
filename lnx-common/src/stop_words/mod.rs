@@ -1,6 +1,6 @@
-use rkyv::{Archive, Serialize, Deserialize};
-use hashbrown::HashSet;
 use bytecheck::CheckBytes;
+use hashbrown::HashSet;
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::CorruptedData;
 

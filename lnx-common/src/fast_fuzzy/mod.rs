@@ -1,8 +1,9 @@
 use std::ops::Deref;
 use std::sync::Arc;
-use compose::{SymSpell, Verbosity};
-use rkyv::{Archive, Serialize, Deserialize};
+
 use bytecheck::CheckBytes;
+use compose::{SymSpell, Verbosity};
+use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::CorruptedData;
 
@@ -25,8 +26,8 @@ impl Deref for FastFuzzyCorrector {
 impl FastFuzzyCorrector {
     /// Deserializes the fuzzy corrector from a given buffer.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CorruptedData> {
-        let inner: FastFuzzyCorrectorInner = rkyv::from_bytes(bytes)
-            .map_err(|_| CorruptedData)?;
+        let inner: FastFuzzyCorrectorInner =
+            rkyv::from_bytes(bytes).map_err(|_| CorruptedData)?;
 
         Ok(Self(Arc::new(inner)))
     }
@@ -54,7 +55,11 @@ pub struct FastFuzzyCorrectorInner {
 impl FastFuzzyCorrectorInner {
     #[inline]
     /// Checks for any corrections for the given term.
-    pub fn correct(&self, term: &str, edit_distance: u8) -> impl Iterator<Item = (String, u8)> {
+    pub fn correct(
+        &self,
+        term: &str,
+        edit_distance: u8,
+    ) -> impl Iterator<Item = (String, u8)> {
         self.symspell
             .lookup(term, Verbosity::Closest, edit_distance as i64)
             .into_iter()

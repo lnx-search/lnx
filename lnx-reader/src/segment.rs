@@ -5,10 +5,10 @@ use lnx_common::schema::RESERVED_DOCUMENT_ID_FIELD;
 use lnx_segments::{DeleteValue, DELETES_FILE};
 use lnx_storage::ReadOnlyDirectory;
 use tantivy::collector::{Collector, FilterCollector};
+use tantivy::directory::OwnedBytes;
 use tantivy::query::{BooleanQuery, Occur, Query, TermQuery};
 use tantivy::schema::Field;
 use tantivy::{Directory, DocAddress, Index, IndexReader, ReloadPolicy, Searcher, Term};
-use tantivy::directory::OwnedBytes;
 
 use crate::deletes::{DeletesCollector, DeletesFilter};
 use crate::ReaderError;

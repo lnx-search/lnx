@@ -5,9 +5,9 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+pub mod fast_fuzzy;
 pub mod schema;
 pub mod stop_words;
-pub mod fast_fuzzy;
 #[cfg(feature = "test-utils")]
 pub mod test_utils;
 
