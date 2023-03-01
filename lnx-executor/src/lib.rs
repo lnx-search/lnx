@@ -15,4 +15,4 @@ pub use pools::{
     schedule_default,
     schedule_search,
 };
-pub use yielding::execute_yielding_io;
+pub use yielding::schedule_yielding_io;

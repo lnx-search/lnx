@@ -12,7 +12,7 @@ use crate::schedule_default;
 const MAX_RECORD_LATENCY: Duration = Duration::from_secs(5);
 
 /// Execute IO on the executor system.
-pub fn execute_yielding_io<IO>(ctx: &YieldContext, io: IO)
+pub fn schedule_yielding_io<IO>(ctx: &YieldContext, io: IO)
 where
     IO: YieldingIo,
 {
@@ -45,6 +45,11 @@ where
 }
 
 #[derive(Debug, Clone)]
+/// The runtime context for a given yielding task.
+///
+/// This can be used for grouping multiple
+/// IO tasks as part of the same collection in order
+/// to balance metrics and runtime allowance.
 pub struct YieldContext {
     num_tasks: Arc<AtomicU64>,
     num_steps: Arc<AtomicU64>,
@@ -101,6 +106,7 @@ impl YieldContext {
         self.limit.store(dur.as_micros() as u64, Ordering::Relaxed);
     }
 
+    /// Get the given task limit.
     fn get_limit(&self) -> Duration {
         let epoch = self.epoch.load(Ordering::Relaxed);
 
@@ -128,14 +134,17 @@ impl YieldContext {
         Duration::from_micros(limit_micros)
     }
 
+    /// Record the total duration of a given yielding task for this ctx.
     fn record_latency(&mut self, dur: Duration) {
         let _ = self.latency_recording.record(dur.as_micros() as u64);
     }
 
+    /// Increment the task counter for this ctx.
     fn inc_task(&self) {
         self.num_tasks.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Increment the step counter for this ctx.
     fn inc_step(&self) {
         self.epoch.fetch_add(1, Ordering::Relaxed);
         self.num_steps.fetch_add(1, Ordering::Relaxed);

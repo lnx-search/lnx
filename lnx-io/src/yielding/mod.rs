@@ -1,9 +1,7 @@
 mod writer;
 
-use std::time::Duration;
-
 use futures::channel::oneshot;
-pub use writer::{WriteOp, YieldingWriter};
+pub use writer::{WriteOp, YieldingWriter, WriterError, YieldingWriterHandle};
 
 #[macro_export]
 macro_rules! check_result {
