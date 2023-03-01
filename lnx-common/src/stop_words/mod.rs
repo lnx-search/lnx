@@ -1,5 +1,6 @@
+use std::collections::BTreeSet;
+
 use bytecheck::CheckBytes;
-use hashbrown::HashSet;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::CorruptedData;
@@ -8,7 +9,7 @@ use crate::CorruptedData;
 #[archive_attr(derive(CheckBytes))]
 /// A set of stop words that should be ignored in the presence of a query.
 pub struct StopWords {
-    words: HashSet<Box<str>>,
+    words: BTreeSet<Box<str>>,
 }
 
 impl StopWords {
