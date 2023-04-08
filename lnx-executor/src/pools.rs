@@ -10,6 +10,8 @@ use arc_swap::ArcSwap;
 use futures::channel::oneshot;
 use futures::FutureExt;
 use once_cell::sync::OnceCell;
+use tokio::runtime::Runtime;
+use tokio::task::JoinHandle;
 
 /// The executor pool used for searches only.
 ///
@@ -19,7 +21,7 @@ static SEARCH_POOL: OnceCell<ArcSwap<ExecutorPool>> = OnceCell::new();
 /// The executor pool for any operations that are not searches.
 ///
 /// This typically includes compression, IO, etc...
-static DEFAULT_POOL: OnceCell<ArcSwap<ExecutorPool>> = OnceCell::new();
+static DEFAULT_POOL: OnceCell<ArcSwap<Runtime>> = OnceCell::new();
 
 /// The default ratio of other operations to CPU searches.
 ///
@@ -44,27 +46,9 @@ pub fn get_search_usage() -> f32 {
         .unwrap_or_default()
 }
 
-/// Get the current default pool usage pct.
-pub fn get_default_usage() -> f32 {
-    DEFAULT_POOL
-        .get()
-        .map(|v: &ArcSwap<ExecutorPool>| {
-            let guard = v.load();
-            guard.get_threadpool_usage_pct()
-        })
-        .unwrap_or_default()
-}
-
 /// Reset the search pool usage metrics.
 pub fn reset_search_usage() {
     if let Some(pool) = SEARCH_POOL.get() {
-        pool.load().reset_usage_metrics();
-    }
-}
-
-/// Reset the default pool usage metrics.
-pub fn reset_default_usage() {
-    if let Some(pool) = DEFAULT_POOL.get() {
         pool.load().reset_usage_metrics();
     }
 }
@@ -83,16 +67,16 @@ where
 }
 
 /// Execute an operation on the default pool.
-pub fn execute_default<OP, T>(op: OP) -> impl Future<Output = Option<T>>
+pub fn spawn_task<OP, T>(op: OP) -> JoinHandle<T>
 where
     T: Send + 'static,
-    OP: FnOnce() -> T + Send + 'static,
+    OP: Future<Output = T> + Send + 'static,
 {
     DEFAULT_POOL
         .get()
         .expect("Default executor pool should be initialised.")
         .load()
-        .execute(op)
+        .spawn(op)
 }
 
 /// Spawn an operation on the search pool.
@@ -107,18 +91,6 @@ where
         .schedule(op)
 }
 
-/// Spawn an operation on the default pool.
-pub fn schedule_default<OP>(op: OP)
-where
-    OP: FnOnce() + Send + 'static,
-{
-    DEFAULT_POOL
-        .get()
-        .expect("Default executor pool should be initialised.")
-        .load()
-        .schedule(op)
-}
-
 /// Creates the executor pools with a given search executor pct.
 pub(crate) fn install_pools(num_threads: usize, search_pct: f32) -> anyhow::Result<()> {
     if search_pct <= 10.0 {
@@ -128,8 +100,15 @@ pub(crate) fn install_pools(num_threads: usize, search_pct: f32) -> anyhow::Resu
     let search_threads = get_threads(num_threads, search_pct / 100.0);
     let default_threads = get_threads(num_threads, (100.0 - search_pct) / 100.0);
 
+    info!(
+        total_thread_allocation = num_threads,
+        search_threads = search_threads,
+        default_threads = default_threads,
+        "Creating threadpool."
+    );
+
     let search_pool = spawn_thread_pool("search", search_threads)?;
-    let default_pool = spawn_thread_pool("default", default_threads)?;
+    let default_pool = spawn_runtime_pool("default", default_threads)?;
 
     if let Some(existing) = SEARCH_POOL.get() {
         existing.store(Arc::new(search_pool));
@@ -200,6 +179,8 @@ impl ExecutorPool {
         T: Send + 'static,
         OP: FnOnce() -> T + Send + 'static,
     {
+        trace!("Executing operation");
+
         let guard = self.pool.clone();
         let execution_time = self.execution_time.clone();
 
@@ -213,6 +194,7 @@ impl ExecutorPool {
             }
 
             let elapsed = start.elapsed();
+            trace!(elapsed = ?elapsed, "Execute operation completed.");
             execution_time.fetch_add(elapsed.as_micros() as u64, Ordering::Relaxed);
 
             drop(guard);
@@ -227,6 +209,8 @@ impl ExecutorPool {
     where
         OP: FnOnce() + Send + 'static,
     {
+        trace!("Scheduling operation");
+
         let guard = self.pool.clone();
         let execution_time = self.execution_time.clone();
 
@@ -236,6 +220,7 @@ impl ExecutorPool {
             (op)();
 
             let elapsed = start.elapsed();
+            trace!(elapsed = ?elapsed, "Scheduled operation completed.");
             execution_time.fetch_add(elapsed.as_micros() as u64, Ordering::Relaxed);
 
             drop(guard);
@@ -270,6 +255,18 @@ fn spawn_thread_pool(
         .build()
         .context("Create executor pool")
         .map(ExecutorPool::from)
+}
+
+fn spawn_runtime_pool(
+    nickname: &'static str,
+    num_threads: usize,
+) -> anyhow::Result<Runtime> {
+    tokio::runtime::Builder::new_multi_thread()
+        .thread_name(format!("lnx-executor-{nickname}"))
+        .worker_threads(num_threads)
+        .enable_all()
+        .build()
+        .context("Build runtime executor")
 }
 
 fn get_threads(num_total: usize, ratio: f32) -> usize {

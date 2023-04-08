@@ -21,7 +21,6 @@ validator = { workspace = true }
 serde = { workspace = true }
 rkyv = { workspace = true }
 tantivy = { workspace = true }
-compose = { workspace = true }
 
 [features]
 test-utils = []

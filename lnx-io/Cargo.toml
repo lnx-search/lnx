@@ -6,10 +6,3 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam = { workspace = true }
-futures = { workspace = true }
-flume = { workspace = true }
-thiserror = { workspace = true }
-arc-swap = { workspace = true }
-
-lnx-executor = { path = "../lnx-executor" }
