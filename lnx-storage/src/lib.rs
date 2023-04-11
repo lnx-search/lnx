@@ -25,7 +25,7 @@ use datacake_lmdb::{heed, LmdbStorage};
 use tokio::time::Instant;
 
 pub use self::distributor::HEARTBEAT;
-pub use self::fragments::{BlockId, FragmentInfo};
+pub use self::fragments::{BlockId, FragmentInfo, BLOCK_HEADER_SIZE};
 use crate::distributor::TaskDistributor;
 use crate::fragments::{
     FragmentReader,

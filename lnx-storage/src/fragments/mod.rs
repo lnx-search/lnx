@@ -28,6 +28,7 @@ pub use self::writer::{
     StreamError,
     WriteDocBlock,
     WriterState,
+    BLOCK_HEADER_SIZE,
 };
 use crate::metastore::Metastore;
 
@@ -163,6 +164,13 @@ impl IndexFragmentsWriters {
     }
 
     #[instrument(name = "open-fragment-writer", skip_all)]
+    /// Writes a file to the fragment.
+    ///
+    /// WARNING:
+    ///     This is **NOT** replicated across the cluster directly and is **NOT** recovered
+    ///     after a failure, this is by design to allow the system to start re-indexing and
+    ///     recreating the file states. This may change in the future, but files should be
+    ///     able to be reconstructed from the block state, otherwise use the standard KV system.
     pub async fn write_file(
         &self,
         fragment_id: u64,

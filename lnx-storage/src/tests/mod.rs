@@ -14,6 +14,7 @@ mod block_replication;
 mod fragment_read;
 mod fragment_replication;
 mod kv_ops;
+mod recovery;
 
 /// A setup harness for a single node cluster
 async fn single_node_test_harness<CB, F>(cb: CB) -> anyhow::Result<()>

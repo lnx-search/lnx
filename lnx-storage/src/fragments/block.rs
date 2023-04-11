@@ -9,7 +9,7 @@ pub type BlockId = u64;
 pub type BlockLocations = Vec<(BlockId, BlockInfo)>;
 
 #[repr(C)]
-#[derive(Serialize, Deserialize, Archive, Debug, Clone)]
+#[derive(Serialize, Deserialize, Archive, Debug, Clone, Eq, PartialEq)]
 #[archive_attr(derive(CheckBytes, Debug))]
 pub struct BlockInfo {
     /// The position of the block in the current fragment.

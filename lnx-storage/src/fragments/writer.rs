@@ -26,6 +26,9 @@ use crate::metastore::{BlockMetadata, Metastore};
 use crate::resolvers::{BLOCK_LOCATIONS_PATH, FRAGMENT_INFO_PATH};
 use crate::{EnvCtx, FragmentInfo, SharedSlice};
 
+/// The number of bytes that prefix a given block
+pub const BLOCK_HEADER_SIZE: usize = 16;
+
 /// A writer that exports received documents blocks into
 /// the start of a index fragment.
 pub struct FragmentWriter {
