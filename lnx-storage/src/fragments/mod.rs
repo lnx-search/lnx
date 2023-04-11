@@ -282,7 +282,7 @@ impl IndexFragmentsWriters {
     /// This is a no-op on windows.
     async fn sync_directory(&self) -> io::Result<()> {
         #[cfg(unix)]
-        lnx_executor::spawn_task(move || {
+        lnx_executor::spawn_task(async move {
             std::fs::OpenOptions::new()
                 .read(true)
                 .open(&crate::resolvers::fragments_folder())?
