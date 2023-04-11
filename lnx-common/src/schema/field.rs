@@ -6,7 +6,6 @@
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Field {
@@ -129,10 +128,8 @@ impl Field {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 pub struct BaseOptions {
-    #[schema(default = "true", example = json!(true))]
     #[serde(default = "default_to_true")]
     /// Should the field be included in the stored and compressed document.
     ///
@@ -140,14 +137,12 @@ pub struct BaseOptions {
     /// original document, but can still be used for searching.
     pub stored: bool,
 
-    #[schema(default = "false", example = json!(true))]
     #[serde(default)]
     /// Should the field be a multi-value field.
     ///
     /// This means the field can contain multiple values which are searchable.
     pub multi: bool,
 
-    #[schema(default = "false", example = json!(true))]
     #[serde(default)]
     /// Should the field be mandatory when uploading documents.
     ///
@@ -166,11 +161,9 @@ pub struct BaseOptions {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 pub struct TextOptions {
     #[serde(flatten)]
-    #[schema(inline)]
     pub base: BaseOptions,
 }
 
@@ -182,17 +175,14 @@ pub struct TextOptions {
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 #[serde(from = "NumericFieldOptionsSchema")]
 pub struct NumericFieldOptions {
-    #[schema(default = "false", example = json!(false))]
     /// Should the field be indexed.
     ///
     /// This can be used when performing searches or filtering.
     pub indexed: bool,
 
-    #[schema(default = "<indexed>", example = json!(false))]
     /// Should the field norms be enabled.
     ///
     /// This defaults to what ever `indexed` is set to, which
@@ -201,14 +191,12 @@ pub struct NumericFieldOptions {
     /// the default.
     pub field_norms: bool,
 
-    #[schema(default = "false", example = json!(true))]
     /// Should this field be a fast field.
     ///
     /// Fast fields have a similar access time to an array and
     /// are used when sorting and filtering.
     pub fast: bool,
 
-    #[schema(inline)]
     pub base: BaseOptions,
 }
 

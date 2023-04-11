@@ -12,10 +12,10 @@ use datacake::eventual_consistency::Document;
 use datacake::rpc::{Body, Status};
 use futures::stream::TryStreamExt;
 use futures::StreamExt;
+use hyper::body;
 use hyper::body::HttpBody;
 use jocky::metadata::{write_metadata_offsets, SegmentMetadata};
 use lnx_io::file::SyncOnFlushFile;
-use ownedbytes::OwnedBytes;
 use puppet::{derive_message, puppet_actor, ActorMailbox};
 use rkyv::{AlignedVec, Archive, Deserialize, Serialize};
 use tokio::task::yield_now;
@@ -23,11 +23,13 @@ use tokio::task::yield_now;
 use super::block::BlockLocations;
 use crate::fragments::block::{BlockId, BlockInfo};
 use crate::metastore::{BlockMetadata, Metastore};
-use crate::resolvers::BLOCK_LOCATIONS_PATH;
+use crate::resolvers::{BLOCK_LOCATIONS_PATH, FRAGMENT_INFO_PATH};
+use crate::{EnvCtx, FragmentInfo, SharedSlice};
 
 /// A writer that exports received documents blocks into
 /// the start of a index fragment.
 pub struct FragmentWriter {
+    env: EnvCtx,
     id: u64,
     cursor: usize,
     metadata: SegmentMetadata,
@@ -42,15 +44,17 @@ pub struct FragmentWriter {
 impl FragmentWriter {
     /// Create a new block writer.
     pub fn new(
+        env: EnvCtx,
         id: u64,
         file: impl Into<SyncOnFlushFile>,
         metastore: Metastore,
     ) -> ActorMailbox<Self> {
-        Self::from_existing_state(id, file, metastore, Vec::new())
+        Self::from_existing_state(env, id, file, metastore, Vec::new())
     }
 
     /// Create a new block writer from an existing file and state.
     pub fn from_existing_state(
+        env: EnvCtx,
         id: u64,
         file: impl Into<SyncOnFlushFile>,
         metastore: Metastore,
@@ -59,6 +63,7 @@ impl FragmentWriter {
         let (tx, rx) = flume::bounded(25);
 
         let actor = Self {
+            env,
             id,
             cursor: 0,
             metadata: SegmentMetadata::default(),
@@ -96,7 +101,7 @@ impl FragmentWriter {
             self.cursor += n;
 
             if n == buffer.len() {
-                trace!(num_yields = yields, elapsed = ?start.elapsed(), "Write bytes");
+                debug!(num_yields = yields, elapsed = ?start.elapsed(), "Write bytes");
                 return Ok(self.cursor);
             }
 
@@ -175,7 +180,7 @@ impl FragmentWriter {
         // Write the length of the block as the prefix.
         // This lets us walk through the block to recover data.
         let start = self.write_block_header(len as u32, msg.block.id(), msg.checksum)?;
-        let res = self.write_all(&buffer).await;
+        let res = self.write_all(buffer).await;
 
         if res.is_ok() {
             let info = BlockInfo {
@@ -272,6 +277,7 @@ impl FragmentWriter {
     #[puppet]
     /// Attempt to flush the buffer contents to disk.
     async fn flush(&mut self, _msg: Flush) -> io::Result<()> {
+        let start = Instant::now();
         self.writer.flush()?;
 
         // We only persist the metadata of the blocks once we know it's safely on disk.
@@ -280,6 +286,8 @@ impl FragmentWriter {
                 .insert_block(block_id, metadata)
                 .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
         }
+
+        debug!(elapsed = ?start.elapsed(), "Flush complete");
 
         Ok(())
     }
@@ -290,23 +298,32 @@ impl FragmentWriter {
     ///
     /// Once this operation is complete the file can be
     /// opened by a fragment reader.
-    async fn seal(&mut self, _msg: Seal) -> io::Result<()> {
+    async fn seal(&mut self, msg: Seal) -> io::Result<()> {
         let start_time = Instant::now();
 
         let block_locations_bytes = rkyv::to_bytes::<_, 4096>(&self.block_locations)
             .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+        let fragment_info = rkyv::to_bytes::<_, 4096>(&msg.0)
+            .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
+
         let start = self.cursor;
         self.write_all(&block_locations_bytes).await?;
         let end = self.cursor;
         self.metadata
             .add_file(BLOCK_LOCATIONS_PATH.to_string(), start as u64..end as u64);
 
+        let start = self.cursor;
+        self.write_all(&fragment_info).await?;
+        let end = self.cursor;
+        self.metadata
+            .add_file(FRAGMENT_INFO_PATH.to_string(), start as u64..end as u64);
+
         let metadata_bytes = self.metadata.to_bytes()?;
         let start = self.cursor;
         let len = metadata_bytes.len();
 
         self.write_all(&metadata_bytes).await?;
-        write_metadata_offsets(self.writer.get_mut(), start as u64, len as u64)?;
+        write_metadata_offsets(&mut self.writer, start as u64, len as u64)?;
         self.flush(Flush).await?;
 
         self.metastore
@@ -328,7 +345,8 @@ impl FragmentWriter {
 impl Drop for FragmentWriter {
     fn drop(&mut self) {
         if self.should_remove_file_on_drop {
-            let path = crate::resolvers::get_fragment_location(self.id);
+            let path =
+                crate::resolvers::get_fragment_location(&self.env.root_path, self.id);
             let _ = std::fs::remove_file(path);
         }
     }
@@ -359,7 +377,7 @@ derive_message!(WriteDocBlock, io::Result<usize>);
 /// Returns the current position of the cursor.
 pub struct WriteFile {
     pub file: String,
-    pub bytes: OwnedBytes,
+    pub bytes: SharedSlice,
 }
 derive_message!(WriteFile, io::Result<()>);
 
@@ -417,32 +435,26 @@ impl datacake::rpc::RequestContents for FragmentStream {
     type Content = Self;
 
     async fn from_body(body: Body) -> Result<Self::Content, Status> {
-        let mut stream = body.into_inner();
+        let mut incoming = body.into_inner();
 
         let mut blocks = Vec::new();
         let mut files = Vec::new();
         let mut has_read_header = false;
         let mut temp_buffer = AlignedVec::new();
+        let mut remaining = Bytes::new();
         let (mut upstream, body) = hyper::Body::channel();
-        while let Some(chunk) = stream.data().await {
+
+        // Read the first part of the data
+        while let Some(chunk) = incoming.data().await {
             let chunk = chunk.map_err(log_err).map_err(Status::internal)?;
-
-            if has_read_header {
-                upstream
-                    .send_data(chunk)
-                    .await
-                    .map_err(log_err)
-                    .map_err(Status::internal)?;
-                continue;
-            }
-
             temp_buffer.extend_from_slice(&chunk);
 
             let files_length_bytes = &temp_buffer[..mem::size_of::<u32>()];
             let files_length =
                 u32::from_le_bytes(files_length_bytes.try_into().unwrap()) as usize;
+            let min_length = files_length + mem::size_of::<u32>();
 
-            if temp_buffer.len() < (files_length + mem::size_of::<u32>()) {
+            if temp_buffer.len() < min_length {
                 continue;
             }
 
@@ -453,10 +465,9 @@ impl datacake::rpc::RequestContents for FragmentStream {
                 &temp_buffer[files_buffer_end..files_buffer_end + mem::size_of::<u32>()];
             let blocks_length =
                 u32::from_le_bytes(blocks_length_bytes.try_into().unwrap()) as usize;
+            let min_length = files_length + blocks_length + (mem::size_of::<u32>() * 2);
 
-            if temp_buffer.len()
-                < (files_length + blocks_length + (mem::size_of::<u32>() * 2))
-            {
+            if temp_buffer.len() < min_length {
                 continue;
             }
 
@@ -468,13 +479,52 @@ impl datacake::rpc::RequestContents for FragmentStream {
 
             files = rkyv::from_bytes(files_buffer).map_err(Status::internal)?;
             blocks = rkyv::from_bytes(blocks_buffer).map_err(Status::internal)?;
+
+            if temp_buffer.len() > blocks_buffer_start + blocks_length {
+                remaining = Bytes::copy_from_slice(
+                    &temp_buffer[blocks_buffer_start + blocks_length..],
+                );
+            }
         }
+
+        if !has_read_header {
+            return Err(Status::invalid());
+        }
+
+        // Stream the remainder of the chunks
+        tokio::spawn(async move {
+            if !remaining.is_empty() {
+                if let Err(e) = upstream.send_data(remaining).await {
+                    error!(error = ?e, "Failed to send data chunk to upstream buffer");
+                    return;
+                }
+            }
+
+            copy_to_upstream(incoming, upstream).await;
+        });
 
         Ok(Self {
             files,
             blocks,
             body: body.into(),
         })
+    }
+}
+
+async fn copy_to_upstream(mut incoming: hyper::Body, mut upstream: body::Sender) {
+    while let Some(chunk) = incoming.data().await {
+        match chunk {
+            Ok(chunk) => {
+                if let Err(e) = upstream.send_data(chunk).await {
+                    error!(error = ?e, "Failed to send data chunk to upstream buffer");
+                    return;
+                }
+            },
+            Err(e) => {
+                warn!(error = ?e, "Failed to receive data chunk from remote");
+                return;
+            },
+        }
     }
 }
 
@@ -486,7 +536,7 @@ derive_message!(Flush, io::Result<()>);
 
 /// Seals the segment, writing the metadata and footer
 /// to the file.
-pub struct Seal;
+pub struct Seal(pub FragmentInfo);
 derive_message!(Seal, io::Result<()>);
 
 pub struct GetCurrentState;

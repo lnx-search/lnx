@@ -11,24 +11,33 @@ use crate::fragments::{
     IndexFragmentsReaders,
     IndexFragmentsWriters,
 };
-use crate::Metastore;
+use crate::listeners::ListenerManager;
+use crate::{EnvCtx, Metastore};
+
 /// Loads all sealed fragments stored within the metastore.
-pub async fn load_readers(metastore: &Metastore) -> io::Result<IndexFragmentsReaders> {
+pub async fn load_readers(
+    env: EnvCtx,
+    metastore: &Metastore,
+    listeners: ListenerManager,
+) -> io::Result<IndexFragmentsReaders> {
     let fragment_ids = metastore
         .get_sealed_fragments()
         .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
     let mut readers = BTreeMap::new();
     for fragment_id in fragment_ids {
+        debug!(fragment_id = fragment_id, "Loading fragment");
         // We do this same process in the IndexFragmentsReaders::load_reader method
         // but it is very heavy on locking and is slower, so we use this method to
         // prevent thousands of fragments slowing the startup time.
-        let path = crate::resolvers::get_fragment_location(fragment_id);
+        let path = crate::resolvers::get_fragment_location(&env.root_path, fragment_id);
         let reader = FragmentReader::open_mmap(path).await?;
         readers.insert(fragment_id, reader);
     }
 
-    Ok(IndexFragmentsReaders::from_existing_state(readers))
+    Ok(IndexFragmentsReaders::from_existing_state(
+        env, readers, listeners,
+    ))
 }
 
 /// Loads / recovers partially written fragment writers.
@@ -36,16 +45,22 @@ pub async fn load_readers(metastore: &Metastore) -> io::Result<IndexFragmentsRea
 /// This is a blocking operation.
 ///
 pub async fn load_partial_writers(
+    env: EnvCtx,
     metastore: &Metastore,
+    listeners: ListenerManager,
 ) -> io::Result<IndexFragmentsWriters> {
     let metastore = metastore.clone();
-    lnx_executor::spawn_task(async move { load_partial_writers_inner(&metastore) })
-        .await
-        .expect("Join task")
+    lnx_executor::spawn_task(async move {
+        load_partial_writers_inner(env, &metastore, listeners)
+    })
+    .await
+    .expect("Join task")
 }
 
 fn load_partial_writers_inner(
+    env: EnvCtx,
     metastore: &Metastore,
+    listeners: ListenerManager,
 ) -> io::Result<IndexFragmentsWriters> {
     let fragment_ids = metastore
         .get_unsealed_fragments()
@@ -70,7 +85,7 @@ fn load_partial_writers_inner(
 
     let mut writers = HashMap::new();
     for fragment_id in fragment_ids {
-        let path = crate::resolvers::get_fragment_location(fragment_id);
+        let path = crate::resolvers::get_fragment_location(&env.root_path, fragment_id);
 
         let res = std::fs::OpenOptions::new()
             .create(false)
@@ -86,6 +101,7 @@ fn load_partial_writers_inner(
                     fragment_blocks.remove(&fragment_id).unwrap_or_default();
 
                 let writer = FragmentWriter::from_existing_state(
+                    env.clone(),
                     fragment_id,
                     file,
                     metastore.clone(),
@@ -100,7 +116,9 @@ fn load_partial_writers_inner(
     }
 
     Ok(IndexFragmentsWriters::from_existing_state(
+        env,
         metastore.clone(),
         writers,
+        listeners,
     ))
 }

@@ -14,9 +14,10 @@ use datacake_lmdb::LmdbStorage;
 use rkyv::AlignedVec;
 
 use crate::fragments::{FragmentInfo, IndexFragmentsWriters, StreamError};
+use crate::listeners::ListenerManager;
 use crate::rpc::GetFragment;
 pub use crate::rpc::StorageService;
-use crate::Metastore;
+use crate::{IndexFragmentsReaders, Metastore};
 
 pub static INDEX_FRAGMENTS: &str = "lnx-fragments";
 
@@ -36,6 +37,8 @@ pub struct LnxStorage {
     lmdb_store: LmdbStorage,
     metastore: Metastore,
     fragment_writers: IndexFragmentsWriters,
+    fragment_readers: IndexFragmentsReaders,
+    listeners: ListenerManager,
 }
 
 impl LnxStorage {
@@ -44,11 +47,15 @@ impl LnxStorage {
         lmdb_store: LmdbStorage,
         metastore: Metastore,
         fragment_writers: IndexFragmentsWriters,
+        fragment_readers: IndexFragmentsReaders,
+        listeners: ListenerManager,
     ) -> Self {
         Self {
             lmdb_store,
             metastore,
             fragment_writers,
+            fragment_readers,
+            listeners,
         }
     }
 }
@@ -180,8 +187,14 @@ impl Storage for LnxStorage {
                 StreamError::Io(e) => StorageError::IO(e),
             })?;
 
+        let fragment_id = info.fragment_id;
         self.fragment_writers
-            .seal(info.fragment_id)
+            .seal(fragment_id, info)
+            .await
+            .map_err(StorageError::IO)?;
+
+        self.fragment_readers
+            .open_new_reader(fragment_id)
             .await
             .map_err(StorageError::IO)?;
 
@@ -203,7 +216,7 @@ impl Storage for LnxStorage {
             .await
             .map_err(StorageError::Lmdb)?;
 
-        crate::listeners::trigger_on_put(keyspace, document);
+        self.listeners.trigger_on_put(keyspace, document);
 
         Ok(())
     }
@@ -276,7 +289,7 @@ impl Storage for LnxStorage {
             ))
         } else {
             for doc in successful_docs {
-                crate::listeners::trigger_on_put(keyspace, doc);
+                self.listeners.trigger_on_put(keyspace, doc);
             }
             Ok(())
         }
@@ -294,9 +307,8 @@ impl Storage for LnxStorage {
             .await
             .map_err(StorageError::Lmdb)?;
 
-        crate::listeners::trigger_on_del(keyspace, doc_id);
-
         if keyspace != INDEX_FRAGMENTS {
+            self.listeners.trigger_on_del(keyspace, doc_id);
             return Ok(());
         }
 
@@ -309,7 +321,7 @@ impl Storage for LnxStorage {
         .await
         .expect("Join task")?;
 
-        crate::listeners::trigger_fragment_delete(doc_id);
+        self.listeners.trigger_fragment_delete(doc_id);
 
         Ok(())
     }
@@ -341,7 +353,7 @@ impl Storage for LnxStorage {
                 ))
             } else {
                 for doc_id in doc_ids {
-                    crate::listeners::trigger_on_del(keyspace, doc_id);
+                    self.listeners.trigger_on_del(keyspace, doc_id);
                 }
                 Ok(())
             };

@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use datacake::eventual_consistency::Document;
 use datacake::node::{Consistency, ConsistencyError, DatacakeHandle};
 use datacake::rpc::{
     Channel,
@@ -18,7 +17,7 @@ use futures::future::join_all;
 use tokio::sync::Semaphore;
 use tokio::time::{interval, MissedTickBehavior};
 
-use crate::fragments::{BlockId, WriteDocBlock};
+use crate::fragments::WriteDocBlock;
 use crate::rpc::{AddDocBlock, AddManyDocBlocks};
 use crate::StorageService;
 
@@ -34,6 +33,12 @@ const MAX_RPC_CONCURRENCY: usize = 10;
 /// The maximum number of messages that can be queued up in the
 /// batcher before backpressure begins to apply.
 const CHANNEL_CAPACITY: usize = 500;
+/// The duration between batching requests.
+pub const HEARTBEAT: Duration = if cfg!(test) {
+    Duration::from_millis(250)
+} else {
+    Duration::from_secs(1)
+};
 
 type FragmentBatches = BTreeMap<(u64, SocketAddr), Vec<WriteDocBlock>>;
 
@@ -75,21 +80,12 @@ impl TaskDistributor {
     pub async fn send_block(
         &self,
         fragment_id: u64,
-        block_id: BlockId,
-        data: Vec<u8>,
-        checksum: u32,
+        block: WriteDocBlock,
     ) -> Result<(), ConsistencyError> {
         let priority_nodes = self.node.select_nodes(Consistency::Quorum).await?;
-        let memory_usage = data.len();
+        let memory_usage = block.block.data().len();
 
-        let ts = self.node.clock().get_time().await;
-        let msg = AddDocBlock {
-            fragment_id,
-            block: WriteDocBlock {
-                block: Document::new(block_id, ts, data),
-                checksum,
-            },
-        };
+        let msg = AddDocBlock { fragment_id, block };
 
         self.submit_to_nodes::<StorageService, _>(&priority_nodes, msg.clone())
             .await?;
@@ -118,22 +114,18 @@ impl TaskDistributor {
     pub async fn send_many_blocks(
         &self,
         fragment_id: u64,
-        blocks: impl Iterator<Item = (BlockId, Vec<u8>, u32)>,
+        blocks: impl Iterator<Item = WriteDocBlock>,
     ) -> Result<(), ConsistencyError> {
         let priority_nodes = self.node.select_nodes(Consistency::Quorum).await?;
         let mut memory_usage = 0;
 
-        let ts = self.node.clock().get_time().await;
         let msg = AddManyDocBlocks {
             fragment_id,
             blocks: blocks
                 .into_iter()
-                .map(|(block_id, data, checksum)| {
-                    memory_usage += data.len();
-                    WriteDocBlock {
-                        block: Document::new(block_id, ts, data),
-                        checksum,
-                    }
+                .map(|block| {
+                    memory_usage += block.block.data().len();
+                    block
                 })
                 .collect(),
         };
@@ -196,8 +188,8 @@ impl TaskDistributor {
 
         if num_successful != num_required_nodes {
             return Err(ConsistencyError::ConsistencyFailure {
-                responses: num_successful,
-                required: num_required_nodes,
+                responses: num_successful + 1,
+                required: num_required_nodes + 1,
                 timeout: NETWORK_TIMEOUT,
             });
         }
@@ -246,7 +238,7 @@ async fn supervise_distributor_task(
 
 async fn run_task_distributor(node: DatacakeHandle, events: flume::Receiver<Mutation>) {
     let limiter = Arc::new(Semaphore::new(MAX_RPC_CONCURRENCY));
-    let mut interval = interval(Duration::from_secs(1));
+    let mut interval = interval(HEARTBEAT);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     'runner: loop {
         interval.tick().await;
@@ -278,6 +270,11 @@ async fn run_task_distributor(node: DatacakeHandle, events: flume::Receiver<Muta
         }
 
         let num_batches = fragment_batches.len();
+
+        if num_batches == 0 {
+            continue;
+        }
+
         debug!(
             num_batches = num_batches,
             "Beginning RPC batch distribution"

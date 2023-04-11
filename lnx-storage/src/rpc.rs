@@ -46,10 +46,9 @@ impl Handler<GetFragment> for StorageService {
         let remote = msg.remote_addr();
         let msg = msg.into_inner().to_owned().map_err(Status::internal)?;
 
-        let reader = self
-            .readers
-            .get_reader(msg.fragment_id)
-            .ok_or_else(Status::invalid)?;
+        let reader = self.readers.get_reader(msg.fragment_id).ok_or_else(|| {
+            Status::internal(format!("Unknown fragment {}", msg.fragment_id))
+        })?;
 
         let lookup: HashSet<u64> = HashSet::from_iter(msg.blocks);
 
@@ -63,6 +62,8 @@ impl Handler<GetFragment> for StorageService {
             .filter(|(block_id, _)| !lookup.contains(&**block_id))
             .map(|(block_id, info)| (*block_id, info.len(), info.checksum))
             .collect();
+
+        info!(remote_addr = %remote, fragment_id = msg.fragment_id, "Starting data stream for node");
 
         let (mut tx, body) = hyper::Body::channel();
 

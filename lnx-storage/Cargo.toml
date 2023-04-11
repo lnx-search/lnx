@@ -1,5 +1,5 @@
 [package]
-name = "lnx-writer"
+name = "lnx-storage"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,10 +20,8 @@ puppet = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 flume = { workspace = true }
-ownedbytes = { workspace = true }
 memmap2 = { workspace = true }
 smallvec = { workspace = true }
-stable_deref_trait = { workspace = true }
 zstd = { workspace = true }
 once_cell = { workspace = true }
 hashbrown = { workspace = true }
@@ -32,8 +30,12 @@ rkyv = { workspace = true }
 parking_lot = { workspace = true }
 crc32fast = { workspace = true }
 exponential-backoff = { workspace = true }
+uuid = { workspace = true, optional = true }
 
 lnx-io = { path = "../lnx-io" }
 lnx-executor = { path = "../lnx-executor" }
 
-deunicode = "1.3.3"
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+test-helper = { workspace = true }

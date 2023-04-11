@@ -1,25 +1,30 @@
-use std::io;
+use std::any::type_name;
 use std::io::ErrorKind;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::{io, mem};
 
+use bytecheck::CheckBytes;
 use hashbrown::HashMap;
 use jocky::metadata::{get_metadata_offsets, SegmentMetadata, METADATA_HEADER_SIZE};
 use memmap2::Mmap;
-use ownedbytes::OwnedBytes;
-use rkyv::AlignedVec;
-use stable_deref_trait::StableDeref;
+use rkyv::de::deserializers::SharedDeserializeMap;
+use rkyv::validation::validators::DefaultValidator;
+use rkyv::{AlignedVec, Archive, Deserialize};
 
 use crate::fragments::block::{BlockId, BlockInfo, BlockLocations};
+use crate::resolvers::{BLOCK_LOCATIONS_PATH, FRAGMENT_INFO_PATH};
+use crate::{FragmentInfo, SharedSlice};
 
 #[derive(Clone)]
 /// A lightweight fragment reader that can be cheaply cloned and sliced
 /// like a file.
 pub struct FragmentReader {
+    info: Arc<FragmentInfo>,
     should_remove_on_drop: Arc<AtomicBool>,
-    file_contents: OwnedBytes,
+    file_contents: SharedSlice,
     metadata: Arc<SegmentMetadata>,
     blocks: Arc<HashMap<BlockId, BlockInfo>>,
 }
@@ -29,7 +34,7 @@ impl FragmentReader {
     ///
     /// This expects the fragment to be completely sealed.
     pub fn new(
-        bytes: OwnedBytes,
+        bytes: SharedSlice,
         should_remove_on_drop: Arc<AtomicBool>,
     ) -> io::Result<Self> {
         let len = bytes.len();
@@ -37,28 +42,33 @@ impl FragmentReader {
         let (start, len) = get_metadata_offsets(offsets_slice)
             .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
 
-        let metadata_slice = &bytes[start as usize..(start + len) as usize];
-        let metadata = SegmentMetadata::from_buffer(metadata_slice)?;
-
-        let block_locations_range = metadata.get_location(crate::resolvers::BLOCK_LOCATIONS_PATH)
-            .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "Failed to read block locations, fragment is corrupted and must be repaired"))?;
-        let mut block_locations_bytes = AlignedVec::with_capacity(
-            (block_locations_range.end - block_locations_range.start) as usize,
-        );
-        block_locations_bytes.extend_from_slice(
-            &bytes[block_locations_range.start as usize
-                ..block_locations_range.end as usize],
-        );
-        let block_locations_iter = rkyv::from_bytes::<BlockLocations>(&block_locations_bytes)
-            .map_err(|_| io::Error::new(ErrorKind::InvalidData, "Failed to read block locations, fragment is corrupted and must be repaired"))?;
+        let mut aligned_metadata = AlignedVec::with_capacity(len as usize);
+        aligned_metadata
+            .extend_from_slice(&bytes[start as usize..(start + len) as usize]);
+        let metadata = SegmentMetadata::from_buffer(&aligned_metadata)?;
+        let fragment_info =
+            deserialize_file::<FragmentInfo>(FRAGMENT_INFO_PATH, &metadata, &bytes)?;
+        let block_locations_iter =
+            deserialize_file::<BlockLocations>(BLOCK_LOCATIONS_PATH, &metadata, &bytes)?;
         let block_locations = HashMap::from_iter(block_locations_iter);
 
         Ok(Self {
-            should_remove_on_drop: should_remove_on_drop.clone(),
+            info: Arc::new(fragment_info),
+            should_remove_on_drop,
             file_contents: bytes,
             metadata: Arc::new(metadata),
             blocks: Arc::new(block_locations),
         })
+    }
+
+    /// Get the fragment ID.
+    pub fn id(&self) -> u64 {
+        self.info.fragment_id
+    }
+
+    /// Get the fragment metadata
+    pub fn info(&self) -> &FragmentInfo {
+        &self.info
     }
 
     /// Get an iterator over all blocks in the fragment.
@@ -81,19 +91,14 @@ impl FragmentReader {
 
     /// Open a fragment read
     pub fn open_mmap_blocking(path: PathBuf) -> io::Result<Self> {
-        let file = std::fs::File::open(&path)?;
+        let file = std::fs::File::open(path)?;
         let map = unsafe { Mmap::map(&file)? };
         let should_remove_on_drop = Arc::new(AtomicBool::new(false));
-        let wrapper = MmapWrapper {
-            inner: Some(map),
-            path,
-            should_remove_on_drop: should_remove_on_drop.clone(),
-        };
-        Self::new(OwnedBytes::new(wrapper), should_remove_on_drop)
+        Self::new(SharedSlice::from(map), should_remove_on_drop)
     }
 
     /// Read a virtual file from the fragment.
-    pub fn read_file(&self, path: &str) -> Option<OwnedBytes> {
+    pub fn read_file(&self, path: &str) -> Option<SharedSlice> {
         let range = self.metadata.get_location(path)?;
         Some(
             self.file_contents
@@ -102,7 +107,7 @@ impl FragmentReader {
     }
 
     /// Reads a block from the fragment but leaves it in it's compressed form.
-    pub fn read_block(&self, id: u64) -> Option<OwnedBytes> {
+    pub fn read_block(&self, id: u64) -> Option<SharedSlice> {
         let info = self.blocks.get(&id)?.clone();
         Some(self.file_contents.slice(info.location_usize()))
     }
@@ -114,28 +119,36 @@ impl FragmentReader {
     }
 }
 
-struct MmapWrapper {
-    inner: Option<Mmap>,
-    should_remove_on_drop: Arc<AtomicBool>,
-    path: PathBuf,
+fn deserialize_file<T>(
+    file_path: &str,
+    metadata: &SegmentMetadata,
+    data: &[u8],
+) -> io::Result<T>
+where
+    T: Archive + 'static,
+    T::Archived: CheckBytes<DefaultValidator<'static>>
+        + Deserialize<T, SharedDeserializeMap>
+        + 'static,
+{
+    let range = metadata.get_location(file_path).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!("Failed to read file type {}, fragment is corrupted and must be repaired", type_name::<T>()),
+        )
+    })?;
+
+    let range = range.start as usize..range.end as usize;
+    let mut aligned = AlignedVec::with_capacity(range.len());
+    aligned.extend_from_slice(&data[range]);
+
+    // SAFETY:
+    //      We ensure the target `T` is `'static` and contains only owned data so it's safe to
+    //      temporarily extend the lifetime so we can allocate the type entirely.
+    let slice = unsafe { mem::transmute::<&[u8], &'static [u8]>(aligned.as_slice()) };
+    rkyv::from_bytes::<T>(slice).map_err(|_| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!("Failed to read file type {}, fragment is corrupted and must be repaired", type_name::<T>()),
+        )
+    })
 }
-
-impl Deref for MmapWrapper {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        self.inner.as_ref().unwrap().deref()
-    }
-}
-
-impl Drop for MmapWrapper {
-    fn drop(&mut self) {
-        drop(self.inner.take());
-
-        if self.should_remove_on_drop.load(Ordering::Relaxed) {
-            let _ = std::fs::remove_file(&self.path);
-        }
-    }
-}
-
-unsafe impl StableDeref for MmapWrapper {}

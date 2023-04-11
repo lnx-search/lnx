@@ -3,12 +3,6 @@
 version = 3
 
 [[package]]
-name = "adler"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
-
-[[package]]
 name = "ahash"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,12 +408,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deunicode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c1bba4f227a4a53d12b653f50ca7bf10c9119ae2aba56aff9e0338b5c98f36a"
-
-[[package]]
 name = "downcast-rs"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -487,16 +475,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a407cfaa3385c4ae6b23e84623d48c2798d06e3e6a1878f7f59f17b3f86499"
 dependencies = [
  "instant",
-]
-
-[[package]]
-name = "flate2"
-version = "1.0.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8a2db397cb1c8772f31494cb8917e48cd1e64f0fa7efac59fbd741a0a8ce841"
-dependencies = [
- "crc32fast",
- "miniz_oxide",
 ]
 
 [[package]]
@@ -696,20 +674,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hdrhistogram"
-version = "7.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f19b9f54f7c7f55e31401bb647626ce0cf0f67b0004982ce815b3ee72a02aa8"
-dependencies = [
- "base64",
- "byteorder",
- "crossbeam-channel",
- "flate2",
- "nom",
- "num-traits",
-]
-
-[[package]]
 name = "heed"
 version = "0.20.0-alpha.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -876,7 +840,6 @@ checksum = "10a35a97730320ffe8e2d410b5d3b69279b98d2c14bdb8b70ea89ecf7888d41e"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
- "serde",
 ]
 
 [[package]]
@@ -918,7 +881,7 @@ dependencies = [
 [[package]]
 name = "jocky"
 version = "0.1.0"
-source = "git+https://github.com/ChillFish8/jocky.git?rev=2d33055#2d3305560819d20d1635347f473c8840e0922773"
+source = "git+https://github.com/ChillFish8/jocky.git?rev=c989fce#c989fcecdc457f2e7021c5f0006f0fbbe2e3545d"
 dependencies = [
  "bytecheck",
  "cityhash-sys",
@@ -1007,7 +970,6 @@ dependencies = [
  "thiserror",
  "tracing",
  "tracing-futures",
- "utoipa",
  "validator",
 ]
 
@@ -1018,7 +980,6 @@ dependencies = [
  "anyhow",
  "arc-swap",
  "futures",
- "hdrhistogram",
  "num_cpus",
  "once_cell",
  "parking_lot",
@@ -1041,7 +1002,7 @@ name = "lnx-io"
 version = "0.1.0"
 
 [[package]]
-name = "lnx-writer"
+name = "lnx-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1051,7 +1012,6 @@ dependencies = [
  "crc32fast",
  "datacake",
  "datacake-lmdb",
- "deunicode",
  "exponential-backoff",
  "flume",
  "futures",
@@ -1062,16 +1022,17 @@ dependencies = [
  "lnx-io",
  "memmap2",
  "once_cell",
- "ownedbytes",
  "parking_lot",
  "puppet",
  "rkyv",
  "smallvec",
- "stable_deref_trait",
+ "test-helper",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-futures",
+ "tracing-subscriber",
+ "uuid",
  "zstd",
 ]
 
@@ -1173,21 +1134,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
-name = "miniz_oxide"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
-dependencies = [
- "adler",
-]
-
-[[package]]
 name = "mio"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1218,16 +1164,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
-]
-
-[[package]]
 name = "nu-ansi-term"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1235,15 +1171,6 @@ checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
 dependencies = [
  "overload",
  "winapi",
-]
-
-[[package]]
-name = "num-traits"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "578ede34cf02f8924ab9447f50c28075b4d3e5b269972345e7e0372b38c6cdcd"
-dependencies = [
- "autocfg",
 ]
 
 [[package]]
@@ -1934,6 +1861,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "test-helper"
+version = "0.1.0"
+source = "git+https://github.com/lnx-search/datacake.git?rev=c968fd4#c968fd474c8d999aa3339d57f7fae6fbe7cf19a7"
+
+[[package]]
 name = "thiserror"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2167,30 +2099,6 @@ name = "utf8-ranges"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcfc827f90e53a02eaef5e535ee14266c1d569214c6aa70133a624d8a3164ba"
-
-[[package]]
-name = "utoipa"
-version = "3.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a15f6da6a2b471134ca44b7d18e8a76d73035cf8b3ed24c4dd5ca6a63aa439c5"
-dependencies = [
- "indexmap",
- "serde",
- "serde_json",
- "utoipa-gen",
-]
-
-[[package]]
-name = "utoipa-gen"
-version = "3.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f2e33027986a4707b3f5c37ed01b33d0e5a53da30204b52ff18f80600f1d0ec"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "uuid"

@@ -8,13 +8,13 @@ use std::time::{Duration, Instant};
 use bytecheck::CheckBytes;
 use exponential_backoff::Backoff;
 use hashbrown::HashMap;
-use ownedbytes::OwnedBytes;
 use parking_lot::RwLock;
 use puppet::ActorMailbox;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::fragments::writer::{Flush, GetCurrentState, RemoveOnDrop, Seal, WriteFile};
-use crate::listeners::FragmentListener;
+use crate::listeners::{FragmentListener, ListenerManager};
+use crate::{EnvCtx, SharedSlice};
 
 mod block;
 mod reader;
@@ -32,7 +32,7 @@ pub use self::writer::{
 use crate::metastore::Metastore;
 
 #[repr(C)]
-#[derive(Serialize, Deserialize, Archive, Debug)]
+#[derive(Serialize, Deserialize, Archive, Debug, Clone)]
 #[archive_attr(derive(CheckBytes, Debug))]
 pub struct FragmentInfo {
     /// The unique ID of the fragment.
@@ -75,6 +75,8 @@ pub struct FragmentInfo {
 /// This keeps track of active writers and caches active files
 /// while closing in-active files are a period of in activity.
 pub struct IndexFragmentsWriters {
+    /// The storage configuration environment.
+    env: EnvCtx,
     /// The cache of live writers mapping fragment ID to writer.
     active_writers: Arc<RwLock<HashMap<u64, ActorMailbox<FragmentWriter>>>>,
     /// The storage metastore.
@@ -82,20 +84,26 @@ pub struct IndexFragmentsWriters {
     /// This tracks any important metadata for regular use without
     /// requiring repairs or recovery.
     metastore: Metastore,
+    /// Event listeners and notifications.
+    listeners: ListenerManager,
 }
 
 impl IndexFragmentsWriters {
     /// Create a new fragment writer with a given metastore.
     pub fn from_existing_state(
+        env: EnvCtx,
         metastore: Metastore,
         writers: HashMap<u64, ActorMailbox<FragmentWriter>>,
+        listeners: ListenerManager,
     ) -> Self {
         let slf = Self {
+            env,
             active_writers: Arc::new(RwLock::new(writers)),
             metastore,
+            listeners,
         };
 
-        crate::listeners::register_fragment_listener(slf.clone());
+        slf.listeners.register_fragment_listener(slf.clone());
 
         slf
     }
@@ -112,7 +120,8 @@ impl IndexFragmentsWriters {
             return Ok(writer);
         }
 
-        let path = crate::resolvers::get_fragment_location(fragment_id);
+        let path =
+            crate::resolvers::get_fragment_location(&self.env.root_path, fragment_id);
         info!(path = %path.display(), "Opening new fragment writer");
 
         let mut options = OpenOptions::new();
@@ -125,8 +134,14 @@ impl IndexFragmentsWriters {
             .await
             .expect("Join thread")?;
 
-        let writer = FragmentWriter::new(fragment_id, file, self.metastore.clone());
+        let writer = FragmentWriter::new(
+            self.env.clone(),
+            fragment_id,
+            file,
+            self.metastore.clone(),
+        );
 
+        info!("Creating new blank fragment");
         self.metastore
             .create_new_fragment(fragment_id)
             .map_err(|e| io::Error::new(ErrorKind::Other, e))?;
@@ -152,10 +167,16 @@ impl IndexFragmentsWriters {
         &self,
         fragment_id: u64,
         file: String,
-        bytes: OwnedBytes,
+        bytes: SharedSlice,
     ) -> io::Result<()> {
         let writer = self.get_writer(fragment_id).await?;
-        writer.send(WriteFile { file, bytes }).await?;
+        writer
+            .send(WriteFile {
+                file: file.clone(),
+                bytes,
+            })
+            .await?;
+        self.listeners.trigger_fragment_file_add(fragment_id, file);
         Ok(())
     }
 
@@ -167,7 +188,8 @@ impl IndexFragmentsWriters {
         block_data: WriteDocBlock,
     ) -> io::Result<()> {
         let writer = self.get_writer(fragment_id).await?;
-        let num_bytes = block_data.block.data().len();
+        let doc = block_data.block.clone();
+        let num_bytes = doc.data().len();
         let start = Instant::now();
 
         // TODO: Add cache to skip blocks which already exist.
@@ -175,6 +197,10 @@ impl IndexFragmentsWriters {
         writer.send(block_data).await?;
 
         writer.send(Flush).await?;
+
+        // TODO: Optimise with smallvec
+        self.listeners
+            .trigger_fragment_block_flush(fragment_id, vec![doc]);
 
         debug!(elapsed = ?start.elapsed(), num_bytes = num_bytes, "Wrote bytes to fragment");
 
@@ -190,16 +216,22 @@ impl IndexFragmentsWriters {
     ) -> io::Result<()> {
         let writer = self.get_writer(fragment_id).await?;
         let mut num_bytes = 0;
+        let mut docs = Vec::with_capacity(blocks.len());
         let start = Instant::now();
 
         // TODO: Add cache to skip blocks which already exist.
         //       This can help cut out duplicates early on.
         for block_data in blocks {
+            docs.push(block_data.block.clone());
             num_bytes += block_data.block.data().len();
             writer.send(block_data.clone()).await?;
         }
 
         writer.send(Flush).await?;
+
+        // TODO: Optimise with smallvec
+        self.listeners
+            .trigger_fragment_block_flush(fragment_id, docs);
 
         debug!(elapsed = ?start.elapsed(), num_bytes = num_bytes, "Wrote bytes to fragment");
 
@@ -224,15 +256,15 @@ impl IndexFragmentsWriters {
 
     #[instrument(name = "fragment-seal", skip(self))]
     /// Seal written fragment
-    pub async fn seal(&self, fragment_id: u64) -> io::Result<()> {
+    pub async fn seal(&self, fragment_id: u64, info: FragmentInfo) -> io::Result<()> {
         let writer = self.get_writer(fragment_id).await?;
 
         let start = Instant::now();
-        writer.send(Seal).await?;
+        writer.send(Seal(info)).await?;
 
         info!(elapsed = ?start.elapsed(), "Fragment seal complete");
 
-        crate::listeners::trigger_fragment_seal(fragment_id);
+        self.listeners.trigger_fragment_seal(fragment_id);
 
         Ok(())
     }
@@ -268,17 +300,27 @@ impl FragmentListener for IndexFragmentsWriters {
 
 #[derive(Clone)]
 pub struct IndexFragmentsReaders {
+    /// The storage configuration environment.
+    env: EnvCtx,
     sealed_fragments: Arc<RwLock<BTreeMap<u64, FragmentReader>>>,
+    /// Event listeners and notifications.
+    listeners: ListenerManager,
 }
 
 impl IndexFragmentsReaders {
     /// Create a new fragment writer with a given metastore.
-    pub fn from_existing_state(readers: BTreeMap<u64, FragmentReader>) -> Self {
+    pub fn from_existing_state(
+        env: EnvCtx,
+        readers: BTreeMap<u64, FragmentReader>,
+        listeners: ListenerManager,
+    ) -> Self {
         let slf = Self {
+            env,
             sealed_fragments: Arc::new(RwLock::new(readers)),
+            listeners,
         };
 
-        crate::listeners::register_fragment_listener(slf.clone());
+        slf.listeners.register_fragment_listener(slf.clone());
 
         slf
     }
@@ -288,55 +330,47 @@ impl IndexFragmentsReaders {
         self.sealed_fragments.read().get(&fragment_id).cloned()
     }
 
-    fn try_add_new_reader(&self, fragment_id: u64) -> io::Result<()> {
-        let path = crate::resolvers::get_fragment_location(fragment_id);
+    /// Open a new reader.
+    ///
+    /// This will retry opening the file if it can up to 3 times.
+    pub async fn open_new_reader(&self, fragment_id: u64) -> io::Result<()> {
+        let backoff = Backoff::new(3, Duration::from_secs(1), Duration::from_secs(5));
+
+        let mut last_error = None;
+        for wait_for in backoff.iter() {
+            let slf = self.clone();
+            let result = lnx_executor::spawn_task(async move {
+                slf.try_add_new_reader_blocking(fragment_id)
+            })
+            .await
+            .expect("Join task");
+
+            match result {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    warn!(error = ?e, wait_for = ?wait_for, "Failed to open reader, retrying in {wait_for:?}");
+                    last_error = Some(e);
+                },
+            }
+        }
+
+        Err(last_error.unwrap())
+    }
+
+    fn try_add_new_reader_blocking(&self, fragment_id: u64) -> io::Result<()> {
+        info!(fragment_id = fragment_id, "Opening fragment");
+        let path =
+            crate::resolvers::get_fragment_location(&self.env.root_path, fragment_id);
         let reader = FragmentReader::open_mmap_blocking(path)?;
         self.sealed_fragments.write().insert(fragment_id, reader);
 
-        crate::listeners::trigger_fragment_read_ready(fragment_id);
+        self.listeners.trigger_fragment_read_ready(fragment_id);
 
         Ok(())
     }
 }
 
 impl FragmentListener for IndexFragmentsReaders {
-    fn on_seal(&self, fragment_id: u64) {
-        let backoff =
-            Backoff::new(u32::MAX, Duration::from_secs(5), Duration::from_secs(60));
-
-        if let Err(e) = self.try_add_new_reader(fragment_id) {
-            let slf = self.clone();
-
-            lnx_executor::spawn_task(async move {
-                let mut error = e;
-                for wait_for in backoff.iter() {
-                    error!(
-                        error = ?error,
-                        wait_for = ?wait_for,
-                        fragment_id = fragment_id,
-                        "Failed to open fragment for reading, trying again in {:?}", wait_for
-                    );
-                    tokio::time::sleep(wait_for).await;
-
-                    if let Err(e) = slf.try_add_new_reader(fragment_id) {
-                        error = e;
-                    } else {
-                        info!(
-                            fragment_id = fragment_id,
-                            "New fragment available to search after retry"
-                        );
-                        break;
-                    }
-                }
-            });
-        }
-
-        info!(
-            fragment_id = fragment_id,
-            "New fragment available to search"
-        );
-    }
-
     fn on_delete(&self, fragment_id: u64) {
         if let Some(fragment) = self.sealed_fragments.write().remove(&fragment_id) {
             fragment.set_remove_on_drop();

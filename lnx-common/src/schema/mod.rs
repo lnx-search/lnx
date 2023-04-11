@@ -18,7 +18,6 @@ pub static RESERVED_DOCUMENT_ID_FIELD: &str = "_lnx_doc_id";
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 #[validate(schema(
     function = "validators::validate_schema",
@@ -29,7 +28,6 @@ pub static RESERVED_DOCUMENT_ID_FIELD: &str = "_lnx_doc_id";
 /// The schema contains all the information required to create
 /// and manage the index itself, including tokenizers, fields, and validation.
 pub struct Schema {
-    #[schema(example = "my-index")]
     #[validate(length(min = 2, max = 32), custom = "validators::validate_index_name")]
     /// The name of the index.
     ///
@@ -50,7 +48,6 @@ pub struct Schema {
     pub fields: Option<BTreeMap<String, Field>>,
 
     #[serde(default)]
-    #[schema(example = json!(["title", "body", "tags"]))]
     /// The searchable `text` fields that are used by default when
     /// querying data.
     ///
@@ -60,7 +57,6 @@ pub struct Schema {
 
     #[serde(default)]
     #[validate(custom = "validators::validate_boost_fields")]
-    #[schema(example = json!({"title": 1.5, "body": 1.0, "tags": 1.2}))]
     /// Additional multipliers to apply to the score of each field.
     ///
     /// This can be used to add bias to you search results for certain fields.

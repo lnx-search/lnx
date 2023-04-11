@@ -1,0 +1,36 @@
+{
+  $any: [
+    { $fuzzy: "bob", $field: "name" },
+    { $fuzzy: "Javascrip", $field: "description" },
+    { $terms: ["timmy", "bobby"], $field: "tags" },
+    { $phrase: "bob ross", $field: "name" },
+    {
+      $all: [
+        { $text: "name:timmy" },
+        { $regex: "bobby.*", $fields: ["tags", "category"] },
+        { $range: { $lt: 500, $ge: 800 }, $field: "price" }
+      ]
+    }
+  ],
+
+  // Compute field values at runtime.
+  $compute: {
+    full_name: { $concat: ["forename", "surname"], $seperator: "-", $rename: "Full Name" },
+    num_fields: { $count: [""] }
+  },
+
+  // Filter out returned fields
+  $select: ["price", "description"],
+
+  $order_by: ["price", "name"],
+  $sort: "desc",
+  $limit: 30,
+  $offset: 5,
+}
+
+// $term
+// $terms
+// $fuzzy
+// $text
+// $regex
+// $phrase

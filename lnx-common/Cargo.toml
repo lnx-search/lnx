@@ -16,7 +16,6 @@ hashbrown = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = { workspace = true }
 thiserror = { workspace = true }
-utoipa = { workspace = true }
 validator = { workspace = true }
 serde = { workspace = true }
 rkyv = { workspace = true }

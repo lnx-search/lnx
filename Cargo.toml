@@ -6,7 +6,8 @@ members = [
     "lnx-cluster",
     "lnx-storage",
     "lnx-executor",
-    "lnx-io"
+    "lnx-io",
+
 ]
 
 [workspace.dependencies]
@@ -21,24 +22,20 @@ flume = "0.10.14"
 futures = "0.3.26"
 serde_json = "1"
 smallvec = "1.10.0"
-stable_deref_trait = "1.2.0"
 num_cpus = "1.15"
 parse-size = "1.0"
 parking_lot = "0.12.1"
 humansize = "2.1"
 humantime = "2.1"
 hashbrown = "0.13"
-hdrhistogram = "7.5.2"
 tracing = "0.1"
 tracing-futures = "0.2"
 tracing-subscriber = "0.3.16"
 thiserror = "1"
 tantivy = "0.19"
-utoipa = "3.0"
+uuid = "1"
 rayon = "1.6.1"
 once_cell = "1.17.1"
-ownedbytes = "0.4.0"
-moka = "0.10.0"
 memmap2 = "0.5.10"
 zstd = "0.12.3+zstd.1.5.2"
 exponential-backoff = "1.2.0"
@@ -53,4 +50,5 @@ rkyv = { version = "0.7", features = ["validation"] }
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14.25", features = ["full"] }
 
-jocky = { git = "https://github.com/ChillFish8/jocky.git", rev = "2d33055" }
+jocky = { git = "https://github.com/ChillFish8/jocky.git", rev = "c989fce" }
+test-helper = { git = "https://github.com/lnx-search/datacake.git", rev = "c968fd4" }

@@ -15,27 +15,15 @@ const AUTO_COMMIT_DEFAULT: u64 = 30;
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
-    utoipa::ToSchema,
 )]
 #[serde(from = "WriterSettingsSchema")]
 pub struct WriterSettings {
-    #[schema(default = "<calculated: num_logical_cores>", example = 8)]
     /// The duration of inactivity to elapse before flushing a segment.
     pub auto_commit_duration: u64,
 
-    #[schema(
-        default = "<calculated: 50MB * num_threads>",
-        example = "100MB",
-        value_type = String,
-    )]
     /// The number of indexing threads to use.
     pub num_threads: usize,
 
-    #[schema(
-        default = "30s",
-        example = "1m 30s",
-        value_type = String,
-    )]
     /// The size of the memory buffer to use in total across the number of indexing threads.
     pub memory_buffer_size: usize,
 }
@@ -127,7 +115,7 @@ impl Default for WriterSettingsSchema {
 
 impl WriterSettingsSchema {
     fn default_num_threads() -> usize {
-        std::cmp::min(num_cpus::get(), 8)
+        cmp::min(num_cpus::get(), 8)
     }
 }
 
