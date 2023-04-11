@@ -75,7 +75,9 @@ async fn test_cluster_block_store() -> anyhow::Result<()> {
         );
 
         // Let the batcher execute requests.
-        tokio::time::sleep(HEARTBEAT * 4).await;
+        // This can be super flaky at times as it really just depends on how long
+        // the first op took.
+        tokio::time::sleep(HEARTBEAT * 2).await;
 
         let events = ops_logger.blocks();
         assert_eq!(
@@ -124,7 +126,9 @@ async fn test_cluster_many_block_store() -> anyhow::Result<()> {
         );
 
         // Let the batcher execute requests.
-        tokio::time::sleep(HEARTBEAT * 4).await;
+        // This can be super flaky at times as it really just depends on how long
+        // the first op took.
+        tokio::time::sleep(HEARTBEAT * 2).await;
 
         let events = ops_logger.blocks();
         assert_eq!(

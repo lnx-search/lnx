@@ -131,13 +131,17 @@ where
         + 'static,
 {
     let range = metadata.get_location(file_path).ok_or_else(|| {
-        io::Error::new(
-            ErrorKind::InvalidData,
-            format!("Failed to read file type {}, fragment is corrupted and must be repaired", type_name::<T>()),
-        )
+        io::Error::new(ErrorKind::NotFound, format!("Unknown file {file_path:?}"))
     })?;
 
     let range = range.start as usize..range.end as usize;
+    if range.end > data.len() || range.start >= data.len() {
+        return Err(io::Error::new(
+            ErrorKind::InvalidData,
+            "Provided data is too small",
+        ));
+    }
+
     let mut aligned = AlignedVec::with_capacity(range.len());
     aligned.extend_from_slice(&data[range]);
 
@@ -151,4 +155,57 @@ where
             format!("Failed to read file type {}, fragment is corrupted and must be repaired", type_name::<T>()),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_file_deserializer() {
+        let msg = "hello, world".to_string();
+        let buffer = rkyv::to_bytes::<_, 128>(&msg).expect("Serialize string");
+
+        let mut metadata = SegmentMetadata::default();
+        metadata.add_file("hello".to_string(), 0..buffer.len() as u64);
+
+        deserialize_file::<String>("hello", &metadata, &buffer)
+            .expect("Deserialize should pass");
+    }
+
+    #[test]
+    fn test_file_deserializer_err() {
+        let mut metadata = SegmentMetadata::default();
+        metadata.add_file("hello".to_string(), 0..12); // Incorrect position
+
+        let msg = "hello, world".to_string();
+        let buffer = rkyv::to_bytes::<_, 128>(&msg).expect("Serialize string");
+        metadata.add_file(
+            "out-of-range".to_string(),
+            buffer.len() as u64..(buffer.len() + 5) as u64,
+        );
+
+        let error = deserialize_file::<String>("hello", &metadata, &buffer[..5])
+            .expect_err("Should get IO error");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        assert!(error.to_string().contains("Provided data is too small"));
+
+        let error = deserialize_file::<String>("hello", &metadata, &buffer)
+            .expect_err("Should get IO error");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        assert!(error.to_string().contains("Failed to read file type"));
+
+        let error = deserialize_file::<String>(
+            "this-file-does-not-exist",
+            &metadata,
+            &buffer[..5],
+        )
+        .expect_err("Should get IO error");
+        assert_eq!(error.kind(), ErrorKind::NotFound);
+
+        let error = deserialize_file::<String>("out-of-range", &metadata, &buffer)
+            .expect_err("Should get IO error");
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+        assert!(error.to_string().contains("Provided data is too small"));
+    }
 }
