@@ -281,11 +281,12 @@ impl IndexFragmentsWriters {
     ///
     /// This is a no-op on windows.
     async fn sync_directory(&self) -> io::Result<()> {
+        let path = self.env.root_path.clone();
         #[cfg(unix)]
         lnx_executor::spawn_task(async move {
             std::fs::OpenOptions::new()
                 .read(true)
-                .open(&crate::resolvers::fragments_folder())?
+                .open(&crate::resolvers::fragments_folder(&path))?
                 .sync_data()?;
             Ok::<_, io::Error>(())
         })
