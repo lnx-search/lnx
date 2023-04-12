@@ -10,7 +10,6 @@ use datacake::node::{
     DatacakeNodeBuilder,
 };
 use lnx_storage::{EnvCtx, LnxStorageExtension, LnxStorageHandle, StorageGuard};
-use tracing::info;
 use uuid::Uuid;
 
 /// A setup harness for a single node cluster
@@ -41,8 +40,6 @@ where
 
     node.shutdown().await;
 
-    std::fs::remove_dir_all(&root)?;
-
     Ok(())
 }
 
@@ -63,7 +60,7 @@ where
     let (nodes, _guards) = connect_nodes(&root, num_nodes).await?;
     (cb)(nodes).await;
 
-    std::fs::remove_dir_all(&root)?;
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
     Ok(())
 }

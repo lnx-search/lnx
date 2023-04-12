@@ -14,13 +14,13 @@ const MEDIUM_FRAGMENT_SIZE: usize = 1 << 30; // 1 GB
 const LARGE_FRAGMENT_SIZE: usize = 3 << 30; // 3 GB
 
 pub async fn run_fragments_bench() -> anyhow::Result<()> {
-    // run_local(TINY_FRAGMENT_SIZE).await?;
-    // run_local(SMALL_FRAGMENT_SIZE).await?;
-    // run_local(MEDIUM_FRAGMENT_SIZE).await?;
-    // // run_local(LARGE_FRAGMENT_SIZE).await?;
-    //
-    // run_cluster(3, TINY_FRAGMENT_SIZE).await?;
-    // run_cluster(3, SMALL_FRAGMENT_SIZE).await?;
+    run_local(TINY_FRAGMENT_SIZE).await?;
+    run_local(SMALL_FRAGMENT_SIZE).await?;
+    run_local(MEDIUM_FRAGMENT_SIZE).await?;
+    run_local(LARGE_FRAGMENT_SIZE).await?;
+
+    run_cluster(3, TINY_FRAGMENT_SIZE).await?;
+    run_cluster(3, SMALL_FRAGMENT_SIZE).await?;
     run_cluster(3, MEDIUM_FRAGMENT_SIZE).await?;
 
     Ok(())
@@ -87,8 +87,7 @@ async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
                 create_fragment_and_commit(store, target_size, 1).await;
             });
 
-            let blocks_per_sec =
-                (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
+            let blocks_per_sec = num_blocks as f32 / total_elapsed.as_secs_f32();
             let transfer_rate = (blocks_per_sec.max(1.0) * data.len() as f32) as usize;
 
             info!(
@@ -122,7 +121,7 @@ async fn create_fragment_and_commit(
         store
             .add_many_blocks(fragment_id, blocks)
             .await
-            .expect("Add block");
+            .expect("Add blocks");
     }
 
     let start = Instant::now();
@@ -139,7 +138,7 @@ async fn create_fragment_and_commit(
             },
         )
         .await
-        .expect("COMMIT LIED TO US");
+        .expect("Commit fragment");
 
     info!("Commit took {:?}", start.elapsed());
 }

@@ -16,7 +16,7 @@ use rkyv::{AlignedVec, Archive, Deserialize};
 
 use crate::fragments::block::{BlockId, BlockInfo, BlockLocations};
 use crate::resolvers::{BLOCK_LOCATIONS_PATH, FRAGMENT_INFO_PATH};
-use crate::{FragmentInfo, SharedSlice};
+use crate::{FragmentInfo, SharedSlice, BLOCK_HEADER_SIZE};
 
 #[derive(Clone)]
 /// A lightweight fragment reader that can be cheaply cloned and sliced
@@ -110,6 +110,17 @@ impl FragmentReader {
     pub fn read_block(&self, id: u64) -> Option<SharedSlice> {
         let info = self.blocks.get(&id)?.clone();
         Some(self.file_contents.slice(info.location_usize()))
+    }
+
+    /// Reads a block from the fragment but leaves it in it's compressed form with
+    /// the metadata header attached.
+    pub fn read_block_raw(&self, id: u64) -> Option<SharedSlice> {
+        let info = self.blocks.get(&id)?.clone();
+        let range = info.location_usize();
+        Some(
+            self.file_contents
+                .slice(range.start - BLOCK_HEADER_SIZE..range.end),
+        )
     }
 
     /// Tells the reader that it should remove the file once all references
