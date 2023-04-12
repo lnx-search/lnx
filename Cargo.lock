@@ -946,14 +946,6 @@ name = "lnx"
 version = "0.1.0"
 
 [[package]]
-name = "lnx-cluster"
-version = "0.1.0"
-dependencies = [
- "datacake",
- "tokio",
-]
-
-[[package]]
 name = "lnx-common"
 version = "0.1.0"
 dependencies = [
@@ -1016,6 +1008,7 @@ dependencies = [
  "flume",
  "futures",
  "hashbrown 0.13.2",
+ "humansize",
  "hyper",
  "jocky",
  "lnx-executor",
@@ -1266,6 +1259,24 @@ name = "percent-encoding"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
+
+[[package]]
+name = "performance-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crc32fast",
+ "datacake",
+ "humansize",
+ "itertools",
+ "lnx-executor",
+ "lnx-storage",
+ "test-helper",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "phf"

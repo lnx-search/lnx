@@ -31,6 +31,7 @@ parking_lot = { workspace = true }
 crc32fast = { workspace = true }
 exponential-backoff = { workspace = true }
 uuid = { workspace = true, optional = true }
+humansize = { workspace = true }
 
 lnx-io = { path = "../lnx-io" }
 lnx-executor = { path = "../lnx-executor" }

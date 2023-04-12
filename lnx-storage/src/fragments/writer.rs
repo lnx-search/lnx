@@ -10,9 +10,6 @@ use bytecheck::CheckBytes;
 use bytes::Bytes;
 use datacake::eventual_consistency::Document;
 use datacake::rpc::{Body, Status};
-use futures::stream::TryStreamExt;
-use futures::StreamExt;
-use hyper::body;
 use hyper::body::HttpBody;
 use jocky::metadata::{write_metadata_offsets, SegmentMetadata};
 use lnx_io::file::SyncOnFlushFile;
@@ -116,12 +113,11 @@ impl FragmentWriter {
 
     #[instrument("fragment-io-copy-stream", skip_all)]
     async fn copy_stream(&mut self, msg: FragmentStream) -> Result<(), StreamError> {
-        let mut stream = msg.body.into_inner().into_stream();
+        let stream = msg.body;
 
         let mut current_pos = self.cursor;
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
+        while let Ok(chunk) = stream.recv_async().await {  // TODO: Handle errors
             self.write_all(&chunk).await?;
         }
 
@@ -399,7 +395,7 @@ pub struct FragmentStream {
     /// the writer to determine the block's positions within the file.
     pub blocks: Vec<(BlockId, u32, u32)>,
     /// The body of the request to start streaming data from.
-    pub body: Body,
+    pub body: flume::Receiver<Bytes>,
 }
 derive_message!(FragmentStream, Result<(), StreamError>);
 
@@ -415,15 +411,17 @@ impl datacake::rpc::TryIntoBody for FragmentStream {
         header.extend_from_slice(&(blocks.len() as u32).to_le_bytes());
         header.extend_from_slice(&blocks);
 
-        let mut stream = self.body;
+        let stream = self.body;
         let (mut tx, body) = hyper::Body::channel();
 
         tokio::spawn(async move {
             tx.send_data(Bytes::from(header)).await.map_err(log_err)?;
 
-            while let Some(chunk) = stream.data().await {
-                let chunk = chunk.map_err(log_err)?;
-                tx.send_data(chunk).await.map_err(log_err)?;
+            // TODO: Handle errors
+            while let Ok(chunk) = stream.recv_async().await {
+                tx.send_data(chunk)
+                    .await
+                    .map_err(log_err)?;
             }
 
             Ok::<_, hyper::Error>(())
@@ -445,7 +443,7 @@ impl datacake::rpc::RequestContents for FragmentStream {
         let mut has_read_header = false;
         let mut temp_buffer = AlignedVec::new();
         let mut remaining = Bytes::new();
-        let (mut upstream, body) = hyper::Body::channel();
+        let (tx, rx) = flume::bounded(10);
 
         // Read the first part of the data
         while let Some(chunk) = incoming.data().await {
@@ -488,6 +486,8 @@ impl datacake::rpc::RequestContents for FragmentStream {
                     &temp_buffer[blocks_buffer_start + blocks_length..],
                 );
             }
+
+            break
         }
 
         if !has_read_header {
@@ -496,30 +496,26 @@ impl datacake::rpc::RequestContents for FragmentStream {
 
         // Stream the remainder of the chunks
         tokio::spawn(async move {
-            if !remaining.is_empty() {
-                if let Err(e) = upstream.send_data(remaining).await {
-                    error!(error = ?e, "Failed to send data chunk to upstream buffer");
-                    return;
-                }
+            if !remaining.is_empty() && tx.send_async(remaining).await.is_err() {
+                return;
             }
 
-            copy_to_upstream(incoming, upstream).await;
+            copy_to_upstream(incoming, tx).await;
         });
 
         Ok(Self {
             files,
             blocks,
-            body: body.into(),
+            body: rx,
         })
     }
 }
 
-async fn copy_to_upstream(mut incoming: hyper::Body, mut upstream: body::Sender) {
+async fn copy_to_upstream(mut incoming: hyper::Body, upstream: flume::Sender<Bytes>) {
     while let Some(chunk) = incoming.data().await {
         match chunk {
             Ok(chunk) => {
-                if let Err(e) = upstream.send_data(chunk).await {
-                    error!(error = ?e, "Failed to send data chunk to upstream buffer");
+                if upstream.send_async(chunk).await.is_err() {
                     return;
                 }
             },

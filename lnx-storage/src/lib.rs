@@ -104,6 +104,7 @@ impl ClusterExtension for LnxStorageExtension {
             loader::load_readers(self.env.clone(), &metastore, listeners.clone())
                 .await
                 .map_err(CreateStorageError::LoadState)?;
+
         info!("Loading partial fragment writers");
         let writers = loader::load_partial_writers(
             self.env.clone(),
@@ -317,6 +318,12 @@ impl LnxStorageHandle {
 pub struct EnvCtx(Arc<EnvCtxInner>);
 
 impl EnvCtx {
+    /// Create a new environment for the storage system.
+    pub fn new(root_path: PathBuf) -> Self {
+        let inner = EnvCtxInner { root_path };
+        Self(Arc::new(inner))
+    }
+
     #[cfg(test)]
     /// Create a environment context for testing.
     pub fn for_test() -> Self {

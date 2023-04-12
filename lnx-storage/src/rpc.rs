@@ -1,7 +1,10 @@
+use std::mem;
+use std::time::Instant;
 use bytecheck::CheckBytes;
 use bytes::Bytes;
 use datacake::rpc::{Handler, Request, RpcService, ServiceRegistry, Status};
 use hashbrown::HashSet;
+use humansize::DECIMAL;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::fragments::{
@@ -65,34 +68,70 @@ impl Handler<GetFragment> for StorageService {
 
         info!(remote_addr = %remote, fragment_id = msg.fragment_id, "Starting data stream for node");
 
-        let (mut tx, body) = hyper::Body::channel();
+        let (tx, rx) = flume::bounded(10);
 
-        tokio::spawn(async move {
+        lnx_executor::spawn_task(async move {
+            let mut total_bytes = 0;
+
+            let start = Instant::now();
             for (path, _) in reader.get_file_locations() {
                 let file = reader
                     .read_file(path)
                     .expect("File should exist in fragment, this is a bug");
 
-                if let Err(e) = tx.send_data(Bytes::copy_from_slice(&file)).await {
+                total_bytes += file.len();
+                if let Err(e) = tx.send_async(Bytes::copy_from_slice(&file)).await {
                     error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
+                    return;
                 }
             }
 
-            for (block_id, _) in reader.get_fragment_blocks() {
+            let mut block_ids = reader.get_fragment_blocks()
+                .map(|(id, _)| *id)
+                .filter(|block_id| !lookup.contains(block_id))
+                .collect::<Vec<BlockId>>();
+            block_ids.sort_unstable();
+
+            let mut buffered = Vec::with_capacity(5 << 20);
+            for block_id in block_ids {
                 let block = reader
-                    .read_block(*block_id)
+                    .read_block(block_id)
                     .expect("Block should exist in fragment, this is a bug");
+                buffered.extend_from_slice(&block);
 
-                if let Err(e) = tx.send_data(Bytes::copy_from_slice(&block)).await {
+                if buffered.len() < (4 << 20) {
+                    continue
+                }
+
+                total_bytes += buffered.len();
+                let body = mem::replace(&mut buffered, Vec::with_capacity(2 << 20));
+                if let Err(e) = tx.send_async(Bytes::from(body)).await {
                     error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
+                    return;
                 }
             }
+
+            if !buffered.is_empty() {
+                if let Err(e) = tx.send_async(Bytes::from(buffered)).await {
+                    error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
+                    return;
+                }
+            }
+
+            let transfer_rate = (total_bytes as f32 / start.elapsed().as_secs_f32()) as usize;
+            let transfer_rate_pretty = humansize::format_size(transfer_rate, DECIMAL);
+            info!(
+                elapsed = ?start.elapsed(),
+                transfer_rate_bytes_sec = transfer_rate,
+                transfer_rate = %format!("{transfer_rate_pretty}/s"),
+                "Fragment streaming completed",
+            );
         });
 
         Ok(FragmentStream {
             files,
             blocks,
-            body: body.into(),
+            body: rx,
         })
     }
 }

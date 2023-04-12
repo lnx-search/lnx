@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use anyhow::Context;
 
 use datacake::node::{Consistency, ConsistencyError, DatacakeHandle};
 use datacake::rpc::{
@@ -21,7 +22,7 @@ use crate::fragments::WriteDocBlock;
 use crate::rpc::{AddDocBlock, AddManyDocBlocks};
 use crate::StorageService;
 
-const NETWORK_TIMEOUT: Duration = Duration::from_secs(2);
+const NETWORK_TIMEOUT: Duration = Duration::from_secs(5);
 /// The maximum memory usage of a batch.
 ///
 /// The value of 250MB is fairly specific and is effectively
@@ -188,8 +189,8 @@ impl TaskDistributor {
 
         if num_successful != num_required_nodes {
             return Err(ConsistencyError::ConsistencyFailure {
-                responses: num_successful + 1,
-                required: num_required_nodes + 1,
+                responses: num_successful,
+                required: num_required_nodes,
                 timeout: NETWORK_TIMEOUT,
             });
         }
@@ -331,7 +332,10 @@ async fn send_node_batch(
         blocks,
     };
 
-    client.send_owned(msg).await?;
+    client
+        .send_owned(msg)
+        .await
+        .context("Failed to complete RPC on remote node")?;
 
     Ok(())
 }

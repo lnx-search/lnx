@@ -1,0 +1,21 @@
+[package]
+name = "performance-tests"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+datacake = { workspace = true }
+humansize = { workspace = true }
+crc32fast = { workspace = true }
+test-helper = { workspace = true }
+uuid = { workspace = true }
+itertools = { workspace = true }
+
+lnx-storage = { path = "../lnx-storage" }
+lnx-executor = { path = "../lnx-executor" }

@@ -351,7 +351,7 @@ impl IndexFragmentsReaders {
                 slf.try_add_new_reader_blocking(fragment_id)
             })
             .await
-            .expect("Join task");
+            .map_err(|_| io::Error::new(ErrorKind::Other, "Executor task panicked"))?;
 
             match result {
                 Ok(()) => return Ok(()),
