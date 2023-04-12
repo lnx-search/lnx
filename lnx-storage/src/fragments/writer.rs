@@ -117,7 +117,8 @@ impl FragmentWriter {
 
         let mut current_pos = self.cursor;
 
-        while let Ok(chunk) = stream.recv_async().await {  // TODO: Handle errors
+        while let Ok(chunk) = stream.recv_async().await {
+            // TODO: Handle errors
             self.write_all(&chunk).await?;
         }
 
@@ -419,9 +420,7 @@ impl datacake::rpc::TryIntoBody for FragmentStream {
 
             // TODO: Handle errors
             while let Ok(chunk) = stream.recv_async().await {
-                tx.send_data(chunk)
-                    .await
-                    .map_err(log_err)?;
+                tx.send_data(chunk).await.map_err(log_err)?;
             }
 
             Ok::<_, hyper::Error>(())
@@ -487,7 +486,7 @@ impl datacake::rpc::RequestContents for FragmentStream {
                 );
             }
 
-            break
+            break;
         }
 
         if !has_read_header {

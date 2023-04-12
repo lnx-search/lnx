@@ -1,10 +1,11 @@
 //! Runs the storage system under high load with many small fragments being produced.
 
 use std::time::{Duration, Instant};
-use tracing::info;
-use lnx_storage::{FragmentInfo, LnxStorageHandle};
+
 use humansize::DECIMAL;
 use itertools::Itertools;
+use lnx_storage::{FragmentInfo, LnxStorageHandle};
+use tracing::info;
 
 const BLOCK_SIZE: usize = 128 << 10; // 128KB¬
 const TINY_FRAGMENT_SIZE: usize = 100 << 10; // 100 KB
@@ -13,7 +14,6 @@ const MEDIUM_FRAGMENT_SIZE: usize = 1 << 30; // 1 GB
 const LARGE_FRAGMENT_SIZE: usize = 3 << 30; // 3 GB
 
 pub async fn run_fragments_bench() -> anyhow::Result<()> {
-
     // run_local(TINY_FRAGMENT_SIZE).await?;
     // run_local(SMALL_FRAGMENT_SIZE).await?;
     // run_local(MEDIUM_FRAGMENT_SIZE).await?;
@@ -53,8 +53,8 @@ async fn run_local(target_size: usize) -> anyhow::Result<()> {
                 });
             }
 
-
-            let blocks_per_sec = (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
+            let blocks_per_sec =
+                (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
             let transfer_rate = (blocks_per_sec * data.len() as f32) as usize;
 
             info!(
@@ -67,7 +67,6 @@ async fn run_local(target_size: usize) -> anyhow::Result<()> {
     )
     .await
 }
-
 
 async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
     info!(
@@ -88,7 +87,8 @@ async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
                 create_fragment_and_commit(store, target_size, 1).await;
             });
 
-            let blocks_per_sec = (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
+            let blocks_per_sec =
+                (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
             let transfer_rate = (blocks_per_sec.max(1.0) * data.len() as f32) as usize;
 
             info!(
@@ -101,7 +101,6 @@ async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
     )
     .await
 }
-
 
 async fn create_fragment_and_commit(
     store: &LnxStorageHandle,

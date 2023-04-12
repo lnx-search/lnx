@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use anyhow::Context;
 
+use anyhow::Context;
 use datacake::node::{Consistency, ConsistencyError, DatacakeHandle};
 use datacake::rpc::{
     Channel,

@@ -1,5 +1,6 @@
 use std::mem;
 use std::time::Instant;
+
 use bytecheck::CheckBytes;
 use bytes::Bytes;
 use datacake::rpc::{Handler, Request, RpcService, ServiceRegistry, Status};
@@ -86,7 +87,8 @@ impl Handler<GetFragment> for StorageService {
                 }
             }
 
-            let mut block_ids = reader.get_fragment_blocks()
+            let mut block_ids = reader
+                .get_fragment_blocks()
                 .map(|(id, _)| *id)
                 .filter(|block_id| !lookup.contains(block_id))
                 .collect::<Vec<BlockId>>();
@@ -100,7 +102,7 @@ impl Handler<GetFragment> for StorageService {
                 buffered.extend_from_slice(&block);
 
                 if buffered.len() < (4 << 20) {
-                    continue
+                    continue;
                 }
 
                 total_bytes += buffered.len();
@@ -118,7 +120,8 @@ impl Handler<GetFragment> for StorageService {
                 }
             }
 
-            let transfer_rate = (total_bytes as f32 / start.elapsed().as_secs_f32()) as usize;
+            let transfer_rate =
+                (total_bytes as f32 / start.elapsed().as_secs_f32()) as usize;
             let transfer_rate_pretty = humansize::format_size(transfer_rate, DECIMAL);
             info!(
                 elapsed = ?start.elapsed(),

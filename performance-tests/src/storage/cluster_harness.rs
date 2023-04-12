@@ -9,8 +9,8 @@ use datacake::node::{
     DatacakeNode,
     DatacakeNodeBuilder,
 };
-use tracing::info;
 use lnx_storage::{EnvCtx, LnxStorageExtension, LnxStorageHandle, StorageGuard};
+use tracing::info;
 use uuid::Uuid;
 
 /// A setup harness for a single node cluster
