@@ -3,9 +3,6 @@ use datacake::node::Consistency;
 use crate::tests::OpsLogger;
 use crate::LnxStorageHandle;
 
-// TODO: A lot of this can be replace with datacake's test suite
-//       once it's move into another feature.
-
 #[tokio::test]
 async fn test_basic_kv_ops() -> anyhow::Result<()> {
     super::single_node_test_harness(|store: LnxStorageHandle, ops_logger| async move {

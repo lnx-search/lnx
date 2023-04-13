@@ -12,6 +12,7 @@ bytecheck = { workspace = true }
 cityhash-sys = { workspace = true }
 datacake = { workspace = true }
 datacake-lmdb = { workspace = true }
+datacake-eventual-consistency = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 tracing-futures = { workspace = true }

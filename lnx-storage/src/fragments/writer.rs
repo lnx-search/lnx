@@ -116,10 +116,18 @@ impl FragmentWriter {
         let stream = msg.body;
 
         let mut current_pos = self.cursor;
-
-        while let Ok(chunk) = stream.recv_async().await {
-            // TODO: Handle errors
-            self.write_all(&chunk).await?;
+        loop {
+            match stream.recv_async().await {
+                Ok(Some(chunk)) => self.write_all(&chunk).await?,
+                Ok(None) => break,
+                Err(_) => {
+                    warn!("Remote node closed the connection before the transfer could be completed");
+                    return Err(StreamError::Io(io::Error::new(
+                        ErrorKind::ConnectionAborted,
+                        "Remote node aborted the connection",
+                    )));
+                },
+            };
         }
 
         for (block_id, len, checksum) in msg.blocks {
@@ -396,7 +404,7 @@ pub struct FragmentStream {
     /// the writer to determine the block's positions within the file.
     pub blocks: Vec<(BlockId, u32, u32)>,
     /// The body of the request to start streaming data from.
-    pub body: flume::Receiver<Bytes>,
+    pub body: flume::Receiver<Option<Bytes>>,
 }
 derive_message!(FragmentStream, Result<(), StreamError>);
 
@@ -418,9 +426,17 @@ impl datacake::rpc::TryIntoBody for FragmentStream {
         tokio::spawn(async move {
             tx.send_data(Bytes::from(header)).await.map_err(log_err)?;
 
-            // TODO: Handle errors
-            while let Ok(chunk) = stream.recv_async().await {
-                tx.send_data(chunk).await.map_err(log_err)?;
+            loop {
+                match stream.recv_async().await {
+                    Ok(Some(chunk)) => {
+                        tx.send_data(chunk).await.map_err(log_err)?;
+                    },
+                    Ok(None) => break,
+                    Err(_) => {
+                        warn!("Local node aborted transfer to remote server");
+                        break;
+                    },
+                }
             }
 
             Ok::<_, hyper::Error>(())
@@ -495,7 +511,7 @@ impl datacake::rpc::RequestContents for FragmentStream {
 
         // Stream the remainder of the chunks
         tokio::spawn(async move {
-            if !remaining.is_empty() && tx.send_async(remaining).await.is_err() {
+            if !remaining.is_empty() && tx.send_async(Some(remaining)).await.is_err() {
                 return;
             }
 
@@ -510,11 +526,14 @@ impl datacake::rpc::RequestContents for FragmentStream {
     }
 }
 
-async fn copy_to_upstream(mut incoming: hyper::Body, upstream: flume::Sender<Bytes>) {
+async fn copy_to_upstream(
+    mut incoming: hyper::Body,
+    upstream: flume::Sender<Option<Bytes>>,
+) {
     while let Some(chunk) = incoming.data().await {
         match chunk {
             Ok(chunk) => {
-                if upstream.send_async(chunk).await.is_err() {
+                if upstream.send_async(Some(chunk)).await.is_err() {
                     return;
                 }
             },
@@ -524,6 +543,8 @@ async fn copy_to_upstream(mut incoming: hyper::Body, upstream: flume::Sender<Byt
             },
         }
     }
+
+    let _ = upstream.send_async(None).await;
 }
 
 /// Flush the current writer buffer.

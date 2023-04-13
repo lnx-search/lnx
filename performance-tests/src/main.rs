@@ -2,6 +2,7 @@ use std::env::temp_dir;
 use std::time::Duration;
 
 use anyhow::Context;
+use tracing::warn;
 
 mod storage;
 
@@ -26,7 +27,9 @@ async fn main() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_secs(30)).await;
 
-    std::fs::remove_dir_all(temp_dir().join("lnx-tests"))?;
+    if let Err(e) = std::fs::remove_dir_all(temp_dir().join("lnx-tests")) {
+        warn!(error = ?e, "Failed to remove tmp directory");
+    }
 
     Ok(())
 }

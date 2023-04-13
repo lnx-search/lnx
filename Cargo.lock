@@ -999,6 +999,7 @@ dependencies = [
  "cityhash-sys",
  "crc32fast",
  "datacake",
+ "datacake-eventual-consistency",
  "datacake-lmdb",
  "exponential-backoff",
  "flume",

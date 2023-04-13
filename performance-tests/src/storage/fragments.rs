@@ -19,9 +19,9 @@ pub async fn run_fragments_bench() -> anyhow::Result<()> {
     run_local(MEDIUM_FRAGMENT_SIZE).await?;
     run_local(LARGE_FRAGMENT_SIZE).await?;
 
-    run_cluster(3, TINY_FRAGMENT_SIZE).await?;
-    run_cluster(3, SMALL_FRAGMENT_SIZE).await?;
-    run_cluster(3, MEDIUM_FRAGMENT_SIZE).await?;
+    run_cluster(2, TINY_FRAGMENT_SIZE).await?;
+    run_cluster(2, SMALL_FRAGMENT_SIZE).await?;
+    run_cluster(2, MEDIUM_FRAGMENT_SIZE).await?;
 
     Ok(())
 }
@@ -46,19 +46,27 @@ async fn run_local(target_size: usize) -> anyhow::Result<()> {
             let data = vec![0u8; BLOCK_SIZE];
             let num_blocks = target_size / BLOCK_SIZE;
 
-            let mut total_elapsed = Duration::default();
+            let mut commit_time = Duration::default();
+            let mut add_blocks_time = Duration::default();
             for fragment_id in 0..10 {
-                timeit!(&mut total_elapsed, {
-                    create_fragment_and_commit(&store, target_size, fragment_id).await;
-                });
+                create_fragment_and_commit(
+                    &mut commit_time,
+                    &mut add_blocks_time,
+                    &store,
+                    target_size,
+                    fragment_id,
+                )
+                .await;
             }
 
             let blocks_per_sec =
-                (num_blocks as f32 * 10.0) / total_elapsed.as_secs_f32();
-            let transfer_rate = (blocks_per_sec * data.len() as f32) as usize;
+                num_blocks as f32 / (add_blocks_time + commit_time).as_secs_f32();
+            let transfer_rate = (blocks_per_sec.max(1.0) * data.len() as f32) as usize;
 
             info!(
-                total_elapsed = ?total_elapsed,
+                total_elapsed = ?(add_blocks_time + commit_time),
+                add_blocks_time = ?add_blocks_time,
+                commit_time = ?commit_time,
                 blocks_per_sec = blocks_per_sec,
                 transfer_rate = %humansize::format_size(transfer_rate, DECIMAL),
                 "Test complete",
@@ -82,16 +90,25 @@ async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
             let num_blocks = target_size / BLOCK_SIZE;
             info!("Using {num_blocks} blocks");
 
-            let mut total_elapsed = Duration::default();
-            timeit!(&mut total_elapsed, {
-                create_fragment_and_commit(store, target_size, 1).await;
-            });
+            let mut commit_time = Duration::default();
+            let mut add_blocks_time = Duration::default();
+            create_fragment_and_commit(
+                &mut commit_time,
+                &mut add_blocks_time,
+                store,
+                target_size,
+                1,
+            )
+            .await;
 
-            let blocks_per_sec = num_blocks as f32 / total_elapsed.as_secs_f32();
+            let blocks_per_sec =
+                num_blocks as f32 / (add_blocks_time + commit_time).as_secs_f32();
             let transfer_rate = (blocks_per_sec.max(1.0) * data.len() as f32) as usize;
 
             info!(
-                total_elapsed = ?total_elapsed,
+                total_elapsed = ?(add_blocks_time + commit_time),
+                add_blocks_time = ?add_blocks_time,
+                commit_time = ?commit_time,
                 blocks_per_sec = blocks_per_sec,
                 transfer_rate = %humansize::format_size(transfer_rate, DECIMAL),
                 "Test complete",
@@ -102,6 +119,8 @@ async fn run_cluster(num_nodes: u8, target_size: usize) -> anyhow::Result<()> {
 }
 
 async fn create_fragment_and_commit(
+    commit_time: &mut Duration,
+    blocks_add_time: &mut Duration,
     store: &LnxStorageHandle,
     target_size: usize,
     fragment_id: u64,
@@ -109,36 +128,37 @@ async fn create_fragment_and_commit(
     let data = vec![0u8; BLOCK_SIZE];
     let num_blocks = target_size / BLOCK_SIZE;
 
-    let blocks_chunks = (0..num_blocks)
-        .into_iter()
-        .map(|block_id| {
-            let checksum = crc32fast::hash(&data);
-            (block_id as u64, data.clone(), checksum)
-        })
-        .chunks(1000);
+    timeit!(blocks_add_time, {
+        let blocks_chunks = (0..num_blocks)
+            .into_iter()
+            .map(|block_id| {
+                let checksum = crc32fast::hash(&data);
+                (block_id as u64, data.clone(), checksum)
+            })
+            .chunks(1000);
 
-    for blocks in &blocks_chunks {
+        for blocks in &blocks_chunks {
+            store
+                .add_many_blocks(fragment_id, blocks)
+                .await
+                .expect("Add blocks");
+        }
+    });
+
+    timeit!(commit_time, {
         store
-            .add_many_blocks(fragment_id, blocks)
-            .await
-            .expect("Add blocks");
-    }
-
-    let start = Instant::now();
-    store
-        .commit_fragment(
-            fragment_id,
-            FragmentInfo {
+            .commit_fragment(
                 fragment_id,
-                num_blocks: num_blocks as u32,
-                num_docs: 0,
-                orphaned_id: None,
-                num_bytes_total: (num_blocks * data.len()) as u64,
-                child_of_fragments: vec![],
-            },
-        )
-        .await
-        .expect("Commit fragment");
-
-    info!("Commit took {:?}", start.elapsed());
+                FragmentInfo {
+                    fragment_id,
+                    num_blocks: num_blocks as u32,
+                    num_docs: 0,
+                    orphaned_id: None,
+                    num_bytes_total: (num_blocks * data.len()) as u64,
+                    child_of_fragments: vec![],
+                },
+            )
+            .await
+            .expect("Commit fragment");
+    });
 }

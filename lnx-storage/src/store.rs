@@ -384,3 +384,52 @@ impl Storage for LnxStorage {
             .map_err(StorageError::Lmdb)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::env::temp_dir;
+
+    use datacake_eventual_consistency::test_suite;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::{loader, resolvers, EnvCtx};
+
+    #[tokio::test]
+    async fn test_store_suite() -> anyhow::Result<()> {
+        lnx_executor::build_default_pools(1).expect("Build pools");
+
+        let root = temp_dir()
+            .join("lnx-tests")
+            .join(Uuid::new_v4().to_string());
+        let env = EnvCtx::new(root);
+
+        let lmdb_store =
+            LmdbStorage::open(&resolvers::metastore_folder(&env.root_path)).await?;
+        let metastore = Metastore::from_env(lmdb_store.handle().env().clone())?;
+        let listeners = ListenerManager::default();
+
+        info!("Loading existing fragment readers");
+        let readers = loader::load_readers(env.clone(), &metastore, listeners.clone())
+            .await
+            .expect("Load readers");
+
+        info!("Loading partial fragment writers");
+        let writers =
+            loader::load_partial_writers(env.clone(), &metastore, listeners.clone())
+                .await
+                .expect("Load writes");
+
+        let store = LnxStorage::new(
+            lmdb_store,
+            metastore.clone(),
+            writers.clone(),
+            readers.clone(),
+            listeners.clone(),
+        );
+
+        test_suite::run_test_suite(store).await;
+
+        Ok(())
+    }
+}

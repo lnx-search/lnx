@@ -81,7 +81,8 @@ impl Handler<GetFragment> for StorageService {
                     .expect("File should exist in fragment, this is a bug");
 
                 total_bytes += file.len();
-                if let Err(e) = tx.send_async(Bytes::copy_from_slice(&file)).await {
+                if let Err(e) = tx.send_async(Some(Bytes::copy_from_slice(&file))).await
+                {
                     error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
                     return;
                 }
@@ -107,18 +108,20 @@ impl Handler<GetFragment> for StorageService {
 
                 total_bytes += buffered.len();
                 let body = mem::replace(&mut buffered, Vec::with_capacity(2 << 20));
-                if let Err(e) = tx.send_async(Bytes::from(body)).await {
-                    error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
+                if let Err(e) = tx.send_async(Some(Bytes::from(body))).await {
+                    warn!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
                     return;
                 }
             }
 
             if !buffered.is_empty() {
-                if let Err(e) = tx.send_async(Bytes::from(buffered)).await {
-                    error!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
+                if let Err(e) = tx.send_async(Some(Bytes::from(buffered))).await {
+                    warn!(error = ?e, remote_addr = %remote, "Failed to send fragment body to peer");
                     return;
                 }
             }
+
+            let _ = tx.send_async(None).await;
 
             let transfer_rate =
                 (total_bytes as f32 / start.elapsed().as_secs_f32()) as usize;

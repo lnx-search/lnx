@@ -50,6 +50,7 @@ tokio = { version = "1", features = ["full"] }
 hyper = { version = "0.14.25", features = ["full"] }
 
 datacake-lmdb = { git = "https://github.com/lnx-search/datacake.git" }
+datacake-eventual-consistency = { git = "https://github.com/lnx-search/datacake.git", features = ["test-suite"] }
 datacake = { git = "https://github.com/lnx-search/datacake.git", default-features = false, features = ["datacake-crdt", "datacake-rpc", "datacake-eventual-consistency", "datacake-node"] }
 jocky = { git = "https://github.com/ChillFish8/jocky.git", rev = "c989fce" }
 test-helper = { git = "https://github.com/lnx-search/datacake.git", rev = "c968fd4" }
