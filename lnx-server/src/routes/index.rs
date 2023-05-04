@@ -307,3 +307,15 @@ pub async fn clear_documents(req: LnxRequest) -> LnxResponse {
 
     json_response(200, "changes registered")
 }
+
+/// Gets count of searchable documents in the index.
+pub async fn get_documents_count(req: LnxRequest) -> LnxResponse {
+    let state = req.data::<State>().expect("get state");
+    let index = get_or_400!(req.param("index"));
+    let index: Index =
+        get_or_400!(state.engine.get_index(index), "index does not exist");
+
+    let count = index.get_documents_count().await?;
+
+    json_response(200, &format!("{}", count))
+}

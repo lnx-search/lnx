@@ -85,6 +85,11 @@ impl Index {
         self.0.clear_documents().await
     }
 
+    /// Gets count of searchable documents in the index.
+    pub async fn get_documents_count(&self) -> Result<usize> {
+        self.0.get_documents_count().await
+    }
+
     /// Adds a set of stop words to the indexes' stop word manager.
     ///
     /// This function is semi-asynchronous in the sense that there is a buffer of
@@ -229,6 +234,18 @@ impl InternalIndex {
     /// Deletes all documents from the index.
     async fn clear_documents(&self) -> Result<()> {
         self.writer.send_op(WriterOp::DeleteAll).await
+    }
+
+    /// Gets count of searchable documents in the index.
+    async fn get_documents_count(&self) -> Result<usize> {
+        if let Ok(metas) = self._ctx.index.searchable_segment_metas() {
+            let mut count = 0usize;
+            for m in metas {
+                count += m.num_docs() as usize;
+            }
+            return Ok(count);
+        }
+        Ok(0)
     }
 
     /// Deletes a specific document
