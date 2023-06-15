@@ -1,0 +1,20 @@
+[package]
+name = "lnx"
+version = "0.10.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[workspace.dependencies]
+serde_json = "1"
+
+serde = { version = "1", features = ["derive"] }
+rkyv = { version = "0.7.42", features = ["strict"] }
+
+[workspace]
+members = [
+    "lnx-document",
+    "lnx-transforms",
+]
