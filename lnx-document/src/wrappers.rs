@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
-use rkyv::{Archive, Serialize};
 
+use rkyv::{Archive, Serialize};
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
@@ -10,7 +10,7 @@ use rkyv::{Archive, Serialize};
 pub struct RawWrapper<T: Copy + Archive + 'static>(
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::Raw)]
-    Vec<T>
+    Vec<T>,
 );
 
 impl<T: Copy + Archive + 'static> Default for RawWrapper<T> {
@@ -40,7 +40,7 @@ impl<T: Copy + Archive + 'static> DerefMut for RawWrapper<T> {
 pub struct CopyWrapper<T: Copy + Archive + 'static>(
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::CopyOptimize)]
-    Vec<T>
+    Vec<T>,
 );
 
 impl<T: Copy + Archive + 'static> Default for CopyWrapper<T> {
@@ -66,13 +66,13 @@ impl<T: Copy + Archive + 'static> DerefMut for CopyWrapper<T> {
 #[repr(C)]
 #[derive(Clone, Debug, Archive, Serialize)]
 /// An UTF-8 string wrapper.
-/// 
+///
 /// This type implements some (de)serialization optimisations compared
 /// to a regular string.
 pub struct Text<'a>(
     #[with(rkyv::with::AsOwned)]
     // TODO: Re-enable #[with(rkyv::with::Raw)]
-    Cow<'a, [u8]>
+    Cow<'a, [u8]>,
 );
 
 impl<'a> From<&'a str> for Text<'a> {
@@ -101,11 +101,10 @@ impl<'a> Deref for Text<'a> {
     }
 }
 
-
 #[repr(C)]
 #[derive(Clone, Debug, Archive, Serialize)]
 /// An arbitrary bytes sequence wrapper.
-/// 
+///
 /// This type implements some (de)serialization optimisations compared
 /// to a regular vec.
 pub struct Bytes(#[with(rkyv::with::Raw)] Vec<u8>);

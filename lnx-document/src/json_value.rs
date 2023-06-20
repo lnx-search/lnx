@@ -1,11 +1,16 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+
+use serde::de::value::MapAccessDeserializer;
 use serde::de::{MapAccess, SeqAccess};
 use serde::Deserialize;
 
-pub type JsonMap<'a> = Vec<(Cow<'a, str>, Value<'a>)>;
+use crate::UserDiplayType;
 
+pub type JsonMap<'a> = BTreeMap<Cow<'a, str>, Value<'a>>;
+pub type JsonMapIter<'a> =
+    std::collections::btree_map::IntoIter<Cow<'a, str>, Value<'a>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
@@ -17,6 +22,44 @@ pub enum Value<'a> {
     Bool(bool),
     Array(Vec<Value<'a>>),
     Object(JsonMap<'a>),
+}
+
+impl<'a> UserDiplayType for Value<'a> {
+    fn type_name(&self) -> Cow<'static, str> {
+        match self {
+            Value::Null => Cow::Borrowed("null"),
+            Value::Str(_) => Cow::Borrowed("string"),
+            Value::U64(_) => Cow::Borrowed("u64"),
+            Value::I64(_) => Cow::Borrowed("i64"),
+            Value::F64(_) => Cow::Borrowed("f64"),
+            Value::Bool(_) => Cow::Borrowed("bool"),
+            Value::Array(_) => Cow::Borrowed("array"),
+            Value::Object(_) => Cow::Borrowed("object"),
+        }
+    }
+}
+
+impl<'a> Value<'a> {
+    /// Converts the JSON value into typed value as is.
+    pub fn into_typed_as_is(self) -> crate::typed_value::Value<'a> {
+        match self {
+            Value::Null => crate::typed_value::Value::Null,
+            Value::Str(v) => crate::typed_value::Value::Str(v),
+            Value::U64(v) => crate::typed_value::Value::U64(v),
+            Value::I64(v) => crate::typed_value::Value::I64(v),
+            Value::F64(v) => crate::typed_value::Value::F64(v),
+            Value::Bool(v) => crate::typed_value::Value::Bool(v),
+            Value::Array(elements) => crate::typed_value::Value::Array(
+                elements.into_iter().map(|v| v.into_typed_as_is()).collect(),
+            ),
+            Value::Object(object) => crate::typed_value::Value::Object(
+                object
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_typed_as_is()))
+                    .collect(),
+            ),
+        }
+    }
 }
 
 impl<'a> From<&'a str> for Value<'a> {
@@ -70,7 +113,9 @@ impl<'a, T: Into<Value<'a>>> From<BTreeMap<Cow<'a, str>, T>> for Value<'a> {
 impl<'de> serde::Deserialize<'de> for Value<'de> {
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Value<'de>, D::Error>
-    where D: serde::Deserializer<'de> {
+    where
+        D: serde::Deserializer<'de>,
+    {
         struct ValueVisitor;
 
         impl<'de> serde::de::Visitor<'de> for ValueVisitor {
@@ -102,19 +147,25 @@ impl<'de> serde::Deserialize<'de> for Value<'de> {
 
             #[inline]
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where E: serde::de::Error {
+            where
+                E: serde::de::Error,
+            {
                 Ok(Value::Str(Cow::Owned(v.to_owned())))
             }
 
             #[inline]
             fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
-            where E: serde::de::Error {
+            where
+                E: serde::de::Error,
+            {
                 Ok(Value::Str(Cow::Borrowed(v)))
             }
 
             #[inline]
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-            where E: serde::de::Error {
+            where
+                E: serde::de::Error,
+            {
                 Ok(Value::Str(Cow::Owned(v)))
             }
 
@@ -125,7 +176,9 @@ impl<'de> serde::Deserialize<'de> for Value<'de> {
 
             #[inline]
             fn visit_some<D>(self, deserializer: D) -> Result<Value<'de>, D::Error>
-            where D: serde::Deserializer<'de> {
+            where
+                D: serde::Deserializer<'de>,
+            {
                 Deserialize::deserialize(deserializer)
             }
 
@@ -136,7 +189,9 @@ impl<'de> serde::Deserialize<'de> for Value<'de> {
 
             #[inline]
             fn visit_seq<V>(self, mut visitor: V) -> Result<Value<'de>, V::Error>
-            where V: SeqAccess<'de> {
+            where
+                V: SeqAccess<'de>,
+            {
                 let mut vec = Vec::with_capacity(visitor.size_hint().unwrap_or(0));
 
                 while let Some(elem) = visitor.next_element()? {
@@ -147,15 +202,12 @@ impl<'de> serde::Deserialize<'de> for Value<'de> {
             }
 
             #[inline]
-            fn visit_map<V>(self, mut visitor: V) -> Result<Value<'de>, V::Error>
-            where V: MapAccess<'de> {
-                let mut values = Vec::with_capacity(visitor.size_hint().unwrap_or(0));
-
-                while let Some((key, value)) = visitor.next_entry()? {
-                    values.push((key, value));
-                }
-
-                Ok(Value::Object(values))
+            fn visit_map<V>(self, visitor: V) -> Result<Value<'de>, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let de = MapAccessDeserializer::new(visitor);
+                Ok(Value::Object(BTreeMap::deserialize(de)?))
             }
         }
 

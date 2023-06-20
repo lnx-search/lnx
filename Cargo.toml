@@ -9,7 +9,15 @@ edition = "2021"
 
 [workspace.dependencies]
 serde_json = "1"
+smallvec = "1.10.0"
+thiserror = "1"
+anyhow = "1"
+ryu = "1"
+itoa = "1"
+base64 = "0.21.2"
 
+bumpalo = { version = "3", features = ["collections"] }
+time = { version = "0.3.21", features = ["parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.42", features = ["strict"] }
 

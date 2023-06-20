@@ -1,5 +1,9 @@
 mod flatten;
+mod op_codes;
 mod type_cast;
-mod filter;
+mod vm;
 
-pub use flatten::flatten_object;
+pub use flatten::ObjectFlattener;
+pub use op_codes::TransformOp;
+pub use type_cast::{DateTimeFormat, DateTimeParser, TimestampResolution, TypeCast};
+pub use vm::TransformVM;

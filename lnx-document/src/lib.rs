@@ -1,22 +1,25 @@
 extern crate core;
 
-mod wrappers;
+mod helpers;
 pub mod json_value;
+pub mod typed_value;
+mod wrappers;
 
+pub use helpers::UserDiplayType;
 use rkyv::{Archive, Serialize};
-use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 
+use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Archive, Serialize)]
 /// The document information describing the field, number of values for the field
-/// and the type.
+/// and the target type.
 pub struct OffsetInfo {
     /// The unique ID for the given field.
     field_id: u16,
     /// The number of values for the given type within the field.
     field_length: u16,
-    /// The type of the field.
+    /// the target type of the field.
     ///
     /// A field may contain multiple types but each type is it's own
     /// [OffsetInfo] entry.
@@ -40,6 +43,14 @@ pub enum FieldType {
     F64 = 5,
     /// the field is of type `null`.
     Null = 6,
+
+    // Aliased Types
+    // These are types which are stored as another type because it makes more
+    // sense to do so.
+    /// A datetime value stored as a i64s.
+    DateTime = 7,
+    /// A datetime value stored as 2 x u64s.
+    IpAddr = 8,
 }
 
 #[repr(C)]
@@ -53,7 +64,6 @@ pub struct DocumentBlock<'a> {
     /// The document data itself.
     docs: Vec<Document<'a>>,
 }
-
 
 #[repr(C)]
 #[derive(Clone, Debug, Default, Archive, Serialize)]
