@@ -2,15 +2,15 @@ mod types;
 
 use std::mem;
 use std::path::{Path, PathBuf};
-use heed::{Database, EnvOpenOptions};
-use heed::byteorder::LE;
-use heed::Env;
+
 use anyhow::{anyhow, Result};
-use heed::types::{U64, ByteSlice};
-use rkyv::ser::serializers::AllocSerializer;
-use rkyv::{AlignedVec, Archive, CheckBytes, Deserialize, Serialize};
+use heed::byteorder::LE;
+use heed::types::{ByteSlice, U64};
+use heed::{Database, Env, EnvOpenOptions};
 use rkyv::de::deserializers::SharedDeserializeMap;
+use rkyv::ser::serializers::AllocSerializer;
 use rkyv::validation::validators::DefaultValidator;
+use rkyv::{AlignedVec, Archive, CheckBytes, Deserialize, Serialize};
 
 use crate::types::Key;
 
@@ -23,7 +23,7 @@ use crate::types::Key;
 pub struct Metastore {
     path: PathBuf,
     env: Env,
-    db: Database<U64<LE>, ByteSlice>
+    db: Database<U64<LE>, ByteSlice>,
 }
 
 impl Metastore {
@@ -35,9 +35,7 @@ impl Metastore {
             std::fs::create_dir_all(&inner)?;
         }
 
-        let env = EnvOpenOptions::new()
-            .max_dbs(5)
-            .open(&inner)?;
+        let env = EnvOpenOptions::new().max_dbs(5).open(&inner)?;
 
         let mut txn = env.write_txn()?;
         let metastore = env.create_database(&mut txn, Some("metastore"))?;
@@ -74,7 +72,9 @@ impl Metastore {
     where
         K: Key,
         V: Archive,
-        V::Archived: 'static + CheckBytes<DefaultValidator<'static>> + Deserialize<V, SharedDeserializeMap>,
+        V::Archived: 'static
+            + CheckBytes<DefaultValidator<'static>>
+            + Deserialize<V, SharedDeserializeMap>,
     {
         let key = k.to_hash();
         let txn = self.env.read_txn()?;

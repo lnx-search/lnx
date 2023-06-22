@@ -4,11 +4,7 @@ use std::{io, mem};
 
 use rkyv::ser::Serializer;
 
-use crate::serializer::{
-    DocSerializer,
-    DocSerializerError, 
-    DocWriteSerializer,
-};
+use crate::serializer::{DocSerializer, DocSerializerError, DocWriteSerializer};
 
 /// The default amount of stack scratch space to allocate.
 pub const DEFAULT_SCRATCH_SPACE: usize = 1 << 10;

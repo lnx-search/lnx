@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use lnx_tools::cityhash;
 
+use lnx_tools::cityhash;
 
 pub trait Key {
     fn to_hash(&self) -> u64;

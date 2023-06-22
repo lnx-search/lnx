@@ -1,19 +1,25 @@
 extern crate core;
 
-mod helpers;
-pub mod json_value;
-pub mod typed_value;
-mod wrappers;
-mod serializer;
 mod decoder;
 mod encoder;
+mod helpers;
+pub mod json_value;
+mod serializer;
+pub mod typed_value;
+mod wrappers;
 
-pub use self::serializer::{DocSerializer, DocSerializerError};
-pub use self::decoder::{Decoder, BufferWalker, Archiver, UnsafeArchiver, CheckedArchiver};
-pub use self::encoder::{Encoder, DEFAULT_SCRATCH_SPACE, ChecksumAndLenWriter};
 pub use helpers::UserDiplayType;
 use rkyv::{Archive, Serialize};
 
+pub use self::decoder::{
+    Archiver,
+    BufferWalker,
+    CheckedArchiver,
+    Decoder,
+    UnsafeArchiver,
+};
+pub use self::encoder::{ChecksumAndLenWriter, Encoder, DEFAULT_SCRATCH_SPACE};
+pub use self::serializer::{DocSerializer, DocSerializerError};
 use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 
 #[repr(C)]
@@ -97,5 +103,3 @@ pub struct Document<'a> {
     /// All f64 values within the document.
     f64s: RawWrapper<f64>,
 }
-
-
