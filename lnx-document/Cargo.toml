@@ -10,3 +10,4 @@ rkyv = { workspace = true }
 serde = { workspace = true }
 time = { workspace = true }
 anyhow = { workspace = true }
+crc32fast = { workspace = true }

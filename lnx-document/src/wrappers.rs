@@ -5,6 +5,7 @@ use rkyv::{Archive, Serialize};
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 /// A wrapper new-type that applies the `Raw` optimization to
 /// the inner `Vec<T>`.
 pub struct RawWrapper<T: Copy + Archive + 'static>(
@@ -35,6 +36,7 @@ impl<T: Copy + Archive + 'static> DerefMut for RawWrapper<T> {
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 /// A wrapper new-type that applies the `CopyOptimize` optimization to
 /// the inner `Vec<T>`.
 pub struct CopyWrapper<T: Copy + Archive + 'static>(
@@ -63,8 +65,9 @@ impl<T: Copy + Archive + 'static> DerefMut for CopyWrapper<T> {
     }
 }
 
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 /// An UTF-8 string wrapper.
 ///
 /// This type implements some (de)serialization optimisations compared
@@ -101,8 +104,9 @@ impl<'a> Deref for Text<'a> {
     }
 }
 
-#[repr(C)]
+#[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 /// An arbitrary bytes sequence wrapper.
 ///
 /// This type implements some (de)serialization optimisations compared

@@ -1,0 +1,15 @@
+[package]
+name = "lnx-metastore"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lnx-executor = { path = "../lnx-executor" }
+lnx-tools = { path = "../lnx-tools" }
+
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+heed = { workspace = true }
+rkyv = { workspace = true }

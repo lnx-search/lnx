@@ -4,7 +4,13 @@ mod helpers;
 pub mod json_value;
 pub mod typed_value;
 mod wrappers;
+mod serializer;
+mod decoder;
+mod encoder;
 
+pub use self::serializer::{DocSerializer, DocSerializerError};
+pub use self::decoder::{Decoder, BufferWalker, Archiver, UnsafeArchiver, CheckedArchiver};
+pub use self::encoder::{Encoder, DEFAULT_SCRATCH_SPACE, ChecksumAndLenWriter};
 pub use helpers::UserDiplayType;
 use rkyv::{Archive, Serialize};
 
@@ -12,6 +18,7 @@ use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 /// The document information describing the field, number of values for the field
 /// and the target type.
 pub struct OffsetInfo {
@@ -28,6 +35,7 @@ pub struct OffsetInfo {
 
 #[repr(u16)]
 #[derive(Copy, Clone, Debug, Archive, Serialize)]
+#[archive(check_bytes)]
 pub enum FieldType {
     /// the field is of type `str`.
     String = 0,
@@ -55,18 +63,20 @@ pub enum FieldType {
 
 #[repr(C)]
 #[derive(Clone, Debug, Default, Archive, Serialize)]
+#[archive(check_bytes)]
 /// A document block representing a collection of documents.
-pub struct DocumentBlock<'a> {
+pub struct DocumentHeaderBlock {
     #[with(rkyv::with::AsBox)]
     /// The field mapping of field name to field ID (index in array).
     field_mapping: Vec<String>,
     #[with(rkyv::with::AsBox)]
-    /// The document data itself.
-    docs: Vec<Document<'a>>,
+    #[with(rkyv::with::Raw)]
+    doc_offsets: Vec<u32>,
 }
 
 #[repr(C)]
 #[derive(Clone, Debug, Default, Archive, Serialize)]
+#[archive(check_bytes)]
 pub struct Document<'a> {
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::CopyOptimize)]
@@ -87,3 +97,5 @@ pub struct Document<'a> {
     /// All f64 values within the document.
     f64s: RawWrapper<f64>,
 }
+
+

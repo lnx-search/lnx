@@ -1,0 +1,21 @@
+[package]
+name = "lnx-executor"
+version = "0.1.0"
+edition = "2021"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arc-swap = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+rayon = { workspace = true }
+num_cpus = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
