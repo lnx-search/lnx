@@ -719,10 +719,15 @@ name = "lnx-document"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "crc32fast",
+ "lz4_flex",
  "rkyv",
  "serde",
+ "serde_json",
  "time",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

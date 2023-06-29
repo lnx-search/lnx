@@ -5,13 +5,14 @@ use rkyv::{Archive, Serialize};
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[cfg_attr(test, derive(PartialEq))]
 #[archive(check_bytes)]
 /// A wrapper new-type that applies the `Raw` optimization to
 /// the inner `Vec<T>`.
 pub struct RawWrapper<T: Copy + Archive + 'static>(
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::Raw)]
-    Vec<T>,
+    pub Vec<T>,
 );
 
 impl<T: Copy + Archive + 'static> Default for RawWrapper<T> {
@@ -34,15 +35,22 @@ impl<T: Copy + Archive + 'static> DerefMut for RawWrapper<T> {
     }
 }
 
+impl<T: Copy + Archive + 'static> From<Vec<T>> for RawWrapper<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self(value)
+    }
+}
+
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[cfg_attr(test, derive(PartialEq))]
 #[archive(check_bytes)]
 /// A wrapper new-type that applies the `CopyOptimize` optimization to
 /// the inner `Vec<T>`.
 pub struct CopyWrapper<T: Copy + Archive + 'static>(
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::CopyOptimize)]
-    Vec<T>,
+    pub Vec<T>,
 );
 
 impl<T: Copy + Archive + 'static> Default for CopyWrapper<T> {
@@ -65,8 +73,14 @@ impl<T: Copy + Archive + 'static> DerefMut for CopyWrapper<T> {
     }
 }
 
+impl<T: Copy + Archive + 'static> From<Vec<T>> for CopyWrapper<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self(value)
+    }
+}
+
 #[repr(transparent)]
-#[derive(Clone, Debug, Archive, Serialize)]
+#[derive(Clone, Debug, Archive, Serialize, Ord, PartialOrd, Eq, PartialEq)]
 #[archive(check_bytes)]
 /// An UTF-8 string wrapper.
 ///
@@ -77,6 +91,29 @@ pub struct Text<'a>(
     // TODO: Re-enable #[with(rkyv::with::Raw)]
     Cow<'a, [u8]>,
 );
+
+impl<'a> Into<Cow<'a, str>> for Text<'a> {
+    fn into(self) -> Cow<'a, str> {
+        unsafe {
+            match self.0 {
+                Cow::Borrowed(buf) => Cow::Borrowed(std::str::from_utf8_unchecked(buf)),
+                Cow::Owned(buf) => Cow::Owned(String::from_utf8_unchecked(buf)),
+            }
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Text<'a> {
+    fn from(value: Cow<'a, str>) -> Self {
+        match value {
+            Cow::Borrowed(b) => Self(Cow::Borrowed(b.as_bytes())),
+            Cow::Owned(b) => {
+                let v: String = b;  // If you see an error here from your linter, this is just a linter issue.
+                Self(Cow::Owned(v.into_bytes()))
+            },
+        }
+    }
+}
 
 impl<'a> From<&'a str> for Text<'a> {
     fn from(value: &'a str) -> Self {
@@ -106,18 +143,13 @@ impl<'a> Deref for Text<'a> {
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
+#[cfg_attr(test, derive(PartialEq))]
 #[archive(check_bytes)]
 /// An arbitrary bytes sequence wrapper.
 ///
 /// This type implements some (de)serialization optimisations compared
 /// to a regular vec.
-pub struct Bytes(#[with(rkyv::with::Raw)] Vec<u8>);
-
-impl Bytes {
-    pub fn copy_from_slice(slice: &[u8]) -> Self {
-        Self(slice.to_owned())
-    }
-}
+pub struct Bytes(#[with(rkyv::with::Raw)] pub Vec<u8>);
 
 impl From<Vec<u8>> for Bytes {
     fn from(value: Vec<u8>) -> Self {

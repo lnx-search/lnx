@@ -5,7 +5,8 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use time::formatting::Formattable;
 use time::OffsetDateTime;
 
-use crate::UserDiplayType;
+use crate::{FieldType, UserDiplayType};
+use crate::wrappers::{Bytes, Text};
 
 pub type TypedMap<'a> = BTreeMap<Cow<'a, str>, Value<'a>>;
 pub type TypedMapIter<'a> =
@@ -24,6 +25,25 @@ pub enum Value<'a> {
     Bytes(Vec<u8>),
     Array(Vec<Value<'a>>),
     Object(TypedMap<'a>),
+}
+
+impl<'a>  Value<'a> {
+    #[inline]
+    pub fn as_field_type(&self) -> FieldType {
+        match self {
+            Value::Null => FieldType::Null,
+            Value::Str(_) => FieldType::String,
+            Value::U64(_) => FieldType::U64,
+            Value::I64(_) => FieldType::I64,
+            Value::F64(_) => FieldType::F64,
+            Value::Bool(_) => FieldType::Bool,
+            Value::DateTime(_) => FieldType::DateTime,
+            Value::IpAddr(_) => FieldType::IpAddr,
+            Value::Bytes(_) => FieldType::Bytes,
+            Value::Array(_) => FieldType::Array,
+            Value::Object(_) => FieldType::Object,
+        }
+    }
 }
 
 impl<'a> UserDiplayType for Value<'a> {
@@ -71,6 +91,24 @@ impl<'a> From<&'a str> for Value<'a> {
 impl<'a> From<String> for Value<'a> {
     fn from(value: String) -> Self {
         Self::Str(Cow::Owned(value))
+    }
+}
+
+impl<'a> From<Text<'a>> for Value<'a> {
+    fn from(value: Text<'a>) -> Self {
+        Self::Str(value.into())
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Value<'a> {
+    fn from(value: Cow<'a, str>) -> Self {
+        Self::Str(value)
+    }
+}
+
+impl<'a> From<Bytes> for Value<'a> {
+    fn from(value: Bytes) -> Self {
+        Self::Bytes(value.0)
     }
 }
 
@@ -161,5 +199,10 @@ impl DateTime {
             .map_err(|_| anyhow::anyhow!("Cannot format datetime as is beyond what the format supports rendering"))?
             .format(format)
             .map_err(|e| anyhow::anyhow!("Cannot format datetime with the given format: {e}"))
+    }
+
+    #[inline]
+    pub fn as_micros(&self) -> i64 {
+        self.micros
     }
 }

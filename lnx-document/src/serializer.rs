@@ -2,10 +2,66 @@ use std::alloc::Layout;
 use std::error::Error;
 use std::ptr::NonNull;
 use std::{fmt, io};
+use std::hash::Hasher;
 
-use rkyv::ser::serializers::{BufferScratch, SharedSerializeMap};
+use rkyv::ser::serializers::{AllocScratch, BufferScratch, FallbackScratch, HeapScratch, SharedSerializeMap};
 use rkyv::ser::{ScratchSpace, Serializer, SharedSerializeRegistry};
-use rkyv::{AlignedBytes, Archive, ArchiveUnsized, Fallible, Infallible};
+use rkyv::{AlignedBytes, AlignedVec, Archive, ArchiveUnsized, Fallible, Infallible};
+
+const STACK_SCRATCH: usize = 1024;
+
+
+#[derive(Default)]
+pub struct ChecksumDocWriter {
+    inner: AlignedVec,
+    hasher: crc32fast::Hasher,
+}
+
+impl From<AlignedVec> for ChecksumDocWriter {
+    fn from(inner: AlignedVec) -> Self {
+        Self {
+            inner,
+            hasher: crc32fast::Hasher::new(),
+        }
+    }
+}
+
+impl ChecksumDocWriter {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            inner: AlignedVec::with_capacity(capacity),
+            hasher: crc32fast::Hasher::new(),
+        }
+    }
+
+    #[inline]
+    pub fn finish(mut self) -> AlignedVec {
+        let checksum = self.hasher.finalize();
+        self.inner.extend_from_slice(&checksum.to_le_bytes());
+        self.inner
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl io::Write for ChecksumDocWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.hasher.write(buf);
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
 
 /// The default serializer error.
 #[derive(Debug)]
@@ -13,7 +69,7 @@ pub enum DocSerializerError<const N: usize, S> {
     /// An error occurred while serializing
     Serializer(S),
     /// An error occurred while using scratch space
-    ScratchSpace(<StackScratch<N> as Fallible>::Error),
+    ScratchSpace(<FallbackScratch<StackScratch<STACK_SCRATCH>, FallbackScratch<HeapScratch<N>, AllocScratch>> as Fallible>::Error),
     /// An error occurred while serializing shared memory
     Shared(<SharedSerializeMap as Fallible>::Error),
 }
@@ -48,7 +104,7 @@ where
 #[derive(Debug)]
 pub struct DocSerializer<const N: usize, S = Infallible> {
     serializer: S,
-    scratch: StackScratch<N>,
+    scratch: FallbackScratch<StackScratch<STACK_SCRATCH>, FallbackScratch<HeapScratch<N>, AllocScratch>>,
     shared: SharedSerializeMap,
 }
 
@@ -58,7 +114,13 @@ impl<const N: usize, S> DocSerializer<N, S> {
     pub fn new(serializer: S) -> Self {
         Self {
             serializer,
-            scratch: StackScratch::new(),
+            scratch: FallbackScratch::new(
+                StackScratch::new(),
+                FallbackScratch::new(
+                    HeapScratch::new(),
+                    AllocScratch::new(),
+                )
+            ),
             shared: SharedSerializeMap::new(),
         }
     }
@@ -83,11 +145,7 @@ impl<const N: usize, S> DocSerializer<N, S> {
 impl<S: Default, const N: usize> Default for DocSerializer<N, S> {
     #[inline]
     fn default() -> Self {
-        Self {
-            serializer: S::default(),
-            scratch: StackScratch::new(),
-            shared: SharedSerializeMap::new(),
-        }
+        Self::new(S::default())
     }
 }
 
@@ -239,7 +297,7 @@ impl<const N: usize> ScratchSpace for StackScratch<N> {
 }
 
 #[derive(Debug)]
-pub(crate) struct DocWriteSerializer<W: io::Write> {
+pub struct DocWriteSerializer<W: io::Write> {
     inner: W,
     pos: usize,
 }
@@ -247,25 +305,25 @@ pub(crate) struct DocWriteSerializer<W: io::Write> {
 impl<W: io::Write> DocWriteSerializer<W> {
     /// Creates a new serializer from a writer.
     #[inline]
-    pub(crate) fn new(inner: W) -> Self {
+    pub fn new(inner: W) -> Self {
         Self { inner, pos: 0 }
     }
 
     #[inline]
     /// Returns a mutable reference to the inner writer.
-    pub(crate) fn writer_mut(&mut self) -> &mut W {
+    pub fn writer_mut(&mut self) -> &mut W {
         &mut self.inner
     }
 
     #[inline]
     /// Returns a reference to the inner writer.
-    pub(crate) fn writer(&self) -> &W {
+    pub fn writer(&self) -> &W {
         &self.inner
     }
 
     #[inline]
     /// Returns the inner writer
-    pub(crate) fn into_inner(self) -> W {
+    pub fn into_inner(self) -> W {
         self.inner
     }
 }
