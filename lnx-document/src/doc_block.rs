@@ -17,7 +17,7 @@ use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 const CAPACITY: usize = 512 << 10;
 
 #[repr(C)]
-#[derive(Clone, Debug, Default, Archive, Serialize)]
+#[derive(Clone, Debug, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct DocBlock<'a> {
     #[with(rkyv::with::AsBox)]
@@ -44,8 +44,24 @@ pub struct DocBlock<'a> {
     /// All f64 values within the block.
     f64s: RawWrapper<f64>,
     /// All ip fields within the block.
-    ips: RawWrapper<Ipv6Addr>,
+    ips: CopyWrapper<Ipv6Addr>,
 
+}
+
+impl<'a> Default for DocBlock<'a> {
+    fn default() -> Self {
+        Self {
+            field_mapping: Vec::with_capacity(4),
+            documents: Vec::with_capacity(4),
+            strings: Vec::with_capacity(2),
+            bytes: Vec::new(),
+            bools: Default::default(),
+            u64s: Default::default(),
+            i64s: Default::default(),
+            f64s: Default::default(),
+            ips: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
