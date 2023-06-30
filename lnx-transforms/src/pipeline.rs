@@ -188,7 +188,7 @@ pub trait Transform: Send + 'static {
 
 
 #[derive(Debug, thiserror::Error)]
-#[error("Transform Error: {message}")]
+#[error("Transform Error originating from field path: {context_keys:?}: {message}")]
 pub struct TransformError {
     message: String,
     context_keys: Vec<String>,
