@@ -72,3 +72,9 @@ impl UserDisplayType for Ipv6Addr {
         Cow::Borrowed("ip")
     }
 }
+
+impl UserDisplayType for tantivy::schema::Facet {
+    fn type_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("facet")
+    }
+}

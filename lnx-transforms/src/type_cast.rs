@@ -4,6 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use anyhow::{anyhow, bail, Result};
 use base64::Engine;
+use tantivy::schema::Facet;
 use lnx_document::{DateTime, UserDisplayType, Value};
 use time::format_description::{well_known, OwnedFormatItem};
 use time::OffsetDateTime;
@@ -26,6 +27,8 @@ pub enum TypeCast {
     DateTime(DateTimeParser),
     /// Cast the input value to a `ip`.
     IpAddr,
+    /// Cast the input value to a `facet`.
+    Facet,
 }
 
 impl UserDisplayType for TypeCast {
@@ -41,100 +44,60 @@ impl UserDisplayType for TypeCast {
                 Cow::Owned(format!("datetime<{}>", parser.supported_formats()))
             },
             TypeCast::IpAddr => Cow::Borrowed("ip"),
+            TypeCast::Facet => Cow::Borrowed("facet"),
         }
     }
 }
 
 impl TypeCast {
     /// Attempts to cast a JSON value to the cast type.
-    pub fn try_cast_json<'a>(
+    pub fn try_cast_value<'a>(
         &self,
-        value: json_value::Value<'a>,
-        keys_history: &[&str], // Used to make errors more ergonomic.
-    ) -> Result<value::Value<'a>> {
+        value: Value<'a>,
+    ) -> Result<Value<'a>> {
         match value {
-            json_value::Value::Null => Ok(value::Value::Null),
-            json_value::Value::Str(s) => self.try_cast_cow(s, keys_history),
-            json_value::Value::U64(v) => self.try_cast_u64(v, keys_history),
-            json_value::Value::I64(v) => self.try_cast_i64(v, keys_history),
-            json_value::Value::F64(v) => self.try_cast_f64(v, keys_history),
-            json_value::Value::Bool(v) => self.try_cast_bool(v, keys_history),
-            json_value::Value::Array(elements) => {
+            Value::Null => Ok(Value::Null),
+            Value::Str(s) => self.try_cast_cow(s),
+            Value::U64(v) => self.try_cast_u64(v),
+            Value::I64(v) => self.try_cast_i64(v),
+            Value::F64(v) => self.try_cast_f64(v),
+            Value::Bool(v) => self.try_cast_bool(v),
+            Value::Facet(v) => self.try_cast_facet(v),
+            Value::DateTime(v) => self.try_cast_datetime(v),
+            Value::IpAddr(v) => self.try_cast_ip(v),
+            Value::Bytes(v) => self.try_cast_bytes(v),
+            Value::Array(elements) => {
                 let mut casted = Vec::with_capacity(elements.len());
                 for value in elements {
-                    if matches!(
-                        value,
-                        json_value::Value::Array(_) | json_value::Value::Object(_)
-                    ) {
-                        return Err(self.err_with_detail(value, "due to field containing an array of arrays or array of objects", keys_history));
+                    if matches!(value, Value::Object(_)) {
+                        return Err(self.err_with_detail(value, "due to field containing an array of arrays or array of objects"));
                     }
 
-                    let value = self.try_cast_json(value, keys_history)?;
+                    let value = self.try_cast_value(value)?;
                     casted.push(value);
                 }
-                Ok(value::Value::Array(casted))
+                Ok(Value::Array(casted))
             },
-            other => self.bail(other, keys_history),
+            other => self.bail(other),
         }
     }
 
-    /// Attempts to cast a typed value to the cast type.
-    pub fn try_cast_typed<'a>(
-        &self,
-        value: value::Value<'a>,
-        keys_history: &[&str], // Used to make errors more ergonomic.
-    ) -> Result<value::Value<'a>> {
-        match value {
-            value::Value::Null => Ok(value::Value::Null),
-            value::Value::Str(s) => self.try_cast_cow(s, keys_history),
-            value::Value::U64(v) => self.try_cast_u64(v, keys_history),
-            value::Value::I64(v) => self.try_cast_i64(v, keys_history),
-            value::Value::F64(v) => self.try_cast_f64(v, keys_history),
-            value::Value::Bool(v) => self.try_cast_bool(v, keys_history),
-            value::Value::DateTime(v) => self.try_cast_datetime(v, keys_history),
-            value::Value::IpAddr(v) => self.try_cast_ip(v, keys_history),
-            value::Value::Array(elements) => {
-                let mut casted = Vec::with_capacity(elements.len());
-                for value in elements {
-                    if matches!(
-                        value,
-                        typed_value::Value::Array(_) | typed_value::Value::Object(_)
-                    ) {
-                        return Err(self.err_with_detail(
-                            value,
-                            "due to field containing an array of arrays or array of objects",
-                            keys_history,
-                        ));
-                    }
-
-                    let value = self.try_cast_typed(value, keys_history)?;
-                    casted.push(value);
-                }
-                Ok(value::Value::Array(casted))
-            },
-            other => self.bail(other, keys_history),
-        }
-    }
-
-    fn bail<T>(&self, value: impl UserDisplayType, keys_history: &[&str]) -> Result<T> {
+    fn bail<T>(&self, value: impl UserDisplayType) -> Result<T> {
         bail!(
-            "Cannot cast `{}` to `{}` for field ({:?})",
+            "Cannot cast `{}` to `{}`",
             value.type_name(),
             self.type_name(),
-            keys_history.join(".")
         )
     }
 
     fn err_invalid_value(
         &self,
         value: impl UserDisplayType + Debug,
-        keys_history: &[&str],
     ) -> anyhow::Error {
         anyhow!(
-            "Cannot cast `{}` to `{}` for field ({:?}) due to an invalid value being provided: {:?}",
+            "Cannot cast `{}` to `{}` due to an invalid value being provided: {:?}",
             value.type_name(),
             self.type_name(),
-            keys_history.join("."),
             value,
         )
     }
@@ -142,14 +105,12 @@ impl TypeCast {
     fn err_with_detail(
         &self,
         value: impl UserDisplayType,
-        reason: &str,
-        keys_history: &[&str],
+        reason: &str
     ) -> anyhow::Error {
         anyhow!(
-            "Cannot cast `{}` to `{}` for field ({:?}) {reason}",
+            "Cannot cast `{}` to `{}` {reason}",
             value.type_name(),
             self.type_name(),
-            keys_history.join("."),
         )
     }
 
@@ -157,55 +118,60 @@ impl TypeCast {
     pub fn try_cast_str<'a>(
         &self,
         string: &'a str,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
-        self.try_cast_cow(Cow::Borrowed(string), keys_history)
+    ) -> Result<Value<'a>> {
+        self.try_cast_cow(Cow::Borrowed(string))
     }
 
     /// Attempts to cast a string to the cast type.
     pub fn try_cast_cow<'a>(
         &self,
         string: Cow<'a, str>,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::String => Ok(value::Value::Str(string)),
+            Self::String => Ok(Value::Str(string)),
             Self::U64 => string
                 .parse::<u64>()
-                .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(value::Value::U64),
+                .map_err(|_| self.err_invalid_value(string))
+                .map(Value::U64),
             Self::I64 => string
                 .parse::<i64>()
-                .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(value::Value::I64),
+                .map_err(|_| self.err_invalid_value(string))
+                .map(Value::I64),
             Self::F64 => string
                 .parse::<f64>()
-                .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(value::Value::F64),
+                .map_err(|_| self.err_invalid_value(string))
+                .map(Value::F64),
             Self::Bool => string
                 .parse::<bool>()
-                .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(value::Value::Bool),
+                .map_err(|_| self.err_invalid_value(string))
+                .map(Value::Bool),
             Self::DateTime(parser) => parser
                 .try_parse_str(string.as_ref())
-                .map(value::Value::DateTime),
+                .map(Value::DateTime),
             Self::IpAddr => {
                 if let Ok(ipv4) = string.parse::<Ipv4Addr>() {
-                    return Ok(value::Value::IpAddr(ipv4.to_ipv6_mapped()));
+                    return Ok(Value::IpAddr(ipv4.to_ipv6_mapped()));
                 }
 
                 if let Ok(ipv6) = string.parse::<Ipv6Addr>() {
-                    return Ok(value::Value::IpAddr(ipv6));
+                    return Ok(Value::IpAddr(ipv6));
                 }
 
-                Err(self.err_invalid_value(string, keys_history))
+                Err(self.err_invalid_value(string))
             },
             Self::Bytes => {
                 let engine = base64::engine::general_purpose::STANDARD;
                 if let Ok(bytes) = engine.decode(string.as_ref()) {
-                    Ok(value::Value::Bytes(bytes))
+                    Ok(Value::Bytes(bytes))
                 } else {
-                    Err(self.err_invalid_value(string, keys_history))
+                    Err(self.err_invalid_value(string))
+                }
+            },
+            TypeCast::Facet => {
+                if let Ok(facet) = Facet::from_text(&string) {
+                    Ok(Value::Facet(facet))
+                } else {
+                    Err(self.err_with_detail(string, "because the value is not in the form of a path"))
                 }
             },
         }
@@ -215,37 +181,34 @@ impl TypeCast {
     pub fn try_cast_u64<'a>(
         &self,
         v: u64,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::U64 => Ok(value::Value::U64(v)),
+            Self::U64 => Ok(Value::U64(v)),
             Self::I64 => {
                 let v: i64 = v.try_into().map_err(|_| {
                     self.err_with_detail(
                         v,
                         "because the input value cannot be safely represented by the target type",
-                        keys_history,
                     )
                 })?;
-                Ok(value::Value::I64(v))
+                Ok(Value::I64(v))
             },
             Self::String => {
                 let mut buffer = itoa::Buffer::new();
                 let s = buffer.format(v);
-                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(Value::Str(Cow::Owned(s.to_owned())))
             },
             Self::DateTime(parser) => {
                 let v: i64 = v.try_into().map_err(|_| {
                     self.err_with_detail(
                         v,
                         "because the input value cannot be safely represented by the target type",
-                        keys_history,
                     )
                 })?;
                 let dt = parser.try_convert_timestamp(v)?;
-                Ok(value::Value::DateTime(dt))
+                Ok(Value::DateTime(dt))
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
         }
     }
 
@@ -253,30 +216,28 @@ impl TypeCast {
     pub fn try_cast_i64<'a>(
         &self,
         v: i64,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::I64 => Ok(value::Value::I64(v)),
+            Self::I64 => Ok(Value::I64(v)),
             Self::U64 => {
                 let v: u64 = v.try_into().map_err(|_| {
                     self.err_with_detail(
                         v,
                         "because the input value cannot be safely represented by the target type",
-                        keys_history,
                     )
                 })?;
-                Ok(value::Value::U64(v))
+                Ok(Value::U64(v))
             },
             Self::String => {
                 let mut buffer = itoa::Buffer::new();
                 let s = buffer.format(v);
-                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(Value::Str(Cow::Owned(s.to_owned())))
             },
             Self::DateTime(parser) => {
                 let dt = parser.try_convert_timestamp(v)?;
-                Ok(value::Value::DateTime(dt))
+                Ok(Value::DateTime(dt))
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
         }
     }
 
@@ -284,16 +245,15 @@ impl TypeCast {
     pub fn try_cast_f64<'a>(
         &self,
         v: f64,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::F64 => Ok(value::Value::F64(v)),
+            Self::F64 => Ok(Value::F64(v)),
             Self::String => {
                 let mut buffer = ryu::Buffer::new();
                 let s = buffer.format(v);
-                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(Value::Str(Cow::Owned(s.to_owned())))
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
         }
     }
 
@@ -301,16 +261,15 @@ impl TypeCast {
     pub fn try_cast_bool<'a>(
         &self,
         v: bool,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::Bool => Ok(value::Value::Bool(v)),
+            Self::Bool => Ok(Value::Bool(v)),
             Self::String => {
                 let v = if v { "true" } else { "false" };
 
-                Ok(value::Value::Str(Cow::Borrowed(v)))
+                Ok(Value::Str(Cow::Borrowed(v)))
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
         }
     }
 
@@ -318,15 +277,14 @@ impl TypeCast {
     pub fn try_cast_datetime<'a>(
         &self,
         v: DateTime,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::DateTime(_) => Ok(value::Value::DateTime(v)),
+            Self::DateTime(_) => Ok(Value::DateTime(v)),
             Self::String => match v.format(&well_known::Rfc3339) {
-                Err(e) => bail!("{e} for field ({:?})", keys_history.join(".")),
-                Ok(rendered) => Ok(value::Value::Str(Cow::Owned(rendered))),
+                Err(e) => Err(e),
+                Ok(rendered) => Ok(Value::Str(Cow::Owned(rendered))),
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
         }
     }
 
@@ -334,19 +292,41 @@ impl TypeCast {
     pub fn try_cast_ip<'a>(
         &self,
         v: Ipv6Addr,
-        keys_history: &[&str],
-    ) -> Result<value::Value<'a>> {
+    ) -> Result<Value<'a>> {
         match self {
-            Self::IpAddr => Ok(value::Value::IpAddr(v)),
+            Self::IpAddr => Ok(Value::IpAddr(v)),
             Self::String => {
                 let s = if let Some(ipv4) = v.to_ipv4_mapped() {
                     ipv4.to_string()
                 } else {
                     v.to_string()
                 };
-                Ok(value::Value::Str(Cow::Owned(s)))
+                Ok(Value::Str(Cow::Owned(s)))
             },
-            _ => self.bail(v, keys_history),
+            _ => self.bail(v),
+        }
+    }
+
+    /// Attempts to cast a facet to the cast type.
+    pub fn try_cast_facet<'a>(
+        &self,
+        v: Facet,
+    ) -> Result<Value<'a>> {
+        match self {
+            Self::Facet => Ok(Value::Facet(v)),
+            Self::String => Ok(Value::Str(Cow::Owned(v.to_string()))),
+            _ => self.bail(v),
+        }
+    }
+
+    /// Attempts to cast some bytes to the cast type.
+    pub fn try_cast_bytes<'a>(
+        &self,
+        v: Vec<u8>,
+    ) -> Result<Value<'a>> {
+        match self {
+            Self::Bytes => Ok(Value::Bytes(v)),
+            _ => self.bail(v),
         }
     }
 }
@@ -458,19 +438,19 @@ impl DateTimeParser {
     }
 
     /// Attempts to parse a JSON value into a datetime using the format info.
-    pub fn try_parse_json(&self, value: json_value::Value) -> Result<DateTime> {
+    pub fn try_parse_json(&self, value: Value) -> Result<DateTime> {
         match value {
-            json_value::Value::Str(s) => self.try_parse_str(s.as_ref()),
-            json_value::Value::I64(ts) => self.try_convert_timestamp(ts),
+            Value::Str(s) => self.try_parse_str(s.as_ref()),
+            Value::I64(ts) => self.try_convert_timestamp(ts),
             other => self.bail(other),
         }
     }
 
     /// Attempts to parse a typed value into a datetime using the format info.
-    pub fn try_parse_typed(&self, value: value::Value) -> Result<DateTime> {
+    pub fn try_parse_typed(&self, value: Value) -> Result<DateTime> {
         match value {
-            value::Value::Str(s) => self.try_parse_str(s.as_ref()),
-            value::Value::I64(ts) => self.try_convert_timestamp(ts),
+            Value::Str(s) => self.try_parse_str(s.as_ref()),
+            Value::I64(ts) => self.try_convert_timestamp(ts),
             other => self.bail(other),
         }
     }
@@ -518,322 +498,322 @@ mod tests {
 
     #[test]
     fn test_cast_str() {
-        let value = TypeCast::String.try_cast_str("hello, world!", &[]);
-        assert_eq!(value.unwrap(), value::Value::from("hello, world!"));
+        let value = TypeCast::String.try_cast_str("hello, world!");
+        assert_eq!(value.unwrap(), Value::from("hello, world!"));
 
-        let value = TypeCast::U64.try_cast_str("hello, world!", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` for field (\"\") due to an invalid value being provided: \"hello, world!\"");
+        let value = TypeCast::U64.try_cast_str("hello, world!");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` due to an invalid value being provided: \"hello, world!\"");
 
-        let value = TypeCast::U64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(124321u64));
+        let value = TypeCast::U64.try_cast_str("124321");
+        assert_eq!(value.unwrap(), Value::from(124321u64));
 
-        let value = TypeCast::U64.try_cast_str("-124321", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` for field (\"\") due to an invalid value being provided: \"-124321\"");
+        let value = TypeCast::U64.try_cast_str("-124321");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` due to an invalid value being provided: \"-124321\"");
 
-        let value = TypeCast::I64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(124321i64));
-        let value = TypeCast::I64.try_cast_str("-124321", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(-124321i64));
+        let value = TypeCast::I64.try_cast_str("124321");
+        assert_eq!(value.unwrap(), Value::from(124321i64));
+        let value = TypeCast::I64.try_cast_str("-124321");
+        assert_eq!(value.unwrap(), Value::from(-124321i64));
 
-        let value = TypeCast::F64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(124321.0));
-        let value = TypeCast::F64.try_cast_str("-124321", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(-124321.0));
-        let value = TypeCast::F64.try_cast_str("nan", &[]);
-        assert!(matches!(value.unwrap(), value::Value::F64(v) if v.is_nan()));
+        let value = TypeCast::F64.try_cast_str("124321");
+        assert_eq!(value.unwrap(), Value::from(124321.0));
+        let value = TypeCast::F64.try_cast_str("-124321");
+        assert_eq!(value.unwrap(), Value::from(-124321.0));
+        let value = TypeCast::F64.try_cast_str("nan");
+        assert!(matches!(value.unwrap(), Value::F64(v) if v.is_nan()));
 
-        let value = TypeCast::Bool.try_cast_str("true", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(true));
-        let value = TypeCast::Bool.try_cast_str("false", &[]);
-        assert_eq!(value.unwrap(), value::Value::from(false));
-        let value = TypeCast::Bool.try_cast_str("1", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bool` for field (\"\") due to an invalid value being provided: \"1\"");
-        let value = TypeCast::Bool.try_cast_str("-", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bool` for field (\"\") due to an invalid value being provided: \"-\"");
+        let value = TypeCast::Bool.try_cast_str("true");
+        assert_eq!(value.unwrap(), Value::from(true));
+        let value = TypeCast::Bool.try_cast_str("false");
+        assert_eq!(value.unwrap(), Value::from(false));
+        let value = TypeCast::Bool.try_cast_str("1");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bool` due to an invalid value being provided: \"1\"");
+        let value = TypeCast::Bool.try_cast_str("-");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bool` due to an invalid value being provided: \"-\"");
 
-        let value = TypeCast::Bytes.try_cast_str("hello, world!", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bytes` for field (\"\") due to an invalid value being provided: \"hello, world!\"");
-        let value = TypeCast::Bytes.try_cast_str("aGVsbG8gd29ybGQ=", &[]);
+        let value = TypeCast::Bytes.try_cast_str("hello, world!");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bytes` due to an invalid value being provided: \"hello, world!\"");
+        let value = TypeCast::Bytes.try_cast_str("aGVsbG8gd29ybGQ=");
         assert_eq!(
             value.unwrap(),
-            value::Value::Bytes(vec![
+            Value::Bytes(vec![
                 104u8, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100
             ])
         );
 
-        let value = TypeCast::IpAddr.try_cast_str("192.168.0.1", &[]);
+        let value = TypeCast::IpAddr.try_cast_str("192.168.0.1");
         assert_eq!(
             value.unwrap(),
-            value::Value::IpAddr(Ipv4Addr::new(192, 168, 0, 1).to_ipv6_mapped())
+            Value::IpAddr(Ipv4Addr::new(192, 168, 0, 1).to_ipv6_mapped())
         );
         let value = TypeCast::IpAddr
-            .try_cast_str("2345:0425:2CA1:0000:0000:0567:5673:23b5", &[]);
+            .try_cast_str("2345:0425:2CA1:0000:0000:0567:5673:23b5");
         assert_eq!(
             value.unwrap(),
-            value::Value::IpAddr(
+            Value::IpAddr(
                 Ipv6Addr::from_str("2345:0425:2CA1:0000:0000:0567:5673:23b5").unwrap()
             )
         );
-        let value = TypeCast::IpAddr.try_cast_str("hello, world!", &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `ip` for field (\"\") due to an invalid value being provided: \"hello, world!\"");
+        let value = TypeCast::IpAddr.try_cast_str("hello, world!");
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `ip` due to an invalid value being provided: \"hello, world!\"");
 
         let value = TypeCast::DateTime(
             DateTimeParser::default().with_format(DateTimeFormat::Rfc3339),
         )
-        .try_cast_str("2002-10-02T15:00:00Z", &[]);
+        .try_cast_str("2002-10-02T15:00:00Z");
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
+            Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_format(DateTimeFormat::Rfc2822)
                 .with_format(DateTimeFormat::Rfc3339),
         )
-        .try_cast_str("2002-10-02T15:00:00Z", &[]);
+        .try_cast_str("2002-10-02T15:00:00Z");
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
+            Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default().with_format(DateTimeFormat::Rfc3339),
         )
-        .try_cast_str("hello, world!", &[]);
+        .try_cast_str("hello, world!");
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `datetime` as it does not match any provided formats: [rfc3339]");
     }
 
     #[test]
     fn test_cast_u64() {
-        let value = TypeCast::String.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("12456"));
-        let value = TypeCast::String.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("0"));
+        let value = TypeCast::String.try_cast_u64(12456);
+        assert_eq!(value.unwrap(), Value::from("12456"));
+        let value = TypeCast::String.try_cast_u64(0);
+        assert_eq!(value.unwrap(), Value::from("0"));
 
-        let value = TypeCast::U64.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), value::Value::U64(0));
-        let value = TypeCast::U64.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), value::Value::U64(12456));
+        let value = TypeCast::U64.try_cast_u64(0);
+        assert_eq!(value.unwrap(), Value::U64(0));
+        let value = TypeCast::U64.try_cast_u64(12456);
+        assert_eq!(value.unwrap(), Value::U64(12456));
 
-        let value = TypeCast::I64.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), value::Value::I64(12456));
-        let value = TypeCast::I64.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), value::Value::I64(0));
-        let value = TypeCast::I64.try_cast_u64(u64::MAX, &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `u64` to `i64` for field (\"\") because the input value cannot be safely represented by the target type");
+        let value = TypeCast::I64.try_cast_u64(12456);
+        assert_eq!(value.unwrap(), Value::I64(12456));
+        let value = TypeCast::I64.try_cast_u64(0);
+        assert_eq!(value.unwrap(), Value::I64(0));
+        let value = TypeCast::I64.try_cast_u64(u64::MAX);
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `u64` to `i64` because the input value cannot be safely represented by the target type");
 
-        let value = TypeCast::F64.try_cast_u64(12456, &[]);
+        let value = TypeCast::F64.try_cast_u64(12456);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `f64` for field (\"\")"
+            "Cannot cast `u64` to `f64`"
         );
-        let value = TypeCast::F64.try_cast_u64(0, &[]);
+        let value = TypeCast::F64.try_cast_u64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `f64` for field (\"\")"
+            "Cannot cast `u64` to `f64`"
         );
-        let value = TypeCast::F64.try_cast_u64(u64::MAX, &[]);
+        let value = TypeCast::F64.try_cast_u64(u64::MAX);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `f64` for field (\"\")"
-        );
-
-        let value = TypeCast::Bool.try_cast_u64(0, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bool` for field (\"\")"
-        );
-        let value = TypeCast::Bool.try_cast_u64(1, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bool` for field (\"\")"
-        );
-        let value = TypeCast::Bool.try_cast_u64(4, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bool` for field (\"\")"
+            "Cannot cast `u64` to `f64`"
         );
 
-        let value = TypeCast::Bytes.try_cast_u64(0, &[]);
+        let value = TypeCast::Bool.try_cast_u64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bytes` for field (\"\")"
+            "Cannot cast `u64` to `bool`"
         );
-        let value = TypeCast::Bytes.try_cast_u64(2235, &[]);
+        let value = TypeCast::Bool.try_cast_u64(1);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bytes` for field (\"\")"
+            "Cannot cast `u64` to `bool`"
         );
-        let value = TypeCast::Bytes.try_cast_u64(u64::MAX, &[]);
+        let value = TypeCast::Bool.try_cast_u64(4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `bytes` for field (\"\")"
+            "Cannot cast `u64` to `bool`"
         );
 
-        let value = TypeCast::IpAddr.try_cast_u64(0, &[]);
+        let value = TypeCast::Bytes.try_cast_u64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `ip` for field (\"\")"
+            "Cannot cast `u64` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_u64(2235, &[]);
+        let value = TypeCast::Bytes.try_cast_u64(2235);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `ip` for field (\"\")"
+            "Cannot cast `u64` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_u64(u64::MAX, &[]);
+        let value = TypeCast::Bytes.try_cast_u64(u64::MAX);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `u64` to `ip` for field (\"\")"
+            "Cannot cast `u64` to `bytes`"
+        );
+
+        let value = TypeCast::IpAddr.try_cast_u64(0);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `u64` to `ip`"
+        );
+        let value = TypeCast::IpAddr.try_cast_u64(2235);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `u64` to `ip`"
+        );
+        let value = TypeCast::IpAddr.try_cast_u64(u64::MAX);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `u64` to `ip`"
         );
 
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Seconds),
         )
-        .try_cast_u64(0, &[]);
+        .try_cast_u64(0);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_secs(0).unwrap())
+            Value::DateTime(DateTime::from_secs(0).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Micros),
         )
-        .try_cast_u64(2235, &[]);
+        .try_cast_u64(2235);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_micros(2235).unwrap())
+            Value::DateTime(DateTime::from_micros(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Millis),
         )
-        .try_cast_u64(2235, &[]);
+        .try_cast_u64(2235);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_millis(2235).unwrap())
+            Value::DateTime(DateTime::from_millis(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Millis),
         )
-        .try_cast_u64(u64::MAX, &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `u64` to `datetime<unix_millis>` for field (\"\") because the input value cannot be safely represented by the target type");
+        .try_cast_u64(u64::MAX);
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `u64` to `datetime<unix_millis>` because the input value cannot be safely represented by the target type");
     }
 
     #[test]
     fn test_cast_i64() {
-        let value = TypeCast::String.try_cast_i64(12456, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("12456"));
-        let value = TypeCast::String.try_cast_i64(0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("0"));
+        let value = TypeCast::String.try_cast_i64(12456);
+        assert_eq!(value.unwrap(), Value::from("12456"));
+        let value = TypeCast::String.try_cast_i64(0);
+        assert_eq!(value.unwrap(), Value::from("0"));
 
-        let value = TypeCast::U64.try_cast_i64(0, &[]);
-        assert_eq!(value.unwrap(), value::Value::U64(0));
-        let value = TypeCast::U64.try_cast_i64(12456, &[]);
-        assert_eq!(value.unwrap(), value::Value::U64(12456));
-        let value = TypeCast::U64.try_cast_i64(-12456, &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` for field (\"\") because the input value cannot be safely represented by the target type");
-        let value = TypeCast::U64.try_cast_i64(i64::MAX, &[]);
-        assert_eq!(value.unwrap(), value::Value::U64(i64::MAX as u64));
-        let value = TypeCast::U64.try_cast_i64(i64::MIN, &[]);
-        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` for field (\"\") because the input value cannot be safely represented by the target type");
+        let value = TypeCast::U64.try_cast_i64(0);
+        assert_eq!(value.unwrap(), Value::U64(0));
+        let value = TypeCast::U64.try_cast_i64(12456);
+        assert_eq!(value.unwrap(), Value::U64(12456));
+        let value = TypeCast::U64.try_cast_i64(-12456);
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` because the input value cannot be safely represented by the target type");
+        let value = TypeCast::U64.try_cast_i64(i64::MAX);
+        assert_eq!(value.unwrap(), Value::U64(i64::MAX as u64));
+        let value = TypeCast::U64.try_cast_i64(i64::MIN);
+        assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` because the input value cannot be safely represented by the target type");
 
-        let value = TypeCast::F64.try_cast_i64(12456, &[]);
+        let value = TypeCast::F64.try_cast_i64(12456);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `f64` for field (\"\")"
+            "Cannot cast `i64` to `f64`"
         );
-        let value = TypeCast::F64.try_cast_i64(0, &[]);
+        let value = TypeCast::F64.try_cast_i64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `f64` for field (\"\")"
+            "Cannot cast `i64` to `f64`"
         );
-        let value = TypeCast::F64.try_cast_i64(i64::MAX, &[]);
+        let value = TypeCast::F64.try_cast_i64(i64::MAX);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `f64` for field (\"\")"
-        );
-
-        let value = TypeCast::Bool.try_cast_i64(0, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bool` for field (\"\")"
-        );
-        let value = TypeCast::Bool.try_cast_i64(1, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bool` for field (\"\")"
-        );
-        let value = TypeCast::Bool.try_cast_i64(4, &[]);
-        assert_eq!(
-            value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bool` for field (\"\")"
+            "Cannot cast `i64` to `f64`"
         );
 
-        let value = TypeCast::Bytes.try_cast_i64(0, &[]);
+        let value = TypeCast::Bool.try_cast_i64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bytes` for field (\"\")"
+            "Cannot cast `i64` to `bool`"
         );
-        let value = TypeCast::Bytes.try_cast_i64(2235, &[]);
+        let value = TypeCast::Bool.try_cast_i64(1);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bytes` for field (\"\")"
+            "Cannot cast `i64` to `bool`"
         );
-        let value = TypeCast::Bytes.try_cast_i64(i64::MAX, &[]);
+        let value = TypeCast::Bool.try_cast_i64(4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `bytes` for field (\"\")"
+            "Cannot cast `i64` to `bool`"
         );
 
-        let value = TypeCast::IpAddr.try_cast_i64(0, &[]);
+        let value = TypeCast::Bytes.try_cast_i64(0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `ip` for field (\"\")"
+            "Cannot cast `i64` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_i64(2235, &[]);
+        let value = TypeCast::Bytes.try_cast_i64(2235);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `ip` for field (\"\")"
+            "Cannot cast `i64` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_i64(i64::MAX, &[]);
+        let value = TypeCast::Bytes.try_cast_i64(i64::MAX);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `i64` to `ip` for field (\"\")"
+            "Cannot cast `i64` to `bytes`"
+        );
+
+        let value = TypeCast::IpAddr.try_cast_i64(0);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `i64` to `ip`"
+        );
+        let value = TypeCast::IpAddr.try_cast_i64(2235);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `i64` to `ip`"
+        );
+        let value = TypeCast::IpAddr.try_cast_i64(i64::MAX);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `i64` to `ip`"
         );
 
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Seconds),
         )
-        .try_cast_i64(0, &[]);
+        .try_cast_i64(0);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_secs(0).unwrap())
+            Value::DateTime(DateTime::from_secs(0).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Micros),
         )
-        .try_cast_i64(2235, &[]);
+        .try_cast_i64(2235);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_micros(2235).unwrap())
+            Value::DateTime(DateTime::from_micros(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Millis),
         )
-        .try_cast_i64(2235, &[]);
+        .try_cast_i64(2235);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(DateTime::from_millis(2235).unwrap())
+            Value::DateTime(DateTime::from_millis(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
                 .with_timestamp_resolution(TimestampResolution::Millis),
         )
-        .try_cast_i64(i64::MAX, &[]);
+        .try_cast_i64(i64::MAX);
         assert_eq!(
             value.unwrap_err().to_string(),
             "Cannot cast timestamp to `datetime` as it goes beyond the bounds of the supported `datetime` range"
@@ -842,87 +822,87 @@ mod tests {
 
     #[test]
     fn test_cast_f64() {
-        let value = TypeCast::String.try_cast_f64(12456.0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("12456.0"));
-        let value = TypeCast::String.try_cast_f64(0.0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("0.0"));
+        let value = TypeCast::String.try_cast_f64(12456.0);
+        assert_eq!(value.unwrap(), Value::from("12456.0"));
+        let value = TypeCast::String.try_cast_f64(0.0);
+        assert_eq!(value.unwrap(), Value::from("0.0"));
 
-        let value = TypeCast::F64.try_cast_f64(12456.0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(12456.0));
-        let value = TypeCast::F64.try_cast_f64(0.0, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(0.0));
+        let value = TypeCast::F64.try_cast_f64(12456.0);
+        assert_eq!(value.unwrap(), Value::from(12456.0));
+        let value = TypeCast::F64.try_cast_f64(0.0);
+        assert_eq!(value.unwrap(), Value::from(0.0));
 
         // Types we know we dont support
-        let value = TypeCast::U64.try_cast_f64(0.0, &[]);
+        let value = TypeCast::U64.try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `u64` for field (\"\")"
+            "Cannot cast `f64` to `u64`"
         );
-        let value = TypeCast::I64.try_cast_f64(0.0, &[]);
+        let value = TypeCast::I64.try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `i64` for field (\"\")"
+            "Cannot cast `f64` to `i64`"
         );
-        let value = TypeCast::Bytes.try_cast_f64(0.0, &[]);
+        let value = TypeCast::Bytes.try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `bytes` for field (\"\")"
+            "Cannot cast `f64` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_f64(0.0, &[]);
+        let value = TypeCast::IpAddr.try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `ip` for field (\"\")"
+            "Cannot cast `f64` to `ip`"
         );
-        let value = TypeCast::DateTime(DateTimeParser::default()).try_cast_f64(0.0, &[]);
+        let value = TypeCast::DateTime(DateTimeParser::default()).try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `datetime<>` for field (\"\")"
+            "Cannot cast `f64` to `datetime<>`"
         );
-        let value = TypeCast::Bool.try_cast_f64(0.0, &[]);
+        let value = TypeCast::Bool.try_cast_f64(0.0);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `f64` to `bool` for field (\"\")"
+            "Cannot cast `f64` to `bool`"
         );
     }
 
     #[test]
     fn test_cast_bool() {
-        let value = TypeCast::String.try_cast_bool(true, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("true"));
-        let value = TypeCast::String.try_cast_bool(false, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("false"));
+        let value = TypeCast::String.try_cast_bool(true);
+        assert_eq!(value.unwrap(), Value::from("true"));
+        let value = TypeCast::String.try_cast_bool(false);
+        assert_eq!(value.unwrap(), Value::from("false"));
 
-        let value = TypeCast::Bool.try_cast_bool(true, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(true));
-        let value = TypeCast::Bool.try_cast_bool(false, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(false));
+        let value = TypeCast::Bool.try_cast_bool(true);
+        assert_eq!(value.unwrap(), Value::from(true));
+        let value = TypeCast::Bool.try_cast_bool(false);
+        assert_eq!(value.unwrap(), Value::from(false));
 
         // Types we know we dont support
-        let value = TypeCast::U64.try_cast_bool(false, &[]);
+        let value = TypeCast::U64.try_cast_bool(false);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `bool` to `u64` for field (\"\")"
+            "Cannot cast `bool` to `u64`"
         );
-        let value = TypeCast::I64.try_cast_bool(false, &[]);
+        let value = TypeCast::I64.try_cast_bool(false);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `bool` to `i64` for field (\"\")"
+            "Cannot cast `bool` to `i64`"
         );
-        let value = TypeCast::Bytes.try_cast_bool(false, &[]);
+        let value = TypeCast::Bytes.try_cast_bool(false);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `bool` to `bytes` for field (\"\")"
+            "Cannot cast `bool` to `bytes`"
         );
-        let value = TypeCast::IpAddr.try_cast_bool(true, &[]);
+        let value = TypeCast::IpAddr.try_cast_bool(true);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `bool` to `ip` for field (\"\")"
+            "Cannot cast `bool` to `ip`"
         );
         let value =
-            TypeCast::DateTime(DateTimeParser::default()).try_cast_bool(false, &[]);
+            TypeCast::DateTime(DateTimeParser::default()).try_cast_bool(false);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `bool` to `datetime<>` for field (\"\")"
+            "Cannot cast `bool` to `datetime<>`"
         );
     }
 
@@ -932,44 +912,44 @@ mod tests {
             Ipv6Addr::from_str("2345:0425:2CA1:0000:0000:0567:5673:23b5").unwrap();
         let ipv4 = Ipv4Addr::new(192, 168, 0, 1).to_ipv6_mapped();
 
-        let value = TypeCast::String.try_cast_ip(ipv6, &[]);
+        let value = TypeCast::String.try_cast_ip(ipv6);
         assert_eq!(
             value.unwrap(),
-            value::Value::from("2345:425:2ca1::567:5673:23b5")
+            Value::from("2345:425:2ca1::567:5673:23b5")
         );
-        let value = TypeCast::String.try_cast_ip(ipv4, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("192.168.0.1"));
+        let value = TypeCast::String.try_cast_ip(ipv4);
+        assert_eq!(value.unwrap(), Value::from("192.168.0.1"));
 
-        let value = TypeCast::IpAddr.try_cast_ip(ipv6, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(ipv6));
-        let value = TypeCast::IpAddr.try_cast_ip(ipv4, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(ipv4));
+        let value = TypeCast::IpAddr.try_cast_ip(ipv6);
+        assert_eq!(value.unwrap(), Value::from(ipv6));
+        let value = TypeCast::IpAddr.try_cast_ip(ipv4);
+        assert_eq!(value.unwrap(), Value::from(ipv4));
 
         // Types we know we dont support
-        let value = TypeCast::U64.try_cast_ip(ipv4, &[]);
+        let value = TypeCast::U64.try_cast_ip(ipv4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `ip` to `u64` for field (\"\")"
+            "Cannot cast `ip` to `u64`"
         );
-        let value = TypeCast::I64.try_cast_ip(ipv4, &[]);
+        let value = TypeCast::I64.try_cast_ip(ipv4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `ip` to `i64` for field (\"\")"
+            "Cannot cast `ip` to `i64`"
         );
-        let value = TypeCast::Bytes.try_cast_ip(ipv4, &[]);
+        let value = TypeCast::Bytes.try_cast_ip(ipv4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `ip` to `bytes` for field (\"\")"
+            "Cannot cast `ip` to `bytes`"
         );
-        let value = TypeCast::DateTime(DateTimeParser::default()).try_cast_ip(ipv4, &[]);
+        let value = TypeCast::DateTime(DateTimeParser::default()).try_cast_ip(ipv4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `ip` to `datetime<>` for field (\"\")"
+            "Cannot cast `ip` to `datetime<>`"
         );
-        let value = TypeCast::Bool.try_cast_ip(ipv4, &[]);
+        let value = TypeCast::Bool.try_cast_ip(ipv4);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `ip` to `bool` for field (\"\")"
+            "Cannot cast `ip` to `bool`"
         );
     }
 
@@ -979,74 +959,117 @@ mod tests {
         let min_time = DateTime::from_micros(i64::MIN).unwrap();
         let random_time = DateTime::from_secs(2452352325).unwrap();
 
-        let value = TypeCast::String.try_cast_datetime(max_time, &[]);
+        let value = TypeCast::String.try_cast_datetime(max_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot format datetime as is beyond what the format supports rendering for field (\"\")"
+            "Cannot format datetime as is beyond what the format supports rendering"
         );
-        let value = TypeCast::String.try_cast_datetime(min_time, &[]);
+        let value = TypeCast::String.try_cast_datetime(min_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot format datetime as is beyond what the format supports rendering for field (\"\")"
+            "Cannot format datetime as is beyond what the format supports rendering"
         );
-        let value = TypeCast::String.try_cast_datetime(random_time, &[]);
-        assert_eq!(value.unwrap(), value::Value::from("2047-09-17T16:58:45Z"));
+        let value = TypeCast::String.try_cast_datetime(random_time);
+        assert_eq!(value.unwrap(), Value::from("2047-09-17T16:58:45Z"));
 
         let value = TypeCast::DateTime(DateTimeParser::default())
-            .try_cast_datetime(max_time, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(max_time));
+            .try_cast_datetime(max_time);
+        assert_eq!(value.unwrap(), Value::from(max_time));
         let value = TypeCast::DateTime(DateTimeParser::default())
-            .try_cast_datetime(min_time, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(min_time));
+            .try_cast_datetime(min_time);
+        assert_eq!(value.unwrap(), Value::from(min_time));
         let value = TypeCast::DateTime(DateTimeParser::default())
-            .try_cast_datetime(random_time, &[]);
-        assert_eq!(value.unwrap(), value::Value::from(random_time));
+            .try_cast_datetime(random_time);
+        assert_eq!(value.unwrap(), Value::from(random_time));
 
         // Types we know we dont support
-        let value = TypeCast::I64.try_cast_datetime(max_time, &[]);
+        let value = TypeCast::I64.try_cast_datetime(max_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `i64` for field (\"\")"
+            "Cannot cast `datetime` to `i64`"
         );
-        let value = TypeCast::I64.try_cast_datetime(min_time, &[]);
+        let value = TypeCast::I64.try_cast_datetime(min_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `i64` for field (\"\")"
+            "Cannot cast `datetime` to `i64`"
         );
-        let value = TypeCast::I64.try_cast_datetime(random_time, &[]);
+        let value = TypeCast::I64.try_cast_datetime(random_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `i64` for field (\"\")"
+            "Cannot cast `datetime` to `i64`"
         );
-        let value = TypeCast::U64.try_cast_datetime(max_time, &[]);
+        let value = TypeCast::U64.try_cast_datetime(max_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `u64` for field (\"\")"
+            "Cannot cast `datetime` to `u64`"
         );
-        let value = TypeCast::U64.try_cast_datetime(min_time, &[]);
+        let value = TypeCast::U64.try_cast_datetime(min_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `u64` for field (\"\")"
+            "Cannot cast `datetime` to `u64`"
         );
-        let value = TypeCast::U64.try_cast_datetime(random_time, &[]);
+        let value = TypeCast::U64.try_cast_datetime(random_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `u64` for field (\"\")"
+            "Cannot cast `datetime` to `u64`"
         );
-        let value = TypeCast::Bytes.try_cast_datetime(random_time, &[]);
+        let value = TypeCast::Bytes.try_cast_datetime(random_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `bytes` for field (\"\")"
+            "Cannot cast `datetime` to `bytes`"
         );
-        let value = TypeCast::F64.try_cast_datetime(random_time, &[]);
+        let value = TypeCast::F64.try_cast_datetime(random_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `f64` for field (\"\")"
+            "Cannot cast `datetime` to `f64`"
         );
-        let value = TypeCast::Bool.try_cast_datetime(random_time, &[]);
+        let value = TypeCast::Bool.try_cast_datetime(random_time);
         assert_eq!(
             value.unwrap_err().to_string(),
-            "Cannot cast `datetime` to `bool` for field (\"\")"
+            "Cannot cast `datetime` to `bool`"
+        );
+    }
+
+    #[test]
+    fn test_cast_facet() {
+        let facet = Facet::from_text("/hello/world/foo").unwrap();
+
+        let value = TypeCast::String.try_cast_facet(facet.clone());
+        assert_eq!(value.unwrap(), Value::from("/hello/world/foo"));
+        let value = TypeCast::Facet.try_cast_facet(facet.clone());
+        assert_eq!(value.unwrap(), Value::from(facet.clone()));
+
+
+        // Types we know we dont support
+        let value = TypeCast::I64.try_cast_facet(facet.clone());
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `i64`"
+        );
+        let value = TypeCast::U64.try_cast_facet(facet.clone());
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `u64`"
+        );
+        let value = TypeCast::Bytes.try_cast_facet(facet.clone());
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `bytes`"
+        );
+        let value = TypeCast::F64.try_cast_facet(facet.clone());
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `f64`"
+        );
+        let value = TypeCast::Bool.try_cast_facet(facet.clone());
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `bool`"
+        );
+        let value = TypeCast::DateTime(DateTimeParser::default()).try_cast_facet(facet);
+        assert_eq!(
+            value.unwrap_err().to_string(),
+            "Cannot cast `facet` to `datetime<>`"
         );
     }
 }

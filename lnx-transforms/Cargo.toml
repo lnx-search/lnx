@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 lnx-document = { path = "../lnx-document" }
 
+thiserror = { workspace = true }
 anyhow = { workspace = true }
 smallvec = { workspace = true }
 time = { workspace = true }
@@ -16,6 +17,7 @@ ryu = { workspace = true }
 itoa = { workspace = true }
 base64 = { workspace = true }
 hashbrown = { workspace = true }
+tantivy = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
