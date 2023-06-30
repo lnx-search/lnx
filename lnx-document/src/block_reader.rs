@@ -1,6 +1,7 @@
 use std::{io, mem};
-use rkyv::AlignedVec;
+
 use anyhow::{bail, Context, Result};
+use rkyv::AlignedVec;
 
 use crate::block_builder::DocBlock;
 use crate::{ArchivedFieldType, Document, Step};
@@ -27,7 +28,7 @@ impl DocBlockReader {
         let expected_checksum = u32::from_le_bytes(
             data[slice_at..]
                 .try_into()
-                .context("Cannot read checksum bytes, data corrupted")?
+                .context("Cannot read checksum bytes, data corrupted")?,
         );
         let actual_checksum = crc32fast::hash(&data[..slice_at]);
 
@@ -45,10 +46,7 @@ impl DocBlockReader {
             rkyv::archived_root::<DocBlock<'static>>(&buffer[..slice_at])
         };
 
-        Ok(Self {
-            data,
-            view,
-        })
+        Ok(Self { data, view })
     }
 
     #[inline]
@@ -89,8 +87,7 @@ impl<'block> DocumentView<'block> {
     pub fn to_json_string(&self) -> io::Result<String> {
         let mut buffer = Vec::new();
         self.to_json(&mut buffer)?;
-        Ok(String::from_utf8(buffer)
-            .expect("Data should be guarenteed UTF-8"))
+        Ok(String::from_utf8(buffer).expect("Data should be guarenteed UTF-8"))
     }
 
     /// Serializes the view to a JSON formatted value in a given writer.
@@ -138,7 +135,10 @@ impl<'block> DocumentView<'block> {
 
         let key: &str = self.block.field_mapping[step.field_id as usize].as_ref();
 
-        if !matches!(step.field_type, ArchivedFieldType::Array | ArchivedFieldType::Object) {
+        if !matches!(
+            step.field_type,
+            ArchivedFieldType::Array | ArchivedFieldType::Object
+        ) {
             assert_eq!(step.field_length, 1, "Field length for object values which are not collections should be single values.");
         }
 
@@ -254,7 +254,6 @@ impl<'block> DocumentView<'block> {
 
         Ok(())
     }
-
 
     #[inline]
     fn serialize_array_element<W: io::Write>(
@@ -458,20 +457,21 @@ pub struct TypeCursors {
     bytes: usize,
 }
 
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use crate::{ChecksumDocWriter, DocBlockBuilder, DocSerializer, DynamicDocument};
-    use crate::serializer::DocWriteSerializer;
+
     use super::*;
+    use crate::serializer::DocWriteSerializer;
+    use crate::{ChecksumDocWriter, DocBlockBuilder, DocSerializer, DynamicDocument};
 
     #[test]
     fn test_reading_empty_block() {
         let mut builder = DocBlockBuilder::default();
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());
-        let mut serializer = DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
+        let mut serializer =
+            DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
         builder
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
@@ -479,9 +479,11 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        let view = DocBlockReader::using_data(data)
-            .expect("Read block successfully");
-        assert!(view.view.documents.is_empty(), "No documents should be in block");
+        let view = DocBlockReader::using_data(data).expect("Read block successfully");
+        assert!(
+            view.view.documents.is_empty(),
+            "No documents should be in block"
+        );
     }
 
     #[test]
@@ -494,7 +496,8 @@ mod tests {
         assert!(!is_full, "Builder should not be full");
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());
-        let mut serializer = DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
+        let mut serializer =
+            DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
         builder
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
@@ -502,8 +505,7 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        let view = DocBlockReader::using_data(data)
-            .expect("Read block successfully");
+        let view = DocBlockReader::using_data(data).expect("Read block successfully");
         let doc_view = view.doc(0);
         assert!(doc_view.is_empty(), "Document should be empty")
     }
@@ -516,7 +518,8 @@ mod tests {
         assert!(!is_full, "Builder should not be full");
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());
-        let mut serializer = DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
+        let mut serializer =
+            DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
         builder
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
@@ -524,8 +527,7 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        DocBlockReader::using_data(data)
-            .expect("Read block successfully")
+        DocBlockReader::using_data(data).expect("Read block successfully")
     }
 
     // fn debug_layout(json_text: &str) -> DocBlockBuilder {
@@ -551,7 +553,9 @@ mod tests {
         validate_full_json_cycle(json!({"age": 123}));
         validate_full_json_cycle(json!({"x": -123}));
         validate_full_json_cycle(json!({"is_old": true}));
-        validate_full_json_cycle(json!({"my-nested-value": {"age": 12, "name": "timmy"}}));
+        validate_full_json_cycle(
+            json!({"my-nested-value": {"age": 12, "name": "timmy"}}),
+        );
         validate_full_json_cycle(json!({"my-array": [123, null, "foo"]}));
     }
 

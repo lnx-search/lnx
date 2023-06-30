@@ -1,17 +1,17 @@
-use std::collections::BTreeMap;
-use std::{io, mem};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::mem::MaybeUninit;
 use std::net::Ipv6Addr;
+use std::{io, mem};
 
 use anyhow::Result;
-use rkyv::{Archive, Serialize};
 use rkyv::ser::Serializer;
+use rkyv::{Archive, Serialize};
 
-use crate::value::{DateTime, DynamicDocument, Value};
-use crate::{DocSerializer, Document, FieldType};
 use crate::serializer::DocWriteSerializer;
+use crate::value::{DateTime, DynamicDocument, Value};
 use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
+use crate::{DocSerializer, Document, FieldType};
 
 /// The target size of a doc block in bytes.
 const CAPACITY: usize = 512 << 10;
@@ -104,7 +104,10 @@ impl<'a> DocBlockBuilder<'a> {
     }
 
     /// Compresses the serialized buffer and reset's the serializer.
-    pub fn serialize_with<const N: usize, W: io::Write>(&mut self, serializer: &mut DocSerializer<N, DocWriteSerializer<W>>) -> Result<()> {
+    pub fn serialize_with<const N: usize, W: io::Write>(
+        &mut self,
+        serializer: &mut DocSerializer<N, DocWriteSerializer<W>>,
+    ) -> Result<()> {
         let field_mapping = self.build_field_mapping();
         self.block.field_mapping = field_mapping;
         serializer.serialize_value(&self.block)?;
@@ -115,7 +118,8 @@ impl<'a> DocBlockBuilder<'a> {
     ///
     /// The ID of the field matches the index of the field.
     pub fn build_field_mapping(&self) -> Vec<Box<str>> {
-        let mut keys: Vec<MaybeUninit<Box<str>>> = Vec::with_capacity(self.unordered_key_lookup.len());
+        let mut keys: Vec<MaybeUninit<Box<str>>> =
+            Vec::with_capacity(self.unordered_key_lookup.len());
         for _ in 0..self.unordered_key_lookup.len() {
             keys.push(MaybeUninit::uninit());
         }
@@ -131,20 +135,13 @@ impl<'a> DocBlockBuilder<'a> {
     fn get_key_idx(&mut self, key: Cow<'a, str>) -> u16 {
         let key_size = key.as_bytes().len();
         let next_id = self.unordered_key_lookup.len() as u16;
-        *self.unordered_key_lookup
-            .entry(key)
-            .or_insert_with(|| {
-                self.approx_data_size += key_size;
-                next_id
-            })
+        *self.unordered_key_lookup.entry(key).or_insert_with(|| {
+            self.approx_data_size += key_size;
+            next_id
+        })
     }
 
-    fn convert_value(
-        &mut self,
-        doc: &mut Document,
-        field_id: u16,
-        value: Value<'a>,
-    ) {
+    fn convert_value(&mut self, doc: &mut Document, field_id: u16, value: Value<'a>) {
         match value {
             Value::Null => {
                 doc.add_single_value_field(field_id, FieldType::Null);
@@ -230,7 +227,7 @@ impl<'a> DocBlockBuilder<'a> {
                 &mut current_type,
                 &mut num_steps_added,
                 value.as_field_type(),
-                doc
+                doc,
             );
 
             match value {
@@ -309,8 +306,7 @@ impl<'a> DocBlockBuilder<'a> {
                         let field_id = self.get_key_idx(key);
                         self.convert_value(doc, field_id, value);
                     }
-
-                }
+                },
             }
         }
 
@@ -322,7 +318,6 @@ impl<'a> DocBlockBuilder<'a> {
         doc.set_length(idx, num_steps_added);
     }
 }
-
 
 fn handle_array_entry_type_change(
     counter: &mut u16,
@@ -345,10 +340,7 @@ fn handle_array_entry_type_change(
     maybe_increment(value_type, counter);
 }
 
-fn maybe_increment(
-    value_type: FieldType,
-    counter: &mut u16,
-) {
+fn maybe_increment(value_type: FieldType, counter: &mut u16) {
     // We have to special case the collection types here so we don't
     // incorrectly add 2 steps for the same collection.
     if !matches!(value_type, FieldType::Object | FieldType::Array) {
@@ -433,13 +425,12 @@ impl<'a> DocValue<bool> for DocBlock<'a> {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
     use rkyv::AlignedVec;
-    use crate::Step;
+
     use super::*;
+    use crate::Step;
 
     macro_rules! doc {
         () => {{
@@ -469,18 +460,14 @@ mod test {
             assert_eq!(
                 builder.block,
                 DocBlock {
-                    documents: vec![
-                        Document {
-                            len,
-                            layout: vec![
-                                Step {
-                                    field_id: 0,
-                                    field_length: 1,
-                                    field_type: $tp,
-                                },
-                            ],
-                        }
-                    ],
+                    documents: vec![Document {
+                        len,
+                        layout: vec![Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: $tp,
+                        },],
+                    }],
                     $attr: vec![$value].into(),
                     ..Default::default()
                 }
@@ -495,36 +482,12 @@ mod test {
             FieldType::String,
             strings
         );
-        test_basic_type!(
-            12u64,
-            FieldType::U64,
-            u64s
-        );
-        test_basic_type!(
-            -124i64,
-            FieldType::I64,
-            i64s
-        );
-        test_basic_type!(
-            12.30,
-            FieldType::F64,
-            f64s
-        );
-        test_basic_type!(
-            false,
-            FieldType::Bool,
-            bools
-        );
-        test_basic_type!(
-            Bytes(b"Hello".to_vec()),
-            FieldType::Bytes,
-            bytes
-        );
-        test_basic_type!(
-            Ipv6Addr::LOCALHOST,
-            FieldType::IpAddr,
-            ips
-        );
+        test_basic_type!(12u64, FieldType::U64, u64s);
+        test_basic_type!(-124i64, FieldType::I64, i64s);
+        test_basic_type!(12.30, FieldType::F64, f64s);
+        test_basic_type!(false, FieldType::Bool, bools);
+        test_basic_type!(Bytes(b"Hello".to_vec()), FieldType::Bytes, bytes);
+        test_basic_type!(Ipv6Addr::LOCALHOST, FieldType::IpAddr, ips);
 
         let mut builder = DocBlockBuilder::default();
         let doc = doc! {
@@ -535,18 +498,14 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len: 1,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::DateTime,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len: 1,
+                    layout: vec![Step {
+                        field_id: 0,
+                        field_length: 1,
+                        field_type: FieldType::DateTime,
+                    },],
+                }],
                 i64s: vec![DateTime::MAX.as_micros()].into(),
                 ..Default::default()
             }
@@ -570,23 +529,21 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 3,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 3,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
                 strings: vec![
                     Text::from("Bobby"),
                     Text::from("Timmy"),
@@ -595,7 +552,6 @@ mod test {
                 ..Default::default()
             }
         );
-
 
         let mut builder = DocBlockBuilder::default();
         let doc = doc! {
@@ -617,47 +573,40 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 3,
-                                field_type: FieldType::U64,
-                            },
-                            Step {
-                                field_id: 1,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 3,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 3,
+                            field_type: FieldType::U64,
+                        },
+                        Step {
+                            field_id: 1,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 3,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
                 strings: vec![
                     Text::from("Bobby"),
                     Text::from("Timmy"),
                     Text::from("John"),
                 ],
-                u64s: vec![
-                    1231,
-                    12,
-                    912
-                ].into(),
+                u64s: vec![1231, 12, 912].into(),
                 ..Default::default()
             }
         );
-
     }
 
     #[test]
@@ -679,28 +628,26 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 3,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 3,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
                 strings: vec![
                     Text::from("nested-one"),
                     Text::from("nested-two"),
@@ -730,40 +677,35 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::Object,
-                            },
-                            Step {
-                                field_id: 1,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
-                strings: vec![
-                    Text::from("bobby"),
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::Object,
+                        },
+                        Step {
+                            field_id: 1,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
+                strings: vec![Text::from("bobby"),],
                 ..Default::default()
             }
         );
-
 
         let mut builder = DocBlockBuilder::default();
         let doc = doc! {
@@ -780,31 +722,27 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::Object,
-                            },
-                            Step {
-                                field_id: 1,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
-                strings: vec![
-                    Text::from("bobby"),
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::Object,
+                        },
+                        Step {
+                            field_id: 1,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
+                strings: vec![Text::from("bobby"),],
                 ..Default::default()
             }
         );
@@ -832,48 +770,46 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: 1,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 2,
-                                field_type: FieldType::Object,
-                            },
-                            Step {
-                                field_id: 2,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: 3,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: 4,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: 1,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 2,
+                            field_type: FieldType::Object,
+                        },
+                        Step {
+                            field_id: 2,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: 3,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: 4,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
                 strings: vec![
                     Text::from("something"),
                     Text::from("bobby"),
@@ -899,7 +835,8 @@ mod test {
         };
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
-        let mut serializer = DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
+        let mut serializer =
+            DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
         builder
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
@@ -908,7 +845,8 @@ mod test {
         let doc = doc! {};
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
-        let mut serializer = DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
+        let mut serializer =
+            DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
         builder
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
@@ -931,44 +869,36 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 3,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::U64,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
-                strings: vec![
-                    Text::from("Bobby"),
-                    Text::from("John"),
-                ],
-                u64s: vec![
-                    123
-                ].into(),
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 3,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::U64,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
+                strings: vec![Text::from("Bobby"), Text::from("John"),],
+                u64s: vec![123].into(),
                 ..Default::default()
             }
         );
-
 
         let mut builder = DocBlockBuilder::default();
         let doc = doc! {
@@ -989,59 +919,53 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 3,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 3,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::U64,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::I64,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 1,
-                                field_type: FieldType::String,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 3,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 3,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::U64,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::I64,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 1,
+                            field_type: FieldType::String,
+                        },
+                    ],
+                }],
                 strings: vec![
                     Text::from("Bobby"),
                     Text::from("Timmy"),
                     Text::from("John"),
                 ],
-                u64s: vec![
-                    1223,
-                ].into(),
-                i64s: vec![
-                    -1223,
-                ].into(),
+                u64s: vec![1223,].into(),
+                i64s: vec![-1223,].into(),
                 ..Default::default()
             }
         );
@@ -1068,28 +992,26 @@ mod test {
         assert_eq!(
             builder.block,
             DocBlock {
-                documents: vec![
-                    Document {
-                        len,
-                        layout: vec![
-                            Step {
-                                field_id: 0,
-                                field_length: 2,
-                                field_type: FieldType::Array,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 0,
-                                field_type: FieldType::Object,
-                            },
-                            Step {
-                                field_id: u16::MAX,
-                                field_length: 0,
-                                field_type: FieldType::Object,
-                            },
-                        ],
-                    }
-                ],
+                documents: vec![Document {
+                    len,
+                    layout: vec![
+                        Step {
+                            field_id: 0,
+                            field_length: 2,
+                            field_type: FieldType::Array,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 0,
+                            field_type: FieldType::Object,
+                        },
+                        Step {
+                            field_id: u16::MAX,
+                            field_length: 0,
+                            field_type: FieldType::Object,
+                        },
+                    ],
+                }],
                 ..Default::default()
             }
         );

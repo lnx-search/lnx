@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use anyhow::{anyhow, bail, Result};
 use base64::Engine;
-use lnx_document::{Value, DateTime, UserDisplayType};
+use lnx_document::{DateTime, UserDisplayType, Value};
 use time::format_description::{well_known, OwnedFormatItem};
 use time::OffsetDateTime;
 
@@ -583,9 +583,7 @@ mod tests {
         .try_cast_str("2002-10-02T15:00:00Z", &[]);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(
-                DateTime::from_micros(1033570800000000).unwrap()
-            )
+            value::Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -595,9 +593,7 @@ mod tests {
         .try_cast_str("2002-10-02T15:00:00Z", &[]);
         assert_eq!(
             value.unwrap(),
-            value::Value::DateTime(
-                DateTime::from_micros(1033570800000000).unwrap()
-            )
+            value::Value::DateTime(DateTime::from_micros(1033570800000000).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default().with_format(DateTimeFormat::Rfc3339),
@@ -994,10 +990,7 @@ mod tests {
             "Cannot format datetime as is beyond what the format supports rendering for field (\"\")"
         );
         let value = TypeCast::String.try_cast_datetime(random_time, &[]);
-        assert_eq!(
-            value.unwrap(),
-            value::Value::from("2047-09-17T16:58:45Z")
-        );
+        assert_eq!(value.unwrap(), value::Value::from("2047-09-17T16:58:45Z"));
 
         let value = TypeCast::DateTime(DateTimeParser::default())
             .try_cast_datetime(max_time, &[]);

@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
-use base64::Engine;
 
+use base64::Engine;
 use rkyv::{Archive, Serialize};
 use serde::Serializer;
 
@@ -126,7 +126,7 @@ impl<'a> From<Cow<'a, str>> for Text<'a> {
         match value {
             Cow::Borrowed(b) => Self(Cow::Borrowed(b.as_bytes())),
             Cow::Owned(b) => {
-                let v: String = b;  // If you see an error here from your linter, this is just a linter issue.
+                let v: String = b; // If you see an error here from your linter, this is just a linter issue.
                 Self(Cow::Owned(v.into_bytes()))
             },
         }
@@ -166,7 +166,10 @@ impl<'a> AsRef<str> for ArchivedText<'a> {
 }
 
 impl<'a> serde::Serialize for ArchivedText<'a> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_str(self.as_ref())
     }
 }

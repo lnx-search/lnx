@@ -1,15 +1,13 @@
 use std::borrow::Cow;
 use std::net::Ipv6Addr;
-use hashbrown::HashMap;
-use smallvec::SmallVec;
-use lnx_document::{KeyValues, UserDisplayType};
-use lnx_document::{DateTime, Value};
 
+use hashbrown::HashMap;
+use lnx_document::{DateTime, KeyValues, UserDisplayType, Value};
+use smallvec::SmallVec;
 
 pub struct TransformPipeline {
-    stages: HashMap<String, SmallVec<[Box<dyn Transform>; 4]>>
+    stages: HashMap<String, SmallVec<[Box<dyn Transform>; 4]>>,
 }
-
 
 pub trait Transform: Send + 'static {
     /// The error message to display when a type cannot be transformed
@@ -79,12 +77,12 @@ pub trait Transform: Send + 'static {
     }
 
     #[inline]
-    fn transform_array<'a>(&self, elements: Vec<Value<'a>>) -> anyhow::Result<Value<'a>> {
+    fn transform_array<'a>(
+        &self,
+        elements: Vec<Value<'a>>,
+    ) -> anyhow::Result<Value<'a>> {
         // This implementation should allow the compiler to re-use the existing allocation.
-        elements
-            .into_iter()
-            .map(self.transform)
-            .collect()
+        elements.into_iter().map(self.transform).collect()
     }
 
     #[inline]

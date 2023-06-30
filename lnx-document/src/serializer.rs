@@ -1,15 +1,20 @@
 use std::alloc::Layout;
 use std::error::Error;
+use std::hash::Hasher;
 use std::ptr::NonNull;
 use std::{fmt, io};
-use std::hash::Hasher;
 
-use rkyv::ser::serializers::{AllocScratch, BufferScratch, FallbackScratch, HeapScratch, SharedSerializeMap};
+use rkyv::ser::serializers::{
+    AllocScratch,
+    BufferScratch,
+    FallbackScratch,
+    HeapScratch,
+    SharedSerializeMap,
+};
 use rkyv::ser::{ScratchSpace, Serializer, SharedSerializeRegistry};
 use rkyv::{AlignedBytes, AlignedVec, Archive, ArchiveUnsized, Fallible, Infallible};
 
 const STACK_SCRATCH: usize = 1024;
-
 
 #[derive(Default)]
 pub struct ChecksumDocWriter {
@@ -69,7 +74,12 @@ pub enum DocSerializerError<const N: usize, S> {
     /// An error occurred while serializing
     Serializer(S),
     /// An error occurred while using scratch space
-    ScratchSpace(<FallbackScratch<StackScratch<STACK_SCRATCH>, FallbackScratch<HeapScratch<N>, AllocScratch>> as Fallible>::Error),
+    ScratchSpace(
+        <FallbackScratch<
+            StackScratch<STACK_SCRATCH>,
+            FallbackScratch<HeapScratch<N>, AllocScratch>,
+        > as Fallible>::Error,
+    ),
     /// An error occurred while serializing shared memory
     Shared(<SharedSerializeMap as Fallible>::Error),
 }
@@ -104,7 +114,10 @@ where
 #[derive(Debug)]
 pub struct DocSerializer<const N: usize, S = Infallible> {
     serializer: S,
-    scratch: FallbackScratch<StackScratch<STACK_SCRATCH>, FallbackScratch<HeapScratch<N>, AllocScratch>>,
+    scratch: FallbackScratch<
+        StackScratch<STACK_SCRATCH>,
+        FallbackScratch<HeapScratch<N>, AllocScratch>,
+    >,
     shared: SharedSerializeMap,
 }
 
@@ -116,10 +129,7 @@ impl<const N: usize, S> DocSerializer<N, S> {
             serializer,
             scratch: FallbackScratch::new(
                 StackScratch::new(),
-                FallbackScratch::new(
-                    HeapScratch::new(),
-                    AllocScratch::new(),
-                )
+                FallbackScratch::new(HeapScratch::new(), AllocScratch::new()),
             ),
             shared: SharedSerializeMap::new(),
         }

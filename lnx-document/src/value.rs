@@ -5,12 +5,11 @@ use std::ops::{Deref, DerefMut};
 use time::formatting::Formattable;
 use time::OffsetDateTime;
 
-use crate::{FieldType, UserDisplayType};
 use crate::wrappers::{Bytes, Text};
+use crate::{FieldType, UserDisplayType};
 
 pub type KeyValues<'a> = Vec<(Cow<'a, str>, Value<'a>)>;
-pub type KeyValuesIter<'a> =
-    std::vec::IntoIter<(Cow<'a, str>, Value<'a>)>;
+pub type KeyValuesIter<'a> = std::vec::IntoIter<(Cow<'a, str>, Value<'a>)>;
 
 #[derive(Debug, Clone, Default)]
 /// A JSON-like document object.
@@ -61,7 +60,7 @@ pub enum Value<'a> {
     Object(KeyValues<'a>),
 }
 
-impl<'a>  Value<'a> {
+impl<'a> Value<'a> {
     #[inline]
     pub fn as_field_type(&self) -> FieldType {
         match self {

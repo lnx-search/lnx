@@ -1,20 +1,20 @@
 extern crate core;
 
+mod block_builder;
+mod block_reader;
 mod helpers;
+mod serde_support;
 mod serializer;
 mod value;
 mod wrappers;
-mod serde_support;
-mod block_builder;
-mod block_reader;
 
 pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};
+pub use value::{DateTime, DynamicDocument, KeyValues, KeyValuesIter, Value};
 
-pub use value::{Value, KeyValues, KeyValuesIter, DateTime, DynamicDocument};
-pub use self::serializer::{DocSerializer, DocSerializerError, ChecksumDocWriter};
 pub use self::block_builder::DocBlockBuilder;
 pub use self::block_reader::{DocBlockReader, DocumentView};
+pub use self::serializer::{ChecksumDocWriter, DocSerializer, DocSerializerError};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Archive, Serialize, Eq, PartialEq)]
@@ -87,7 +87,6 @@ pub struct Step {
     field_type: FieldType,
 }
 
-
 #[repr(C)]
 #[derive(Clone, Debug, Default, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -105,7 +104,7 @@ impl Document {
     pub fn new(len: u32, capacity: usize) -> Self {
         Self {
             len,
-            layout: Vec::with_capacity(capacity)
+            layout: Vec::with_capacity(capacity),
         }
     }
 
@@ -121,7 +120,12 @@ impl Document {
         });
     }
 
-    pub fn add_multi_value_field(&mut self, field_id: u16, field_type: FieldType, field_length: u16)  {
+    pub fn add_multi_value_field(
+        &mut self,
+        field_id: u16,
+        field_type: FieldType,
+        field_length: u16,
+    ) {
         self.add_step(Step {
             field_id,
             field_type,
