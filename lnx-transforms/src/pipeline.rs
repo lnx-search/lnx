@@ -5,7 +5,6 @@ use hashbrown::HashMap;
 use lnx_document::{DateTime, DynamicDocument, KeyValues, UserDisplayType, Value};
 use smallvec::SmallVec;
 
-
 /// A transform pipeline applies multiple transform operations on a object.
 pub struct TransformPipeline {
     pipeline_name: String,
@@ -31,13 +30,19 @@ impl TransformPipeline {
 
     #[inline]
     /// Apply the transform pipeline to a given document.
-    pub fn transform_doc<'a>(&self, document: DynamicDocument<'a>) -> Result<DynamicDocument<'a>, TransformError> {
+    pub fn transform_doc<'a>(
+        &self,
+        document: DynamicDocument<'a>,
+    ) -> Result<DynamicDocument<'a>, TransformError> {
         self.transform_key_values(document.0).map(DynamicDocument)
     }
 
     #[inline]
     /// Apply the transform pipeline to a given set of key-value pairs.
-    pub fn transform_key_values<'a>(&self, object: KeyValues<'a>) -> Result<KeyValues<'a>, TransformError> {
+    pub fn transform_key_values<'a>(
+        &self,
+        object: KeyValues<'a>,
+    ) -> Result<KeyValues<'a>, TransformError> {
         object
             .into_iter()
             .map(|(key, mut value)| {
@@ -66,11 +71,13 @@ impl Transform for TransformPipeline {
     }
 
     #[inline]
-    fn transform_object<'a>(&self, object: KeyValues<'a>) -> Result<Value<'a>, TransformError> {
+    fn transform_object<'a>(
+        &self,
+        object: KeyValues<'a>,
+    ) -> Result<Value<'a>, TransformError> {
         self.transform_key_values(object).map(Value::Object)
     }
 }
-
 
 /// Defines a transform operation.
 ///
@@ -110,7 +117,10 @@ pub trait Transform: Send + 'static {
 
     #[inline]
     /// Applies the transform to a `string` value.
-    fn transform_str<'a>(&self, value: Cow<'a, str>) -> Result<Value<'a>, TransformError> {
+    fn transform_str<'a>(
+        &self,
+        value: Cow<'a, str>,
+    ) -> Result<Value<'a>, TransformError> {
         Err(self.expecting(&value.type_name()))
     }
 
@@ -140,13 +150,19 @@ pub trait Transform: Send + 'static {
 
     #[inline]
     /// Applies the transform to a `facet` value.
-    fn transform_facet<'a>(&self, value: tantivy::schema::Facet) -> Result<Value<'a>, TransformError> {
+    fn transform_facet<'a>(
+        &self,
+        value: tantivy::schema::Facet,
+    ) -> Result<Value<'a>, TransformError> {
         Err(self.expecting(&value.type_name()))
     }
 
     #[inline]
     /// Applies the transform to a `datetime` value.
-    fn transform_datetime<'a>(&self, value: DateTime) -> Result<Value<'a>, TransformError> {
+    fn transform_datetime<'a>(
+        &self,
+        value: DateTime,
+    ) -> Result<Value<'a>, TransformError> {
         Err(self.expecting(&value.type_name()))
     }
 
@@ -181,11 +197,13 @@ pub trait Transform: Send + 'static {
 
     #[inline]
     /// Applies the transform to an object.
-    fn transform_object<'a>(&self, object: KeyValues<'a>) -> Result<Value<'a>, TransformError> {
+    fn transform_object<'a>(
+        &self,
+        object: KeyValues<'a>,
+    ) -> Result<Value<'a>, TransformError> {
         Err(self.expecting(&object.type_name()))
     }
 }
-
 
 #[derive(Debug, thiserror::Error)]
 #[error("Transform Error originating from field path: {context_keys:?}: {message}")]
@@ -219,7 +237,7 @@ impl TransformError {
 impl TransformErrorContext for TransformError {
     fn with_context_key<CB>(mut self, ctx: CB) -> Self
     where
-        CB: FnOnce() -> String
+        CB: FnOnce() -> String,
     {
         self.context_keys.push(ctx());
         self
@@ -234,15 +252,15 @@ pub trait TransformErrorContext {
 
 impl<T, E> TransformErrorContext for Result<T, E>
 where
-    E: TransformErrorContext
+    E: TransformErrorContext,
 {
     fn with_context_key<CB>(self, ctx: CB) -> Self
     where
-        CB: FnOnce() -> String
+        CB: FnOnce() -> String,
     {
         match self {
             Ok(v) => Ok(v),
-            Err(e) => Err(e.with_context_key(ctx))
+            Err(e) => Err(e.with_context_key(ctx)),
         }
     }
 }

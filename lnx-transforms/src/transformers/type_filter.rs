@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use smallvec::SmallVec;
+
 use lnx_document::{UserDisplayType, Value};
+use smallvec::SmallVec;
+
 use crate::pipeline::{Transform, TransformError};
 
 pub struct TypeFilterTransformer {
@@ -12,9 +14,7 @@ pub struct TypeFilterTransformer {
 impl TypeFilterTransformer {
     /// Creates a new type filter transformer.
     pub fn new(mode: FilterMode, filter: Filter) -> Self {
-        Self {
-            mode, filter,
-        }
+        Self { mode, filter }
     }
 }
 
@@ -23,9 +23,7 @@ impl Transform for TypeFilterTransformer {
         let message = format!(
             "The type `{type_name}` is not allowed on this field, {} types: [{}]",
             self.mode,
-            self.filter
-                .enabled()
-                .join(", ")
+            self.filter.enabled().join(", ")
         );
         TransformError::new(message)
     }
@@ -44,7 +42,6 @@ impl Transform for TypeFilterTransformer {
         }
     }
 }
-
 
 #[derive(Debug)]
 /// The operation mode of the filter.
@@ -98,9 +95,7 @@ impl Filter {
             Value::Bytes(_) => self.bytes,
             Value::Array(values) => {
                 if let Some(filter) = self.array.as_ref() {
-                    values
-                        .iter()
-                        .all(|v| filter.is_match(v))
+                    values.iter().all(|v| filter.is_match(v))
                 } else {
                     false
                 }

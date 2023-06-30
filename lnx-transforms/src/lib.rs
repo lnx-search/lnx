@@ -1,5 +1,5 @@
 mod pipeline;
-mod type_cast;
 mod transformers;
+mod type_cast;
 
 pub use type_cast::{DateTimeFormat, DateTimeParser, TimestampResolution, TypeCast};

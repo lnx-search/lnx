@@ -20,7 +20,10 @@ impl TypeCastTransformer {
 
 impl Transform for TypeCastTransformer {
     fn expecting(&self, type_name: &str) -> TransformError {
-        TransformError::new(format!("Cannot cast `{type_name}` to `{}`", self.cast.type_name()))
+        TransformError::new(format!(
+            "Cannot cast `{type_name}` to `{}`",
+            self.cast.type_name()
+        ))
     }
 
     #[inline]
