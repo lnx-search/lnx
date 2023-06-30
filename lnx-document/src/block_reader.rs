@@ -530,16 +530,6 @@ mod tests {
         DocBlockReader::using_data(data).expect("Read block successfully")
     }
 
-    // fn debug_layout(json_text: &str) -> DocBlockBuilder {
-    //     let doc = serde_json::from_str(json_text).unwrap();
-    //     let mut builder = DocBlockBuilder::default();
-    //
-    //     let is_full = builder.add_document(doc);
-    //     assert!(!is_full, "Builder should not be full");
-    //
-    //     builder
-    // }
-
     fn validate_full_json_cycle(value: serde_json::Value) {
         let expected_text = serde_json::to_string(&value).unwrap();
         let view = get_view_of(&expected_text);
@@ -560,7 +550,95 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_docs() {
+    fn test_empty_values() {
+        let complex = json!({});
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": {}
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": []
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": {
+                "bar": {
+                    "baz": {}
+                }
+            }
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": [[], [[]]]
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": {
+                "bar": [
+                    [
+                        [
+                            {}
+                        ]
+                    ]
+                ]
+            }
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "foo": {
+                "bar": [
+                    [
+                        [
+                            {"something": [[]]}
+                        ]
+                    ]
+                ]
+            }
+        });
+        validate_full_json_cycle(complex);
+    }
+
+    #[test]
+    fn test_github_archive_docs() {
+        let complex = json!({
+            "payload": {
+                "push_id": 536752122,
+                "size": 4,
+                "distinct_size": 4,
+                "ref": "refs/heads/master",
+                "head": "fa6048ec9b9eeafd12cee5f81324f355e1f2a198",
+                "before": "2d06657267b32e0c8e193c617039da200f710195",
+                "commits": []
+            }
+        });
+        validate_full_json_cycle(complex);
+
+        let complex = json!({
+            "id": "2489395767",
+            "type":"PushEvent",
+            "actor": {
+                "id":1310570,
+                "login":"soumith",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/soumith",
+                "avatar_url": "https://avatars.githubusercontent.com/u/1310570?"
+            },
+            "repo": {
+                "id": 28067809,
+                "name": "soumith/fbcunn",
+                "url": "https://api.github.com/repos/soumith/fbcunn"
+            },
+            "payload": {}
+        });
+        validate_full_json_cycle(complex);
+
         let complex = json!({
             "id": "2489395767",
             "type":"PushEvent",
@@ -629,7 +707,6 @@ mod tests {
             "public":true,
             "created_at":"2015-01-01T01:00:00Z"
         });
-
         validate_full_json_cycle(complex);
     }
 }
