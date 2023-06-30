@@ -5,10 +5,10 @@ use std::mem::MaybeUninit;
 use std::net::Ipv6Addr;
 
 use anyhow::Result;
-use rkyv::{AlignedVec, Archive, Serialize};
+use rkyv::{Archive, Serialize};
 use rkyv::ser::Serializer;
 
-use crate::typed_value::{DateTime, TypedMap, Value};
+use crate::value::{DateTime, DynamicDocument, Value};
 use crate::{DocSerializer, Document, FieldType};
 use crate::serializer::DocWriteSerializer;
 use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
@@ -22,30 +22,29 @@ const CAPACITY: usize = 512 << 10;
 pub struct DocBlock<'a> {
     #[with(rkyv::with::AsBox)]
     /// The field mapping of field name to field ID (index in array).
-    field_mapping: Vec<Box<str>>,
+    pub(crate) field_mapping: Vec<Box<str>>,
 
     /// The documents and the layouts they have.
     #[with(rkyv::with::AsBox)]
-    documents: Vec<Document>,
+    pub(crate) documents: Vec<Document>,
 
     // The block data
     #[with(rkyv::with::AsBox)]
     /// All string values within the block.
-    strings: Vec<Text<'a>>,
+    pub(crate) strings: Vec<Text<'a>>,
     #[with(rkyv::with::AsBox)]
     /// All bytes values within the block.
-    bytes: Vec<Bytes>,
+    pub(crate) bytes: Vec<Bytes>,
     /// All bool values within the block.
-    bools: CopyWrapper<bool>,
+    pub(crate) bools: CopyWrapper<bool>,
     /// All u64 values within the block.
-    u64s: RawWrapper<u64>,
+    pub(crate) u64s: RawWrapper<u64>,
     /// All i64 values within the block.
-    i64s: RawWrapper<i64>,
+    pub(crate) i64s: RawWrapper<i64>,
     /// All f64 values within the block.
-    f64s: RawWrapper<f64>,
+    pub(crate) f64s: RawWrapper<f64>,
     /// All ip fields within the block.
-    ips: CopyWrapper<Ipv6Addr>,
-
+    pub(crate) ips: CopyWrapper<Ipv6Addr>,
 }
 
 impl<'a> Default for DocBlock<'a> {
@@ -86,10 +85,10 @@ impl<'a> DocBlockBuilder<'a> {
     /// Adds a document object into the block.
     ///
     /// The map will be converted to the `[Document]` type and serialized.
-    pub fn add_document(&mut self, doc: TypedMap<'a>) -> bool {
+    pub fn add_document(&mut self, doc: DynamicDocument<'a>) -> bool {
         // TODO: We can remove these small allocations if we re-use the document.
-        let mut document = Document::with_capacity(doc.len());
-        for (key, value) in doc {
+        let mut document = Document::new(doc.len() as u32, doc.len());
+        for (key, value) in doc.0 {
             let field_id = self.get_key_idx(key);
             self.convert_value(&mut document, field_id, value);
         }
@@ -175,6 +174,11 @@ impl<'a> DocBlockBuilder<'a> {
                 self.approx_data_size += mem::size_of::<bool>();
                 self.block.add_value(v);
             },
+            Value::Facet(facet) => {
+                doc.add_single_value_field(field_id, FieldType::Facet);
+                self.approx_data_size += facet.encoded_str().as_bytes().len();
+                self.block.add_value(facet.encoded_str().to_string());
+            },
             Value::DateTime(v) => {
                 doc.add_single_value_field(field_id, FieldType::DateTime);
                 self.approx_data_size += mem::size_of::<DateTime>();
@@ -251,6 +255,10 @@ impl<'a> DocBlockBuilder<'a> {
                     self.approx_data_size += mem::size_of::<bool>();
                     self.block.add_value(v);
                 },
+                Value::Facet(facet) => {
+                    self.approx_data_size += facet.encoded_str().as_bytes().len();
+                    self.block.add_value(facet.encoded_str().to_string());
+                },
                 Value::DateTime(v) => {
                     self.approx_data_size += mem::size_of::<DateTime>();
                     self.block.add_value(v);
@@ -324,42 +332,29 @@ fn handle_array_entry_type_change(
     doc: &mut Document,
 ) {
     if *current_type == value_type {
-        (*counter) += 1;
+        maybe_increment(value_type, counter);
         return;
     }
 
     if *counter > 0 {
         doc.add_array_entry(*current_type, *counter);
         (*num_steps_added) += 1;
+        (*counter) = 0;
     }
     (*current_type) = value_type;
+    maybe_increment(value_type, counter);
+}
 
+fn maybe_increment(
+    value_type: FieldType,
+    counter: &mut u16,
+) {
     // We have to special case the collection types here so we don't
     // incorrectly add 2 steps for the same collection.
-    if matches!(value_type, FieldType::Object | FieldType::Array) {
-        (*counter) = 0;
-    } else {
-        (*counter) = 1;
+    if !matches!(value_type, FieldType::Object | FieldType::Array) {
+        (*counter) += 1;
     }
 }
-
-pub struct DocBlockReader {
-    data: AlignedVec,
-    /// A view into the owned `data` as the doc block type rather than some bytes.
-    ///
-    /// It's important that `data` lives *longer* than this view as the view only lives
-    /// for as long as `data.
-    view: &'static rkyv::Archived<DocBlock<'static>>,
-}
-
-impl DocBlockReader {
-    pub fn using_data(data: AlignedVec) -> Result<Self> {
-        let buffer = unsafe { mem::transmute::<&[u8], &'static [u8]>(data.as_slice()) };
-        todo!()
-
-    }
-}
-
 
 /// Describes a type supported for storage in the doc block.
 pub trait DocValue<T> {
@@ -368,6 +363,18 @@ pub trait DocValue<T> {
 
 impl<'a> DocValue<Cow<'a, str>> for DocBlock<'a> {
     fn add_value(&mut self, value: Cow<'a, str>) {
+        self.strings.push(Text::from(value));
+    }
+}
+
+impl<'a> DocValue<String> for DocBlock<'a> {
+    fn add_value(&mut self, value: String) {
+        self.strings.push(Text::from(value));
+    }
+}
+
+impl<'a> DocValue<&'a str> for DocBlock<'a> {
+    fn add_value(&mut self, value: &'a str) {
         self.strings.push(Text::from(value));
     }
 }
@@ -430,21 +437,22 @@ impl<'a> DocValue<bool> for DocBlock<'a> {
 
 #[cfg(test)]
 mod test {
+    use rkyv::AlignedVec;
     use crate::Step;
     use super::*;
 
     macro_rules! doc {
         () => {{
-            std::collections::BTreeMap::<Cow<str>, crate::typed_value::Value>::new()
+            crate::DynamicDocument::default()
         }};
         ($($key:expr => $value:expr $(,)?)+) => {{
-            let mut doc = std::collections::BTreeMap::<Cow<str>, crate::typed_value::Value>::new();
+            let doc = vec![
+                $(
+                    (Cow::Borrowed($key), $value.into()),
+                )+
+            ];
 
-            $(
-                doc.insert(Cow::Borrowed($key), $value.into());
-            )+
-
-            doc
+            crate::DynamicDocument::from(doc)
         }};
     }
 
@@ -455,6 +463,7 @@ mod test {
                 "field_demo" => $value
             };
 
+            let len = doc.len() as u32;
             let is_full = builder.add_document(doc);
             assert!(!is_full, "Builder should not be full");
             assert_eq!(
@@ -462,6 +471,7 @@ mod test {
                 DocBlock {
                     documents: vec![
                         Document {
+                            len,
                             layout: vec![
                                 Step {
                                     field_id: 0,
@@ -527,6 +537,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len: 1,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -553,6 +564,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -560,6 +572,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -598,6 +611,7 @@ mod test {
             ],
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -605,6 +619,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -658,6 +673,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -665,6 +681,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -707,6 +724,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -714,6 +732,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -755,6 +774,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -762,6 +782,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -805,6 +826,7 @@ mod test {
             "some_other_field" => "name-here",
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -812,6 +834,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -902,6 +925,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -909,6 +933,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -958,6 +983,7 @@ mod test {
             ]
         };
 
+        let len = doc.len() as u32;
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
@@ -965,6 +991,7 @@ mod test {
             DocBlock {
                 documents: vec![
                     Document {
+                        len,
                         layout: vec![
                             Step {
                                 field_id: 0,
@@ -1015,6 +1042,54 @@ mod test {
                 i64s: vec![
                     -1223,
                 ].into(),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    /// This test was created after an edge case with some existing data
+    /// showed that we sometimes added an additional step when we shouldn't.
+    ///
+    /// This was originally caused by the `counter` in `handle_array_entry_type_change`
+    /// being incorrectly incremented for Array and Object types.
+    fn test_nested_array_of_objects_bug() {
+        let mut builder = DocBlockBuilder::default();
+        let doc = doc! {
+            "this-was-a-bug" => vec![
+                Value::Object(Vec::new()),
+                Value::Object(Vec::new()),
+            ]
+        };
+
+        let len = doc.len() as u32;
+        let is_full = builder.add_document(doc);
+        assert!(!is_full, "Builder should not be full");
+        assert_eq!(
+            builder.block,
+            DocBlock {
+                documents: vec![
+                    Document {
+                        len,
+                        layout: vec![
+                            Step {
+                                field_id: 0,
+                                field_length: 2,
+                                field_type: FieldType::Array,
+                            },
+                            Step {
+                                field_id: u16::MAX,
+                                field_length: 0,
+                                field_type: FieldType::Object,
+                            },
+                            Step {
+                                field_id: u16::MAX,
+                                field_length: 0,
+                                field_type: FieldType::Object,
+                            },
+                        ],
+                    }
+                ],
                 ..Default::default()
             }
         );

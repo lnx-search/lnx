@@ -1,15 +1,15 @@
 use anyhow::{anyhow, bail, Result};
-use lnx_document::{json_value, typed_value, UserDiplayType};
+use lnx_document::{json_value, value, UserDisplayType};
 
 use crate::op_codes::TransformOp;
 use crate::TypeCast;
 
-pub type TransformedFields<'a> = Vec<(&'a str, typed_value::Value<'a>)>;
+pub type TransformedFields<'a> = Vec<(&'a str, value::Value<'a>)>;
 
 pub enum StackEntry<'a> {
     Missing,
     Json(json_value::Value<'a>),
-    Typed(typed_value::Value<'a>),
+    Typed(value::Value<'a>),
 }
 
 /// A VM for transforming and casting documents against a given
@@ -133,7 +133,7 @@ fn get_key_optional<'a>(
 
 enum ExtractedMap<'a, 'b> {
     Json(&'a mut json_value::JsonMap<'b>),
-    Typed(&'a mut typed_value::TypedMap<'b>),
+    Typed(&'a mut value::KeyValues<'b>),
 }
 
 fn extract_map<'a, 'b: 'a>(
@@ -160,7 +160,7 @@ fn extract_map<'a, 'b: 'a>(
         },
         StackEntry::Typed(value) => {
             match value {
-                typed_value::Value::Object(map) => Ok(ExtractedMap::Typed(map)),
+                value::Value::Object(map) => Ok(ExtractedMap::Typed(map)),
                 other => bail!(
                     "Cannot get key ({key:?}) from field ({:?}) as the value is not a object, got: `{}`",
                     render_history(key_history),
@@ -177,7 +177,7 @@ fn store<'a, 'b: 'a>(
     entry: StackEntry<'a>,
 ) -> Result<()> {
     match entry {
-        StackEntry::Missing => fields.push((key, typed_value::Value::Null)),
+        StackEntry::Missing => fields.push((key, value::Value::Null)),
         StackEntry::Json(value) => fields.push((key, value.into_typed_as_is())),
         StackEntry::Typed(value) => fields.push((key, value)),
     };
@@ -214,7 +214,7 @@ fn check_not_null<'a>(
                 render_history(keys_history)
             )
         },
-        StackEntry::Typed(typed_value::Value::Null) => {
+        StackEntry::Typed(value::Value::Null) => {
             bail!(
                 "Value must not be null for field ({:?})",
                 render_history(keys_history)
@@ -457,7 +457,7 @@ mod tests {
 
         assert_eq!(
             result,
-            transformed!("this_key_now_exists" => typed_value::Value::Null)
+            transformed!("this_key_now_exists" => value::Value::Null)
         )
     }
 

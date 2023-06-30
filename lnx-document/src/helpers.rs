@@ -1,73 +1,73 @@
 use std::borrow::Cow;
 use std::net::Ipv6Addr;
 
-use crate::typed_value::DateTime;
+use crate::value::DateTime;
 
-pub trait UserDiplayType {
+pub trait UserDisplayType {
     fn type_name(&self) -> Cow<'static, str>;
 }
 
-impl UserDiplayType for String {
+impl UserDisplayType for String {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("string")
     }
 }
 
-impl UserDiplayType for &str {
+impl UserDisplayType for &str {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("string")
     }
 }
 
-impl<'a> UserDiplayType for Cow<'a, str> {
+impl<'a> UserDisplayType for Cow<'a, str> {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("string")
     }
 }
 
-impl UserDiplayType for Vec<u8> {
+impl UserDisplayType for Vec<u8> {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("bytes")
     }
 }
 
-impl UserDiplayType for &[u8] {
+impl UserDisplayType for &[u8] {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("bytes")
     }
 }
 
-impl UserDiplayType for u64 {
+impl UserDisplayType for u64 {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("u64")
     }
 }
 
-impl UserDiplayType for i64 {
+impl UserDisplayType for i64 {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("i64")
     }
 }
 
-impl UserDiplayType for f64 {
+impl UserDisplayType for f64 {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("f64")
     }
 }
 
-impl UserDiplayType for bool {
+impl UserDisplayType for bool {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("bool")
     }
 }
 
-impl UserDiplayType for DateTime {
+impl UserDisplayType for DateTime {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("datetime")
     }
 }
 
-impl UserDiplayType for Ipv6Addr {
+impl UserDisplayType for Ipv6Addr {
     fn type_name(&self) -> Cow<'static, str> {
         Cow::Borrowed("ip")
     }

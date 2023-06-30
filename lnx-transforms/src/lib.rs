@@ -2,6 +2,7 @@ mod flatten;
 mod op_codes;
 mod type_cast;
 mod vm;
+mod pipeline;
 
 pub use flatten::ObjectFlattener;
 pub use op_codes::TransformOp;

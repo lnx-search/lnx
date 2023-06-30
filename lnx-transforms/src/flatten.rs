@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use lnx_document::typed_value::{TypedMap, TypedMapIter, Value};
+use lnx_document::value::{KeyValues, KeyValuesIter, Value};
 use smallvec::SmallVec;
 
 type ValueStack<'a> = SmallVec<[(Cow<'a, str>, Value<'a>); 10]>;
@@ -45,18 +45,18 @@ type ValueStack<'a> = SmallVec<[(Cow<'a, str>, Value<'a>); 10]>;
 /// ]
 /// ```
 pub struct ObjectFlattener<'a> {
-    object: TypedMapIter<'a>,
+    object: KeyValuesIter<'a>,
     fields: ValueStack<'a>,
 }
 
-impl<'a> From<TypedMap<'a>> for ObjectFlattener<'a> {
-    fn from(map: TypedMap<'a>) -> Self {
+impl<'a> From<KeyValues<'a>> for ObjectFlattener<'a> {
+    fn from(map: KeyValues<'a>) -> Self {
         Self::from(map.into_iter())
     }
 }
 
-impl<'a> From<TypedMapIter<'a>> for ObjectFlattener<'a> {
-    fn from(object: TypedMapIter<'a>) -> Self {
+impl<'a> From<KeyValuesIter<'a>> for ObjectFlattener<'a> {
+    fn from(object: KeyValuesIter<'a>) -> Self {
         Self {
             object,
             fields: ValueStack::new(),

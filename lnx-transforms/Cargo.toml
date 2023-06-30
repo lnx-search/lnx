@@ -15,6 +15,7 @@ bumpalo = { workspace = true }
 ryu = { workspace = true }
 itoa = { workspace = true }
 base64 = { workspace = true }
+hashbrown = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

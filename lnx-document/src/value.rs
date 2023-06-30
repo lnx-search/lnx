@@ -1,16 +1,49 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::ops::{Deref, DerefMut};
 
 use time::formatting::Formattable;
 use time::OffsetDateTime;
 
-use crate::{FieldType, UserDiplayType};
+use crate::{FieldType, UserDisplayType};
 use crate::wrappers::{Bytes, Text};
 
-pub type TypedMap<'a> = BTreeMap<Cow<'a, str>, Value<'a>>;
-pub type TypedMapIter<'a> =
-    std::collections::btree_map::IntoIter<Cow<'a, str>, Value<'a>>;
+pub type KeyValues<'a> = Vec<(Cow<'a, str>, Value<'a>)>;
+pub type KeyValuesIter<'a> =
+    std::vec::IntoIter<(Cow<'a, str>, Value<'a>)>;
+
+#[derive(Debug, Clone, Default)]
+/// A JSON-like document object.
+///
+/// Internally this is a vector of tuples
+/// which can potentially contain duplicate keys.
+pub struct DynamicDocument<'a>(pub KeyValues<'a>);
+
+impl<'a> From<KeyValues<'a>> for DynamicDocument<'a> {
+    fn from(value: KeyValues<'a>) -> Self {
+        Self(value)
+    }
+}
+
+impl<'a> Deref for DynamicDocument<'a> {
+    type Target = KeyValues<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'a> DerefMut for DynamicDocument<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> UserDisplayType for KeyValues<'a> {
+    fn type_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("object")
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value<'a> {
@@ -20,11 +53,12 @@ pub enum Value<'a> {
     I64(i64),
     F64(f64),
     Bool(bool),
+    Facet(tantivy::schema::Facet),
     DateTime(DateTime),
     IpAddr(Ipv6Addr),
     Bytes(Vec<u8>),
     Array(Vec<Value<'a>>),
-    Object(TypedMap<'a>),
+    Object(KeyValues<'a>),
 }
 
 impl<'a>  Value<'a> {
@@ -37,6 +71,7 @@ impl<'a>  Value<'a> {
             Value::I64(_) => FieldType::I64,
             Value::F64(_) => FieldType::F64,
             Value::Bool(_) => FieldType::Bool,
+            Value::Facet(_) => FieldType::Facet,
             Value::DateTime(_) => FieldType::DateTime,
             Value::IpAddr(_) => FieldType::IpAddr,
             Value::Bytes(_) => FieldType::Bytes,
@@ -46,7 +81,7 @@ impl<'a>  Value<'a> {
     }
 }
 
-impl<'a> UserDiplayType for Value<'a> {
+impl<'a> UserDisplayType for Value<'a> {
     fn type_name(&self) -> Cow<'static, str> {
         match self {
             Value::Null => Cow::Borrowed("null"),
@@ -55,6 +90,7 @@ impl<'a> UserDiplayType for Value<'a> {
             Value::I64(_) => Cow::Borrowed("i64"),
             Value::F64(_) => Cow::Borrowed("f64"),
             Value::Bool(_) => Cow::Borrowed("bool"),
+            Value::Facet(_) => Cow::Borrowed("facet"),
             Value::DateTime(_) => Cow::Borrowed("datetime"),
             Value::Bytes(_) => Cow::Borrowed("bytes"),
             Value::Array(_) => Cow::Borrowed("array"),
@@ -64,7 +100,7 @@ impl<'a> UserDiplayType for Value<'a> {
     }
 }
 
-impl<'a> UserDiplayType for &Value<'a> {
+impl<'a> UserDisplayType for &Value<'a> {
     fn type_name(&self) -> Cow<'static, str> {
         match self {
             Value::Null => Cow::Borrowed("null"),
@@ -73,6 +109,7 @@ impl<'a> UserDiplayType for &Value<'a> {
             Value::I64(_) => Cow::Borrowed("i64"),
             Value::F64(_) => Cow::Borrowed("f64"),
             Value::Bool(_) => Cow::Borrowed("bool"),
+            Value::Facet(_) => Cow::Borrowed("facet"),
             Value::DateTime(_) => Cow::Borrowed("datetime"),
             Value::Bytes(_) => Cow::Borrowed("bytes"),
             Value::Array(_) => Cow::Borrowed("array"),
@@ -154,15 +191,27 @@ impl<'a> From<DateTime> for Value<'a> {
     }
 }
 
+impl<'a> From<tantivy::schema::Facet> for Value<'a> {
+    fn from(value: tantivy::schema::Facet) -> Self {
+        Self::Facet(value)
+    }
+}
+
 impl<'a, T: Into<Value<'a>>> From<Vec<T>> for Value<'a> {
     fn from(value: Vec<T>) -> Self {
         Self::Array(value.into_iter().map(|v| v.into()).collect())
     }
 }
 
-impl<'a, T: Into<Value<'a>>> From<BTreeMap<Cow<'a, str>, T>> for Value<'a> {
-    fn from(value: BTreeMap<Cow<'a, str>, T>) -> Self {
+impl<'a, T: Into<Value<'a>>> From<Vec<(Cow<'a, str>, T)>> for Value<'a> {
+    fn from(value: Vec<(Cow<'a, str>, T)>) -> Self {
         Self::Object(value.into_iter().map(|(k, v)| (k, v.into())).collect())
+    }
+}
+
+impl<'a> From<DynamicDocument<'a>> for Value<'a> {
+    fn from(value: DynamicDocument<'a>) -> Self {
+        Self::Object(value.0)
     }
 }
 

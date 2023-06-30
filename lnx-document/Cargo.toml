@@ -11,10 +11,10 @@ serde = { workspace = true }
 time = { workspace = true }
 anyhow = { workspace = true }
 crc32fast = { workspace = true }
-bytemuck = { workspace = true }
+tantivy = { workspace = true }
+base64 = { workspace = true }
+itoa = { workspace = true }
+ryu = { workspace = true }
 
 [dev-dependencies]
 serde_json = "1.0.96"
-tracing-subscriber = "0.3.17"
-tracing = "0.1"
-lz4_flex = { workspace = true }

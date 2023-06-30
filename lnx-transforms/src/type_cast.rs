@@ -4,8 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use anyhow::{anyhow, bail, Result};
 use base64::Engine;
-use lnx_document::typed_value::DateTime;
-use lnx_document::{json_value, typed_value, UserDiplayType};
+use lnx_document::{Value, DateTime, UserDisplayType};
 use time::format_description::{well_known, OwnedFormatItem};
 use time::OffsetDateTime;
 
@@ -29,7 +28,7 @@ pub enum TypeCast {
     IpAddr,
 }
 
-impl UserDiplayType for TypeCast {
+impl UserDisplayType for TypeCast {
     fn type_name(&self) -> Cow<'static, str> {
         match self {
             TypeCast::String => Cow::Borrowed("string"),
@@ -52,9 +51,9 @@ impl TypeCast {
         &self,
         value: json_value::Value<'a>,
         keys_history: &[&str], // Used to make errors more ergonomic.
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match value {
-            json_value::Value::Null => Ok(typed_value::Value::Null),
+            json_value::Value::Null => Ok(value::Value::Null),
             json_value::Value::Str(s) => self.try_cast_cow(s, keys_history),
             json_value::Value::U64(v) => self.try_cast_u64(v, keys_history),
             json_value::Value::I64(v) => self.try_cast_i64(v, keys_history),
@@ -73,7 +72,7 @@ impl TypeCast {
                     let value = self.try_cast_json(value, keys_history)?;
                     casted.push(value);
                 }
-                Ok(typed_value::Value::Array(casted))
+                Ok(value::Value::Array(casted))
             },
             other => self.bail(other, keys_history),
         }
@@ -82,19 +81,19 @@ impl TypeCast {
     /// Attempts to cast a typed value to the cast type.
     pub fn try_cast_typed<'a>(
         &self,
-        value: typed_value::Value<'a>,
+        value: value::Value<'a>,
         keys_history: &[&str], // Used to make errors more ergonomic.
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match value {
-            typed_value::Value::Null => Ok(typed_value::Value::Null),
-            typed_value::Value::Str(s) => self.try_cast_cow(s, keys_history),
-            typed_value::Value::U64(v) => self.try_cast_u64(v, keys_history),
-            typed_value::Value::I64(v) => self.try_cast_i64(v, keys_history),
-            typed_value::Value::F64(v) => self.try_cast_f64(v, keys_history),
-            typed_value::Value::Bool(v) => self.try_cast_bool(v, keys_history),
-            typed_value::Value::DateTime(v) => self.try_cast_datetime(v, keys_history),
-            typed_value::Value::IpAddr(v) => self.try_cast_ip(v, keys_history),
-            typed_value::Value::Array(elements) => {
+            value::Value::Null => Ok(value::Value::Null),
+            value::Value::Str(s) => self.try_cast_cow(s, keys_history),
+            value::Value::U64(v) => self.try_cast_u64(v, keys_history),
+            value::Value::I64(v) => self.try_cast_i64(v, keys_history),
+            value::Value::F64(v) => self.try_cast_f64(v, keys_history),
+            value::Value::Bool(v) => self.try_cast_bool(v, keys_history),
+            value::Value::DateTime(v) => self.try_cast_datetime(v, keys_history),
+            value::Value::IpAddr(v) => self.try_cast_ip(v, keys_history),
+            value::Value::Array(elements) => {
                 let mut casted = Vec::with_capacity(elements.len());
                 for value in elements {
                     if matches!(
@@ -111,13 +110,13 @@ impl TypeCast {
                     let value = self.try_cast_typed(value, keys_history)?;
                     casted.push(value);
                 }
-                Ok(typed_value::Value::Array(casted))
+                Ok(value::Value::Array(casted))
             },
             other => self.bail(other, keys_history),
         }
     }
 
-    fn bail<T>(&self, value: impl UserDiplayType, keys_history: &[&str]) -> Result<T> {
+    fn bail<T>(&self, value: impl UserDisplayType, keys_history: &[&str]) -> Result<T> {
         bail!(
             "Cannot cast `{}` to `{}` for field ({:?})",
             value.type_name(),
@@ -128,7 +127,7 @@ impl TypeCast {
 
     fn err_invalid_value(
         &self,
-        value: impl UserDiplayType + Debug,
+        value: impl UserDisplayType + Debug,
         keys_history: &[&str],
     ) -> anyhow::Error {
         anyhow!(
@@ -142,7 +141,7 @@ impl TypeCast {
 
     fn err_with_detail(
         &self,
-        value: impl UserDiplayType,
+        value: impl UserDisplayType,
         reason: &str,
         keys_history: &[&str],
     ) -> anyhow::Error {
@@ -159,7 +158,7 @@ impl TypeCast {
         &self,
         string: &'a str,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         self.try_cast_cow(Cow::Borrowed(string), keys_history)
     }
 
@@ -168,35 +167,35 @@ impl TypeCast {
         &self,
         string: Cow<'a, str>,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::String => Ok(typed_value::Value::Str(string)),
+            Self::String => Ok(value::Value::Str(string)),
             Self::U64 => string
                 .parse::<u64>()
                 .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(typed_value::Value::U64),
+                .map(value::Value::U64),
             Self::I64 => string
                 .parse::<i64>()
                 .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(typed_value::Value::I64),
+                .map(value::Value::I64),
             Self::F64 => string
                 .parse::<f64>()
                 .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(typed_value::Value::F64),
+                .map(value::Value::F64),
             Self::Bool => string
                 .parse::<bool>()
                 .map_err(|_| self.err_invalid_value(string, keys_history))
-                .map(typed_value::Value::Bool),
+                .map(value::Value::Bool),
             Self::DateTime(parser) => parser
                 .try_parse_str(string.as_ref())
-                .map(typed_value::Value::DateTime),
+                .map(value::Value::DateTime),
             Self::IpAddr => {
                 if let Ok(ipv4) = string.parse::<Ipv4Addr>() {
-                    return Ok(typed_value::Value::IpAddr(ipv4.to_ipv6_mapped()));
+                    return Ok(value::Value::IpAddr(ipv4.to_ipv6_mapped()));
                 }
 
                 if let Ok(ipv6) = string.parse::<Ipv6Addr>() {
-                    return Ok(typed_value::Value::IpAddr(ipv6));
+                    return Ok(value::Value::IpAddr(ipv6));
                 }
 
                 Err(self.err_invalid_value(string, keys_history))
@@ -204,7 +203,7 @@ impl TypeCast {
             Self::Bytes => {
                 let engine = base64::engine::general_purpose::STANDARD;
                 if let Ok(bytes) = engine.decode(string.as_ref()) {
-                    Ok(typed_value::Value::Bytes(bytes))
+                    Ok(value::Value::Bytes(bytes))
                 } else {
                     Err(self.err_invalid_value(string, keys_history))
                 }
@@ -217,9 +216,9 @@ impl TypeCast {
         &self,
         v: u64,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::U64 => Ok(typed_value::Value::U64(v)),
+            Self::U64 => Ok(value::Value::U64(v)),
             Self::I64 => {
                 let v: i64 = v.try_into().map_err(|_| {
                     self.err_with_detail(
@@ -228,12 +227,12 @@ impl TypeCast {
                         keys_history,
                     )
                 })?;
-                Ok(typed_value::Value::I64(v))
+                Ok(value::Value::I64(v))
             },
             Self::String => {
                 let mut buffer = itoa::Buffer::new();
                 let s = buffer.format(v);
-                Ok(typed_value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
             },
             Self::DateTime(parser) => {
                 let v: i64 = v.try_into().map_err(|_| {
@@ -244,7 +243,7 @@ impl TypeCast {
                     )
                 })?;
                 let dt = parser.try_convert_timestamp(v)?;
-                Ok(typed_value::Value::DateTime(dt))
+                Ok(value::Value::DateTime(dt))
             },
             _ => self.bail(v, keys_history),
         }
@@ -255,9 +254,9 @@ impl TypeCast {
         &self,
         v: i64,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::I64 => Ok(typed_value::Value::I64(v)),
+            Self::I64 => Ok(value::Value::I64(v)),
             Self::U64 => {
                 let v: u64 = v.try_into().map_err(|_| {
                     self.err_with_detail(
@@ -266,16 +265,16 @@ impl TypeCast {
                         keys_history,
                     )
                 })?;
-                Ok(typed_value::Value::U64(v))
+                Ok(value::Value::U64(v))
             },
             Self::String => {
                 let mut buffer = itoa::Buffer::new();
                 let s = buffer.format(v);
-                Ok(typed_value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
             },
             Self::DateTime(parser) => {
                 let dt = parser.try_convert_timestamp(v)?;
-                Ok(typed_value::Value::DateTime(dt))
+                Ok(value::Value::DateTime(dt))
             },
             _ => self.bail(v, keys_history),
         }
@@ -286,13 +285,13 @@ impl TypeCast {
         &self,
         v: f64,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::F64 => Ok(typed_value::Value::F64(v)),
+            Self::F64 => Ok(value::Value::F64(v)),
             Self::String => {
                 let mut buffer = ryu::Buffer::new();
                 let s = buffer.format(v);
-                Ok(typed_value::Value::Str(Cow::Owned(s.to_owned())))
+                Ok(value::Value::Str(Cow::Owned(s.to_owned())))
             },
             _ => self.bail(v, keys_history),
         }
@@ -303,13 +302,13 @@ impl TypeCast {
         &self,
         v: bool,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::Bool => Ok(typed_value::Value::Bool(v)),
+            Self::Bool => Ok(value::Value::Bool(v)),
             Self::String => {
                 let v = if v { "true" } else { "false" };
 
-                Ok(typed_value::Value::Str(Cow::Borrowed(v)))
+                Ok(value::Value::Str(Cow::Borrowed(v)))
             },
             _ => self.bail(v, keys_history),
         }
@@ -320,12 +319,12 @@ impl TypeCast {
         &self,
         v: DateTime,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::DateTime(_) => Ok(typed_value::Value::DateTime(v)),
+            Self::DateTime(_) => Ok(value::Value::DateTime(v)),
             Self::String => match v.format(&well_known::Rfc3339) {
                 Err(e) => bail!("{e} for field ({:?})", keys_history.join(".")),
-                Ok(rendered) => Ok(typed_value::Value::Str(Cow::Owned(rendered))),
+                Ok(rendered) => Ok(value::Value::Str(Cow::Owned(rendered))),
             },
             _ => self.bail(v, keys_history),
         }
@@ -336,16 +335,16 @@ impl TypeCast {
         &self,
         v: Ipv6Addr,
         keys_history: &[&str],
-    ) -> Result<typed_value::Value<'a>> {
+    ) -> Result<value::Value<'a>> {
         match self {
-            Self::IpAddr => Ok(typed_value::Value::IpAddr(v)),
+            Self::IpAddr => Ok(value::Value::IpAddr(v)),
             Self::String => {
                 let s = if let Some(ipv4) = v.to_ipv4_mapped() {
                     ipv4.to_string()
                 } else {
                     v.to_string()
                 };
-                Ok(typed_value::Value::Str(Cow::Owned(s)))
+                Ok(value::Value::Str(Cow::Owned(s)))
             },
             _ => self.bail(v, keys_history),
         }
@@ -468,15 +467,15 @@ impl DateTimeParser {
     }
 
     /// Attempts to parse a typed value into a datetime using the format info.
-    pub fn try_parse_typed(&self, value: typed_value::Value) -> Result<DateTime> {
+    pub fn try_parse_typed(&self, value: value::Value) -> Result<DateTime> {
         match value {
-            typed_value::Value::Str(s) => self.try_parse_str(s.as_ref()),
-            typed_value::Value::I64(ts) => self.try_convert_timestamp(ts),
+            value::Value::Str(s) => self.try_parse_str(s.as_ref()),
+            value::Value::I64(ts) => self.try_convert_timestamp(ts),
             other => self.bail(other),
         }
     }
 
-    fn bail<T>(&self, value: impl UserDiplayType) -> Result<T> {
+    fn bail<T>(&self, value: impl UserDisplayType) -> Result<T> {
         bail!("Cannot cast `{}` to `datetime`", value.type_name())
     }
 
@@ -520,33 +519,33 @@ mod tests {
     #[test]
     fn test_cast_str() {
         let value = TypeCast::String.try_cast_str("hello, world!", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("hello, world!"));
+        assert_eq!(value.unwrap(), value::Value::from("hello, world!"));
 
         let value = TypeCast::U64.try_cast_str("hello, world!", &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` for field (\"\") due to an invalid value being provided: \"hello, world!\"");
 
         let value = TypeCast::U64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(124321u64));
+        assert_eq!(value.unwrap(), value::Value::from(124321u64));
 
         let value = TypeCast::U64.try_cast_str("-124321", &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `u64` for field (\"\") due to an invalid value being provided: \"-124321\"");
 
         let value = TypeCast::I64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(124321i64));
+        assert_eq!(value.unwrap(), value::Value::from(124321i64));
         let value = TypeCast::I64.try_cast_str("-124321", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(-124321i64));
+        assert_eq!(value.unwrap(), value::Value::from(-124321i64));
 
         let value = TypeCast::F64.try_cast_str("124321", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(124321.0));
+        assert_eq!(value.unwrap(), value::Value::from(124321.0));
         let value = TypeCast::F64.try_cast_str("-124321", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(-124321.0));
+        assert_eq!(value.unwrap(), value::Value::from(-124321.0));
         let value = TypeCast::F64.try_cast_str("nan", &[]);
-        assert!(matches!(value.unwrap(), typed_value::Value::F64(v) if v.is_nan()));
+        assert!(matches!(value.unwrap(), value::Value::F64(v) if v.is_nan()));
 
         let value = TypeCast::Bool.try_cast_str("true", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(true));
+        assert_eq!(value.unwrap(), value::Value::from(true));
         let value = TypeCast::Bool.try_cast_str("false", &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(false));
+        assert_eq!(value.unwrap(), value::Value::from(false));
         let value = TypeCast::Bool.try_cast_str("1", &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `string` to `bool` for field (\"\") due to an invalid value being provided: \"1\"");
         let value = TypeCast::Bool.try_cast_str("-", &[]);
@@ -557,7 +556,7 @@ mod tests {
         let value = TypeCast::Bytes.try_cast_str("aGVsbG8gd29ybGQ=", &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::Bytes(vec![
+            value::Value::Bytes(vec![
                 104u8, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100
             ])
         );
@@ -565,13 +564,13 @@ mod tests {
         let value = TypeCast::IpAddr.try_cast_str("192.168.0.1", &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::IpAddr(Ipv4Addr::new(192, 168, 0, 1).to_ipv6_mapped())
+            value::Value::IpAddr(Ipv4Addr::new(192, 168, 0, 1).to_ipv6_mapped())
         );
         let value = TypeCast::IpAddr
             .try_cast_str("2345:0425:2CA1:0000:0000:0567:5673:23b5", &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::IpAddr(
+            value::Value::IpAddr(
                 Ipv6Addr::from_str("2345:0425:2CA1:0000:0000:0567:5673:23b5").unwrap()
             )
         );
@@ -584,7 +583,7 @@ mod tests {
         .try_cast_str("2002-10-02T15:00:00Z", &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(
+            value::Value::DateTime(
                 DateTime::from_micros(1033570800000000).unwrap()
             )
         );
@@ -596,7 +595,7 @@ mod tests {
         .try_cast_str("2002-10-02T15:00:00Z", &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(
+            value::Value::DateTime(
                 DateTime::from_micros(1033570800000000).unwrap()
             )
         );
@@ -610,19 +609,19 @@ mod tests {
     #[test]
     fn test_cast_u64() {
         let value = TypeCast::String.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("12456"));
+        assert_eq!(value.unwrap(), value::Value::from("12456"));
         let value = TypeCast::String.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("0"));
+        assert_eq!(value.unwrap(), value::Value::from("0"));
 
         let value = TypeCast::U64.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::U64(0));
+        assert_eq!(value.unwrap(), value::Value::U64(0));
         let value = TypeCast::U64.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::U64(12456));
+        assert_eq!(value.unwrap(), value::Value::U64(12456));
 
         let value = TypeCast::I64.try_cast_u64(12456, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::I64(12456));
+        assert_eq!(value.unwrap(), value::Value::I64(12456));
         let value = TypeCast::I64.try_cast_u64(0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::I64(0));
+        assert_eq!(value.unwrap(), value::Value::I64(0));
         let value = TypeCast::I64.try_cast_u64(u64::MAX, &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `u64` to `i64` for field (\"\") because the input value cannot be safely represented by the target type");
 
@@ -697,7 +696,7 @@ mod tests {
         .try_cast_u64(0, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_secs(0).unwrap())
+            value::Value::DateTime(DateTime::from_secs(0).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -706,7 +705,7 @@ mod tests {
         .try_cast_u64(2235, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_micros(2235).unwrap())
+            value::Value::DateTime(DateTime::from_micros(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -715,7 +714,7 @@ mod tests {
         .try_cast_u64(2235, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_millis(2235).unwrap())
+            value::Value::DateTime(DateTime::from_millis(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -728,18 +727,18 @@ mod tests {
     #[test]
     fn test_cast_i64() {
         let value = TypeCast::String.try_cast_i64(12456, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("12456"));
+        assert_eq!(value.unwrap(), value::Value::from("12456"));
         let value = TypeCast::String.try_cast_i64(0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("0"));
+        assert_eq!(value.unwrap(), value::Value::from("0"));
 
         let value = TypeCast::U64.try_cast_i64(0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::U64(0));
+        assert_eq!(value.unwrap(), value::Value::U64(0));
         let value = TypeCast::U64.try_cast_i64(12456, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::U64(12456));
+        assert_eq!(value.unwrap(), value::Value::U64(12456));
         let value = TypeCast::U64.try_cast_i64(-12456, &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` for field (\"\") because the input value cannot be safely represented by the target type");
         let value = TypeCast::U64.try_cast_i64(i64::MAX, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::U64(i64::MAX as u64));
+        assert_eq!(value.unwrap(), value::Value::U64(i64::MAX as u64));
         let value = TypeCast::U64.try_cast_i64(i64::MIN, &[]);
         assert_eq!(value.unwrap_err().to_string(), "Cannot cast `i64` to `u64` for field (\"\") because the input value cannot be safely represented by the target type");
 
@@ -814,7 +813,7 @@ mod tests {
         .try_cast_i64(0, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_secs(0).unwrap())
+            value::Value::DateTime(DateTime::from_secs(0).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -823,7 +822,7 @@ mod tests {
         .try_cast_i64(2235, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_micros(2235).unwrap())
+            value::Value::DateTime(DateTime::from_micros(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -832,7 +831,7 @@ mod tests {
         .try_cast_i64(2235, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::DateTime(DateTime::from_millis(2235).unwrap())
+            value::Value::DateTime(DateTime::from_millis(2235).unwrap())
         );
         let value = TypeCast::DateTime(
             DateTimeParser::default()
@@ -848,14 +847,14 @@ mod tests {
     #[test]
     fn test_cast_f64() {
         let value = TypeCast::String.try_cast_f64(12456.0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("12456.0"));
+        assert_eq!(value.unwrap(), value::Value::from("12456.0"));
         let value = TypeCast::String.try_cast_f64(0.0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("0.0"));
+        assert_eq!(value.unwrap(), value::Value::from("0.0"));
 
         let value = TypeCast::F64.try_cast_f64(12456.0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(12456.0));
+        assert_eq!(value.unwrap(), value::Value::from(12456.0));
         let value = TypeCast::F64.try_cast_f64(0.0, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(0.0));
+        assert_eq!(value.unwrap(), value::Value::from(0.0));
 
         // Types we know we dont support
         let value = TypeCast::U64.try_cast_f64(0.0, &[]);
@@ -893,14 +892,14 @@ mod tests {
     #[test]
     fn test_cast_bool() {
         let value = TypeCast::String.try_cast_bool(true, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("true"));
+        assert_eq!(value.unwrap(), value::Value::from("true"));
         let value = TypeCast::String.try_cast_bool(false, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("false"));
+        assert_eq!(value.unwrap(), value::Value::from("false"));
 
         let value = TypeCast::Bool.try_cast_bool(true, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(true));
+        assert_eq!(value.unwrap(), value::Value::from(true));
         let value = TypeCast::Bool.try_cast_bool(false, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(false));
+        assert_eq!(value.unwrap(), value::Value::from(false));
 
         // Types we know we dont support
         let value = TypeCast::U64.try_cast_bool(false, &[]);
@@ -940,15 +939,15 @@ mod tests {
         let value = TypeCast::String.try_cast_ip(ipv6, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::from("2345:425:2ca1::567:5673:23b5")
+            value::Value::from("2345:425:2ca1::567:5673:23b5")
         );
         let value = TypeCast::String.try_cast_ip(ipv4, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from("192.168.0.1"));
+        assert_eq!(value.unwrap(), value::Value::from("192.168.0.1"));
 
         let value = TypeCast::IpAddr.try_cast_ip(ipv6, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(ipv6));
+        assert_eq!(value.unwrap(), value::Value::from(ipv6));
         let value = TypeCast::IpAddr.try_cast_ip(ipv4, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(ipv4));
+        assert_eq!(value.unwrap(), value::Value::from(ipv4));
 
         // Types we know we dont support
         let value = TypeCast::U64.try_cast_ip(ipv4, &[]);
@@ -997,18 +996,18 @@ mod tests {
         let value = TypeCast::String.try_cast_datetime(random_time, &[]);
         assert_eq!(
             value.unwrap(),
-            typed_value::Value::from("2047-09-17T16:58:45Z")
+            value::Value::from("2047-09-17T16:58:45Z")
         );
 
         let value = TypeCast::DateTime(DateTimeParser::default())
             .try_cast_datetime(max_time, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(max_time));
+        assert_eq!(value.unwrap(), value::Value::from(max_time));
         let value = TypeCast::DateTime(DateTimeParser::default())
             .try_cast_datetime(min_time, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(min_time));
+        assert_eq!(value.unwrap(), value::Value::from(min_time));
         let value = TypeCast::DateTime(DateTimeParser::default())
             .try_cast_datetime(random_time, &[]);
-        assert_eq!(value.unwrap(), typed_value::Value::from(random_time));
+        assert_eq!(value.unwrap(), value::Value::from(random_time));
 
         // Types we know we dont support
         let value = TypeCast::I64.try_cast_datetime(max_time, &[]);

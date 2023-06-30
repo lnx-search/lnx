@@ -1,20 +1,24 @@
 extern crate core;
 
 mod helpers;
-pub mod json_value;
 mod serializer;
-pub mod typed_value;
+mod value;
 mod wrappers;
-mod doc_block;
+mod serde_support;
+mod block_builder;
+mod block_reader;
 
-pub use helpers::UserDiplayType;
+pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};
 
+pub use value::{Value, KeyValues, KeyValuesIter, DateTime, DynamicDocument};
 pub use self::serializer::{DocSerializer, DocSerializerError, ChecksumDocWriter};
-pub use self::doc_block::DocBlockBuilder;
+pub use self::block_builder::DocBlockBuilder;
+pub use self::block_reader::{DocBlockReader, DocumentView};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Archive, Serialize, Eq, PartialEq)]
+#[archive_attr(derive(Debug))]
 pub enum FieldType {
     /// the field is of type `str`.
     String = 0,
@@ -38,17 +42,20 @@ pub enum FieldType {
     // sense to do so.
     /// A datetime value stored as a i64s.
     DateTime = 8,
+    /// A hierarchical facet stored as a string.
+    Facet = 9,
 
     // Collection special types
     /// An Array type.
-    Array = 9,
+    Array = 10,
     /// An Object type.
-    Object = 10,
+    Object = 11,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
+#[archive_attr(derive(Debug))]
 /// The raw binary structure describing part of the layout of a doc.
 ///
 /// This type should be `4` bytes in size without padding.
@@ -84,16 +91,20 @@ pub struct Step {
 #[repr(C)]
 #[derive(Clone, Debug, Default, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
+#[archive_attr(derive(Debug))]
 pub struct Document {
+    /// The number of top level fields in the document object.
+    pub(crate) len: u32,
     #[with(rkyv::with::AsBox)]
     #[with(rkyv::with::CopyOptimize)]
     /// The core top-level fields in the document.
-    layout: Vec<Step>,
+    pub(crate) layout: Vec<Step>,
 }
 
 impl Document {
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn new(len: u32, capacity: usize) -> Self {
         Self {
+            len,
             layout: Vec::with_capacity(capacity)
         }
     }
