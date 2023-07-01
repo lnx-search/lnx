@@ -18,7 +18,11 @@ impl StorageMetastore {
     }
 
     /// Sets a new checkpoint position for a given writer.
-    pub fn set_checkpoint(&self, writer_key: u64, checkpoint_position: u64) -> Result<()> {
+    pub fn set_checkpoint(
+        &self,
+        writer_key: u64,
+        checkpoint_position: u64,
+    ) -> Result<()> {
         self.0.put(&writer_key, &checkpoint_position)
     }
 }

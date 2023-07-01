@@ -1,8 +1,6 @@
-mod writers;
-mod reader;
 mod metastore_wrapper;
+mod reader;
+mod writers;
 
-
-pub use writers::BlockStoreWriter;
 pub use reader::BlockStoreReader;
-
+pub use writers::BlockStoreWriter;

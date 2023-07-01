@@ -1,8 +1,9 @@
 use std::io;
 use std::path::Path;
-use async_trait::async_trait;
-use crate::metastore_wrapper::StorageMetastore;
 
+use async_trait::async_trait;
+
+use crate::metastore_wrapper::StorageMetastore;
 
 /// The writer responsible for safely persisting doc blocks to disk
 /// doubling as a WAL for the tantivy index as well.
@@ -39,7 +40,7 @@ impl BlockStoreWriter {
 
     #[inline]
     /// Ensures any pending data written to the doc store is safely persisted to disk.
-    /// 
+    ///
     /// This internally advances the checkpoint cursor that will be stored
     /// when a index is committed.
     pub async fn flush(&mut self) -> io::Result<()> {
@@ -69,10 +70,7 @@ pub trait SegmentWriter: Sized {
     async fn flush(&mut self) -> io::Result<()>;
 }
 
-
-pub enum AutoWriter {
-
-}
+pub enum AutoWriter {}
 
 #[async_trait]
 impl SegmentWriter for AutoWriter {

@@ -135,9 +135,7 @@ impl Metastore {
     {
         let slf = self.clone();
 
-        lnx_executor::spawn_blocking_task(async move {
-            slf.put(&k, &v)
-        }).await?
+        lnx_executor::spawn_blocking_task(async move { slf.put(&k, &v) }).await?
     }
 
     #[inline]
@@ -146,15 +144,14 @@ impl Metastore {
     where
         K: Key + Send + 'static,
         V: Archive + Send + 'static,
-        V::Archived: Send + 'static
+        V::Archived: Send
+            + 'static
             + CheckBytes<DefaultValidator<'static>>
             + Deserialize<V, SharedDeserializeMap>,
     {
         let slf = self.clone();
 
-        lnx_executor::spawn_blocking_task(async move {
-            slf.get(&k)
-        }).await?
+        lnx_executor::spawn_blocking_task(async move { slf.get(&k) }).await?
     }
 
     #[inline]
@@ -165,8 +162,6 @@ impl Metastore {
     {
         let slf = self.clone();
 
-        lnx_executor::spawn_blocking_task(async move {
-            slf.del(&k)
-        }).await?
+        lnx_executor::spawn_blocking_task(async move { slf.del(&k) }).await?
     }
 }
