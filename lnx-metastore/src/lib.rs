@@ -2,6 +2,7 @@ mod types;
 
 use std::mem;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use heed::byteorder::LE;
@@ -12,7 +13,7 @@ use rkyv::ser::serializers::AllocSerializer;
 use rkyv::validation::validators::DefaultValidator;
 use rkyv::{AlignedVec, Archive, CheckBytes, Deserialize, Serialize};
 
-use crate::types::Key;
+pub use crate::types::Key;
 
 #[derive(Clone)]
 /// The metadata storage system.
@@ -20,8 +21,12 @@ use crate::types::Key;
 /// This is a ACID key-value store which can be used
 /// in places where it's important to keep the data
 /// correctly persisted.
+///
+/// This is a core structure and only persists data locally.
+/// The `ReplicatedMetastore` should be used for adjusting settings
+/// that need to be reflected across the cluster.
 pub struct Metastore {
-    path: PathBuf,
+    path: Arc<PathBuf>,
     env: Env,
     db: Database<U64<LE>, ByteSlice>,
 }
@@ -42,9 +47,22 @@ impl Metastore {
         drop(txn);
 
         Ok(Self {
-            path: inner,
+            path: Arc::new(inner),
             env,
             db: metastore,
+        })
+    }
+
+    /// Opens a database within the metastore.
+    pub fn open_database(&self, name: &str) -> Result<Self> {
+        let mut txn = self.env.write_txn()?;
+        let db = self.env.create_database(&mut txn, Some(name))?;
+        drop(txn);
+
+        Ok(Self {
+            path: self.path.clone(),
+            env: self.env.clone(),
+            db,
         })
     }
 
@@ -68,7 +86,7 @@ impl Metastore {
     }
 
     /// Gets an entry from the main metastore.
-    pub fn get<K, V>(&self, k: K) -> Result<Option<V>>
+    pub fn get<K, V>(&self, k: &K) -> Result<Option<V>>
     where
         K: Key,
         V: Archive,
@@ -98,7 +116,7 @@ impl Metastore {
     }
 
     /// Deletes an entry from the main metastore.
-    pub fn del<K>(&self, k: K) -> Result<()>
+    pub fn del<K>(&self, k: &K) -> Result<()>
     where
         K: Key,
     {
@@ -106,5 +124,49 @@ impl Metastore {
         let mut txn = self.env.write_txn()?;
         self.db.delete(&mut txn, &key)?;
         Ok(())
+    }
+
+    #[inline]
+    /// Inserts an entry into the main metastore.
+    pub async fn put_async<K, V>(&self, k: K, v: V) -> Result<()>
+    where
+        K: Key + Send + 'static,
+        V: Serialize<AllocSerializer<1024>> + Send + 'static,
+    {
+        let slf = self.clone();
+
+        lnx_executor::spawn_blocking_task(async move {
+            slf.put(&k, &v)
+        }).await?
+    }
+
+    #[inline]
+    /// Gets an entry from the main metastore.
+    pub async fn get_async<K, V>(&self, k: K) -> Result<Option<V>>
+    where
+        K: Key + Send + 'static,
+        V: Archive + Send + 'static,
+        V::Archived: Send + 'static
+            + CheckBytes<DefaultValidator<'static>>
+            + Deserialize<V, SharedDeserializeMap>,
+    {
+        let slf = self.clone();
+
+        lnx_executor::spawn_blocking_task(async move {
+            slf.get(&k)
+        }).await?
+    }
+
+    #[inline]
+    /// Deletes an entry from the main metastore.
+    pub async fn del_async<K>(&self, k: K) -> Result<()>
+    where
+        K: Key + Send + 'static,
+    {
+        let slf = self.clone();
+
+        lnx_executor::spawn_blocking_task(async move {
+            slf.del(&k)
+        }).await?
     }
 }

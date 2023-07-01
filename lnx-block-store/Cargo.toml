@@ -1,0 +1,17 @@
+[package]
+name = "lnx-block-store"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lnx-document = { path = "../lnx-document" }
+lnx-metastore = { path = "../lnx-metastore" }
+
+anyhow = { workspace = true }
+lz4_flex = { workspace = true }
+async-trait = { workspace = true }
+rkyv = { workspace = true }
+memmap2 = { workspace = true }
+thiserror = { workspace = true }

@@ -172,21 +172,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cityhasher"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceab37c9e94f42414cccae77e930232c517f1bb190947018cffb0ab41fc40992"
+
+[[package]]
 name = "combine"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35ed6e9d84f0b51a7f52daf1c7d71dd136fd7a3f41a8462b8cdb8c78d920fad4"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "crc32c"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dfea2db42e9927a3845fb268a10a72faed6d416065f77873f05e411457c363e"
-dependencies = [
- "rustc_version",
 ]
 
 [[package]]
@@ -900,6 +897,20 @@ name = "lnx"
 version = "0.10.0"
 
 [[package]]
+name = "lnx-block-store"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "lnx-document",
+ "lnx-metastore",
+ "lz4_flex 0.11.1",
+ "memmap2",
+ "rkyv",
+ "thiserror",
+]
+
+[[package]]
 name = "lnx-document"
 version = "0.1.0"
 dependencies = [
@@ -952,6 +963,9 @@ dependencies = [
 [[package]]
 name = "lnx-tools"
 version = "0.1.0"
+dependencies = [
+ "cityhasher",
+]
 
 [[package]]
 name = "lnx-transforms"
@@ -959,7 +973,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "bumpalo",
  "hashbrown 0.13.2",
  "itoa",
  "lnx-document",
@@ -969,14 +982,6 @@ dependencies = [
  "tantivy",
  "thiserror",
  "time",
-]
-
-[[package]]
-name = "lnx-wal"
-version = "0.1.0"
-dependencies = [
- "lz4_flex 0.11.1",
- "okaywal",
 ]
 
 [[package]]
@@ -1117,17 +1122,6 @@ checksum = "0fac9e2da13b5eb447a6ce3d392f23a29d8694bff781bf03a16cd9ac8697593b"
 dependencies = [
  "hermit-abi 0.2.6",
  "libc",
-]
-
-[[package]]
-name = "okaywal"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6b078feec95c10f482418cb25975cc4e508d68ab4a35299c7464d9e32a0b288"
-dependencies = [
- "crc32c",
- "flume",
- "parking_lot",
 ]
 
 [[package]]
@@ -1500,15 +1494,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
-name = "rustc_version"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
-dependencies = [
- "semver",
-]
-
-[[package]]
 name = "rustix"
 version = "0.37.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1551,12 +1536,6 @@ name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
-
-[[package]]
-name = "semver"
-version = "1.0.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bebd363326d05ec3e2f532ab7660680f3b02130d780c299bca73469d521bc0ed"
 
 [[package]]
 name = "serde"
