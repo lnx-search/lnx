@@ -436,6 +436,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "exponential-backoff"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47f78d87d930eee4b5686a2ab032de499c72bd1e954b84262bb03492a0f932cd"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "fail"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -902,8 +911,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "flume",
+ "futures",
  "lnx-document",
+ "lnx-executor",
  "lnx-metastore",
+ "lnx-tools",
  "lz4_flex 0.11.1",
  "memmap2",
  "rkyv",
@@ -964,7 +977,12 @@ dependencies = [
 name = "lnx-tools"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cityhasher",
+ "exponential-backoff",
+ "futures",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

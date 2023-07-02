@@ -1,9 +1,12 @@
+mod blocking;
+
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 
 use crate::metastore_wrapper::StorageMetastore;
+use crate::writers::blocking::BlockingIoWriter;
 
 /// The writer responsible for safely persisting doc blocks to disk
 /// doubling as a WAL for the tantivy index as well.
@@ -21,7 +24,7 @@ impl BlockStoreWriter {
         metastore: StorageMetastore,
         writer_id: u64,
     ) -> io::Result<Self> {
-        let segment_writer = AutoWriter::open(file_path).await?;
+        let segment_writer = AutoWriter::open(file_path.to_path_buf()).await?;
 
         Ok(Self {
             segment_writer,
@@ -59,7 +62,7 @@ pub trait SegmentWriter: Sized {
     /// Opens a segment for writing.
     ///
     /// If the file already exists the cursor should start writing from the end of the file.
-    async fn open(path: &Path) -> io::Result<Self>;
+    async fn open(path: PathBuf) -> io::Result<Self>;
 
     /// Writes a chunk of data to the store.
     async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64>;
@@ -70,19 +73,29 @@ pub trait SegmentWriter: Sized {
     async fn flush(&mut self) -> io::Result<()>;
 }
 
-pub enum AutoWriter {}
+/// A writer that automatically selects the most appropriate writer
+/// for the given OS and configuration.
+pub enum AutoWriter {
+    /// The blocking IO writer backed by a threadpool.
+    Blocking(BlockingIoWriter),
+}
 
 #[async_trait]
 impl SegmentWriter for AutoWriter {
-    async fn open(path: &Path) -> io::Result<Self> {
-        todo!()
+    async fn open(path: PathBuf) -> io::Result<Self> {
+        let writer = BlockingIoWriter::open(path).await?;
+        Ok(Self::Blocking(writer))
     }
 
     async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64> {
-        todo!()
+        match self {
+            Self::Blocking(writer) => writer.write_all(bytes).await,
+        }
     }
 
     async fn flush(&mut self) -> io::Result<()> {
-        todo!()
+        match self {
+            Self::Blocking(writer) => writer.flush().await,
+        }
     }
 }

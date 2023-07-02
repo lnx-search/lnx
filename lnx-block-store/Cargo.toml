@@ -8,10 +8,14 @@ edition = "2021"
 [dependencies]
 lnx-document = { path = "../lnx-document" }
 lnx-metastore = { path = "../lnx-metastore" }
+lnx-executor = { path = "../lnx-executor" }
+lnx-tools = { path = "../lnx-tools" }
 
 anyhow = { workspace = true }
-lz4_flex = { workspace = true }
 async-trait = { workspace = true }
+flume = { workspace = true }
+futures = { workspace = true }
+lz4_flex = { workspace = true }
 rkyv = { workspace = true }
 memmap2 = { workspace = true }
 thiserror = { workspace = true }
