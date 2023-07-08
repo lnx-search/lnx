@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 pub use reader::{BlockReadError, BlockStoreReader};
-pub use service::{BlockStoreService, LeasedStorageShard, ServiceConfig};
-pub use shard::{start_shard, StorageShardMailbox, WriteLocation};
+pub use service::{BlockStoreService, ServiceConfig};
+pub use shard::{StorageShardMailbox, WriteLocation};
 
 /// Generates a new path for a new block store segment.
 pub(crate) fn get_new_segment(base_path: &Path, shard_id: usize) -> (FileKey, PathBuf) {
