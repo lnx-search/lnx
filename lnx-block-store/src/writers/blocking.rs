@@ -1,16 +1,16 @@
 use std::borrow::Cow;
 use std::fs::OpenOptions;
+use std::io;
 use std::io::{BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::io;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
-use rkyv::AlignedVec;
 use lnx_tools::files::SyncOnFlushFile;
 use lnx_tools::supervisor;
 use lnx_tools::supervisor::RecreateCallback;
+use rkyv::AlignedVec;
 
 use crate::writers::SegmentWriter;
 

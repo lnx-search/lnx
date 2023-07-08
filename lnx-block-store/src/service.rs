@@ -5,7 +5,6 @@ use anyhow::Result;
 
 use crate::StorageShardMailbox;
 
-
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
     /// The root path for all doc storage entries to be inserted at.
@@ -26,7 +25,8 @@ impl BlockStoreService {
     pub async fn create(config: ServiceConfig) -> Result<Self> {
         let mut shards = Vec::with_capacity(config.num_shards);
         for shard_id in 0..config.num_shards {
-            let shard = crate::shard::start_shard(shard_id, config.base_path.clone()).await?;
+            let shard =
+                crate::shard::start_shard(shard_id, config.base_path.clone()).await?;
             shards.push(shard);
         }
 

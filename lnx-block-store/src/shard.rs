@@ -4,16 +4,16 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::channel::oneshot;
+use lnx_tools::supervisor::RecreateCallback;
 use rkyv::AlignedVec;
 use tracing::{debug, info, instrument};
-use lnx_tools::supervisor::RecreateCallback;
-use crate::FileKey;
 
 use crate::writers::BlockStoreWriter;
-
+use crate::FileKey;
 
 /// Starts a new block writer shard with a given shard ID.
 ///
@@ -21,7 +21,10 @@ use crate::writers::BlockStoreWriter;
 ///
 /// The shard is a supervised task, which means it will be automatically restarted in the event of
 /// a panic, even though this task should never panic in theory.
-pub async fn start_shard(shard_id: usize, base_path: PathBuf) -> Result<StorageShardMailbox> {
+pub async fn start_shard(
+    shard_id: usize,
+    base_path: PathBuf,
+) -> Result<StorageShardMailbox> {
     let (file_key, path) = crate::get_new_segment(&base_path, shard_id);
     let writer = BlockStoreWriter::open(&path).await?;
 
@@ -45,12 +48,8 @@ pub async fn start_shard(shard_id: usize, base_path: PathBuf) -> Result<StorageS
     let task = tokio::spawn(actor.run_actor(rx));
     lnx_tools::supervisor::supervise(task, state);
 
-    Ok(StorageShardMailbox {
-        shard_id,
-        tx,
-    })
+    Ok(StorageShardMailbox { shard_id, tx })
 }
-
 
 #[derive(Debug, Clone)]
 /// A cheap to clone access to the given storage shard.
@@ -70,7 +69,11 @@ impl StorageShardMailbox {
     ///
     /// This returns the location of where the data was written.
     pub async fn write_all(&self, data: Arc<AlignedVec>) -> io::Result<WriteLocation> {
-        debug!(shard_id = self.shard_id, num_bytes = data.len(), "Submitting bytes to file");
+        debug!(
+            shard_id = self.shard_id,
+            num_bytes = data.len(),
+            "Submitting bytes to file"
+        );
 
         let (tx, rx) = oneshot::channel();
 
@@ -79,7 +82,8 @@ impl StorageShardMailbox {
             .await
             .map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?;
 
-        rx.await.map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?
+        rx.await
+            .map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?
     }
 
     /// Flushes the writer ensuring all data is safely persisted to disk.
@@ -93,7 +97,8 @@ impl StorageShardMailbox {
             .await
             .map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?;
 
-        rx.await.map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?
+        rx.await
+            .map_err(|_| io::Error::new(ErrorKind::Other, "Lost contact with shard"))?
     }
 }
 
@@ -127,7 +132,6 @@ impl lnx_tools::supervisor::SupervisedState for SupervisorState {
     }
 }
 
-
 /// A core storage shard actor which manages block store files.
 struct StorageShardActor {
     base_path: PathBuf,
@@ -152,10 +156,10 @@ impl StorageShardActor {
                 let len = data.len();
                 let start = Instant::now();
 
-                let res = self.writer
-                    .write_all(data)
-                    .await
-                    .map(|pos| WriteLocation { file_key: self.file_key, pos });
+                let res = self.writer.write_all(data).await.map(|pos| WriteLocation {
+                    file_key: self.file_key,
+                    pos,
+                });
                 let _ = tx.send(res);
 
                 self.flush_delta += len;
@@ -199,7 +203,8 @@ impl StorageShardActor {
             "Writer is now full, beginning file rollover..."
         );
 
-        let (file_key, path) = crate::get_new_segment(&self.base_path, self.file_key.shard_id);
+        let (file_key, path) =
+            crate::get_new_segment(&self.base_path, self.file_key.shard_id);
         let new_writer = BlockStoreWriter::open(&path).await?;
 
         self.file_key = file_key;
@@ -207,14 +212,17 @@ impl StorageShardActor {
 
         Ok(())
     }
-
 }
 
 enum Op {
-    WriteAll { tx: oneshot::Sender<io::Result<WriteLocation>>, data: Arc<AlignedVec> },
-    Flush { tx: oneshot::Sender<io::Result<()>> },
+    WriteAll {
+        tx: oneshot::Sender<io::Result<WriteLocation>>,
+        data: Arc<AlignedVec>,
+    },
+    Flush {
+        tx: oneshot::Sender<io::Result<()>>,
+    },
 }
-
 
 #[derive(Debug, Copy, Clone)]
 /// The location in which the given block of data was written.

@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
-use async_trait::async_trait;
 
+use async_trait::async_trait;
 use exponential_backoff::Backoff;
 use tracing::{instrument, warn};
 

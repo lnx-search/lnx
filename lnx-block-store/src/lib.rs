@@ -1,15 +1,15 @@
 mod reader;
-mod writers;
 mod service;
 mod shard;
+mod writers;
 
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-pub use reader::{BlockStoreReader, BlockReadError};
-pub use service::{BlockStoreService, ServiceConfig, LeasedStorageShard};
-pub use shard::{WriteLocation, StorageShardMailbox, start_shard};
+pub use reader::{BlockReadError, BlockStoreReader};
+pub use service::{BlockStoreService, LeasedStorageShard, ServiceConfig};
+pub use shard::{start_shard, StorageShardMailbox, WriteLocation};
 
 /// Generates a new path for a new block store segment.
 pub(crate) fn get_new_segment(base_path: &Path, shard_id: usize) -> (FileKey, PathBuf) {
@@ -20,7 +20,6 @@ pub(crate) fn get_new_segment(base_path: &Path, shard_id: usize) -> (FileKey, Pa
 
     (key, base_path.join(format!("{}.blocks", key)))
 }
-
 
 #[derive(Debug, Copy, Clone)]
 pub struct FileKey {
@@ -39,7 +38,7 @@ impl lnx_metastore::Key for FileKey {
         let mut buffer = [0u8; 12];
 
         buffer[..8].copy_from_slice(&self.timestamp.to_be_bytes());
-        buffer[8..].copy_from_slice(&(self.shard_id as u32).to_be_bytes())
+        buffer[8..].copy_from_slice(&(self.shard_id as u32).to_be_bytes());
 
         buffer.as_ref().to_hash()
     }
@@ -47,8 +46,5 @@ impl lnx_metastore::Key for FileKey {
 
 /// Gets the current unix timestamp in seconds.
 fn timestamp() -> u64 {
-    SystemTime::now()
-        .elapsed()
-        .unwrap()
-        .as_secs()
+    SystemTime::now().elapsed().unwrap().as_secs()
 }
