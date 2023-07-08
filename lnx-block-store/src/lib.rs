@@ -7,6 +7,7 @@ use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use anyhow::anyhow;
 pub use reader::{BlockReadError, BlockStoreReader};
 pub use service::{BlockStoreService, ServiceConfig};
 pub use shard::{StorageShardMailbox, WriteLocation};
@@ -23,8 +24,26 @@ pub(crate) fn get_new_segment(base_path: &Path, shard_id: usize) -> (FileKey, Pa
 
 #[derive(Debug, Copy, Clone)]
 pub struct FileKey {
+    /// The timestamp the file was created.
     pub timestamp: u64,
+    /// The shard ID that owns this file.
     pub shard_id: usize,
+}
+
+impl FileKey {
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        let (timestamp, shard) = s
+            .split_once('-')
+            .ok_or_else(|| anyhow!("Invalid value: {s:?}"))?;
+
+        let timestamp = timestamp.parse::<u64>()?;
+        let shard_id = shard.parse::<usize>()?;
+
+        Ok(Self {
+            timestamp,
+            shard_id,
+        })
+    }
 }
 
 impl Display for FileKey {
