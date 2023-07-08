@@ -19,3 +19,6 @@ lz4_flex = { workspace = true }
 rkyv = { workspace = true }
 memmap2 = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

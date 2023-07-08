@@ -919,8 +919,11 @@ dependencies = [
  "lnx-tools",
  "lz4_flex 0.11.1",
  "memmap2",
+ "parking_lot",
  "rkyv",
  "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -955,6 +958,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-indexer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "datacake",
+ "flume",
+ "lnx-block-store",
+ "lnx-document",
+ "lnx-metastore",
+ "lnx-tools",
+ "parking_lot",
+ "tantivy",
+]
+
+[[package]]
 name = "lnx-metastore"
 version = "0.1.0"
 dependencies = [
@@ -978,6 +996,7 @@ name = "lnx-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "cityhasher",
  "exponential-backoff",
  "futures",

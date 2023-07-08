@@ -12,3 +12,4 @@ futures = { workspace = true }
 tokio = { workspace = true }
 exponential-backoff = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }

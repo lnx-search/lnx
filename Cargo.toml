@@ -48,4 +48,5 @@ members = [
     "lnx-executor",
     "lnx-tools",
     "lnx-replica",
+    "lnx-indexer",
 ]

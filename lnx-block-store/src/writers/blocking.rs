@@ -2,10 +2,12 @@ use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, ErrorKind, Seek, SeekFrom, Write};
 use std::path::PathBuf;
-use std::{io, mem};
+use std::io;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
+use rkyv::AlignedVec;
 use lnx_tools::files::SyncOnFlushFile;
 use lnx_tools::supervisor;
 use lnx_tools::supervisor::RecreateCallback;
@@ -43,9 +45,8 @@ impl SegmentWriter for BlockingIoWriter {
     /// Writes some bytes to the file.
     ///
     /// Any blocking operations are wrapped in a thread pool.
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64> {
+    async fn write_all(&mut self, buffer: Arc<AlignedVec>) -> io::Result<u64> {
         // TODO: Ensure this is actually safe
-        let buffer = unsafe { mem::transmute::<&[u8], &'static [u8]>(bytes) };
         let (tx, rx) = oneshot::channel();
 
         self.0
@@ -75,7 +76,7 @@ impl SegmentWriter for BlockingIoWriter {
 
 enum Op {
     WriteAll {
-        buffer: &'static [u8],
+        buffer: Arc<AlignedVec>,
         tx: oneshot::Sender<io::Result<u64>>,
     },
     Flush {
@@ -98,7 +99,7 @@ async fn actor_task(mut state: BlockingIoWriterState, rx: flume::Receiver<Op>) {
     while let Ok(op) = rx.recv_async().await {
         match op {
             Op::WriteAll { buffer, tx } => {
-                let _ = tx.send(state.write_all(buffer));
+                let _ = tx.send(state.write_all(&buffer));
             },
             Op::Flush { tx } => {
                 let _ = tx.send(state.flush());
@@ -114,12 +115,13 @@ struct ActorSupervisionState {
     rx: flume::Receiver<Op>,
 }
 
+#[async_trait]
 impl supervisor::SupervisedState for ActorSupervisionState {
     fn name(&self) -> Cow<'static, str> {
         Cow::Owned(format!("blocking-segment-writer-{}", self.path.display()))
     }
 
-    fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()> {
+    async fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()> {
         let state = BlockingIoWriterState::open(self.path.clone())?;
 
         watcher.submit(lnx_executor::spawn_blocking_task(actor_task(
@@ -138,7 +140,7 @@ struct BlockingIoWriterState {
 }
 
 impl BlockingIoWriterState {
-    fn open(path: PathBuf) -> std::io::Result<Self> {
+    fn open(path: PathBuf) -> io::Result<Self> {
         let mut file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -159,14 +161,14 @@ impl BlockingIoWriterState {
         })
     }
 
-    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<u64> {
+    fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64> {
         let start = self.cursor;
         self.inner.write_all(bytes)?;
         self.cursor += bytes.len() as u64;
         Ok(start)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.inner.flush()
     }
 }

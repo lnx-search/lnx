@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
+use async_trait::async_trait;
 
 use exponential_backoff::Backoff;
 use tracing::{instrument, warn};
@@ -27,6 +28,7 @@ where
     supervise_task(task);
 }
 
+#[async_trait]
 /// Some state which can create new futures in order to replace
 /// previous future if they die unexpectedly.
 pub trait SupervisedState: Send + Sync + 'static {
@@ -34,7 +36,7 @@ pub trait SupervisedState: Send + Sync + 'static {
     fn name(&self) -> Cow<'static, str>;
 
     /// Called to re-create the future from a given state.
-    fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()>;
+    async fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()>;
 
     /// The minimum backoff duration for the restarting of actors.
     fn min_backoff_duration(&self) -> Duration {
@@ -130,7 +132,7 @@ async fn attempt_recovery(
             future: &mut future,
         };
 
-        if let Err(e) = state.recreate(callback) {
+        if let Err(e) = state.recreate(callback).await {
             warn!(attempt = attempt, error = ?e, "Failed to recreate actor state due to error");
             continue;
         }

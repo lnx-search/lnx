@@ -1,44 +1,59 @@
 mod blocking;
 
+use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use rkyv::AlignedVec;
 
-use crate::metastore_wrapper::StorageMetastore;
 use crate::writers::blocking::BlockingIoWriter;
+
+/// The soft limit on file size that a shard can reach before
+/// being sealed.
+const MAX_STORAGE_CAPACITY: u64 = 4 << 30;
 
 /// The writer responsible for safely persisting doc blocks to disk
 /// doubling as a WAL for the tantivy index as well.
 pub struct BlockStoreWriter {
     segment_writer: AutoWriter,
-    metastore: StorageMetastore,
-    writer_id: u64,
+    file_size: u64,
 }
 
 impl BlockStoreWriter {
     /// Creates a new file or opens an existing file for
     /// the doc store writer.
-    pub async fn open(
-        file_path: &Path,
-        metastore: StorageMetastore,
-        writer_id: u64,
-    ) -> io::Result<Self> {
+    pub async fn open(file_path: &Path) -> io::Result<Self> {
+        let file_size = file_path.metadata()?.len();
         let segment_writer = AutoWriter::open(file_path.to_path_buf()).await?;
 
         Ok(Self {
             segment_writer,
-            metastore,
-            writer_id,
+            file_size,
         })
+    }
+
+    #[inline]
+    /// Returns if the shard is at max capacity or not.
+    pub fn file_size(&self) -> u64 {
+        self.file_size
+    }
+
+    #[inline]
+    /// Returns if the shard is at max capacity or not.
+    pub fn is_full(&self) -> bool {
+        self.file_size >= MAX_STORAGE_CAPACITY
     }
 
     #[inline]
     /// Writes a block of data into the doc store.
     ///
     /// Returns the position the bytes were written at.
-    pub async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64> {
-        self.segment_writer.write_all(bytes).await
+    pub async fn write_all(&mut self, bytes: Arc<AlignedVec>) -> io::Result<u64> {
+        let n = self.segment_writer.write_all(bytes).await?;
+        self.file_size += n;
+        Ok(n)
     }
 
     #[inline]
@@ -46,14 +61,8 @@ impl BlockStoreWriter {
     ///
     /// This internally advances the checkpoint cursor that will be stored
     /// when a index is committed.
-    pub async fn flush(&mut self) -> io::Result<()> {
-        self.segment_writer.flush().await
-    }
-
-    #[inline]
-    /// Stores the new commit checkpoint in the metastore.
-    pub fn set_commit_checkpoint(&mut self, pos: u64) -> anyhow::Result<()> {
-        self.metastore.set_checkpoint(self.writer_id, pos)
+    pub fn flush(&mut self) -> impl Future<Output = io::Result<()>> + '_ {
+        self.segment_writer.flush()
     }
 }
 
@@ -65,7 +74,7 @@ pub trait SegmentWriter: Sized {
     async fn open(path: PathBuf) -> io::Result<Self>;
 
     /// Writes a chunk of data to the store.
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64>;
+    async fn write_all(&mut self, bytes: Arc<AlignedVec>) -> io::Result<u64>;
 
     /// Ensures all data written to the store is safely persisted on disk.
     ///
@@ -87,7 +96,7 @@ impl SegmentWriter for AutoWriter {
         Ok(Self::Blocking(writer))
     }
 
-    async fn write_all(&mut self, bytes: &[u8]) -> io::Result<u64> {
+    async fn write_all(&mut self, bytes: Arc<AlignedVec>) -> io::Result<u64> {
         match self {
             Self::Blocking(writer) => writer.write_all(bytes).await,
         }
