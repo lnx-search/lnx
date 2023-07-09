@@ -7,6 +7,7 @@ mod serde_support;
 mod serializer;
 mod value;
 mod wrappers;
+mod tantivy_doc;
 
 pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};

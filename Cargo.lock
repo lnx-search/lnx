@@ -1185,8 +1185,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c718e498b20704d5fb5d51d07f414a22f61c19254c1708e117b93fd76860739c"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -1723,9 +1722,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aec540e9cebc88f523f67f596dee213e491f0c55961de013566f267a0c31f5e9"
+version = "0.20.0"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -1777,8 +1775,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16099e96f0ede682084469b80d6909dc170aa2b11d2a45538b5b36b2a90090b9"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "bitpacking",
 ]
@@ -1786,8 +1783,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56e32b024b26eab93eb8648faf08004356bf9d47376557ee4409f4b210163656"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -1802,8 +1798,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d12fdd6ec0f7e0962f129c03c696a85ec567734950cbb2b89af4a293ce342f"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1826,8 +1821,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "106d8f78ad1da4f0fdd526a0760c326c0573510d4dedabeb1962d35a35879797"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "combine",
  "once_cell",
@@ -1837,8 +1831,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eda34243d3ee64bd8f9ba74a3b0d05f4d07beff7767a727212e9b5a19c13dde7"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -1848,8 +1841,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b9e9470301b026ad3b95f79a791a2a3ee81f3ab16fbe412a9dd81ff834acf5"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -1857,9 +1849,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-tokenizer-api"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64186801b6e06b3a1c4275e23b517835ff4ecbb707318b838dc9de457c062200"
+version = "0.1.0"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#02335fe793e19e45a8d131f21ad57059e511a515"
 dependencies = [
  "serde",
 ]

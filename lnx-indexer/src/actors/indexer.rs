@@ -2,11 +2,12 @@ use std::borrow::Cow;
 
 use lnx_tools::supervisor;
 use lnx_tools::supervisor::RecreateCallback;
-use tantivy::IndexWriter;
+use tantivy::{Index, IndexWriter};
 
 struct IndexingActorState {
     index_id: u64,
     shard_id: u64,
+    index: Index,
 }
 
 impl supervisor::SupervisedState for IndexingActorState {
@@ -22,4 +23,8 @@ impl supervisor::SupervisedState for IndexingActorState {
 struct IndexingActor {
     writer: IndexWriter,
     rx: flume::Receiver<()>,
+}
+
+impl IndexingActor {
+
 }

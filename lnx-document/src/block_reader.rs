@@ -7,12 +7,12 @@ use crate::block_builder::DocBlock;
 use crate::{ArchivedFieldType, Document, Step};
 
 pub struct DocBlockReader {
-    data: AlignedVec,
     /// A view into the owned `data` as the doc block type rather than some bytes.
     ///
     /// It's important that `data` lives *longer* than this view as the view only lives
     /// for as long as `data.
     view: &'static rkyv::Archived<DocBlock<'static>>,
+    data: AlignedVec,
 }
 
 impl DocBlockReader {

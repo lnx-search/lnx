@@ -30,7 +30,7 @@ ryu = "1"
 hashbrown = "0.13.2"
 memmap2 = "0.6.2"
 
-tantivy = "0.20.2"   # TODO: Ship via git
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "add-doc-as-trait-v2" }
 tokio = { version = "1.28.2", features = ["full"] }
 heed = { version = "0.20.0-alpha.0", default-features = false }
 time = { version = "0.3.21", features = ["parsing", "formatting"] }
