@@ -25,6 +25,4 @@ struct IndexingActor {
     rx: flume::Receiver<()>,
 }
 
-impl IndexingActor {
-
-}
+impl IndexingActor {}

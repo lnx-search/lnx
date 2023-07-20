@@ -114,7 +114,7 @@ impl lnx_tools::supervisor::SupervisedState for SupervisorState {
         Cow::Owned(format!("storage-shard-{}", self.shard_id))
     }
 
-    async fn recreate(&self, watcher: RecreateCallback) -> Result<()> {
+    async fn recreate<'a>(&self, watcher: RecreateCallback<'a>) -> Result<()> {
         let (file_key, path) = crate::get_new_segment(&self.base_path, self.shard_id);
         let writer = BlockStoreWriter::open(&path).await?;
 
@@ -143,7 +143,7 @@ struct StorageShardActor {
 impl StorageShardActor {
     async fn run_actor(mut self, rx: flume::Receiver<Op>) {
         while let Ok(op) = rx.recv_async().await {
-            self.handle_op(op);
+            self.handle_op(op).await;
         }
     }
 

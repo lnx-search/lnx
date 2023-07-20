@@ -1,97 +1,20 @@
-use std::{io, mem};
+use std::io;
 
-use anyhow::{bail, Context, Result};
-use rkyv::AlignedVec;
+use anyhow::Result;
 
-use crate::block_builder::DocBlock;
-use crate::{ArchivedFieldType, Document, Step};
+use crate::{helpers, ArchivedFieldType, DocumentView, Step};
 
-pub struct DocBlockReader {
-    /// A view into the owned `data` as the doc block type rather than some bytes.
-    ///
-    /// It's important that `data` lives *longer* than this view as the view only lives
-    /// for as long as `data.
-    view: &'static rkyv::Archived<DocBlock<'static>>,
-    data: AlignedVec,
-}
-
-impl DocBlockReader {
-    #[inline]
-    /// Attempts to create a new reader using some aligned data.
-    ///
-    /// The reader expects the last 4 bytes of the data to contain the crc32 checksum
-    /// of the block which can be used to validate the state of the data.
-    ///
-    /// If the checksums do not match the block will be unable to be read.
-    pub fn using_data(data: AlignedVec) -> Result<Self> {
-        let slice_at = data.len() - mem::size_of::<u32>();
-        let expected_checksum = u32::from_le_bytes(
-            data[slice_at..]
-                .try_into()
-                .context("Cannot read checksum bytes, data corrupted")?,
-        );
-        let actual_checksum = crc32fast::hash(&data[..slice_at]);
-
-        if expected_checksum != actual_checksum {
-            bail!("Checksums of doc block do not match, expected: {expected_checksum} actual: {actual_checksum}");
-        }
-
-        // Safety:
-        // We ensure the data tied to the slice we're borrowing lives at least for as long
-        // as the view we're creating.
-        // The slice is aligned to 16 bytes from the `AlignedVec` which is more than enough
-        // for the doc block structure which requires an alignment of 8.
-        let view = unsafe {
-            let buffer = mem::transmute::<&[u8], &'static [u8]>(data.as_slice());
-            rkyv::archived_root::<DocBlock<'static>>(&buffer[..slice_at])
-        };
-
-        Ok(Self { data, view })
-    }
-
-    #[inline]
-    /// Returns the memory usage of the reader and it's data.
-    pub fn memory_usage(&self) -> usize {
-        self.data.len()
-    }
-
-    #[inline]
-    /// Create a view for a given document within the block.
-    pub fn doc(&self, idx: usize) -> DocumentView {
-        DocumentView {
-            block: self.view,
-            doc: &self.view.documents[idx],
-        }
-    }
-}
-
-/// A zero-copy view into a document within a block.
-pub struct DocumentView<'block> {
-    block: &'block rkyv::Archived<DocBlock<'static>>,
-    doc: &'block rkyv::Archived<Document>,
-}
-
+// JSON methods.,
 impl<'block> DocumentView<'block> {
-    #[inline]
-    /// Returns the length of the document.
-    pub fn len(&self) -> usize {
-        self.doc.len as usize
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.doc.len as usize == 0
-    }
-
     /// Serializes the view to a JSON string.
-    pub fn to_json_string(&self) -> io::Result<String> {
+    pub fn to_json_string(&self) -> Result<String> {
         let mut buffer = Vec::new();
         self.to_json(&mut buffer)?;
-        Ok(String::from_utf8(buffer).expect("Data should be guarenteed UTF-8"))
+        Ok(String::from_utf8(buffer).expect("Data should be guaranteed UTF-8"))
     }
 
     /// Serializes the view to a JSON formatted value in a given writer.
-    pub fn to_json<W: io::Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn to_json<W: io::Write>(&self, writer: &mut W) -> Result<()> {
         write!(writer, "{{")?;
 
         let mut cursors = TypeCursors::default();
@@ -107,7 +30,7 @@ impl<'block> DocumentView<'block> {
                 "Invalid doc layout, top level object cannot have array elements as part of the data (Indicated by the u16::MAX ID)"
             );
 
-            self.serialize_map_field(&mut step_idx, &mut cursors, step, &mut writer)?;
+            self.json_serialize_map_field(&mut step_idx, &mut cursors, step, writer)?;
 
             if i < (self.doc.len as usize - 1) {
                 write!(writer, ",")?;
@@ -121,10 +44,8 @@ impl<'block> DocumentView<'block> {
 
         Ok(())
     }
-}
 
-impl<'block> DocumentView<'block> {
-    fn serialize_map_field<W: io::Write>(
+    fn json_serialize_map_field<W: io::Write>(
         &self,
         step_idx: &mut usize,
         cursors: &mut TypeCursors,
@@ -151,7 +72,8 @@ impl<'block> DocumentView<'block> {
                 cursors.strings += 1;
             },
             ArchivedFieldType::Bytes => {
-                let v = self.block.bytes[cursors.bytes].to_base64_string();
+                let v =
+                    helpers::to_base64_string(self.block.bytes[cursors.bytes].as_ref());
                 write!(writer, "\"{key}\":\"{v}\"")?;
 
                 cursors.bytes += 1;
@@ -226,7 +148,7 @@ impl<'block> DocumentView<'block> {
                     (*step_idx) += 1;
 
                     let step = &self.doc.layout[*step_idx];
-                    self.serialize_array_element(step_idx, cursors, step, writer)?;
+                    self.json_serialize_array_element(step_idx, cursors, step, writer)?;
 
                     if i < (collection_length - 1) {
                         write!(writer, ",")?;
@@ -242,7 +164,7 @@ impl<'block> DocumentView<'block> {
                     (*step_idx) += 1;
 
                     let step = &self.doc.layout[*step_idx];
-                    self.serialize_map_field(step_idx, cursors, step, writer)?;
+                    self.json_serialize_map_field(step_idx, cursors, step, writer)?;
 
                     if i < (collection_length - 1) {
                         write!(writer, ",")?;
@@ -256,7 +178,7 @@ impl<'block> DocumentView<'block> {
     }
 
     #[inline]
-    fn serialize_array_element<W: io::Write>(
+    fn json_serialize_array_element<W: io::Write>(
         &self,
         step_idx: &mut usize,
         cursors: &mut TypeCursors,
@@ -287,7 +209,9 @@ impl<'block> DocumentView<'block> {
             ArchivedFieldType::Bytes => {
                 let num_entries = step.field_length as usize;
                 for i in 0..num_entries {
-                    let v = self.block.bytes[cursors.bytes].to_base64_string();
+                    let v = helpers::to_base64_string(
+                        self.block.bytes[cursors.bytes].as_ref(),
+                    );
                     write!(writer, "\"{v}\"")?;
 
                     if i < (num_entries - 1) {
@@ -416,7 +340,7 @@ impl<'block> DocumentView<'block> {
                     (*step_idx) += 1;
 
                     let step = &self.doc.layout[*step_idx];
-                    self.serialize_array_element(step_idx, cursors, step, writer)?;
+                    self.json_serialize_array_element(step_idx, cursors, step, writer)?;
 
                     if i < (collection_length - 1) {
                         write!(writer, ",")?;
@@ -432,7 +356,7 @@ impl<'block> DocumentView<'block> {
                     (*step_idx) += 1;
 
                     let step = &self.doc.layout[*step_idx];
-                    self.serialize_map_field(step_idx, cursors, step, writer)?;
+                    self.json_serialize_map_field(step_idx, cursors, step, writer)?;
 
                     if i < (collection_length - 1) {
                         write!(writer, ",")?;
@@ -447,7 +371,7 @@ impl<'block> DocumentView<'block> {
 }
 
 #[derive(Copy, Clone, Default)]
-pub struct TypeCursors {
+struct TypeCursors {
     strings: usize,
     u64s: usize,
     i64s: usize,
@@ -459,56 +383,11 @@ pub struct TypeCursors {
 
 #[cfg(test)]
 mod tests {
+    use rkyv::AlignedVec;
     use serde_json::json;
 
-    use super::*;
-    use crate::serializer::DocWriteSerializer;
-    use crate::{ChecksumDocWriter, DocBlockBuilder, DocSerializer, DynamicDocument};
-
-    #[test]
-    fn test_reading_empty_block() {
-        let mut builder = DocBlockBuilder::default();
-
-        let writer = ChecksumDocWriter::from(AlignedVec::new());
-        let mut serializer =
-            DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
-        builder
-            .serialize_with(&mut serializer)
-            .expect("serialization should be ok");
-
-        let buffer = serializer.into_inner_serializer().into_inner();
-        let data = buffer.finish();
-
-        let view = DocBlockReader::using_data(data).expect("Read block successfully");
-        assert!(
-            view.view.documents.is_empty(),
-            "No documents should be in block"
-        );
-    }
-
-    #[test]
-    fn test_reading_empty_doc() {
-        let mut builder = DocBlockBuilder::default();
-
-        let doc = DynamicDocument::default();
-
-        let is_full = builder.add_document(doc);
-        assert!(!is_full, "Builder should not be full");
-
-        let writer = ChecksumDocWriter::from(AlignedVec::new());
-        let mut serializer =
-            DocSerializer::<512, _>::new(DocWriteSerializer::new(writer));
-        builder
-            .serialize_with(&mut serializer)
-            .expect("serialization should be ok");
-
-        let buffer = serializer.into_inner_serializer().into_inner();
-        let data = buffer.finish();
-
-        let view = DocBlockReader::using_data(data).expect("Read block successfully");
-        let doc_view = view.doc(0);
-        assert!(doc_view.is_empty(), "Document should be empty")
-    }
+    use crate::rkyv_serializer::DocWriteSerializer;
+    use crate::{ChecksumDocWriter, DocBlockBuilder, DocBlockReader, DocSerializer};
 
     fn get_view_of(json_text: &str) -> DocBlockReader {
         let doc = serde_json::from_str(json_text).unwrap();

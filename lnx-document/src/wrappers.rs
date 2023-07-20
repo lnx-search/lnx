@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-use base64::Engine;
 use rkyv::{Archive, Serialize};
 use serde::Serializer;
 
@@ -207,12 +206,5 @@ impl Deref for Bytes {
 impl AsRef<[u8]> for ArchivedBytes {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
-    }
-}
-
-impl ArchivedBytes {
-    #[inline]
-    pub fn to_base64_string(&self) -> String {
-        base64::prelude::BASE64_STANDARD.encode(self.as_ref())
     }
 }

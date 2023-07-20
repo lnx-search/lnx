@@ -36,7 +36,7 @@ pub trait SupervisedState: Send + Sync + 'static {
     fn name(&self) -> Cow<'static, str>;
 
     /// Called to re-create the future from a given state.
-    async fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()>;
+    async fn recreate<'a>(&self, watcher: RecreateCallback<'a>) -> anyhow::Result<()>;
 
     /// The minimum backoff duration for the restarting of actors.
     fn min_backoff_duration(&self) -> Duration {

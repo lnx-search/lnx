@@ -1,25 +1,24 @@
 extern crate core;
 
 mod block_builder;
-mod block_reader;
 mod helpers;
+mod reader;
+mod rkyv_serializer;
 mod serde_support;
-mod serializer;
 mod value;
 mod wrappers;
-mod tantivy_doc;
 
 pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};
 pub use value::{DateTime, DynamicDocument, KeyValues, KeyValuesIter, Value};
 
 pub use self::block_builder::DocBlockBuilder;
-pub use self::block_reader::{DocBlockReader, DocumentView};
-pub use self::serializer::{ChecksumDocWriter, DocSerializer, DocSerializerError};
+pub use self::reader::{DocBlockReader, DocumentView};
+pub use self::rkyv_serializer::{ChecksumDocWriter, DocSerializer, DocSerializerError};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Archive, Serialize, Eq, PartialEq)]
-#[archive_attr(derive(Debug))]
+#[archive_attr(derive(Debug, Copy, Clone))]
 pub enum FieldType {
     /// the field is of type `str`.
     String = 0,

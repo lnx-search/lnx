@@ -1,7 +1,14 @@
 use std::borrow::Cow;
 use std::net::Ipv6Addr;
 
+use base64::Engine;
+
 use crate::value::DateTime;
+
+#[inline]
+pub fn to_base64_string(buf: &[u8]) -> String {
+    base64::prelude::BASE64_STANDARD.encode(buf)
+}
 
 pub trait UserDisplayType {
     fn type_name(&self) -> Cow<'static, str>;

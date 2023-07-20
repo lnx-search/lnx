@@ -121,7 +121,7 @@ impl supervisor::SupervisedState for ActorSupervisionState {
         Cow::Owned(format!("blocking-segment-writer-{}", self.path.display()))
     }
 
-    async fn recreate(&self, watcher: RecreateCallback) -> anyhow::Result<()> {
+    async fn recreate<'a>(&self, watcher: RecreateCallback<'a>) -> anyhow::Result<()> {
         let state = BlockingIoWriterState::open(self.path.clone())?;
 
         watcher.submit(lnx_executor::spawn_blocking_task(actor_task(

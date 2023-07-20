@@ -8,7 +8,7 @@ use anyhow::Result;
 use rkyv::ser::Serializer;
 use rkyv::{Archive, Serialize};
 
-use crate::serializer::DocWriteSerializer;
+use crate::rkyv_serializer::DocWriteSerializer;
 use crate::value::{DateTime, DynamicDocument, Value};
 use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
 use crate::{DocSerializer, Document, FieldType};
@@ -60,6 +60,13 @@ impl<'a> Default for DocBlock<'a> {
             f64s: Default::default(),
             ips: Default::default(),
         }
+    }
+}
+
+impl<'a> ArchivedDocBlock<'a> {
+    #[inline]
+    pub fn get_field(&self, field_id: u16) -> &str {
+        &self.field_mapping[field_id as usize]
     }
 }
 
