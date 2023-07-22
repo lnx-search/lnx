@@ -13,6 +13,7 @@ lnx-document = { path = "../lnx-document" }
 lnx-schema = { path = "../lnx-schema" }
 
 datacake = { workspace = true }
+ahash = { workspace = true }
 anyhow = { workspace = true }
 tantivy = { workspace = true }
 parking_lot = { workspace = true }

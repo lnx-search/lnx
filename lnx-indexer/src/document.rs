@@ -1,9 +1,12 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::convert::Infallible;
+use std::hash::{BuildHasher, Hasher};
 use std::net::Ipv6Addr;
 
 use lnx_document::traverse::ViewWalker;
 use lnx_document::DateTime;
+use lnx_tools::hashers::NoOpRandomState;
 use smallvec::SmallVec;
 use tantivy::schema::Facet;
 
@@ -44,8 +47,8 @@ pub struct IndexingDocWalker<'block, 'a> {
     /// The document data for indexing.
     doc: &'a mut IndexingDoc<'block>,
 
-    /// A LIFO queue of the flattened field keys.
-    field_name_stack: SmallVec<[usize; 32]>,
+    /// A fast lookup table re-using previously allocated strings.
+    field_name_lookup: HashMap<u64, usize, NoOpRandomState>,
 
     /// The number of key parts that make up the parent's key.
     parent_key_length: usize,
@@ -60,30 +63,24 @@ impl<'block, 'a> IndexingDocWalker<'block, 'a> {
         Self {
             key_builder: KeyBuilder::default(),
             doc,
-            field_name_stack: SmallVec::default(),
+            field_name_lookup: HashMap::with_capacity_and_hasher(32, NoOpRandomState),
             parent_key_length: 0,
             just_started_new_key: false,
         }
     }
 
-    /// Creates and adds a new key to the field name stack
-    /// if it's the first time the key is getting a value assigned to it.
-    ///
-    /// This allows us to avoid allocating new strings for objects which are just heavily nested.
-    fn maybe_create_new_key(&mut self) {
-        if self.just_started_new_key {
-            self.just_started_new_key = false;
-
-            let key = self.key_builder.to_key();
-            self.doc.field_name.push(key);
-            self.field_name_stack.push(self.doc.field_name.len() - 1);
-        }
-    }
-
     /// Gets the current key index for the field.
     fn get_current_key_index(&mut self) -> usize {
-        self.maybe_create_new_key();
-        self.field_name_stack.pop().unwrap_or_default()
+        let hash = self.key_builder.to_hash_key();
+        if let Some(id) = self.field_name_lookup.get(&hash) {
+            *id
+        } else {
+            let key = self.key_builder.to_key();
+            self.doc.field_name.push(key);
+            let index = self.doc.field_name.len() - 1;
+            self.field_name_lookup.insert(hash, index);
+            index
+        }
     }
 
     /// Adds a new field entry to the doc.
@@ -159,15 +156,14 @@ impl<'block, 'a> ViewWalker<'block> for IndexingDocWalker<'block, 'a> {
         val: &'block str,
     ) -> Result<(), Self::Err> {
         let key = self.get_current_key_index();
-        let facet = Facet::from_encoded(val.to_string().into_bytes())
-            .expect("Facet value should be valid.");
+        let facet = Facet::from_text(val).expect("Facet value should be valid.");
         self.push_field(key, Value::Facet(facet));
         Ok(())
     }
 
     fn visit_map_key(&mut self, key: &'block str) -> Result<(), Self::Err> {
         if self.key_builder.num_parts() > (self.parent_key_length - 1) {
-            self.key_builder.truncate_parts(self.parent_key_length - 1);
+            self.key_builder.pop_part()
         }
 
         self.key_builder.push_part(key);
@@ -191,6 +187,7 @@ impl<'block, 'a> ViewWalker<'block> for IndexingDocWalker<'block, 'a> {
 
     fn end_map(&mut self, _is_last: bool) -> Result<(), Self::Err> {
         self.parent_key_length -= 1;
+        self.key_builder.truncate_parts(self.parent_key_length);
         Ok(())
     }
 }
@@ -226,6 +223,7 @@ pub enum Value<'block> {
 pub struct KeyBuilder<'block> {
     length: usize,
     parts: SmallVec<[&'block str; 6]>,
+    random_state: ahash::RandomState,
 }
 
 impl<'block> KeyBuilder<'block> {
@@ -257,6 +255,18 @@ impl<'block> KeyBuilder<'block> {
         self.parts.len()
     }
 
+    /// Builds a new key as a hash.
+    /// This avoid the string allocation.
+    fn to_hash_key(&self) -> u64 {
+        let mut hasher = self.random_state.build_hasher();
+
+        for key in self.parts.iter() {
+            hasher.write(key.as_bytes());
+        }
+
+        hasher.finish()
+    }
+
     /// Builds a new key from the internal set of parts.
     fn to_key(&self) -> Cow<'block, str> {
         if self.parts.len() == 1 {
@@ -266,7 +276,7 @@ impl<'block> KeyBuilder<'block> {
         let num_parts = self.parts.len();
         let mut s = String::with_capacity(self.string_length());
 
-        for (i, part) in self.parts.iter().rev().enumerate() {
+        for (i, part) in self.parts.iter().enumerate() {
             s.push_str(part);
 
             if i < (num_parts - 1) {
@@ -407,31 +417,279 @@ mod tests {
 
     #[test]
     fn test_nested_flattening_doc() {
+        let complex = json!({
+            "payload": {
+                "before": "2d06657267b32e0c8e193c617039da200f710195",
+                "distinct_size": 4,
+                "head": "fa6048ec9b9eeafd12cee5f81324f355e1f2a198",
+                "push_id": 536752122,
+                "ref": "refs/heads/master",
+                "size": 4,
+                "commits": []
+            }
+        });
+
         check_doc(
-            json!({
-                "hello": "world",
-                "name": "bobby",
-                "age": 32
-            }),
+            complex,
             IndexingDoc {
                 entries: smallvec![
                     FieldValue {
                         key: 0,
-                        value: Value::U64(32)
+                        value: Value::Str("2d06657267b32e0c8e193c617039da200f710195"),
                     },
                     FieldValue {
                         key: 1,
-                        value: Value::Str("world")
+                        value: Value::U64(4),
                     },
                     FieldValue {
                         key: 2,
-                        value: Value::Str("bobby")
+                        value: Value::Str("fa6048ec9b9eeafd12cee5f81324f355e1f2a198"),
+                    },
+                    FieldValue {
+                        key: 3,
+                        value: Value::U64(536752122),
+                    },
+                    FieldValue {
+                        key: 4,
+                        value: Value::Str("refs/heads/master"),
+                    },
+                    FieldValue {
+                        key: 5,
+                        value: Value::U64(4),
                     },
                 ],
                 field_name: smallvec![
-                    Cow::Borrowed("age"),
-                    Cow::Borrowed("hello"),
-                    Cow::Borrowed("name"),
+                    Cow::Borrowed("payload.before"),
+                    Cow::Borrowed("payload.distinct_size"),
+                    Cow::Borrowed("payload.head"),
+                    Cow::Borrowed("payload.push_id"),
+                    Cow::Borrowed("payload.ref"),
+                    Cow::Borrowed("payload.size"),
+                ],
+            },
+        );
+
+        let complex = json!({
+            "id": "2489395767",
+            "type":"PushEvent",
+            "actor": {
+                "id":1310570,
+                "login":"soumith",
+                "gravatar_id": "some-id",
+                "url": "https://api.github.com/users/soumith",
+                "avatar_url": "https://avatars.githubusercontent.com/u/1310570?",
+            },
+            "repo": {
+                "id": 28067809,
+                "name": "soumith/fbcunn",
+                "url": "https://api.github.com/repos/soumith/fbcunn"
+            },
+            "payload": {}
+        });
+
+        check_doc(
+            complex,
+            IndexingDoc {
+                entries: smallvec![
+                    FieldValue {
+                        key: 0,
+                        value: Value::Str(
+                            "https://avatars.githubusercontent.com/u/1310570?"
+                        )
+                    },
+                    FieldValue {
+                        key: 1,
+                        value: Value::Str("some-id")
+                    },
+                    FieldValue {
+                        key: 2,
+                        value: Value::U64(1310570)
+                    },
+                    FieldValue {
+                        key: 3,
+                        value: Value::Str("soumith")
+                    },
+                    FieldValue {
+                        key: 4,
+                        value: Value::Str("https://api.github.com/users/soumith")
+                    },
+                    FieldValue {
+                        key: 5,
+                        value: Value::Str("2489395767")
+                    },
+                    FieldValue {
+                        key: 6,
+                        value: Value::U64(28067809)
+                    },
+                    FieldValue {
+                        key: 7,
+                        value: Value::Str("soumith/fbcunn")
+                    },
+                    FieldValue {
+                        key: 8,
+                        value: Value::Str("https://api.github.com/repos/soumith/fbcunn")
+                    },
+                    FieldValue {
+                        key: 9,
+                        value: Value::Str("PushEvent")
+                    },
+                ],
+                field_name: smallvec![
+                    Cow::Borrowed("actor.avatar_url"),
+                    Cow::Borrowed("actor.gravatar_id"),
+                    Cow::Borrowed("actor.id"),
+                    Cow::Borrowed("actor.login"),
+                    Cow::Borrowed("actor.url"),
+                    Cow::Borrowed("id"),
+                    Cow::Borrowed("repo.id"),
+                    Cow::Borrowed("repo.name"),
+                    Cow::Borrowed("repo.url"),
+                    Cow::Borrowed("type"),
+                ],
+            },
+        );
+
+        let complex = json!({
+            "id": "2489395767",
+            "type":"PushEvent",
+            "actor": {
+                "id":1310570,
+                "login":"soumith",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/soumith",
+                "avatar_url": "https://avatars.githubusercontent.com/u/1310570?"
+            },
+            "repo": {
+                "id": 28067809,
+                "name": "soumith/fbcunn",
+                "url": "https://api.github.com/repos/soumith/fbcunn"
+            },
+            "payload": {
+                "push_id": 536752122,
+                "size": 4,
+                "distinct_size": 4,
+                "ref": "refs/heads/master",
+                "head": "fa6048ec9b9eeafd12cee5f81324f355e1f2a198",
+                "before": "2d06657267b32e0c8e193c617039da200f710195",
+                "commits": [
+                    {
+                        "sha": "dbd68d30ee1f7b60d404553fc1c6226ebb374c8e",
+                        "author": {
+                            "email": "88de463b5797707cf3425f85a415c3d869db732b@gmail.com",
+                            "name": "Soumith Chintala"
+                        },
+                        "message": "back to old structure, except lua files moved out",
+                        "distinct": true,
+                        "url": "https://api.github.com/repos/soumith/fbcunn/commits/dbd68d30ee1f7b60d404553fc1c6226ebb374c8e"
+                    },
+                    {
+                        "sha":"5567f9f5a83d7fe3320b18e5b89405e8a5ca77e6",
+                        "author": {
+                            "email":"88de463b5797707cf3425f85a415c3d869db732b@gmail.com",
+                            "name":"Soumith Chintala"
+                        },
+                        "message": "...",
+                        "distinct": true,
+                        "url": "https://api.github.com/repos/soumith/fbcunn/commits/5567f9f5a83d7fe3320b18e5b89405e8a5ca77e6"
+                    },
+                    {
+                        "sha":"58a83b277328eca811d3a37cf171b2fc4fcd87af",
+                        "author": {
+                            "email":"88de463b5797707cf3425f85a415c3d869db732b@gmail.com",
+                            "name":"Soumith Chintala",
+                        },
+                        "message": "...",
+                        "distinct": true,
+                        "url": "https://api.github.com/repos/soumith/fbcunn/commits/58a83b277328eca811d3a37cf171b2fc4fcd87af"
+                    },
+                    {
+                        "sha":"fa6048ec9b9eeafd12cee5f81324f355e1f2a198",
+                        "author": {
+                            "email":"88de463b5797707cf3425f85a415c3d869db732b@gmail.com",
+                            "name":"Soumith Chintala"
+                        },
+                        "message": "...",
+                        "distinct": true,
+                        "url":"https://api.github.com/repos/soumith/fbcunn/commits/fa6048ec9b9eeafd12cee5f81324f355e1f2a198"
+                    }
+                ]
+            },
+            "public":true,
+            "created_at":"2015-01-01T01:00:00Z"
+        });
+
+        check_doc(
+            complex,
+            IndexingDoc {
+                entries: smallvec![
+                    FieldValue { key: 0, value: Value::Str("https://avatars.githubusercontent.com/u/1310570?") },
+                    FieldValue { key: 1, value: Value::Str("") },
+                    FieldValue { key: 2, value: Value::U64(1310570) },
+                    FieldValue { key: 3, value: Value::Str("soumith") },
+                    FieldValue { key: 4, value: Value::Str("https://api.github.com/users/soumith") },
+                    FieldValue { key: 5, value: Value::Str("2015-01-01T01:00:00Z") },
+                    FieldValue { key: 6, value: Value::Str("2489395767") },
+                    FieldValue { key: 7, value: Value::Str("2d06657267b32e0c8e193c617039da200f710195") },
+                    FieldValue { key: 8, value: Value::Str("88de463b5797707cf3425f85a415c3d869db732b@gmail.com") },
+                    FieldValue { key: 9, value: Value::Str("Soumith Chintala") },
+                    FieldValue { key: 10, value: Value::Bool(true) },
+                    FieldValue { key: 11, value: Value::Str("back to old structure, except lua files moved out") },
+                    FieldValue { key: 12, value: Value::Str("dbd68d30ee1f7b60d404553fc1c6226ebb374c8e") },
+                    FieldValue { key: 13, value: Value::Str("https://api.github.com/repos/soumith/fbcunn/commits/dbd68d30ee1f7b60d404553fc1c6226ebb374c8e") },
+                    FieldValue { key: 8, value: Value::Str("88de463b5797707cf3425f85a415c3d869db732b@gmail.com") },
+                    FieldValue { key: 9, value: Value::Str("Soumith Chintala") },
+                    FieldValue { key: 10, value: Value::Bool(true) },
+                    FieldValue { key: 11, value: Value::Str("...") },
+                    FieldValue { key: 12, value: Value::Str("5567f9f5a83d7fe3320b18e5b89405e8a5ca77e6") },
+                    FieldValue { key: 13, value: Value::Str("https://api.github.com/repos/soumith/fbcunn/commits/5567f9f5a83d7fe3320b18e5b89405e8a5ca77e6") },
+                    FieldValue { key: 8, value: Value::Str("88de463b5797707cf3425f85a415c3d869db732b@gmail.com") },
+                    FieldValue { key: 9, value: Value::Str("Soumith Chintala") },
+                    FieldValue { key: 10, value: Value::Bool(true) },
+                    FieldValue { key: 11, value: Value::Str("...") },
+                    FieldValue { key: 12, value: Value::Str("58a83b277328eca811d3a37cf171b2fc4fcd87af") },
+                    FieldValue { key: 13, value: Value::Str("https://api.github.com/repos/soumith/fbcunn/commits/58a83b277328eca811d3a37cf171b2fc4fcd87af") },
+                    FieldValue { key: 8, value: Value::Str("88de463b5797707cf3425f85a415c3d869db732b@gmail.com") },
+                    FieldValue { key: 9, value: Value::Str("Soumith Chintala") },
+                    FieldValue { key: 10, value: Value::Bool(true) },
+                    FieldValue { key: 11, value: Value::Str("...") },
+                    FieldValue { key: 12, value: Value::Str("fa6048ec9b9eeafd12cee5f81324f355e1f2a198") },
+                    FieldValue { key: 13, value: Value::Str("https://api.github.com/repos/soumith/fbcunn/commits/fa6048ec9b9eeafd12cee5f81324f355e1f2a198") },
+                    FieldValue { key: 14, value: Value::U64(4) },
+                    FieldValue { key: 15, value: Value::Str("fa6048ec9b9eeafd12cee5f81324f355e1f2a198") },
+                    FieldValue { key: 16, value: Value::U64(536752122) },
+                    FieldValue { key: 17, value: Value::Str("refs/heads/master") },
+                    FieldValue { key: 18, value: Value::U64(4) },
+                    FieldValue { key: 19, value: Value::Bool(true) },
+                    FieldValue { key: 20, value: Value::U64(28067809) },
+                    FieldValue { key: 21, value: Value::Str("soumith/fbcunn") },
+                    FieldValue { key: 22, value: Value::Str("https://api.github.com/repos/soumith/fbcunn") },
+                    FieldValue { key: 23, value: Value::Str("PushEvent") }
+                ],
+                field_name: smallvec![
+                    Cow::Borrowed("actor.avatar_url"),
+                    Cow::Borrowed("actor.gravatar_id"),
+                    Cow::Borrowed("actor.id"),
+                    Cow::Borrowed("actor.login"),
+                    Cow::Borrowed("actor.url"),
+                    Cow::Borrowed("created_at"),
+                    Cow::Borrowed("id"),
+                    Cow::Borrowed("payload.before"),
+                    Cow::Borrowed("payload.commits.author.email"),
+                    Cow::Borrowed("payload.commits.author.name"),
+                    Cow::Borrowed("payload.commits.distinct"),
+                    Cow::Borrowed("payload.commits.message"),
+                    Cow::Borrowed("payload.commits.sha"),
+                    Cow::Borrowed("payload.commits.url"),
+                    Cow::Borrowed("payload.distinct_size"),
+                    Cow::Borrowed("payload.head"),
+                    Cow::Borrowed("payload.push_id"),
+                    Cow::Borrowed("payload.ref"),
+                    Cow::Borrowed("payload.size"),
+                    Cow::Borrowed("public"),
+                    Cow::Borrowed("repo.id"),
+                    Cow::Borrowed("repo.name"),
+                    Cow::Borrowed("repo.url"),
+                    Cow::Borrowed("type"),
                 ],
             },
         );

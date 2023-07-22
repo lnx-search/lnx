@@ -1,7 +1,9 @@
 use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ops::{Deref, DerefMut};
 
+use tantivy::schema::FacetParseError;
 use time::formatting::Formattable;
 use time::OffsetDateTime;
 
@@ -52,7 +54,7 @@ pub enum Value<'a> {
     I64(i64),
     F64(f64),
     Bool(bool),
-    Facet(Cow<'a, str>),
+    Facet(Facet<'a>),
     DateTime(DateTime),
     IpAddr(Ipv6Addr),
     Bytes(Vec<u8>),
@@ -192,7 +194,13 @@ impl<'a> From<DateTime> for Value<'a> {
 
 impl<'a> From<tantivy::schema::Facet> for Value<'a> {
     fn from(value: tantivy::schema::Facet) -> Self {
-        Self::Facet(Cow::Owned(value.to_path_string()))
+        Self::Facet(value.into())
+    }
+}
+
+impl<'a> From<Facet<'a>> for Value<'a> {
+    fn from(value: Facet<'a>) -> Self {
+        Self::Facet(value)
     }
 }
 
@@ -211,6 +219,69 @@ impl<'a, T: Into<Value<'a>>> From<Vec<(Cow<'a, str>, T)>> for Value<'a> {
 impl<'a> From<DynamicDocument<'a>> for Value<'a> {
     fn from(value: DynamicDocument<'a>) -> Self {
         Self::Object(value.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// A facet value which uses borrowed data.
+///
+/// This is just a new-type wrapper to make it
+/// clearer and easier to use; It performs no validation.
+pub struct Facet<'a>(pub(crate) Cow<'a, str>);
+
+impl<'a> Facet<'a> {
+    #[inline]
+    /// Consumes the facet and returns the inner Cow.
+    pub fn into_cow(self) -> Cow<'a, str> {
+        self.0
+    }
+
+    #[inline]
+    /// Converts the facet to a tantivy type.
+    pub fn to_tantivy_facet(&self) -> Result<tantivy::schema::Facet, FacetParseError> {
+        tantivy::schema::Facet::from_text(self.0.as_ref())
+    }
+
+    #[inline]
+    /// Returns the facet as a string.
+    pub fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl<'a> Display for Facet<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Facet<'a> {
+    fn from(value: Cow<'a, str>) -> Self {
+        Self(value)
+    }
+}
+
+impl<'a> From<&'a str> for Facet<'a> {
+    fn from(value: &'a str) -> Self {
+        Self(Cow::Borrowed(value))
+    }
+}
+
+impl<'a> From<String> for Facet<'a> {
+    fn from(value: String) -> Self {
+        Self(Cow::Owned(value))
+    }
+}
+
+impl<'a> From<tantivy::schema::Facet> for Facet<'a> {
+    fn from(value: tantivy::schema::Facet) -> Self {
+        Self(Cow::Owned(value.to_path_string()))
+    }
+}
+
+impl<'a> UserDisplayType for Facet<'a> {
+    fn type_name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("facet")
     }
 }
 

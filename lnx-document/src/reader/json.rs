@@ -153,15 +153,7 @@ mod tests {
     use serde_json::json;
 
     use crate::rkyv_serializer::DocWriteSerializer;
-    use crate::{
-        ChecksumDocWriter,
-        DateTime,
-        DocBlockBuilder,
-        DocBlockReader,
-        DocSerializer,
-        DynamicDocument,
-        Value,
-    };
+    use crate::{ChecksumDocWriter, DateTime, DocBlockBuilder, DocBlockReader, DocSerializer, DynamicDocument, Facet, Value};
 
     fn get_view_of(json_text: &str) -> DocBlockReader {
         let doc = serde_json::from_str(json_text).unwrap();
@@ -235,7 +227,7 @@ mod tests {
         let mut doc = DynamicDocument::default();
         doc.push((
             Cow::Borrowed("facet"),
-            Value::Facet(Cow::Borrowed("/home/tools")),
+            Value::Facet(Facet::from("/home/tools")),
         ));
         let reader = get_view_of_dynamic_doc(doc);
         assert_eq!(
@@ -305,8 +297,8 @@ mod tests {
         doc.push((
             Cow::Borrowed("facet"),
             Value::Array(vec![
-                Value::Facet(Cow::Borrowed("/home/kitchen")),
-                Value::Facet(Cow::Borrowed("/home/entertainment")),
+                Value::Facet(Facet::from("/home/kitchen")),
+                Value::Facet(Facet::from("/home/entertainment")),
             ]),
         ));
         let reader = get_view_of_dynamic_doc(doc);

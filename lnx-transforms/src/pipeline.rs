@@ -2,7 +2,14 @@ use std::borrow::Cow;
 use std::net::Ipv6Addr;
 
 use hashbrown::HashMap;
-use lnx_document::{DateTime, DynamicDocument, KeyValues, UserDisplayType, Value};
+use lnx_document::{
+    DateTime,
+    DynamicDocument,
+    Facet,
+    KeyValues,
+    UserDisplayType,
+    Value,
+};
 use smallvec::SmallVec;
 
 /// A transform pipeline applies multiple transform operations on a object.
@@ -152,7 +159,7 @@ pub trait Transform: Send + 'static {
     /// Applies the transform to a `facet` value.
     fn transform_facet<'a>(
         &self,
-        value: tantivy::schema::Facet,
+        value: Facet<'a>,
     ) -> Result<Value<'a>, TransformError> {
         Err(self.expecting(&value.type_name()))
     }

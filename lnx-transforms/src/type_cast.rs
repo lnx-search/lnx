@@ -4,8 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use anyhow::{anyhow, bail, Result};
 use base64::Engine;
-use lnx_document::{DateTime, UserDisplayType, Value};
-use tantivy::schema::Facet;
+use lnx_document::{DateTime, Facet, UserDisplayType, Value};
 use time::format_description::{well_known, OwnedFormatItem};
 use time::OffsetDateTime;
 
@@ -156,8 +155,8 @@ impl TypeCast {
                 }
             },
             TypeCast::Facet => {
-                if Facet::from_text(&string).is_ok() {
-                    Ok(Value::Facet(string))
+                if tantivy::schema::Facet::from_text(&string).is_ok() {
+                    Ok(Value::Facet(Facet::from(string)))
                 } else {
                     Err(self.err_with_detail(
                         string,
@@ -281,10 +280,10 @@ impl TypeCast {
     }
 
     /// Attempts to cast a facet to the cast type.
-    pub fn try_cast_facet<'a>(&self, v: Cow<'a, str>) -> Result<Value<'a>> {
+    pub fn try_cast_facet<'a>(&self, v: Facet<'a>) -> Result<Value<'a>> {
         match self {
             Self::Facet => Ok(Value::Facet(v)),
-            Self::String => Ok(Value::Str(v)),
+            Self::String => Ok(Value::Str(v.into_cow())),
             _ => self.bail(v),
         }
     }
@@ -460,6 +459,8 @@ impl DateTimeParser {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
+
+    use lnx_document::Facet;
 
     use super::*;
 
@@ -936,12 +937,12 @@ mod tests {
 
     #[test]
     fn test_cast_facet() {
-        let facet = Cow::Borrowed("/hello/world/foo");
+        let facet = Facet::from("/hello/world/foo");
 
         let value = TypeCast::String.try_cast_facet(facet.clone());
-        assert_eq!(value.unwrap(), Value::from(facet.as_ref()));
+        assert_eq!(value.unwrap(), Value::Str(facet.to_string().into()));
         let value = TypeCast::Facet.try_cast_facet(facet.clone());
-        assert_eq!(value.unwrap(), Value::from(facet.clone()));
+        assert_eq!(value.unwrap(), Value::Facet(facet.clone()));
 
         // Types we know we dont support
         let value = TypeCast::I64.try_cast_facet(facet.clone());

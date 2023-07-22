@@ -10,7 +10,7 @@ mod wrappers;
 
 pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};
-pub use value::{DateTime, DynamicDocument, KeyValues, KeyValuesIter, Value};
+pub use value::{DateTime, DynamicDocument, Facet, KeyValues, KeyValuesIter, Value};
 
 pub use self::block_builder::DocBlockBuilder;
 pub use self::reader::{traverse, DocBlockReader, DocumentView};

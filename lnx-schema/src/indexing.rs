@@ -1,7 +1,4 @@
-use std::collections::HashSet;
-
 use hashbrown::HashMap;
-use lnx_tools::hashers::NoOpRandomState;
 use tantivy::schema::Field;
 
 #[derive(Debug, Default)]
@@ -14,7 +11,7 @@ pub struct IndexingSchema {
     /// Any fields which should be excluded from indexing.
     ///
     /// This only matters if `catch_unknown_fields_as_dynamic` is `Some`.
-    exclude_fields: HashSet<u64, NoOpRandomState>,
+    exclude_fields: hashbrown::HashSet<String>,
 }
 
 impl IndexingSchema {
@@ -30,14 +27,12 @@ impl IndexingSchema {
 
     /// Excludes a field from indexing.
     pub fn exclude_field(&mut self, field: &str) {
-        let hash = lnx_tools::cityhash(field);
-        self.exclude_fields.insert(hash);
+        self.exclude_fields.insert(field.to_string());
     }
 
     /// Returns if the field is excluded from indexing.
     pub fn is_excluded(&self, field: &str) -> bool {
-        let hash = lnx_tools::cityhash(field);
-        self.exclude_fields.contains(&hash)
+        self.exclude_fields.contains(field)
     }
 
     /// Get the information of how a given indexing field should

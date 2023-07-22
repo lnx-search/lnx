@@ -11,7 +11,7 @@ use rkyv::{Archive, Serialize};
 use crate::rkyv_serializer::DocWriteSerializer;
 use crate::value::{DateTime, DynamicDocument, Value};
 use crate::wrappers::{Bytes, CopyWrapper, RawWrapper, Text};
-use crate::{DocSerializer, Document, FieldType};
+use crate::{DocSerializer, Document, Facet, FieldType};
 
 /// The target size of a doc block in bytes.
 const CAPACITY: usize = 512 << 10;
@@ -180,7 +180,7 @@ impl<'a> DocBlockBuilder<'a> {
             },
             Value::Facet(facet) => {
                 doc.add_single_value_field(field_id, FieldType::Facet);
-                self.approx_data_size += facet.as_bytes().len();
+                self.approx_data_size += facet.0.as_bytes().len();
                 self.block.add_value(facet);
             },
             Value::DateTime(v) => {
@@ -260,8 +260,8 @@ impl<'a> DocBlockBuilder<'a> {
                     self.block.add_value(v);
                 },
                 Value::Facet(facet) => {
-                    self.approx_data_size += facet.as_bytes().len();
-                    self.block.add_value(facet.to_string());
+                    self.approx_data_size += facet.0.as_bytes().len();
+                    self.block.add_value(facet);
                 },
                 Value::DateTime(v) => {
                     self.approx_data_size += mem::size_of::<DateTime>();
@@ -381,6 +381,12 @@ impl<'a> DocValue<&'a str> for DocBlock<'a> {
 impl<'a> DocValue<Text<'a>> for DocBlock<'a> {
     fn add_value(&mut self, value: Text<'a>) {
         self.strings.push(value);
+    }
+}
+
+impl<'a> DocValue<Facet<'a>> for DocBlock<'a> {
+    fn add_value(&mut self, value: Facet<'a>) {
+        self.strings.push(Text::from(value.0));
     }
 }
 
