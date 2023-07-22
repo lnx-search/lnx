@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use rkyv::{Archive, Serialize};
-use serde::Serializer;
 
 #[repr(transparent)]
 #[derive(Clone, Debug, Archive, Serialize)]
@@ -161,15 +160,6 @@ impl<'a> Deref for Text<'a> {
 impl<'a> AsRef<str> for ArchivedText<'a> {
     fn as_ref(&self) -> &str {
         unsafe { std::str::from_utf8_unchecked(self.0.as_ref()) }
-    }
-}
-
-impl<'a> serde::Serialize for ArchivedText<'a> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.as_ref())
     }
 }
 

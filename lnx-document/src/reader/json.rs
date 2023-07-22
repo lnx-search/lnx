@@ -98,9 +98,9 @@ where
     #[inline]
     fn visit_ip(&mut self, is_last: bool, val: Ipv6Addr) -> Result<(), Self::Err> {
         if let Some(ipv4) = val.to_ipv4_mapped() {
-            write!(self.writer, "{ipv4}")?;
+            write!(self.writer, "\"{ipv4}\"")?;
         } else {
-            write!(self.writer, "{val}")?;
+            write!(self.writer, "\"{val}\"")?;
         }
         self.maybe_write_seperator(is_last)
     }
@@ -146,14 +146,29 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
     use rkyv::AlignedVec;
     use serde_json::json;
 
     use crate::rkyv_serializer::DocWriteSerializer;
-    use crate::{ChecksumDocWriter, DocBlockBuilder, DocBlockReader, DocSerializer};
+    use crate::{
+        ChecksumDocWriter,
+        DateTime,
+        DocBlockBuilder,
+        DocBlockReader,
+        DocSerializer,
+        DynamicDocument,
+        Value,
+    };
 
     fn get_view_of(json_text: &str) -> DocBlockReader {
         let doc = serde_json::from_str(json_text).unwrap();
+        get_view_of_dynamic_doc(doc)
+    }
+
+    fn get_view_of_dynamic_doc(doc: DynamicDocument) -> DocBlockReader {
         let mut builder = DocBlockBuilder::default();
 
         let is_full = builder.add_document(doc);
@@ -185,11 +200,153 @@ mod tests {
         validate_full_json_cycle(json!({"age": 123}));
         validate_full_json_cycle(json!({"x": -123}));
         validate_full_json_cycle(json!({"is_old": true}));
+        validate_full_json_cycle(json!({"is_old": false}));
+        validate_full_json_cycle(json!({"some_float": 1.23}));
         validate_full_json_cycle(
             json!({"my-nested-value": {"age": 12, "name": "timmy"}}),
         );
+
+        // Datetime
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("time_micros"),
+            Value::DateTime(DateTime::from_micros(100).unwrap()),
+        ));
+        doc.push((
+            Cow::Borrowed("time_millis"),
+            Value::DateTime(DateTime::from_millis(1).unwrap()),
+        ));
+        doc.push((
+            Cow::Borrowed("time_secs"),
+            Value::DateTime(DateTime::from_secs(1).unwrap()),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({
+                "time_micros": 100,
+                "time_millis": 1000,
+                "time_secs": 1000000,
+            })
+            .to_string()
+        );
+
+        // Facets
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("facet"),
+            Value::Facet(Cow::Borrowed("/home/tools")),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({
+                "facet": "/home/tools",
+            })
+            .to_string()
+        );
+
+        // Bytes
+        let mut doc = DynamicDocument::default();
+        doc.push((Cow::Borrowed("bytes"), Value::Bytes(vec![1, 2, 3])));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({
+                "bytes": "AQID",
+            })
+            .to_string()
+        );
+
+        // Ipv6
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("ipv4"),
+            Value::IpAddr(Ipv4Addr::LOCALHOST.to_ipv6_mapped()),
+        ));
+        doc.push((Cow::Borrowed("ipv6"), Value::IpAddr(Ipv6Addr::LOCALHOST)));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({
+                "ipv6": "::1",
+                "ipv4": "127.0.0.1",
+            })
+            .to_string()
+        );
+
         validate_full_json_cycle(json!({"my-array": [123, null, "foo"]}));
         validate_full_json_cycle(json!({"my-array": [null, null, null]}));
+        validate_full_json_cycle(json!({"my-array": ["bobby", "nicole", "dylan"]}));
+        validate_full_json_cycle(json!({"my-array": [123, 456, 789]}));
+        validate_full_json_cycle(json!({"my-array": [-123, -456, -789]}));
+        validate_full_json_cycle(json!({"my-array": [1.23, 4.56, 7.89]}));
+        validate_full_json_cycle(json!({"my-array": [false, true]}));
+        validate_full_json_cycle(json!({"my-array": [false, true]}));
+
+        // Datetime
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("time"),
+            Value::Array(vec![
+                Value::DateTime(DateTime::from_micros(100).unwrap()),
+                Value::DateTime(DateTime::from_millis(1).unwrap()),
+                Value::DateTime(DateTime::from_secs(1).unwrap()),
+            ]),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({"time": [100, 1000, 1000000]}).to_string()
+        );
+
+        // Facet
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("facet"),
+            Value::Array(vec![
+                Value::Facet(Cow::Borrowed("/home/kitchen")),
+                Value::Facet(Cow::Borrowed("/home/entertainment")),
+            ]),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({
+                "facet": ["/home/kitchen", "/home/entertainment"]
+            })
+            .to_string()
+        );
+
+        // Bytes
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("bytes"),
+            Value::Array(vec![
+                Value::Bytes(vec![1, 2, 3]),
+                Value::Bytes(vec![1, 4, 6]),
+            ]),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({"bytes": ["AQID", "AQQG"]}).to_string()
+        );
+
+        // Ip
+        let mut doc = DynamicDocument::default();
+        doc.push((
+            Cow::Borrowed("ips"),
+            Value::Array(vec![
+                Value::IpAddr(Ipv4Addr::LOCALHOST.to_ipv6_mapped()),
+                Value::IpAddr(Ipv6Addr::LOCALHOST),
+            ]),
+        ));
+        let reader = get_view_of_dynamic_doc(doc);
+        assert_eq!(
+            reader.doc(0).to_json_string().unwrap(),
+            json!({"ips": ["127.0.0.1", "::1"]}).to_string()
+        );
     }
 
     #[test]

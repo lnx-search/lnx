@@ -180,8 +180,8 @@ impl<'a> DocBlockBuilder<'a> {
             },
             Value::Facet(facet) => {
                 doc.add_single_value_field(field_id, FieldType::Facet);
-                self.approx_data_size += facet.encoded_str().as_bytes().len();
-                self.block.add_value(facet.encoded_str().to_string());
+                self.approx_data_size += facet.as_bytes().len();
+                self.block.add_value(facet);
             },
             Value::DateTime(v) => {
                 doc.add_single_value_field(field_id, FieldType::DateTime);
@@ -260,8 +260,8 @@ impl<'a> DocBlockBuilder<'a> {
                     self.block.add_value(v);
                 },
                 Value::Facet(facet) => {
-                    self.approx_data_size += facet.encoded_str().as_bytes().len();
-                    self.block.add_value(facet.encoded_str().to_string());
+                    self.approx_data_size += facet.as_bytes().len();
+                    self.block.add_value(facet.to_string());
                 },
                 Value::DateTime(v) => {
                     self.approx_data_size += mem::size_of::<DateTime>();

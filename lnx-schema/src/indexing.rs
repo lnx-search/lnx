@@ -1,6 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::collections::HashSet;
 
 use hashbrown::HashMap;
+use lnx_tools::hashers::NoOpRandomState;
 use tantivy::schema::Field;
 
 #[derive(Debug, Default)]
@@ -13,7 +14,7 @@ pub struct IndexingSchema {
     /// Any fields which should be excluded from indexing.
     ///
     /// This only matters if `catch_unknown_fields_as_dynamic` is `Some`.
-    exclude_fields: ExcludeFilter,
+    exclude_fields: HashSet<u64, NoOpRandomState>,
 }
 
 impl IndexingSchema {
@@ -28,8 +29,15 @@ impl IndexingSchema {
     }
 
     /// Excludes a field from indexing.
-    pub fn exclude_field(&mut self, field: &str, filter: Option<ExcludeFilter>) {
-        self.exclude_fields.insert(field.to_string(), filter);
+    pub fn exclude_field(&mut self, field: &str) {
+        let hash = lnx_tools::cityhash(field);
+        self.exclude_fields.insert(hash);
+    }
+
+    /// Returns if the field is excluded from indexing.
+    pub fn is_excluded(&self, field: &str) -> bool {
+        let hash = lnx_tools::cityhash(field);
+        self.exclude_fields.contains(&hash)
     }
 
     /// Get the information of how a given indexing field should
@@ -54,12 +62,12 @@ impl IndexingSchema {
         }
 
         // Check that we dont explicitly deny the field.
-        if let Some(filter) = self.exclude_fields.get(field) {
-            return FieldInfo::Exclude(filter.as_ref());
+        if self.is_excluded(field) {
+            return FieldInfo::Exclude;
         }
 
         let dynamic_field = match self.catch_unknown_fields_as_dynamic {
-            None => return FieldInfo::Exclude(None),
+            None => return FieldInfo::Exclude,
             Some(field_id) => field_id,
         };
 
@@ -71,28 +79,11 @@ impl IndexingSchema {
 /// Information describing how a given field should be handled.
 pub enum FieldInfo<'a> {
     /// The field should be ignored from indexing.
-    Exclude(Option<&'a ExcludeFilter>),
+    Exclude,
     /// The field exists and should be indexed.
     Field(Field),
     /// The field is part of a nested schema.
     Nested(&'a IndexingSchema),
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct ExcludeFilter(HashMap<String, Option<ExcludeFilter>>);
-
-impl Deref for ExcludeFilter {
-    type Target = HashMap<String, Option<ExcludeFilter>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ExcludeFilter {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
 }
 
 #[derive(Debug)]

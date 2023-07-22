@@ -14,7 +14,12 @@ pub use value::{DateTime, DynamicDocument, KeyValues, KeyValuesIter, Value};
 
 pub use self::block_builder::DocBlockBuilder;
 pub use self::reader::{traverse, DocBlockReader, DocumentView};
-pub use self::rkyv_serializer::{ChecksumDocWriter, DocSerializer, DocSerializerError};
+pub use self::rkyv_serializer::{
+    ChecksumDocWriter,
+    DocSerializer,
+    DocSerializerError,
+    DocWriteSerializer,
+};
 
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Archive, Serialize, Eq, PartialEq)]
@@ -88,7 +93,7 @@ pub struct Step {
 }
 
 #[repr(C)]
-#[derive(Clone, Debug, Default, Archive, Serialize)]
+#[derive(Clone, Debug, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
 #[archive_attr(derive(Debug))]
 pub struct Document {
@@ -117,19 +122,6 @@ impl Document {
             field_id,
             field_type,
             field_length: 1,
-        });
-    }
-
-    pub fn add_multi_value_field(
-        &mut self,
-        field_id: u16,
-        field_type: FieldType,
-        field_length: u16,
-    ) {
-        self.add_step(Step {
-            field_id,
-            field_type,
-            field_length,
         });
     }
 

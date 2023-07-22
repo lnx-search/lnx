@@ -52,7 +52,7 @@ pub enum Value<'a> {
     I64(i64),
     F64(f64),
     Bool(bool),
-    Facet(tantivy::schema::Facet),
+    Facet(Cow<'a, str>),
     DateTime(DateTime),
     IpAddr(Ipv6Addr),
     Bytes(Vec<u8>),
@@ -192,7 +192,7 @@ impl<'a> From<DateTime> for Value<'a> {
 
 impl<'a> From<tantivy::schema::Facet> for Value<'a> {
     fn from(value: tantivy::schema::Facet) -> Self {
-        Self::Facet(value)
+        Self::Facet(Cow::Owned(value.to_path_string()))
     }
 }
 

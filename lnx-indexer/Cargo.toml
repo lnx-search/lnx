@@ -1,0 +1,24 @@
+[package]
+name = "lnx-indexer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lnx-block-store = { path = "../lnx-block-store" }
+lnx-metastore = { path = "../lnx-metastore" }
+lnx-tools = { path = "../lnx-tools" }
+lnx-document = { path = "../lnx-document" }
+lnx-schema = { path = "../lnx-schema" }
+
+datacake = { workspace = true }
+anyhow = { workspace = true }
+tantivy = { workspace = true }
+parking_lot = { workspace = true }
+flume = { workspace = true }
+smallvec = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+rkyv = { workspace = true }

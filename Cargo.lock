@@ -970,6 +970,8 @@ dependencies = [
  "lnx-schema",
  "lnx-tools",
  "parking_lot",
+ "rkyv",
+ "serde_json",
  "smallvec",
  "tantivy",
 ]
@@ -998,6 +1000,7 @@ name = "lnx-schema"
 version = "0.1.0"
 dependencies = [
  "hashbrown 0.13.2",
+ "lnx-tools",
  "tantivy",
 ]
 

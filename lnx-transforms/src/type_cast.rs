@@ -156,8 +156,8 @@ impl TypeCast {
                 }
             },
             TypeCast::Facet => {
-                if let Ok(facet) = Facet::from_text(&string) {
-                    Ok(Value::Facet(facet))
+                if Facet::from_text(&string).is_ok() {
+                    Ok(Value::Facet(string))
                 } else {
                     Err(self.err_with_detail(
                         string,
@@ -281,10 +281,10 @@ impl TypeCast {
     }
 
     /// Attempts to cast a facet to the cast type.
-    pub fn try_cast_facet<'a>(&self, v: Facet) -> Result<Value<'a>> {
+    pub fn try_cast_facet<'a>(&self, v: Cow<'a, str>) -> Result<Value<'a>> {
         match self {
             Self::Facet => Ok(Value::Facet(v)),
-            Self::String => Ok(Value::Str(Cow::Owned(v.to_string()))),
+            Self::String => Ok(Value::Str(v)),
             _ => self.bail(v),
         }
     }
@@ -936,10 +936,10 @@ mod tests {
 
     #[test]
     fn test_cast_facet() {
-        let facet = Facet::from_text("/hello/world/foo").unwrap();
+        let facet = Cow::Borrowed("/hello/world/foo");
 
         let value = TypeCast::String.try_cast_facet(facet.clone());
-        assert_eq!(value.unwrap(), Value::from("/hello/world/foo"));
+        assert_eq!(value.unwrap(), Value::from(facet.as_ref()));
         let value = TypeCast::Facet.try_cast_facet(facet.clone());
         assert_eq!(value.unwrap(), Value::from(facet.clone()));
 
