@@ -1,14 +1,14 @@
 mod json;
-pub mod view_access;
+pub mod traverse;
 
-use std::mem;
+use std::{io, mem};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context};
 use rkyv::AlignedVec;
 
 use crate::block_builder::DocBlock;
-use crate::{ArchivedFieldType, Document};
-use crate::reader::view_access::{DocViewTransform, DocViewDeserializer};
+use crate::traverse::{DocViewTraverser, ViewWalker};
+use crate::Document;
 
 pub struct DocBlockReader {
     /// A view into the owned `data` as the doc block type rather than some bytes.
@@ -27,7 +27,7 @@ impl DocBlockReader {
     /// of the block which can be used to validate the state of the data.
     ///
     /// If the checksums do not match the block will be unable to be read.
-    pub fn using_data(data: AlignedVec) -> Result<Self> {
+    pub fn using_data(data: AlignedVec) -> anyhow::Result<Self> {
         let slice_at = data.len() - mem::size_of::<u32>();
         let expected_checksum = u32::from_le_bytes(
             data[slice_at..]
@@ -88,13 +88,32 @@ impl<'block> DocumentView<'block> {
         self.doc.len as usize == 0
     }
 
-    /// Deserializes the view into a new type.
-    pub fn transform<T>(&self, transformer: &mut T) -> Result<T::Output>
+    #[inline]
+    /// Traverses a document with a given walker.
+    pub fn traverse<W>(&self, walker: W) -> Result<(), W::Err>
     where
-        T: DocViewTransform<'block> + 'block
+        W: ViewWalker<'block>,
     {
-        let deserializer = DocViewDeserializer::new(*self);
-        transformer.transform(deserializer)
+        let traverser = DocViewTraverser {
+            walker,
+            view: *self,
+        };
+
+        traverser.traverse()
+    }
+
+    #[inline]
+    /// Serializes the view to a JSON formatted value in a given writer.
+    pub fn to_json<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        let walker = json::JSONWalker::new(writer);
+        self.traverse(walker)
+    }
+
+    /// Serializes the view to a JSON string.
+    pub fn to_json_string(&self) -> io::Result<String> {
+        let mut buffer = Vec::new();
+        self.to_json(&mut buffer)?;
+        Ok(String::from_utf8(buffer).expect("Data should be guaranteed UTF-8"))
     }
 }
 

@@ -1,384 +1,147 @@
 use std::io;
+use std::net::Ipv6Addr;
 
-use anyhow::Result;
+use crate::traverse::ViewWalker;
+use crate::DateTime;
 
-use crate::{helpers, ArchivedFieldType, DocumentView, Step};
+/// A view walker that writes the document data
+/// to a given writer in a compact JSON format.
+pub(crate) struct JSONWalker<'a, W>
+where
+    W: io::Write,
+{
+    writer: &'a mut W,
+}
 
-// JSON methods.,
-impl<'block> DocumentView<'block> {
-    /// Serializes the view to a JSON string.
-    pub fn to_json_string(&self) -> Result<String> {
-        let mut buffer = Vec::new();
-        self.to_json(&mut buffer)?;
-        Ok(String::from_utf8(buffer).expect("Data should be guaranteed UTF-8"))
+impl<'a, W> JSONWalker<'a, W>
+where
+    W: io::Write,
+{
+    /// Creates a new JSON walker with a given writer.
+    pub(crate) fn new(writer: &'a mut W) -> Self {
+        Self { writer }
     }
 
-    /// Serializes the view to a JSON formatted value in a given writer.
-    pub fn to_json<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        write!(writer, "{{")?;
-
-        let mut cursors = TypeCursors::default();
-
-        let mut i = 0;
-        let mut step_idx = 0;
-        while step_idx < self.doc.layout.len() {
-            let step: &rkyv::Archived<Step> = &self.doc.layout[step_idx];
-
-            assert_ne!(
-                step.field_id,
-                u16::MAX,
-                "Invalid doc layout, top level object cannot have array elements as part of the data (Indicated by the u16::MAX ID)"
-            );
-
-            self.json_serialize_map_field(&mut step_idx, &mut cursors, step, writer)?;
-
-            if i < (self.doc.len as usize - 1) {
-                write!(writer, ",")?;
-            }
-
-            step_idx += 1;
-            i += 1;
+    fn maybe_write_seperator(&mut self, is_last: bool) -> io::Result<()> {
+        if is_last {
+            Ok(())
+        } else {
+            write!(self.writer, ",")
         }
-
-        write!(writer, "}}")?;
-
-        Ok(())
-    }
-
-    fn json_serialize_map_field<W: io::Write>(
-        &self,
-        step_idx: &mut usize,
-        cursors: &mut TypeCursors,
-        step: &rkyv::Archived<Step>,
-        writer: &mut W,
-    ) -> io::Result<()> {
-        debug_assert_ne!(step.field_id, u16::MAX, "Object field should not be an array sub element. This is a bug.\n{step_idx}\n {step:?}");
-
-        let key: &str = self.block.field_mapping[step.field_id as usize].as_ref();
-
-        if !matches!(
-            step.field_type,
-            ArchivedFieldType::Array | ArchivedFieldType::Object
-        ) {
-            assert_eq!(step.field_length, 1, "Field length for object values which are not collections should be single values.");
-        }
-
-        match step.field_type {
-            ArchivedFieldType::Null => write!(writer, "\"{key}\":null")?,
-            ArchivedFieldType::String => {
-                let v: &str = self.block.strings[cursors.strings].as_ref();
-                write!(writer, "\"{key}\":\"{v}\"")?;
-
-                cursors.strings += 1;
-            },
-            ArchivedFieldType::Bytes => {
-                let v =
-                    helpers::to_base64_string(self.block.bytes[cursors.bytes].as_ref());
-                write!(writer, "\"{key}\":\"{v}\"")?;
-
-                cursors.bytes += 1;
-            },
-            ArchivedFieldType::Bool => {
-                let v = &self.block.bools[cursors.bools];
-
-                if *v {
-                    write!(writer, "\"{key}\":true")?;
-                } else {
-                    write!(writer, "\"{key}\":false")?;
-                }
-
-                cursors.bools += 1;
-            },
-            ArchivedFieldType::U64 => {
-                let v = &self.block.u64s[cursors.u64s];
-
-                let mut buffer = itoa::Buffer::new();
-                let s = buffer.format(*v);
-                write!(writer, "\"{key}\":{s}")?;
-
-                cursors.u64s += 1;
-            },
-            ArchivedFieldType::I64 => {
-                let v = &self.block.i64s[cursors.i64s];
-
-                let mut buffer = itoa::Buffer::new();
-                let s = buffer.format(*v);
-                write!(writer, "\"{key}\":{s}")?;
-
-                cursors.i64s += 1;
-            },
-            ArchivedFieldType::F64 => {
-                let v = &self.block.f64s[cursors.f64s];
-
-                let mut buffer = ryu::Buffer::new();
-                let s = buffer.format(*v);
-                write!(writer, "\"{key}\":{s}")?;
-
-                cursors.f64s += 1;
-            },
-            ArchivedFieldType::IpAddr => {
-                let ip = self.block.ips[cursors.ips];
-
-                if let Some(ipv4) = ip.to_ipv4() {
-                    write!(writer, "\"{key}\":\"{ipv4}\"")?;
-                } else {
-                    write!(writer, "\"{key}\":\"{}\"", ip.as_ipv6())?;
-                }
-
-                cursors.ips += 1;
-            },
-            ArchivedFieldType::DateTime => {
-                // TODO: Handle datetime formats correctly.
-                let v = &self.block.i64s[cursors.i64s];
-                write!(writer, "\"{key}\":{}", *v)?;
-
-                cursors.i64s += 1;
-            },
-            ArchivedFieldType::Facet => {
-                let v: &str = self.block.strings[cursors.strings].as_ref();
-                write!(writer, "\"{key}\":\"{v}\"")?;
-
-                cursors.strings += 1;
-            },
-            ArchivedFieldType::Array => {
-                let collection_length = step.field_length as usize;
-
-                write!(writer, "\"{key}\":[")?;
-                for i in 0..collection_length {
-                    (*step_idx) += 1;
-
-                    let step = &self.doc.layout[*step_idx];
-                    self.json_serialize_array_element(step_idx, cursors, step, writer)?;
-
-                    if i < (collection_length - 1) {
-                        write!(writer, ",")?;
-                    }
-                }
-                write!(writer, "]")?;
-            },
-            ArchivedFieldType::Object => {
-                let collection_length = step.field_length as usize;
-
-                write!(writer, "\"{key}\":{{")?;
-                for i in 0..collection_length {
-                    (*step_idx) += 1;
-
-                    let step = &self.doc.layout[*step_idx];
-                    self.json_serialize_map_field(step_idx, cursors, step, writer)?;
-
-                    if i < (collection_length - 1) {
-                        write!(writer, ",")?;
-                    }
-                }
-                write!(writer, "}}")?;
-            },
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn json_serialize_array_element<W: io::Write>(
-        &self,
-        step_idx: &mut usize,
-        cursors: &mut TypeCursors,
-        step: &rkyv::Archived<Step>,
-        writer: &mut W,
-    ) -> io::Result<()> {
-        assert_eq!(
-            step.field_id,
-            u16::MAX,
-            "Got non-array element step. This likely means the layout was read incorrectly. This is a bug."
-        );
-
-        match step.field_type {
-            ArchivedFieldType::Null => write!(writer, "null")?,
-            ArchivedFieldType::String => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v: &str = self.block.strings[cursors.strings].as_ref();
-                    write!(writer, "\"{v}\"")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.strings += 1;
-                }
-            },
-            ArchivedFieldType::Bytes => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = helpers::to_base64_string(
-                        self.block.bytes[cursors.bytes].as_ref(),
-                    );
-                    write!(writer, "\"{v}\"")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.bytes += 1;
-                }
-            },
-            ArchivedFieldType::Bool => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = &self.block.bools[cursors.bools];
-
-                    if *v {
-                        write!(writer, "true")?;
-                    } else {
-                        write!(writer, "false")?;
-                    }
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.bools += 1;
-                }
-            },
-            ArchivedFieldType::U64 => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = &self.block.u64s[cursors.u64s];
-
-                    let mut buffer = itoa::Buffer::new();
-                    let s = buffer.format(*v);
-                    write!(writer, "{s}")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.u64s += 1;
-                }
-            },
-            ArchivedFieldType::I64 => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = &self.block.i64s[cursors.i64s];
-
-                    let mut buffer = itoa::Buffer::new();
-                    let s = buffer.format(*v);
-                    write!(writer, "{s}")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.i64s += 1;
-                }
-            },
-            ArchivedFieldType::F64 => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = &self.block.f64s[cursors.f64s];
-
-                    let mut buffer = ryu::Buffer::new();
-                    let s = buffer.format(*v);
-                    write!(writer, "{s}")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.f64s += 1;
-                }
-            },
-            ArchivedFieldType::IpAddr => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let ip = self.block.ips[cursors.ips];
-
-                    if let Some(ipv4) = ip.to_ipv4() {
-                        write!(writer, "\"{ipv4}\"")?;
-                    } else {
-                        write!(writer, "\"{}\"", ip.as_ipv6())?;
-                    }
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.ips += 1;
-                }
-            },
-            ArchivedFieldType::DateTime => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v = &self.block.i64s[cursors.i64s];
-
-                    write!(writer, "{v}")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.i64s += 1;
-                }
-            },
-            ArchivedFieldType::Facet => {
-                let num_entries = step.field_length as usize;
-                for i in 0..num_entries {
-                    let v: &str = self.block.strings[cursors.strings].as_ref();
-                    write!(writer, "\"{v}\"")?;
-
-                    if i < (num_entries - 1) {
-                        write!(writer, ",")?;
-                    }
-
-                    cursors.strings += 1;
-                }
-            },
-            ArchivedFieldType::Array => {
-                let collection_length = step.field_length as usize;
-
-                write!(writer, "[")?;
-                for i in 0..collection_length {
-                    (*step_idx) += 1;
-
-                    let step = &self.doc.layout[*step_idx];
-                    self.json_serialize_array_element(step_idx, cursors, step, writer)?;
-
-                    if i < (collection_length - 1) {
-                        write!(writer, ",")?;
-                    }
-                }
-                write!(writer, "]")?;
-            },
-            ArchivedFieldType::Object => {
-                let collection_length = step.field_length as usize;
-
-                write!(writer, "{{")?;
-                for i in 0..collection_length {
-                    (*step_idx) += 1;
-
-                    let step = &self.doc.layout[*step_idx];
-                    self.json_serialize_map_field(step_idx, cursors, step, writer)?;
-
-                    if i < (collection_length - 1) {
-                        write!(writer, ",")?;
-                    }
-                }
-                write!(writer, "}}")?;
-            },
-        }
-
-        Ok(())
     }
 }
 
-#[derive(Copy, Clone, Default)]
-struct TypeCursors {
-    strings: usize,
-    u64s: usize,
-    i64s: usize,
-    f64s: usize,
-    ips: usize,
-    bools: usize,
-    bytes: usize,
+impl<'block, 'a: 'block, W> ViewWalker<'block> for JSONWalker<'a, W>
+where
+    W: io::Write,
+{
+    type Err = io::Error;
+
+    #[inline]
+    fn visit_null(&mut self, is_last: bool) -> Result<(), Self::Err> {
+        write!(self.writer, "null")?;
+
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_str(&mut self, is_last: bool, val: &'block str) -> Result<(), Self::Err> {
+        write!(self.writer, "\"{val}\"")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_bytes(
+        &mut self,
+        is_last: bool,
+        val: &'block [u8],
+    ) -> Result<(), Self::Err> {
+        let data = crate::helpers::to_base64_string(val);
+        write!(self.writer, "\"{data}\"")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_bool(&mut self, is_last: bool, val: bool) -> Result<(), Self::Err> {
+        if val {
+            write!(self.writer, "true")?;
+        } else {
+            write!(self.writer, "false")?;
+        }
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_u64(&mut self, is_last: bool, val: u64) -> Result<(), Self::Err> {
+        let mut buffer = itoa::Buffer::new();
+        let s = buffer.format(val);
+        write!(self.writer, "{s}")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_i64(&mut self, is_last: bool, val: i64) -> Result<(), Self::Err> {
+        let mut buffer = itoa::Buffer::new();
+        let s = buffer.format(val);
+        write!(self.writer, "{s}")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_f64(&mut self, is_last: bool, val: f64) -> Result<(), Self::Err> {
+        let mut buffer = ryu::Buffer::new();
+        let s = buffer.format(val);
+        write!(self.writer, "{s}")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_ip(&mut self, is_last: bool, val: Ipv6Addr) -> Result<(), Self::Err> {
+        if let Some(ipv4) = val.to_ipv4_mapped() {
+            write!(self.writer, "{ipv4}")?;
+        } else {
+            write!(self.writer, "{val}")?;
+        }
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn visit_date(&mut self, is_last: bool, val: DateTime) -> Result<(), Self::Err> {
+        // TODO: Add correct datetime formatting... This currently is just the timestamp
+        self.visit_i64(is_last, val.as_micros())
+    }
+
+    #[inline]
+    fn visit_facet(&mut self, is_last: bool, val: &'block str) -> Result<(), Self::Err> {
+        self.visit_str(is_last, val)
+    }
+
+    #[inline]
+    fn visit_map_key(&mut self, key: &'block str) -> Result<(), Self::Err> {
+        write!(self.writer, "\"{key}\":")
+    }
+
+    #[inline]
+    fn start_array(&mut self, _size_hint: usize) -> Result<(), Self::Err> {
+        write!(self.writer, "[")
+    }
+
+    #[inline]
+    fn end_array(&mut self, is_last: bool) -> Result<(), Self::Err> {
+        write!(self.writer, "]")?;
+        self.maybe_write_seperator(is_last)
+    }
+
+    #[inline]
+    fn start_map(&mut self, _size_hint: usize) -> Result<(), Self::Err> {
+        write!(self.writer, "{{")
+    }
+
+    #[inline]
+    fn end_map(&mut self, is_last: bool) -> Result<(), Self::Err> {
+        write!(self.writer, "}}")?;
+        self.maybe_write_seperator(is_last)
+    }
 }
 
 #[cfg(test)]
@@ -426,6 +189,7 @@ mod tests {
             json!({"my-nested-value": {"age": 12, "name": "timmy"}}),
         );
         validate_full_json_cycle(json!({"my-array": [123, null, "foo"]}));
+        validate_full_json_cycle(json!({"my-array": [null, null, null]}));
     }
 
     #[test]
