@@ -1,26 +1,34 @@
 use std::net::Ipv6Addr;
 
 use anyhow::bail;
-use tantivy::HasLen;
 
 use super::ArchivedFieldType;
 use crate::{DateTime, DocumentView, Step};
 
-/// A type which can be created from a given document view deserializer.
-pub trait DocViewDeserialize<'block>: Sized {
+/// A type which can transform a view into a new type from a deserializer.
+pub trait DocViewTransform<'block> {
+    /// The transformed type.
+    type Output;
+
     /// Attempts to deserialize the type from a given map access.
-    fn deserialize<A: MapAccess<'block>>(access: A) -> anyhow::Result<Self>;
+    fn transform<A>(&mut self, access: A) -> anyhow::Result<Self::Output>
+    where A: MapAccess<'block>;
 }
 
-/// A type which can be created from a single document value.
-pub trait ValueDeserialize<'block>
+/// A transform which can create a new type from a single document value.
+pub trait ValueTransform<'block>
 where
     Self: Sized + 'block,
 {
+    /// The transformed type.
+    type Output;
+
     /// Attempts to deserialize the type from a given deserializer.
-    fn deserialize<D: ValueDeserializer<'block>>(
+    fn transform<D>(
+        &mut self,
         deserializer: D,
-    ) -> anyhow::Result<Self>;
+    ) -> anyhow::Result<Self::Output>
+    where D: ValueDeserializer<'block>;
 }
 
 /// A deserializer which supports a given visitor.
@@ -29,7 +37,8 @@ pub trait ValueDeserializer<'block> {
     fn deserialize_any<V: ValueVisitor<'block>>(
         self,
         visitor: V,
-    ) -> anyhow::Result<V::Output>;
+    ) -> anyhow::Result<V::Output>
+    where V: ValueVisitor<'block>;
 }
 
 /// A visitor type which handles multiple possible types.
@@ -39,67 +48,67 @@ pub trait ValueVisitor<'block> {
 
     #[inline]
     /// Called when the value is null.
-    fn visit_null(&self) -> anyhow::Result<Self::Output> {
+    fn visit_null(&mut self) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret null value")
     }
 
     #[inline]
     /// Called when the value is a u64.
-    fn visit_u64(&self, _val: u64) -> anyhow::Result<Self::Output> {
+    fn visit_u64(&mut self, _val: u64) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret u64 value")
     }
 
     #[inline]
     /// Called when the value is a i64.
-    fn visit_i64(&self, _val: i64) -> anyhow::Result<Self::Output> {
+    fn visit_i64(&mut self, _val: i64) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret i64 value")
     }
 
     #[inline]
     /// Called when the value is a f64.
-    fn visit_f64(&self, _val: f64) -> anyhow::Result<Self::Output> {
+    fn visit_f64(&mut self, _val: f64) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret f64 value")
     }
 
     #[inline]
     /// Called when the value is a bool.
-    fn visit_bool(&self, _val: bool) -> anyhow::Result<Self::Output> {
+    fn visit_bool(&mut self, _val: bool) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret bool value")
     }
 
     #[inline]
     /// Called when the value is a ip.
-    fn visit_ip(&self, _val: Ipv6Addr) -> anyhow::Result<Self::Output> {
+    fn visit_ip(&mut self, _val: Ipv6Addr) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret ip address value")
     }
 
     #[inline]
     /// Called when the value is a datetime.
-    fn visit_datetime(&self, _val: DateTime) -> anyhow::Result<Self::Output> {
+    fn visit_datetime(&mut self, _val: DateTime) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret datetime value")
     }
 
     #[inline]
     /// Called when the value is a str.
-    fn visit_str(&self, _val: &'block str) -> anyhow::Result<Self::Output> {
+    fn visit_str(&mut self, _val: &'block str) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret str value")
     }
 
     #[inline]
     /// Called when the value is a bytes.
-    fn visit_bytes(&self, _val: &'block [u8]) -> anyhow::Result<Self::Output> {
+    fn visit_bytes(&mut self, _val: &'block [u8]) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret bytes value")
     }
 
     #[inline]
     /// Called when the value is a facet.
-    fn visit_facet(&self, _val: &'block str) -> anyhow::Result<Self::Output> {
+    fn visit_facet(&mut self, _val: &'block str) -> anyhow::Result<Self::Output> {
         bail!("Visitor cannot interpret facet value")
     }
 
     #[inline]
     /// Called when the value is a sequence.
-    fn visit_seq<A>(&self, _access: A) -> anyhow::Result<Self::Output>
+    fn visit_seq<A>(&mut self, _access: A) -> anyhow::Result<Self::Output>
     where
         A: SeqAccess<'block>,
     {
@@ -108,7 +117,7 @@ pub trait ValueVisitor<'block> {
 
     #[inline]
     /// Called when the value is a map.
-    fn visit_map<A>(&self, _access: A) -> anyhow::Result<Self::Output>
+    fn visit_map<A>(&mut self, _access: A) -> anyhow::Result<Self::Output>
     where
         A: MapAccess<'block>,
     {
@@ -125,9 +134,10 @@ pub trait SeqAccess<'block> {
     fn size_hint(&self) -> usize;
 
     /// Attempts to deserialize the next entry in the sequence.
-    fn next_element<T: ValueDeserialize<'block> + 'block>(
+    fn next_element<T: ValueTransform<'block> + 'block>(
         &mut self,
-    ) -> anyhow::Result<Option<T>>;
+        transformer: &mut T,
+    ) -> anyhow::Result<Option<T::Output>>;
 }
 
 pub trait MapAccess<'block> {
@@ -138,9 +148,10 @@ pub trait MapAccess<'block> {
     fn size_hint(&self) -> usize;
 
     /// Attempts to deserialize the next entry in the map.
-    fn next_entry<T: ValueDeserialize<'block> + 'block>(
+    fn next_entry<T: ValueTransform<'block> + 'block>(
         &mut self,
-    ) -> anyhow::Result<Option<(&'block str, T)>>;
+        transformer: &mut T,
+    ) -> anyhow::Result<Option<(&'block str, T::Output)>>;
 }
 
 /// The core document view deserializer.
@@ -176,9 +187,10 @@ impl<'block> MapAccess<'block> for DocViewDeserializer<'block> {
         self.view.len()
     }
 
-    fn next_entry<T: ValueDeserialize<'block> + 'block>(
+    fn next_entry<T: ValueTransform<'block> + 'block>(
         &mut self,
-    ) -> anyhow::Result<Option<(&'block str, T)>> {
+        transformer: &mut T,
+    ) -> anyhow::Result<Option<(&'block str, T::Output)>> {
         unsafe { (*self.state).inc_step() };
         let step_idx = unsafe { (*self.state).step() };
 
@@ -202,7 +214,7 @@ impl<'block> MapAccess<'block> for DocViewDeserializer<'block> {
             step,
             view: self.view,
         };
-        let value = T::deserialize(deserializer)?;
+        let value = transformer.transform(deserializer)?;
 
         Ok(Some((key, value)))
     }
@@ -219,7 +231,7 @@ pub struct DocValueDeserializer<'block> {
 impl<'block> ValueDeserializer<'block> for DocValueDeserializer<'block> {
     fn deserialize_any<V: ValueVisitor<'block>>(
         self,
-        visitor: V,
+        mut visitor: V,
     ) -> anyhow::Result<V::Output> {
         if !matches!(
             self.step.field_type,
@@ -317,9 +329,10 @@ impl<'block> SeqAccess<'block> for DocArrayDeserializer<'block> {
         self.sequence_state.size
     }
 
-    fn next_element<T: ValueDeserialize<'block>>(
+    fn next_element<T: ValueTransform<'block>>(
         &mut self,
-    ) -> anyhow::Result<Option<T>> {
+        transformer: &mut T,
+    ) -> anyhow::Result<Option<T::Output>> {
         if self.sequence_state.is_complete() {
             return Ok(None);
         }
@@ -331,7 +344,7 @@ impl<'block> SeqAccess<'block> for DocArrayDeserializer<'block> {
             view: self.view,
         };
 
-        T::deserialize(deserializer).map(Some)
+        transformer.transform(deserializer).map(Some)
     }
 }
 
@@ -350,9 +363,10 @@ impl<'block> MapAccess<'block> for DocMapDeserializer<'block> {
         self.size
     }
 
-    fn next_entry<T: ValueDeserialize<'block>>(
+    fn next_entry<T: ValueTransform<'block>>(
         &mut self,
-    ) -> anyhow::Result<Option<(&'block str, T)>> {
+        transformer: &mut T,
+    ) -> anyhow::Result<Option<(&'block str, T::Output)>> {
         if self.cursor >= self.size {
             return Ok(None);
         }
@@ -373,7 +387,7 @@ impl<'block> MapAccess<'block> for DocMapDeserializer<'block> {
         };
 
         let key = self.view.block.get_field(step.field_id);
-        let value = T::deserialize(deserializer)?;
+        let value = transformer.transform(deserializer)?;
 
         Ok(Some((key, value)))
     }

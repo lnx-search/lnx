@@ -8,7 +8,7 @@ use rkyv::AlignedVec;
 
 use crate::block_builder::DocBlock;
 use crate::{ArchivedFieldType, Document};
-use crate::reader::view_access::{DocViewDeserialize, DocViewDeserializer};
+use crate::reader::view_access::{DocViewTransform, DocViewDeserializer};
 
 pub struct DocBlockReader {
     /// A view into the owned `data` as the doc block type rather than some bytes.
@@ -89,12 +89,12 @@ impl<'block> DocumentView<'block> {
     }
 
     /// Deserializes the view into a new type.
-    pub fn deserialize_into<T>(&self) -> Result<T>
+    pub fn transform<T>(&self, transformer: &mut T) -> Result<T::Output>
     where
-        T: DocViewDeserialize<'block> + 'block
+        T: DocViewTransform<'block> + 'block
     {
         let deserializer = DocViewDeserializer::new(*self);
-        T::deserialize(deserializer)
+        transformer.transform(deserializer)
     }
 }
 

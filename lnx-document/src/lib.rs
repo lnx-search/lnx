@@ -13,7 +13,7 @@ use rkyv::{Archive, Serialize};
 pub use value::{DateTime, DynamicDocument, KeyValues, KeyValuesIter, Value};
 
 pub use self::block_builder::DocBlockBuilder;
-pub use self::reader::{DocBlockReader, DocumentView};
+pub use self::reader::{DocBlockReader, DocumentView, view_access};
 pub use self::rkyv_serializer::{ChecksumDocWriter, DocSerializer, DocSerializerError};
 
 #[repr(u8)]
