@@ -66,11 +66,17 @@ macro_rules! tri {
     }};
 }
 
+/// A system that can traverse the compact document format
+/// allowing systems to work with the documents in a more
+/// user friendly way without having to worry about
+/// any cursors or references.
 pub(crate) struct DocViewTraverser<'block, W>
 where
     W: ViewWalker<'block>,
 {
+    /// The internal walker.
     pub(crate) walker: W,
+    /// The document view.
     pub(crate) view: DocumentView<'block>,
 }
 
