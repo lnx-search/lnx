@@ -153,7 +153,16 @@ mod tests {
     use serde_json::json;
 
     use crate::rkyv_serializer::DocWriteSerializer;
-    use crate::{ChecksumDocWriter, DateTime, DocBlockBuilder, DocBlockReader, DocSerializer, DynamicDocument, Facet, Value};
+    use crate::{
+        ChecksumDocWriter,
+        DateTime,
+        DocBlockBuilder,
+        DocBlockReader,
+        DocSerializer,
+        DynamicDocument,
+        Facet,
+        Value,
+    };
 
     fn get_view_of(json_text: &str) -> DocBlockReader {
         let doc = serde_json::from_str(json_text).unwrap();

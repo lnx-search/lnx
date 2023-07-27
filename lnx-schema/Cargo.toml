@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 lnx-tools = { path = "../lnx-tools" }
 
+ahash = { workspace = true }
 tantivy = { workspace = true }
 hashbrown = { workspace = true }
