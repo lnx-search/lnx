@@ -31,6 +31,7 @@ pub async fn start_shard(
     info!(shard_id = shard_id, path = %path.display(), "Created new storage shard");
 
     let actor = StorageShardActor {
+        shard_id,
         base_path: base_path.clone(),
         file_key,
         writer,
@@ -119,6 +120,7 @@ impl lnx_tools::supervisor::SupervisedState for SupervisorState {
         let writer = BlockStoreWriter::open(&path).await?;
 
         let actor = StorageShardActor {
+            shard_id: self.shard_id,
             base_path: self.base_path.clone(),
             file_key,
             writer,
@@ -134,6 +136,7 @@ impl lnx_tools::supervisor::SupervisedState for SupervisorState {
 
 /// A core storage shard actor which manages block store files.
 struct StorageShardActor {
+    shard_id: usize,
     base_path: PathBuf,
     file_key: FileKey,
     writer: BlockStoreWriter,
@@ -147,7 +150,7 @@ impl StorageShardActor {
         }
     }
 
-    #[instrument(name = "storage-shard", skip_all, fields(shard_id = self.file_key.shard_id))]
+    #[instrument(name = "storage-shard", skip_all, fields(shard_id = self.shard_id))]
     async fn handle_op(&mut self, op: Op) {
         // TODO: Handle flush ops more efficiently by allowing them to be buffered.
         //       this should improve performance when handling high-concurrency.
@@ -204,7 +207,7 @@ impl StorageShardActor {
         );
 
         let (file_key, path) =
-            crate::get_new_segment(&self.base_path, self.file_key.shard_id);
+            crate::get_new_segment(&self.base_path, self.shard_id);
         let new_writer = BlockStoreWriter::open(&path).await?;
 
         self.file_key = file_key;

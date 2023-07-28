@@ -286,30 +286,45 @@ impl<'a> UserDisplayType for Facet<'a> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Ord, PartialOrd, Eq)]
+/// The datatime value used by lnx.
+///
+/// This is a lightweight wrapper around a `i64` timestamp with `microsecond`  precision.
 pub struct DateTime {
     micros: i64,
 }
 
 impl DateTime {
+    /// The maximum timestamp supported.
     pub const MAX: DateTime = DateTime { micros: i64::MAX };
+    /// The minimum timestamp supported.
     pub const MIN: DateTime = DateTime { micros: i64::MIN };
 
     #[inline]
+    /// Converts a given timestamp in seconds to a datetime value.
+    ///
+    /// This can return `None` if the value cannot be safely represented by the datetime.
     pub fn from_secs(v: i64) -> Option<Self> {
         Self::from_millis(i64::checked_mul(v, 1000)?)
     }
 
     #[inline]
+    /// Converts a given timestamp in milliseconds to a datetime value.
+    ///
+    /// This can return `None` if the value cannot be safely represented by the datetime.
     pub fn from_millis(v: i64) -> Option<Self> {
         Self::from_micros(i64::checked_mul(v, 1000)?)
     }
 
     #[inline]
+    /// Converts a given timestamp in microseconds to a datetime value.
+    ///
+    /// This can never return `None`, it's just marked as such for consistency and future proofing.
     pub fn from_micros(v: i64) -> Option<Self> {
         Some(Self { micros: v })
     }
 
     #[inline]
+    /// Formats the datetime into a given format.
     pub fn format(
         &self,
         format: &(impl Formattable + ?Sized),
@@ -321,7 +336,14 @@ impl DateTime {
     }
 
     #[inline]
+    /// Gets the timestamp representation of the datetime with microsecond precision.
     pub fn as_micros(&self) -> i64 {
         self.micros
+    }
+
+    #[inline]
+    /// Gets the datetime as a tantivy-compatible datetime.
+    pub fn as_tantivy_value(&self) -> tantivy::DateTime {
+        tantivy::DateTime::from_timestamp_micros(self.micros)
     }
 }
