@@ -2,13 +2,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
+use lnx_metastore::Metastore;
 use parking_lot::RwLock;
 use tokio::time::Instant;
 use tracing::{info, instrument};
-use lnx_metastore::Metastore;
 
 use crate::metastore::BlockStorageMetastore;
-use crate::{FileKey, Readers, StorageShardMailbox, DEFAULT_FILE_EXT, BlockStoreReader};
+use crate::{BlockStoreReader, FileKey, Readers, StorageShardMailbox, DEFAULT_FILE_EXT};
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -32,7 +32,6 @@ pub struct BlockStoreService {
     config: Arc<ServiceConfig>,
     /// The active writing shards.
     writing_shards: Arc<Vec<StorageShardMailbox>>,
-
 }
 
 impl BlockStoreService {
@@ -46,7 +45,9 @@ impl BlockStoreService {
             let metastore = metastore.clone();
             lnx_executor::start_blocking_thread(move || {
                 crate::reader::get_file_readers(&metastore, &base_path)
-            }).await.expect("Join thread")?
+            })
+            .await
+            .expect("Join thread")?
         };
 
         let mut shards = Vec::with_capacity(config.num_shards);
@@ -78,7 +79,10 @@ impl BlockStoreService {
     /// be loaded.
     pub fn reload_reader(&self, file_key: FileKey) -> Result<()> {
         let start = Instant::now();
-        let path = self.config.base_path.join(format!("{file_key}.{DEFAULT_FILE_EXT}"));
+        let path = self
+            .config
+            .base_path
+            .join(format!("{file_key}.{DEFAULT_FILE_EXT}"));
         let checkpoint = self.metastore.get_file_commit_checkpoint(file_key)?;
 
         let reader = BlockStoreReader::open(&path, checkpoint)?;

@@ -1,16 +1,16 @@
+mod metastore;
 mod reader;
 mod service;
 mod shard;
 mod writers;
-mod metastore;
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use lnx_tools::hashers::NoOpRandomState;
 
+use lnx_tools::hashers::NoOpRandomState;
 pub use reader::{BlockReadError, BlockStoreReader};
 pub use service::{BlockStoreService, ServiceConfig};
 pub use shard::{StorageShardMailbox, WriteLocation};
@@ -18,7 +18,6 @@ pub use shard::{StorageShardMailbox, WriteLocation};
 /// The default file extension produced by the block store.
 pub static DEFAULT_FILE_EXT: &str = "v1blocks";
 pub(crate) type Readers = HashMap<FileKey, BlockStoreReader, NoOpRandomState>;
-
 
 /// Generates a new path for a new block store segment.
 pub(crate) fn get_new_segment(base_path: &Path, shard_id: usize) -> (FileKey, PathBuf) {

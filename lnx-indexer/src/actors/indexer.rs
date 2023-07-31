@@ -36,7 +36,7 @@ impl IndexingActor {
             schema,
             writer,
             indexing_ops,
-            needs_to_commit: false
+            needs_to_commit: false,
         };
 
         std::thread::Builder::new()
@@ -55,7 +55,7 @@ impl IndexingActor {
                 Ok(false) => continue,
                 Err(e) => {
                     error!(error = ?e, "Failed to complete indexing operation due to error");
-                }
+                },
             }
         }
         Ok(())
@@ -91,14 +91,14 @@ impl IndexingActor {
                 debug!("Indexing actor is commit successful");
                 let _ = ack.send(());
                 self.needs_to_commit = false;
-            }
+            },
             IndexingOp::Shutdown(ack) => {
                 info!("Indexing actor is shutting down");
                 if self.needs_to_commit {
                     self.writer.commit()?;
                 }
                 let _ = ack.send(());
-                return Ok(true)
+                return Ok(true);
             },
         };
 
@@ -111,12 +111,7 @@ impl IndexingActor {
         metadata: SmallVec<[DocMetadata; 2]>,
     ) -> anyhow::Result<()> {
         for (i, metadata) in metadata.into_iter().enumerate() {
-            let view = IndexingDoc::new(
-                metadata,
-                reader.clone(),
-                i,
-                &self.schema,
-            );
+            let view = IndexingDoc::new(metadata, reader.clone(), i, &self.schema);
 
             self.writer.add_document(view)?;
         }

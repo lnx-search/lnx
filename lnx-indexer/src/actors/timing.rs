@@ -48,7 +48,7 @@ impl TimingActor {
             // The actor died, normally because the commit failed
             if rx.await.is_err() {
                 warn!("Timing actor is shutting down as indexing actor has died");
-                return
+                return;
             }
 
             match res {
@@ -61,7 +61,7 @@ impl TimingActor {
                             self.clock.interval(),
                         );
                     }
-                }
+                },
             }
         }
     }

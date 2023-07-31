@@ -2,17 +2,17 @@ use std::fs::File;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
-use anyhow::Context;
 
+use anyhow::Context;
 use lnx_document::DocBlockReader;
 use memmap2::Mmap;
 use rkyv::AlignedVec;
 use tracing::warn;
-use crate::{DEFAULT_FILE_EXT, FileKey, Readers};
+
 use crate::metastore::BlockStorageMetastore;
+use crate::{FileKey, Readers, DEFAULT_FILE_EXT};
 
 const BLOCK_LENGTH_BYTES: usize = 4;
-
 
 /// Walks through the directory (non-recursively) and loads and
 /// files which are suitable to be read.
@@ -20,9 +20,7 @@ pub fn get_file_readers(
     metastore: &BlockStorageMetastore,
     base_path: &Path,
 ) -> anyhow::Result<Readers> {
-
-    let dir = std::fs::read_dir(base_path)
-        .context("Read directory entries")?;
+    let dir = std::fs::read_dir(base_path).context("Read directory entries")?;
 
     let mut readers = Readers::default();
     for entry in dir {
@@ -30,13 +28,13 @@ pub fn get_file_readers(
 
         let path = entry.path();
         if !path.is_file() {
-            continue
+            continue;
         }
 
         let file_key = match maybe_get_file_key(&path) {
             None => {
                 warn!(path = %path.display(), "Ignoring file located in block store folder as it is not a valid file name");
-                continue
+                continue;
             },
             Some(key) => key,
         };
@@ -50,7 +48,6 @@ pub fn get_file_readers(
     Ok(readers)
 }
 
-
 /// Attempts to get the file key for a given file if it's valid.
 ///
 /// This means the file name must be in the format of:
@@ -62,13 +59,11 @@ fn maybe_get_file_key(path: &Path) -> Option<FileKey> {
     let (name, ext) = file_name_str.split_once('.')?;
 
     if ext != DEFAULT_FILE_EXT {
-        return None
+        return None;
     }
 
     name.parse::<u64>().ok().map(FileKey)
 }
-
-
 
 #[derive(Debug, thiserror::Error)]
 /// An error when reading a doc block.

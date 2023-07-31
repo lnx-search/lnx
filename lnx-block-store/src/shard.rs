@@ -207,8 +207,7 @@ impl StorageShardActor {
             "Writer is now full, beginning file rollover..."
         );
 
-        let (file_key, path) =
-            crate::get_new_segment(&self.base_path, self.shard_id);
+        let (file_key, path) = crate::get_new_segment(&self.base_path, self.shard_id);
         let new_writer = BlockStoreWriter::open(&path).await?;
 
         self.file_key = file_key;

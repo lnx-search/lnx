@@ -1,5 +1,6 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use anyhow::Context;
 use tokio::sync::oneshot;
 
@@ -18,8 +19,6 @@ pub struct IndexingPipeline {
 }
 
 impl IndexingPipeline {
-
-
     /// Performs a graceful shutdown of the indexing pipeline.
     pub async fn shutdown(&self) -> anyhow::Result<()> {
         // Shutdown the timing actor

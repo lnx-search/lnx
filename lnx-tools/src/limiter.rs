@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone)]
@@ -23,15 +24,19 @@ impl BufferLimiter {
     pub fn new(capacity: u32) -> Self {
         Self {
             capacity,
-            semaphore: Arc::new(Semaphore::new(capacity as usize))
+            semaphore: Arc::new(Semaphore::new(capacity as usize)),
         }
     }
 
     /// Attempts to allocate `size` bytes, this will apply backpressure
     /// if that amount cannot be allocated.
     pub async fn allocate(&self, size: u32) -> BufferAllocationPermit {
-        assert!(size <= self.capacity, "The overall size of the allocation exceeds the maximum capacity");
-        let permit = self.semaphore
+        assert!(
+            size <= self.capacity,
+            "The overall size of the allocation exceeds the maximum capacity"
+        );
+        let permit = self
+            .semaphore
             .clone()
             .acquire_many_owned(size)
             .await
@@ -39,8 +44,6 @@ impl BufferLimiter {
         BufferAllocationPermit(permit)
     }
 }
-
-
 
 /// A wrapper around a [OwnedSemaphorePermit] that should be held
 /// until the buffer can be released.
