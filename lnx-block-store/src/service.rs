@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use parking_lot::RwLock;
+use tokio::time::Instant;
+use tracing::{info, instrument};
 use lnx_metastore::Metastore;
 
 use crate::metastore::BlockStorageMetastore;
@@ -34,6 +36,7 @@ pub struct BlockStoreService {
 }
 
 impl BlockStoreService {
+    #[instrument(name = "block-store-service-create", skip(metastore))]
     /// Creates a new block storage service.
     pub async fn create(metastore: Metastore, config: ServiceConfig) -> Result<Self> {
         let metastore = BlockStorageMetastore::from_metastore(metastore)?;
@@ -68,23 +71,30 @@ impl BlockStoreService {
         &self.writing_shards[shard_id]
     }
 
+    #[instrument(name = "reload-reader", skip(self))]
     /// Attempts to reload a given reader.
     ///
     /// If the reader is not already loaded (like with a new file) it will
     /// be loaded.
     pub fn reload_reader(&self, file_key: FileKey) -> Result<()> {
+        let start = Instant::now();
         let path = self.config.base_path.join(format!("{file_key}.{DEFAULT_FILE_EXT}"));
         let checkpoint = self.metastore.get_file_commit_checkpoint(file_key)?;
 
         let reader = BlockStoreReader::open(&path, checkpoint)?;
         self.readers.write().insert(file_key, reader);
 
+        info!(elapsed = ?start.elapsed(), "Reloaded reader");
+
         Ok(())
     }
 
+    #[instrument(name = "set-commit-checkpoint", skip(self))]
     /// Sets a new file commit checkpoint and reloads the reader.
     pub fn set_file_commit_checkpoint(&self, file_key: FileKey, pos: u64) -> Result<()> {
         self.metastore.set_file_commit_checkpoint(file_key, pos)?;
         self.reload_reader(file_key)
     }
+
+
 }

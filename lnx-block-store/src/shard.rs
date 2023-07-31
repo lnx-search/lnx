@@ -15,6 +15,7 @@ use tracing::{debug, info, instrument};
 use crate::writers::BlockStoreWriter;
 use crate::FileKey;
 
+#[instrument(name = "start-shard", skip(base_path))]
 /// Starts a new block writer shard with a given shard ID.
 ///
 /// A new file will be created in the given base_path in the format of `<timestamp>-<shard_id>.blocks`.
@@ -28,7 +29,7 @@ pub async fn start_shard(
     let (file_key, path) = crate::get_new_segment(&base_path, shard_id);
     let writer = BlockStoreWriter::open(&path).await?;
 
-    info!(shard_id = shard_id, path = %path.display(), "Created new storage shard");
+    info!(path = %path.display(), "Created new storage shard");
 
     let actor = StorageShardActor {
         shard_id,
