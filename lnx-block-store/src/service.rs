@@ -44,7 +44,7 @@ impl BlockStoreService {
         let readers = {
             let base_path = config.base_path.clone();
             let metastore = metastore.clone();
-            tokio::task::spawn_blocking(move || {
+            lnx_executor::start_blocking_thread(move || {
                 crate::reader::get_file_readers(&metastore, &base_path)
             }).await.expect("Join thread")?
         };
@@ -95,6 +95,4 @@ impl BlockStoreService {
         self.metastore.set_file_commit_checkpoint(file_key, pos)?;
         self.reload_reader(file_key)
     }
-
-
 }
