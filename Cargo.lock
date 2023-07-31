@@ -968,6 +968,7 @@ dependencies = [
  "flume",
  "lnx-block-store",
  "lnx-document",
+ "lnx-executor",
  "lnx-metastore",
  "lnx-schema",
  "lnx-tools",
@@ -976,6 +977,9 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tantivy",
+ "time",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -70,6 +70,7 @@ impl BlockStoreReader {
     pub fn get_block(&self, pos: usize) -> Result<DocBlockReader, BlockReadError> {
         let buffer = self.get_block_data(pos)?;
 
-        DocBlockReader::using_data(buffer).map_err(BlockReadError::InvalidBlockData)
+        DocBlockReader::using_data(Arc::new(buffer))
+            .map_err(BlockReadError::InvalidBlockData)
     }
 }

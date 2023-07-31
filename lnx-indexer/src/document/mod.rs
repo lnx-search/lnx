@@ -4,7 +4,6 @@ pub mod walker;
 use std::fmt::Debug;
 use std::mem;
 use std::net::Ipv6Addr;
-use std::sync::Arc;
 
 use lnx_document::{DateTime, DocBlockReader};
 use lnx_schema::indexing::IndexingSchema;
@@ -21,7 +20,6 @@ use self::walker::{IndexingDocData, IndexingDocWalker};
 use crate::document::stack_str::SmallStr;
 use crate::document::walker::FieldValue;
 
-
 /// A document able to be indexed by tantivy.
 pub struct IndexingDoc {
     /// The document metadata.
@@ -32,14 +30,14 @@ pub struct IndexingDoc {
     /// This is not actually 'static and instead only lives for as long as `reader`.
     data: IndexingDocData<'static>,
     /// The owned document data.
-    _reader: Arc<DocBlockReader>,
+    _reader: DocBlockReader,
 }
 
 impl IndexingDoc {
     /// Creates a new indexing doc from a block reader and doc id.
     pub fn new(
         metadata: DocMetadata,
-        reader: Arc<DocBlockReader>,
+        reader: DocBlockReader,
         doc_id: usize,
         schema: &IndexingSchema,
     ) -> Self {
@@ -59,7 +57,11 @@ impl IndexingDoc {
         let data = unsafe {
             mem::transmute::<IndexingDocData<'_>, IndexingDocData<'static>>(data)
         };
-        Self { metadata, data, _reader: reader }
+        Self {
+            metadata,
+            data,
+            _reader: reader,
+        }
     }
 }
 
@@ -85,7 +87,6 @@ impl DocumentAccess for IndexingDoc {
     }
 }
 
-
 /// A document fields iterator.
 ///
 /// This iterator resolves any field keys if specified.
@@ -106,7 +107,10 @@ impl<'a> Iterator for FieldValueIter<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((field, value)) = self.metadata.next() {
-            return Some((field, IndexingValue::Single(SingleIndexingValue::U64(value))))
+            return Some((
+                field,
+                IndexingValue::Single(SingleIndexingValue::U64(value)),
+            ));
         }
 
         let entry = self.inner_iter.next()?;
@@ -125,7 +129,6 @@ impl<'a> Iterator for FieldValueIter<'a> {
         Some((field_id, value))
     }
 }
-
 
 #[derive(Copy, Clone, Debug)]
 /// A value that can be used by tantivy indexers.
@@ -160,7 +163,6 @@ impl<'a> DocValue<'a> for IndexingValue<'a> {
         }
     }
 }
-
 
 #[derive(Copy, Clone, Debug)]
 /// A single raw value for indexing.
@@ -241,7 +243,6 @@ impl<'a> SingleIndexingValue<'a> {
     }
 }
 
-
 #[derive(Debug)]
 /// A doc value that implements no logic.
 pub struct UnImplementedValue;
@@ -254,7 +255,6 @@ impl<'a> DocValue<'a> for UnImplementedValue {
         unimplemented!()
     }
 }
-
 
 #[derive(Debug, Copy, Clone)]
 /// The metadata for the specific document.
@@ -279,10 +279,7 @@ macro_rules! iter_step {
         if !$slf.$field {
             $slf.$field = true;
 
-            return Some((
-                $slf.metadata.$field_id,
-                $slf.metadata.$value,
-            ))
+            return Some(($slf.metadata.$field_id, $slf.metadata.$value));
         }
     }};
 }
@@ -301,7 +298,7 @@ impl DocMetadataIter {
             metadata,
             has_completed_file_id: false,
             has_completed_offset: false,
-            has_completed_timestamp: false
+            has_completed_timestamp: false,
         }
     }
 }
@@ -310,9 +307,24 @@ impl Iterator for DocMetadataIter {
     type Item = (Field, u64);
 
     fn next(&mut self) -> Option<Self::Item> {
-        iter_step!(self, has_completed_file_id, block_store_file_id_field, block_store_file_id);
-        iter_step!(self, has_completed_offset, block_store_offset_field, block_store_offset);
-        iter_step!(self, has_completed_timestamp, doc_hlc_timestamp_field, doc_hlc_timestamp);
+        iter_step!(
+            self,
+            has_completed_file_id,
+            block_store_file_id_field,
+            block_store_file_id
+        );
+        iter_step!(
+            self,
+            has_completed_offset,
+            block_store_offset_field,
+            block_store_offset
+        );
+        iter_step!(
+            self,
+            has_completed_timestamp,
+            doc_hlc_timestamp_field,
+            doc_hlc_timestamp
+        );
 
         None
     }

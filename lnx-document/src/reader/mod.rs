@@ -1,6 +1,7 @@
 mod json;
 pub mod traverse;
 
+use std::sync::Arc;
 use std::{io, mem};
 
 use anyhow::{bail, Context};
@@ -10,13 +11,14 @@ use crate::block_builder::DocBlock;
 use crate::traverse::{DocViewTraverser, ViewWalker};
 use crate::Document;
 
+#[derive(Clone)]
 pub struct DocBlockReader {
     /// A view into the owned `data` as the doc block type rather than some bytes.
     ///
     /// It's important that `data` lives *longer* than this view as the view only lives
     /// for as long as `data.
     view: &'static rkyv::Archived<DocBlock<'static>>,
-    data: AlignedVec,
+    data: Arc<AlignedVec>,
 }
 
 impl DocBlockReader {
@@ -27,7 +29,7 @@ impl DocBlockReader {
     /// of the block which can be used to validate the state of the data.
     ///
     /// If the checksums do not match the block will be unable to be read.
-    pub fn using_data(data: AlignedVec) -> anyhow::Result<Self> {
+    pub fn using_data(data: Arc<AlignedVec>) -> anyhow::Result<Self> {
         let slice_at = data.len() - mem::size_of::<u32>();
         let expected_checksum = u32::from_le_bytes(
             data[slice_at..]
@@ -57,6 +59,12 @@ impl DocBlockReader {
     /// Returns the memory usage of the reader and it's data.
     pub fn memory_usage(&self) -> usize {
         self.data.len()
+    }
+
+    #[inline]
+    /// Returns the number of documents in the block.
+    pub fn num_docs(&self) -> usize {
+        self.view.documents.len()
     }
 
     #[inline]
@@ -137,7 +145,8 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        let view = DocBlockReader::using_data(data).expect("Read block successfully");
+        let view =
+            DocBlockReader::using_data(Arc::new(data)).expect("Read block successfully");
         assert!(
             view.view.documents.is_empty(),
             "No documents should be in block"
@@ -163,7 +172,8 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        let view = DocBlockReader::using_data(data).expect("Read block successfully");
+        let view =
+            DocBlockReader::using_data(Arc::new(data)).expect("Read block successfully");
         let doc_view = view.doc(0);
         assert!(doc_view.is_empty(), "Document should be empty")
     }

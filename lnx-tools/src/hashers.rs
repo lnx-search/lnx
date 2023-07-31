@@ -29,7 +29,7 @@ impl Hasher for NoOpHasher {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 /// A random state which produces a [NoOpHasher]
 pub struct NoOpRandomState;
 

@@ -11,7 +11,11 @@ lnx-metastore = { path = "../lnx-metastore" }
 lnx-tools = { path = "../lnx-tools" }
 lnx-document = { path = "../lnx-document" }
 lnx-schema = { path = "../lnx-schema" }
+lnx-executor = { path = "../lnx-executor" }
 
+tracing = { workspace = true }
+tokio = { workspace = true }
+time = { workspace = true }
 datacake = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }

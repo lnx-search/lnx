@@ -443,6 +443,7 @@ impl KeyBuilder {
 #[cfg(test)]
 mod tests {
     use std::mem;
+    use std::sync::Arc;
 
     use lnx_document::{
         ChecksumDocWriter,
@@ -476,7 +477,7 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        DocBlockReader::using_data(data).expect("Read block successfully")
+        DocBlockReader::using_data(Arc::new(data)).expect("Read block successfully")
     }
 
     fn check_doc(value: serde_json::Value, expected_doc: IndexingDocData) {

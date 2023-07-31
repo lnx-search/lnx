@@ -74,6 +74,8 @@ pub trait SegmentWriter: Sized {
     async fn open(path: PathBuf) -> io::Result<Self>;
 
     /// Writes a chunk of data to the store.
+    ///
+    /// The writer should return the byte offset of the start of the block.
     async fn write_all(&mut self, bytes: Arc<AlignedVec>) -> io::Result<u64>;
 
     /// Ensures all data written to the store is safely persisted on disk.

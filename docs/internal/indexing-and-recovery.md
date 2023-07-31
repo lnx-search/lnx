@@ -11,8 +11,6 @@ from one another, so we need some way of working out what point we got to in ind
 - `storage shard` The storage actor which feeds data into the indexer.
 - `checkpoint` The position in the store shard that the indexer has processed up to.
 - `indexing actor` The actor that is actually processing and pushing the documents into tantivy.
-- `commit actor` The actor that is triggering the tantivy commit operations.
-- `timing actor` The actor that triggers commit events at specific intervals for the auto-commit.
 
 ### Overview
 

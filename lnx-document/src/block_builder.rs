@@ -23,11 +23,9 @@ pub struct DocBlock<'a> {
     #[with(rkyv::with::AsBox)]
     /// The field mapping of field name to field ID (index in array).
     pub(crate) field_mapping: Vec<Box<str>>,
-
     /// The documents and the layouts they have.
     #[with(rkyv::with::AsBox)]
     pub(crate) documents: Vec<Document>,
-
     // The block data
     #[with(rkyv::with::AsBox)]
     /// All string values within the block.

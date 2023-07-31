@@ -5,7 +5,7 @@ use std::hash::{BuildHasher, Hasher};
 use lnx_tools::hashers::NoOpRandomState;
 use tantivy::schema::Field;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct IndexingSchema {
     /// The random state used for
     random_state: RandomState,
@@ -80,7 +80,7 @@ impl IndexingSchema {
         }
 
         match self.catch_unknown_fields_as_dynamic {
-            None => return FieldInfo::Exclude,
+            None => FieldInfo::Exclude,
             Some(field_id) => FieldInfo::CatchAll(field_id),
         }
     }
@@ -99,7 +99,7 @@ pub enum FieldInfo {
     CatchAll(Field),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum FieldType {
     /// The field is a tokenized text field.
     Text { field_id: Field },
