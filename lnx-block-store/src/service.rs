@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use lnx_metastore::Metastore;
 
 use crate::metastore::BlockStorageMetastore;
-use crate::{Readers, StorageShardMailbox};
+use crate::{FileKey, Readers, StorageShardMailbox, DEFAULT_FILE_EXT, BlockStoreReader};
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -66,5 +66,25 @@ impl BlockStoreService {
     /// to the writer.
     pub fn get_storage_context(&self, shard_id: usize) -> &StorageShardMailbox {
         &self.writing_shards[shard_id]
+    }
+
+    /// Attempts to reload a given reader.
+    ///
+    /// If the reader is not already loaded (like with a new file) it will
+    /// be loaded.
+    pub fn reload_reader(&self, file_key: FileKey) -> Result<()> {
+        let path = self.config.base_path.join(format!("{file_key}.{DEFAULT_FILE_EXT}"));
+        let checkpoint = self.metastore.get_file_commit_checkpoint(file_key)?;
+
+        let reader = BlockStoreReader::open(&path, checkpoint)?;
+        self.readers.write().insert(file_key, reader);
+
+        Ok(())
+    }
+
+    /// Sets a new file commit checkpoint and reloads the reader.
+    pub fn set_file_commit_checkpoint(&self, file_key: FileKey, pos: u64) -> Result<()> {
+        self.metastore.set_file_commit_checkpoint(file_key, pos)?;
+        self.reload_reader(file_key)
     }
 }
