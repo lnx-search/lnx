@@ -43,7 +43,7 @@ impl Metastore {
         let env = EnvOpenOptions::new().max_dbs(5).open(&inner)?;
 
         let mut txn = env.write_txn()?;
-        let metastore = env.create_database(&mut txn, Some("metastore"))?;
+        let metastore = env.create_database(&mut txn, Some("lnx_metastore__default"))?;
         drop(txn);
 
         Ok(Self {
