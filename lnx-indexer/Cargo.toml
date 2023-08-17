@@ -13,14 +13,12 @@ lnx-executor = { path = "../lnx-executor" }
 
 tracing = { workspace = true }
 tokio = { workspace = true }
-time = { workspace = true }
-datacake = { workspace = true }
-ahash = { workspace = true }
 anyhow = { workspace = true }
 tantivy = { workspace = true }
 parking_lot = { workspace = true }
 flume = { workspace = true }
 smallvec = { workspace = true }
+exponential-backoff = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

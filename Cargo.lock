@@ -907,27 +907,6 @@ name = "lnx"
 version = "0.10.0"
 
 [[package]]
-name = "lnx-block-store"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "flume",
- "futures",
- "lnx-document",
- "lnx-executor",
- "lnx-metastore",
- "lnx-tools",
- "lz4_flex 0.11.1",
- "memmap2",
- "parking_lot",
- "rkyv",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "lnx-document"
 version = "0.1.0"
 dependencies = [
@@ -962,9 +941,8 @@ dependencies = [
 name = "lnx-indexer"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.3",
  "anyhow",
- "datacake",
+ "exponential-backoff",
  "flume",
  "lnx-document",
  "lnx-executor",
@@ -975,7 +953,6 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tantivy",
- "time",
  "tokio",
  "tracing",
 ]
@@ -1083,12 +1060,6 @@ name = "lz4_flex"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b8c72594ac26bfd34f2d99dfced2edfaddfe8a476e3ff2ca0eb293d925c4f83"
-
-[[package]]
-name = "lz4_flex"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ea9b256699eda7b0387ffbc776dd625e28bde3918446381781245b7a50349d8"
 
 [[package]]
 name = "matchers"
@@ -1759,7 +1730,7 @@ dependencies = [
  "levenshtein_automata",
  "log",
  "lru",
- "lz4_flex 0.10.0",
+ "lz4_flex",
  "measure_time",
  "memmap2",
  "murmurhash32",

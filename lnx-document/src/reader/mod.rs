@@ -56,8 +56,8 @@ impl DocBlockReader {
     }
 
     #[inline]
-    /// Returns the memory usage of the reader and it's data.
-    pub fn memory_usage(&self) -> usize {
+    /// Returns the size of the reader and it's data in bytes.
+    pub fn buffer_usage(&self) -> usize {
         self.data.len()
     }
 

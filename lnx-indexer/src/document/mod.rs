@@ -23,7 +23,7 @@ use crate::document::walker::FieldValue;
 /// A document able to be indexed by tantivy.
 pub struct IndexingDoc {
     /// The document metadata.
-    metadata: DocMetadata,
+    metadata: BlockMetadata,
     /// The flattened document data.
     ///
     /// WARNING:
@@ -36,7 +36,7 @@ pub struct IndexingDoc {
 impl IndexingDoc {
     /// Creates a new indexing doc from a block reader and doc id.
     pub fn new(
-        metadata: DocMetadata,
+        metadata: BlockMetadata,
         reader: DocBlockReader,
         doc_id: usize,
         schema: &IndexingSchema,
@@ -258,7 +258,7 @@ impl<'a> DocValue<'a> for UnImplementedValue {
 
 #[derive(Debug, Copy, Clone)]
 /// The metadata for the specific document.
-pub struct DocMetadata {
+pub struct BlockMetadata {
     /// The field ID of the store file.
     pub block_store_file_id_field: Field,
     /// The actual file ID from the block store.
@@ -286,14 +286,14 @@ macro_rules! iter_step {
 
 /// A iterator that steps through the document metadata values.
 struct DocMetadataIter {
-    metadata: DocMetadata,
+    metadata: BlockMetadata,
     has_completed_file_id: bool,
     has_completed_offset: bool,
     has_completed_timestamp: bool,
 }
 
 impl DocMetadataIter {
-    fn new(metadata: DocMetadata) -> Self {
+    fn new(metadata: BlockMetadata) -> Self {
         Self {
             metadata,
             has_completed_file_id: false,

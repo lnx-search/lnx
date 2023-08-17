@@ -31,8 +31,8 @@ ryu = "1"
 hashbrown = "0.13.2"
 memmap2 = "0.6.2"
 
-# tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "add-doc-as-trait-v2" }
-tantivy = { path = "../../chilfish8-projects/tantivy" }
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "add-doc-as-trait-v2" }
+# tantivy = { path = "../../chilfish8-projects/tantivy" }
 tokio = { version = "1.28.2", features = ["full"] }
 heed = { version = "0.20.0-alpha.0", default-features = false }
 time = { version = "0.3.21", features = ["parsing", "formatting"] }
@@ -40,12 +40,12 @@ serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.42", features = ["strict", "validation"] }
 lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 datacake = { version = "0.7.1", git = "https://github.com/lnx-search/datacake.git" }
+yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }
 
 [workspace]
 members = [
     "lnx-document",
     "lnx-transforms",
-    "lnx-block-store",
     "lnx-metastore",
     "lnx-executor",
     "lnx-tools",
