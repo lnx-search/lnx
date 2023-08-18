@@ -88,12 +88,12 @@ impl<'block> DocumentView<'block> {
     #[inline]
     /// Returns the length of the document.
     pub fn len(&self) -> usize {
-        self.doc.len as usize
+        self.doc.len.value() as usize
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.doc.len as usize == 0
+        self.doc.len.value() as usize == 0
     }
 
     #[inline]

@@ -101,7 +101,7 @@ where
                 "Invalid doc layout, top level object cannot have array elements as part of the data (Indicated by the u16::MAX ID)"
             );
 
-            let is_last = i >= (self.view.doc.len as usize - 1);
+            let is_last = i >= (self.view.doc.len.value() as usize - 1);
             tri!(self.walk_map_field(is_last, &mut step_idx, &mut cursors, step));
 
             step_idx += 1;
@@ -122,7 +122,7 @@ where
     ) -> Result<(), W::Err> {
         debug_assert_ne!(step.field_id, u16::MAX, "Object field should not be an array sub element. This is a bug.\n{step_idx}\n {step:?}");
 
-        let key: &str = self.view.block.field_mapping[step.field_id as usize].as_ref();
+        let key: &str = self.view.block.field_mapping[step.field_id.value() as usize].as_ref();
         tri!(self.walker.visit_map_key(key));
 
         if !matches!(
@@ -156,21 +156,21 @@ where
                 cursors.bools += 1;
             },
             ArchivedFieldType::U64 => {
-                let v: u64 = self.view.block.u64s[cursors.u64s];
+                let v: u64 = self.view.block.u64s[cursors.u64s].value();
 
                 tri!(self.walker.visit_u64(is_parent_last, v));
 
                 cursors.u64s += 1;
             },
             ArchivedFieldType::I64 => {
-                let v: i64 = self.view.block.i64s[cursors.i64s];
+                let v: i64 = self.view.block.i64s[cursors.i64s].value();
 
                 tri!(self.walker.visit_i64(is_parent_last, v));
 
                 cursors.i64s += 1;
             },
             ArchivedFieldType::F64 => {
-                let v: f64 = self.view.block.f64s[cursors.f64s];
+                let v: f64 = self.view.block.f64s[cursors.f64s].value();
 
                 tri!(self.walker.visit_f64(is_parent_last, v));
 
@@ -184,7 +184,7 @@ where
                 cursors.ips += 1;
             },
             ArchivedFieldType::DateTime => {
-                let v = &self.view.block.i64s[cursors.i64s];
+                let v = &self.view.block.i64s[cursors.i64s].value();
                 let dt = DateTime::from_micros(*v).expect("This is infallible");
 
                 tri!(self.walker.visit_date(is_parent_last, dt));
@@ -199,7 +199,7 @@ where
                 cursors.strings += 1;
             },
             ArchivedFieldType::Array => {
-                let collection_length = step.field_length as usize;
+                let collection_length = step.field_length.value() as usize;
 
                 tri!(self.walker.start_array(collection_length));
 
@@ -215,7 +215,7 @@ where
                 tri!(self.walker.end_array(is_parent_last));
             },
             ArchivedFieldType::Object => {
-                let collection_length = step.field_length as usize;
+                let collection_length = step.field_length.value() as usize;
 
                 tri!(self.walker.start_map(collection_length));
 
@@ -251,14 +251,14 @@ where
 
         match step.field_type {
             ArchivedFieldType::Null => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let is_last = i >= (num_entries - 1);
                     tri!(self.walker.visit_null(is_parent_last && is_last));
                 }
             },
             ArchivedFieldType::String => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let v: &str = self.view.block.strings[cursors.strings].as_ref();
 
@@ -269,7 +269,7 @@ where
                 }
             },
             ArchivedFieldType::Bytes => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let v: &[u8] = self.view.block.bytes[cursors.bytes].as_ref();
 
@@ -280,7 +280,7 @@ where
                 }
             },
             ArchivedFieldType::Bool => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let v: bool = self.view.block.bools[cursors.bools];
 
@@ -291,9 +291,9 @@ where
                 }
             },
             ArchivedFieldType::U64 => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
-                    let v: u64 = self.view.block.u64s[cursors.u64s];
+                    let v: u64 = self.view.block.u64s[cursors.u64s].value();
 
                     let is_last = i >= (num_entries - 1);
                     tri!(self.walker.visit_u64(is_parent_last && is_last, v));
@@ -302,9 +302,9 @@ where
                 }
             },
             ArchivedFieldType::I64 => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
-                    let v: i64 = self.view.block.i64s[cursors.i64s];
+                    let v: i64 = self.view.block.i64s[cursors.i64s].value();
 
                     let is_last = i >= (num_entries - 1);
                     tri!(self.walker.visit_i64(is_parent_last && is_last, v));
@@ -313,9 +313,9 @@ where
                 }
             },
             ArchivedFieldType::F64 => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
-                    let v: f64 = self.view.block.f64s[cursors.f64s];
+                    let v: f64 = self.view.block.f64s[cursors.f64s].value();
 
                     let is_last = i >= (num_entries - 1);
                     tri!(self.walker.visit_f64(is_parent_last && is_last, v));
@@ -324,7 +324,7 @@ where
                 }
             },
             ArchivedFieldType::IpAddr => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let ip = self.view.block.ips[cursors.ips];
 
@@ -337,9 +337,9 @@ where
                 }
             },
             ArchivedFieldType::DateTime => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
-                    let v: i64 = self.view.block.i64s[cursors.i64s];
+                    let v: i64 = self.view.block.i64s[cursors.i64s].value();
                     let dt = DateTime::from_micros(v).expect("This is infallible");
 
                     let is_last = i >= (num_entries - 1);
@@ -349,7 +349,7 @@ where
                 }
             },
             ArchivedFieldType::Facet => {
-                let num_entries = step.field_length as usize;
+                let num_entries = step.field_length.value() as usize;
                 for i in 0..num_entries {
                     let v: &str = self.view.block.strings[cursors.strings].as_ref();
 
@@ -360,7 +360,7 @@ where
                 }
             },
             ArchivedFieldType::Array => {
-                let collection_length = step.field_length as usize;
+                let collection_length = step.field_length.value() as usize;
 
                 tri!(self.walker.start_array(collection_length));
 
@@ -376,7 +376,7 @@ where
                 tri!(self.walker.end_array(is_parent_last));
             },
             ArchivedFieldType::Object => {
-                let collection_length = step.field_length as usize;
+                let collection_length = step.field_length.value() as usize;
 
                 tri!(self.walker.start_map(collection_length));
 

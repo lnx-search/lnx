@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use heed::byteorder::LE;
 use heed::types::{ByteSlice, U64};
-use heed::{Database, Env, EnvOpenOptions};
+use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn};
 use rkyv::de::deserializers::SharedDeserializeMap;
 use rkyv::ser::serializers::AllocSerializer;
 use rkyv::validation::validators::DefaultValidator;
@@ -15,23 +15,32 @@ use rkyv::{AlignedVec, Archive, CheckBytes, Deserialize, Serialize};
 
 pub use crate::types::Key;
 
-#[derive(Clone)]
-/// The metadata storage system.
+
+/// A metastore that can store custom typed keys and values.
 ///
-/// This is a ACID key-value store which can be used
-/// in places where it's important to keep the data
-/// correctly persisted.
-///
-/// This is a core structure and only persists data locally.
-/// The `ReplicatedMetastore` should be used for adjusting settings
-/// that need to be reflected across the cluster.
-pub struct Metastore {
+/// This is useful in situations where you want to make use of
+/// various LMDB properties like sorting.
+pub struct CustomMetastore<K, V> {
     path: Arc<PathBuf>,
     env: Env,
-    db: Database<U64<LE>, ByteSlice>,
+    db: Database<K, V>,
 }
 
-impl Metastore {
+impl<K, V> Clone for CustomMetastore<K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            env: self.env.clone(),
+            db: self.db,
+        }
+    }
+}
+
+impl<K, V> CustomMetastore<K, V>
+where
+    K: 'static,
+    V: 'static,
+{
     /// Opens or creates a new metastore in a given directory.
     pub fn open(path: &Path) -> Result<Self> {
         let inner = path.join("metastore.lmdb");
@@ -54,21 +63,80 @@ impl Metastore {
     }
 
     /// Opens a database within the metastore.
-    pub fn open_database(&self, name: &str) -> Result<Self> {
+    pub fn open_new_database<K2, V2>(&self, name: &str) -> Result<CustomMetastore<K2, V2>>
+    where
+        K2: 'static,
+        V2: 'static,
+    {
         let mut txn = self.env.write_txn()?;
         let db = self.env.create_database(&mut txn, Some(name))?;
         drop(txn);
 
-        Ok(Self {
+        Ok(CustomMetastore {
             path: self.path.clone(),
             env: self.env.clone(),
             db,
         })
     }
 
+    #[inline]
+    /// Returns the DB type wrapper.
+    pub fn db(&self) -> Database<K, V> {
+        self.db
+    }
+
+    #[inline]
+    /// Creates a new write transaction.
+    pub fn write_txn(&self) -> Result<RwTxn> {
+        self.env.write_txn().map_err(|e| e.into())
+    }
+
+    #[inline]
+    /// Creates a new read transaction.
+    pub fn read_txn(&self) -> Result<RoTxn> {
+        self.env.read_txn().map_err(|e| e.into())
+    }
+}
+
+#[derive(Clone)]
+/// The metadata storage system.
+///
+/// This is a ACID key-value store which can be used
+/// in places where it's important to keep the data
+/// correctly persisted.
+///
+/// This is a core structure and only persists data locally.
+/// The `ReplicatedMetastore` should be used for adjusting settings
+/// that need to be reflected across the cluster.
+pub struct Metastore {
+    inner: CustomMetastore<U64<LE>, ByteSlice>,
+}
+
+impl Metastore {
+    /// Opens or creates a new metastore in a given directory.
+    pub fn open(path: &Path) -> Result<Self> {
+        let inner = CustomMetastore::open(path)?;
+        Ok(Self { inner })
+    }
+
+    /// Opens a database within the metastore.
+    pub fn open_database(&self, name: &str) -> Result<Self> {
+        let inner = self.inner.open_new_database(name)?;
+        Ok(Self { inner })
+    }
+
+    /// Opens a database within the metastore with a custom type signature.
+    pub fn open_custom_database<K, V>(&self, name: &str) -> Result<CustomMetastore<K, V>>
+    where
+        K: 'static,
+        V: 'static,
+    {
+        self.inner.open_new_database(name)
+    }
+
     /// The location of the LMDB instance.
     pub fn location(&self) -> &Path {
-        &self.path
+        &self.inner.path
     }
 
     /// Inserts an entry into the main metastore.
@@ -80,8 +148,31 @@ impl Metastore {
         let key = k.to_hash();
         let value = rkyv::to_bytes::<_, 1024>(v)?;
 
-        let mut txn = self.env.write_txn()?;
-        self.db.put(&mut txn, &key, value.as_ref())?;
+        let mut txn = self.inner.write_txn()?;
+        self.inner.db.put(&mut txn, &key, value.as_ref())?;
+        txn.commit()?;
+
+        Ok(())
+    }
+
+    /// Inserts multiple entries into the main metastore.
+    ///
+    /// This is part of a single bulk atomic operation.
+    pub fn put_many<'a, I, K: 'a, V: 'a>(&self, values: I) -> Result<()>
+    where
+        K: Key,
+        V: Serialize<AllocSerializer<1024>>,
+        I: IntoIterator<Item = (&'a K, &'a V)>,
+    {
+        let mut txn = self.inner.write_txn()?;
+
+        for (k, v) in values {
+            let key = k.to_hash();
+            let value = rkyv::to_bytes::<_, 1024>(v)?;
+            self.inner.db.put(&mut txn, &key, value.as_ref())?;
+        }
+
+        txn.commit()?;
         Ok(())
     }
 
@@ -95,9 +186,9 @@ impl Metastore {
             + Deserialize<V, SharedDeserializeMap>,
     {
         let key = k.to_hash();
-        let txn = self.env.read_txn()?;
+        let txn = self.inner.read_txn()?;
 
-        if let Some(slice) = self.db.get(&txn, &key)? {
+        if let Some(slice) = self.inner.db.get(&txn, &key)? {
             let mut bytes = AlignedVec::with_capacity(slice.len());
             bytes.extend_from_slice(slice);
 
@@ -121,8 +212,26 @@ impl Metastore {
         K: Key,
     {
         let key = k.to_hash();
-        let mut txn = self.env.write_txn()?;
-        self.db.delete(&mut txn, &key)?;
+        let mut txn = self.inner.write_txn()?;
+        self.inner.db.delete(&mut txn, &key)?;
+        txn.commit()?;
+        Ok(())
+    }
+
+    /// Deletes multiple entries from the main metastore.
+    pub fn del_many<'a, I, K: 'a>(&self, keys: I) -> Result<()>
+    where
+        K: Key,
+        I: IntoIterator<Item = &'a K>,
+    {
+        let mut txn = self.inner.write_txn()?;
+
+        for k in keys {
+            let key = k.to_hash();
+            self.inner.db.delete(&mut txn, &key)?;
+        }
+
+        txn.commit()?;
         Ok(())
     }
 

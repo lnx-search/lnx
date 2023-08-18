@@ -37,7 +37,7 @@ tokio = { version = "1.28.2", features = ["full"] }
 heed = { version = "0.20.0-alpha.0", default-features = false }
 time = { version = "0.3.21", features = ["parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
-rkyv = { version = "0.7.42", features = ["strict", "validation"] }
+rkyv = { version = "0.7.42", features = ["strict", "validation", "archive_le"] }
 lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 datacake = { version = "0.7.1", git = "https://github.com/lnx-search/datacake.git" }
 yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }

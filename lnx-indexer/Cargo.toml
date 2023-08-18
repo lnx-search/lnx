@@ -10,6 +10,7 @@ lnx-tools = { path = "../lnx-tools" }
 lnx-document = { path = "../lnx-document" }
 lnx-schema = { path = "../lnx-schema" }
 lnx-executor = { path = "../lnx-executor" }
+lnx-metastore = { path = "../lnx-metastore" }
 
 tracing = { workspace = true }
 tokio = { workspace = true }
@@ -19,6 +20,7 @@ parking_lot = { workspace = true }
 flume = { workspace = true }
 smallvec = { workspace = true }
 exponential-backoff = { workspace = true }
+yorick = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
