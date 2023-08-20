@@ -122,7 +122,8 @@ where
     ) -> Result<(), W::Err> {
         debug_assert_ne!(step.field_id, u16::MAX, "Object field should not be an array sub element. This is a bug.\n{step_idx}\n {step:?}");
 
-        let key: &str = self.view.block.field_mapping[step.field_id.value() as usize].as_ref();
+        let key: &str =
+            self.view.block.field_mapping[step.field_id.value() as usize].as_ref();
         tri!(self.walker.visit_map_key(key));
 
         if !matches!(

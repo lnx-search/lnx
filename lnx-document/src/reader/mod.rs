@@ -19,6 +19,7 @@ pub struct DocBlockReader {
     /// for as long as `data.
     view: &'static rkyv::Archived<DocBlock<'static>>,
     data: Arc<AlignedVec>,
+    index_id: u64,
 }
 
 impl DocBlockReader {
@@ -52,7 +53,13 @@ impl DocBlockReader {
             rkyv::archived_root::<DocBlock<'static>>(&buffer[..slice_at])
         };
 
-        Ok(Self { data, view })
+        let index_id = view.index_id.value();
+
+        Ok(Self {
+            data,
+            view,
+            index_id,
+        })
     }
 
     #[inline]
@@ -68,10 +75,17 @@ impl DocBlockReader {
     }
 
     #[inline]
+    /// Returns the index ID associated with the view.
+    pub fn index_id(&self) -> u64 {
+        self.index_id
+    }
+
+    #[inline]
     /// Create a view for a given document within the block.
     pub fn doc(&self, idx: usize) -> DocumentView {
         DocumentView {
             block: self.view,
+            doc_id: self.view.document_ids[idx].value(),
             doc: &self.view.documents[idx],
         }
     }
@@ -81,10 +95,17 @@ impl DocBlockReader {
 /// A zero-copy view into a document within a block.
 pub struct DocumentView<'block> {
     pub(crate) block: &'block rkyv::Archived<DocBlock<'static>>,
+    pub(crate) doc_id: u64,
     pub(crate) doc: &'block rkyv::Archived<Document>,
 }
 
 impl<'block> DocumentView<'block> {
+    #[inline]
+    /// Returns the ID of the document.
+    pub fn id(&self) -> u64 {
+        self.doc_id
+    }
+
     #[inline]
     /// Returns the length of the document.
     pub fn len(&self) -> usize {
@@ -133,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_reading_empty_block() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());
         let mut serializer =
@@ -155,11 +176,11 @@ mod tests {
 
     #[test]
     fn test_reading_empty_doc() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
 
         let doc = DynamicDocument::default();
 
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());

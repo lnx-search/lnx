@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+pub use heed;
 use heed::byteorder::LE;
 use heed::types::{ByteSlice, U64};
 use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn};
@@ -14,7 +15,6 @@ use rkyv::validation::validators::DefaultValidator;
 use rkyv::{AlignedVec, Archive, CheckBytes, Deserialize, Serialize};
 
 pub use crate::types::Key;
-
 
 /// A metastore that can store custom typed keys and values.
 ///
@@ -63,7 +63,10 @@ where
     }
 
     /// Opens a database within the metastore.
-    pub fn open_new_database<K2, V2>(&self, name: &str) -> Result<CustomMetastore<K2, V2>>
+    pub fn open_new_database<K2, V2>(
+        &self,
+        name: &str,
+    ) -> Result<CustomMetastore<K2, V2>>
     where
         K2: 'static,
         V2: 'static,

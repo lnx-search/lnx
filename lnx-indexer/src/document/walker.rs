@@ -462,7 +462,7 @@ mod tests {
     fn get_view_of(json_value: serde_json::Value) -> DocBlockReader {
         let json_text = json_value.to_string();
         let doc = serde_json::from_str(&json_text).unwrap();
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
 
         let is_full = builder.add_document(doc);
         assert!(!is_full, "Builder should not be full");

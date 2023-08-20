@@ -170,9 +170,9 @@ mod tests {
     }
 
     fn get_view_of_dynamic_doc(doc: DynamicDocument) -> DocBlockReader {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
 
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
 
         let writer = ChecksumDocWriter::from(AlignedVec::new());
@@ -185,7 +185,7 @@ mod tests {
         let buffer = serializer.into_inner_serializer().into_inner();
         let data = buffer.finish();
 
-        DocBlockReader::using_data(data).expect("Read block successfully")
+        DocBlockReader::using_data(data.into()).expect("Read block successfully")
     }
 
     fn validate_full_json_cycle(value: serde_json::Value) {

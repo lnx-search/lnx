@@ -20,12 +20,16 @@ const CAPACITY: usize = 512 << 10;
 #[derive(Clone, Debug, Archive, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct DocBlock<'a> {
+    /// The unique ID which the block belongs to.
+    pub(crate) index_id: u64,
     #[with(rkyv::with::AsBox)]
     /// The field mapping of field name to field ID (index in array).
     pub(crate) field_mapping: Vec<Box<str>>,
     /// The documents and the layouts they have.
     #[with(rkyv::with::AsBox)]
     pub(crate) documents: Vec<Document>,
+    /// The document IDs.
+    pub(crate) document_ids: RawWrapper<u64>,
     // The block data
     #[with(rkyv::with::AsBox)]
     /// All string values within the block.
@@ -45,11 +49,20 @@ pub struct DocBlock<'a> {
     pub(crate) ips: CopyWrapper<Ipv6Addr>,
 }
 
+#[cfg(test)]
 impl<'a> Default for DocBlock<'a> {
     fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+impl<'a> DocBlock<'a> {
+    fn new(index_id: u64) -> Self {
         Self {
+            index_id,
             field_mapping: Vec::with_capacity(4),
             documents: Vec::with_capacity(4),
+            document_ids: Default::default(),
             strings: Vec::with_capacity(2),
             bytes: Vec::new(),
             bools: Default::default(),
@@ -76,21 +89,20 @@ pub struct DocBlockBuilder<'a> {
     approx_data_size: usize,
 }
 
-impl<'a> Default for DocBlockBuilder<'a> {
-    fn default() -> Self {
+impl<'a> DocBlockBuilder<'a> {
+    /// Creates a new doc block builder with a given index ID.
+    pub fn with_index_id(index_id: u64) -> Self {
         Self {
             unordered_key_lookup: BTreeMap::new(),
-            block: DocBlock::default(),
+            block: DocBlock::new(index_id),
             approx_data_size: mem::size_of::<Self>(),
         }
     }
-}
 
-impl<'a> DocBlockBuilder<'a> {
     /// Adds a document object into the block.
     ///
     /// The map will be converted to the `[Document]` type and serialized.
-    pub fn add_document(&mut self, doc: DynamicDocument<'a>) -> bool {
+    pub fn add_document(&mut self, doc_id: u64, doc: DynamicDocument<'a>) -> bool {
         // TODO: We can remove these small allocations if we re-use the document.
         let mut document = Document::new(doc.len() as u32, doc.len());
         for (key, value) in doc.0 {
@@ -99,6 +111,7 @@ impl<'a> DocBlockBuilder<'a> {
         }
 
         self.block.documents.push(document);
+        self.block.document_ids.push(doc_id);
 
         self.is_full()
     }
@@ -460,17 +473,18 @@ mod test {
 
     macro_rules! test_basic_type {
         ($value:expr, $tp:expr, $attr:ident) => {{
-            let mut builder = DocBlockBuilder::default();
+            let mut builder = DocBlockBuilder::with_index_id(0);
             let doc = doc! {
                 "field_demo" => $value
             };
 
             let len = doc.len() as u32;
-            let is_full = builder.add_document(doc);
+            let is_full = builder.add_document(0, doc);
             assert!(!is_full, "Builder should not be full");
             assert_eq!(
                 builder.block,
                 DocBlock {
+                    document_ids: vec![0].into(),
                     documents: vec![Document {
                         len,
                         layout: vec![Step {
@@ -500,15 +514,16 @@ mod test {
         test_basic_type!(Bytes(b"Hello".to_vec()), FieldType::Bytes, bytes);
         test_basic_type!(Ipv6Addr::LOCALHOST, FieldType::IpAddr, ips);
 
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "field_demo" => DateTime::MAX
         };
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len: 1,
                     layout: vec![Step {
@@ -525,7 +540,7 @@ mod test {
 
     #[test]
     fn test_arrays() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "names" => vec![
                 "Bobby",
@@ -535,11 +550,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -564,7 +580,7 @@ mod test {
             }
         );
 
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "ages" => vec![
                 1231u64,
@@ -579,11 +595,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -622,7 +639,7 @@ mod test {
 
     #[test]
     fn test_nested_arrays() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "field_demo" => vec![
                 vec![
@@ -634,11 +651,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -671,7 +689,7 @@ mod test {
 
     #[test]
     fn test_objects_in_arrays() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "field_demo" => vec![
                 vec![
@@ -683,11 +701,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -718,7 +737,7 @@ mod test {
             }
         );
 
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "field_demo" => vec![
                 doc! {
@@ -728,11 +747,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -761,7 +781,7 @@ mod test {
 
     #[test]
     fn test_value_ordering() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "before-nesting" => "something",
             "field_demo" => vec![
@@ -776,11 +796,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -834,7 +855,7 @@ mod test {
 
     #[test]
     fn test_serialization() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "field_demo" => vec![
                 vec![
@@ -844,7 +865,7 @@ mod test {
                 ],
             ]
         };
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         let mut serializer =
             DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
@@ -852,9 +873,9 @@ mod test {
             .serialize_with(&mut serializer)
             .expect("serialization should be ok");
 
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {};
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         let mut serializer =
             DocSerializer::<512, _>::new(DocWriteSerializer::new(AlignedVec::new()));
@@ -865,7 +886,7 @@ mod test {
 
     #[test]
     fn test_multi_type_arrays() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "names" => vec![
                 Value::from("Bobby"),
@@ -875,11 +896,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -911,7 +933,7 @@ mod test {
             }
         );
 
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "names" => vec![
                 Value::from("Bobby"),
@@ -925,11 +947,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
@@ -989,7 +1012,7 @@ mod test {
     /// This was originally caused by the `counter` in `handle_array_entry_type_change`
     /// being incorrectly incremented for Array and Object types.
     fn test_nested_array_of_objects_bug() {
-        let mut builder = DocBlockBuilder::default();
+        let mut builder = DocBlockBuilder::with_index_id(0);
         let doc = doc! {
             "this-was-a-bug" => vec![
                 Value::Object(Vec::new()),
@@ -998,11 +1021,12 @@ mod test {
         };
 
         let len = doc.len() as u32;
-        let is_full = builder.add_document(doc);
+        let is_full = builder.add_document(0, doc);
         assert!(!is_full, "Builder should not be full");
         assert_eq!(
             builder.block,
             DocBlock {
+                document_ids: vec![0].into(),
                 documents: vec![Document {
                     len,
                     layout: vec![
