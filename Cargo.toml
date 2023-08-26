@@ -31,7 +31,7 @@ ryu = "1"
 hashbrown = "0.13.2"
 memmap2 = "0.6.2"
 
-tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "add-doc-as-trait-v2" }
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
 # tantivy = { path = "../../chilfish8-projects/tantivy" }
 tokio = { version = "1.28.2", features = ["full"] }
 heed = { version = "0.20.0-alpha.0", default-features = false }

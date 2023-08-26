@@ -1266,7 +1266,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -1823,7 +1823,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.20.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -1875,7 +1875,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.4.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "bitpacking",
 ]
@@ -1883,7 +1883,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.1.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -1898,7 +1898,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1921,7 +1921,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.20.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "combine",
  "once_cell",
@@ -1931,7 +1931,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -1941,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -1950,7 +1950,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/ChillFish8/tantivy.git?branch=add-doc-as-trait-v2#59cbd5905f039d75a54e874214d69c2b91fa421b"
+source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx#4d352e43f2e0c9d8c516303531b8b2e49f65acaa"
 dependencies = [
  "serde",
 ]
