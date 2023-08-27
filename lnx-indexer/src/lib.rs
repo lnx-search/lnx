@@ -1,5 +1,9 @@
 mod clock;
 mod document;
-mod metastore;
+mod indexing_queue;
+mod ops;
+mod tracker;
 
 pub type IndexWriter = tantivy::IndexWriter<document::IndexingDoc>;
+
+

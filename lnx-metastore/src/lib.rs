@@ -182,7 +182,7 @@ impl Metastore {
     /// Gets an entry from the main metastore.
     pub fn get<K, V>(&self, k: &K) -> Result<Option<V>>
     where
-        K: Key,
+        K: Key + ?Sized,
         V: Archive,
         V::Archived: 'static
             + CheckBytes<DefaultValidator<'static>>

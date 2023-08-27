@@ -263,14 +263,14 @@ pub struct BlockMetadata {
     pub block_store_file_id_field: Field,
     /// The actual file ID from the block store.
     pub block_store_file_id: u64,
-    /// The field ID of the bytes offset.
-    pub block_store_offset_field: Field,
-    /// The number of bytes to skip before the doc block starts.
-    pub block_store_offset: u64,
     /// The field ID of the HLC timestamp.
     pub doc_hlc_timestamp_field: Field,
     /// The HLC timestamp for the given document.
     pub doc_hlc_timestamp: u64,
+    /// The field ID of the doc ID.
+    pub doc_id_field: Field,
+    /// The unique document ID.
+    pub doc_id: u64,
 }
 
 /// A utility macro for defining iteration steps on the metadata iter.
@@ -288,7 +288,7 @@ macro_rules! iter_step {
 struct DocMetadataIter {
     metadata: BlockMetadata,
     has_completed_file_id: bool,
-    has_completed_offset: bool,
+    has_completed_doc_id: bool,
     has_completed_timestamp: bool,
 }
 
@@ -297,7 +297,7 @@ impl DocMetadataIter {
         Self {
             metadata,
             has_completed_file_id: false,
-            has_completed_offset: false,
+            has_completed_doc_id: false,
             has_completed_timestamp: false,
         }
     }
@@ -315,9 +315,9 @@ impl Iterator for DocMetadataIter {
         );
         iter_step!(
             self,
-            has_completed_offset,
-            block_store_offset_field,
-            block_store_offset
+            has_completed_doc_id,
+            doc_id_field,
+            doc_id
         );
         iter_step!(
             self,

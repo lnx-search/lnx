@@ -53,3 +53,9 @@ impl Key for &[u8] {
         consistent_hash(self)
     }
 }
+
+impl Key for str {
+    fn to_hash(&self) -> u64 {
+        consistent_hash(self)
+    }
+}
