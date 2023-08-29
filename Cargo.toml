@@ -41,7 +41,7 @@ time = { version = "0.3.21", features = ["parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.42", features = ["strict", "validation", "archive_le"] }
 lz4_flex = { version = "0.11", features = ["std"] }
-datacake = { version = "0.7.1", git = "https://github.com/lnx-search/datacake.git" }
+datacake = { version = "0.7.1", default-features = false, features = ["datacake-crdt", "datacake-node", "datacake-rpc", "rkyv"], git = "https://github.com/lnx-search/datacake.git" }
 yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }
 
 [workspace]
