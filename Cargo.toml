@@ -52,7 +52,6 @@ members = [
     "lnx-metastore",
     "lnx-executor",
     "lnx-tools",
-    "lnx-replica",
     "lnx-schema",
     "lnx-indexer",
 ]

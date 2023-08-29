@@ -5,8 +5,6 @@ use std::time::Duration;
 use parking_lot::RwLock;
 use lnx_tools::hashers::NoOpRandomState;
 
-pub mod metastore;
-
 use crate::ops;
 
 
