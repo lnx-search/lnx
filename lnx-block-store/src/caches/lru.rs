@@ -5,7 +5,7 @@ use lnx_document::DocBlockReader;
 ///
 /// Internally this wraps a [moka::sync::Cache] instance.
 pub struct LruCache {
-    inner: moka::sync::Cache<u64, DocBlockReader, RandomState>
+    inner: moka::sync::Cache<u64, DocBlockReader, RandomState>,
 }
 
 impl super::Cache for LruCache {

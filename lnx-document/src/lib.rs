@@ -12,7 +12,7 @@ pub use helpers::UserDisplayType;
 use rkyv::{Archive, Serialize};
 pub use value::{DateTime, DynamicDocument, Facet, KeyValues, KeyValuesIter, Value};
 
-pub use self::block_builder::DocBlockBuilder;
+pub use self::block_builder::{ArchivedDocBlock, DocBlock, DocBlockBuilder};
 pub use self::reader::{traverse, DocBlockReader, DocumentView};
 pub use self::rkyv_serializer::{
     ChecksumDocWriter,

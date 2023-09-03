@@ -1,9 +1,4 @@
-mod clock;
 mod document;
-mod ops;
-mod tracker;
-mod queue;
+mod directory;
 
 pub type IndexWriter = tantivy::IndexWriter<document::IndexingDoc>;
-
-

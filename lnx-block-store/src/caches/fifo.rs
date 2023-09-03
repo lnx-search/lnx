@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
 use ahash::RandomState;
-use parking_lot::Mutex;
 use lnx_document::DocBlockReader;
+use parking_lot::Mutex;
 
 /// A simple FIFO based cache.
 pub struct FifoCache {
@@ -27,7 +27,7 @@ impl super::Cache for FifoCache {
     }
 
     fn put(&self, block_id: u64, reader: DocBlockReader) {
-        let block_size =  reader.buffer_usage() as u32;
+        let block_size = reader.buffer_usage() as u32;
 
         // If we can never fit the reader in the capacity then we don't try.
         if block_size as u64 > self.capacity {
@@ -48,13 +48,13 @@ impl super::Cache for FifoCache {
                 self.blocks.remove(&block_id);
 
                 if evicted_size >= block_size as u64 {
-                    break
+                    break;
                 }
             }
 
             lock.usage -= evicted_size;
 
-            if evicted_size < block_size as u64{
+            if evicted_size < block_size as u64 {
                 return;
             }
         }
@@ -66,8 +66,7 @@ impl super::Cache for FifoCache {
     }
 
     fn get(&self, block_id: u64) -> Option<DocBlockReader> {
-        self.blocks.get(&block_id)
-            .map(|v| v.value().clone())
+        self.blocks.get(&block_id).map(|v| v.value().clone())
     }
 }
 

@@ -4,10 +4,10 @@ use std::io::{Cursor, ErrorKind, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rkyv::AlignedVec;
-use yorick::{StorageBackend, WriteId, YorickStorageService};
 use lnx_document::DocBlockReader;
 use lnx_metastore::Metastore;
+use rkyv::AlignedVec;
+use yorick::{StorageBackend, WriteId, YorickStorageService};
 
 mod caches;
 mod compaction;
@@ -59,24 +59,29 @@ impl BlockStorageService {
             backend,
             service_config,
             compaction::CommitAwareCompactionPolicy::new(metastore),
-        ).await?;
+        )
+        .await?;
 
         let cache = match config.cache_mode {
-            CacheMode::Fifo => caches::CacheSelector::fifo_with_capacity(config.cache_size),
-            CacheMode::Lru => caches::CacheSelector::lru_with_capacity(config.cache_size),
+            CacheMode::Fifo => {
+                caches::CacheSelector::fifo_with_capacity(config.cache_size)
+            },
+            CacheMode::Lru => {
+                caches::CacheSelector::lru_with_capacity(config.cache_size)
+            },
         };
 
-        Ok(Self {
-            cache,
-            inner,
-        })
+        Ok(Self { cache, inner })
     }
 
     #[inline]
     /// Attempts to get a block from the storage service.
     ///
     /// This will use the cached reader if it exists.
-    pub async fn get_block(&self, block_id: u64) -> anyhow::Result<Option<DocBlockReader>> {
+    pub async fn get_block(
+        &self,
+        block_id: u64,
+    ) -> anyhow::Result<Option<DocBlockReader>> {
         if let Some(hit) = self.cache.get(block_id) {
             return Ok(Some(hit));
         }
@@ -90,7 +95,7 @@ impl BlockStorageService {
                 self.cache.put(block_id, reader.clone());
 
                 Ok(Some(reader))
-            }
+            },
         }
     }
 
@@ -102,7 +107,6 @@ impl BlockStorageService {
     }
 }
 
-
 /// A write context that wraps the inner yorick context.
 pub struct WriteContext {
     ctx: yorick::WriteContext,
@@ -110,17 +114,28 @@ pub struct WriteContext {
 
 impl WriteContext {
     /// Writes a uncompressed block to the store.
-    pub async fn write_block<D>(&mut self, block_id: u64, index_id: u64, block_data: D) -> io::Result<WriteId>
+    pub async fn write_block<D>(
+        &mut self,
+        block_id: u64,
+        index_id: u64,
+        block_data: D,
+    ) -> io::Result<WriteId>
     where
         D: AsRef<[u8]> + Send + 'static,
     {
         let compressed = compress_block(block_data).await?;
-        self.write_block_compressed(block_id, index_id, compressed).await
+        self.write_block_compressed(block_id, index_id, compressed)
+            .await
     }
 
     #[inline]
     /// Writes a compressed block to the store.
-    pub fn write_block_compressed<D>(&mut self, block_id: u64, index_id: u64, compressed_data: D) -> impl Future<Output = io::Result<WriteId>> + '_
+    pub fn write_block_compressed<D>(
+        &mut self,
+        block_id: u64,
+        index_id: u64,
+        compressed_data: D,
+    ) -> impl Future<Output = io::Result<WriteId>> + '_
     where
         D: AsRef<[u8]> + Send + 'static,
     {
@@ -133,11 +148,10 @@ impl WriteContext {
     }
 }
 
-
 /// Compresses a block of data using LZ4 compression.
 pub async fn compress_block<D>(data: D) -> io::Result<Vec<u8>>
 where
-    D: AsRef<[u8]> + Send + 'static
+    D: AsRef<[u8]> + Send + 'static,
 {
     tokio::task::spawn_blocking(move || {
         let data = data.as_ref();
@@ -151,7 +165,9 @@ where
         encoder.write_all(data)?;
         encoder.flush()?;
         Ok(encoder.into_inner().into_inner())
-    }).await.expect("Spawn background thread")
+    })
+    .await
+    .expect("Spawn background thread")
 }
 
 /// Decompresses a block of data using LZ4 compression.
@@ -159,7 +175,7 @@ where
 /// This returns an [AlignedVec].
 pub async fn decompress_block<D>(data: D) -> io::Result<AlignedVec>
 where
-    D: AsRef<[u8]> + Send + 'static
+    D: AsRef<[u8]> + Send + 'static,
 {
     tokio::task::spawn_blocking(move || {
         let compressed = data.as_ref();
@@ -171,13 +187,19 @@ where
         aligned.extend_from_reader(&mut reader)?;
 
         Ok(aligned)
-    }).await.expect("Spawn background thread")
+    })
+    .await
+    .expect("Spawn background thread")
 }
 
 #[inline]
 fn uncompressed_size(input: &[u8]) -> io::Result<(usize, &[u8])> {
-    let size = input.get(..4)
-        .ok_or_else(|| io::Error::new(ErrorKind::Other, "Compressed input missing minimum number of bytes"))?;
+    let size = input.get(..4).ok_or_else(|| {
+        io::Error::new(
+            ErrorKind::Other,
+            "Compressed input missing minimum number of bytes",
+        )
+    })?;
     let size: &[u8; 4] = size.try_into().unwrap();
     let uncompressed_size = u32::from_le_bytes(*size) as usize;
     let rest = &input[4..];
@@ -198,7 +220,7 @@ async fn create_backend(try_use_directio: bool) -> io::Result<StorageBackend> {
                 Err(e) => {
                     tracing::error!(error = ?e, "Failed to use direct IO backend due to error");
                     None
-                }
+                },
                 Ok(backend) => Some(backend),
             }
         } else {
@@ -212,11 +234,9 @@ async fn create_backend(try_use_directio: bool) -> io::Result<StorageBackend> {
     match maybe_direct_io_backend {
         Some(backend) => Ok(backend),
         None => {
-            let config = yorick::BufferedIoConfig {
-                io_threads: 4
-            };
+            let config = yorick::BufferedIoConfig { io_threads: 4 };
 
             StorageBackend::create_buffered_io(config).await
-        }
+        },
     }
 }

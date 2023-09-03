@@ -13,6 +13,7 @@ lnx-executor = { path = "../lnx-executor" }
 lnx-metastore = { path = "../lnx-metastore" }
 lnx-block-store = { path = "../lnx-block-store" }
 
+bytes = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
@@ -21,6 +22,7 @@ parking_lot = { workspace = true }
 flume = { workspace = true }
 smallvec = { workspace = true }
 exponential-backoff = { workspace = true }
+stable_deref_trait = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

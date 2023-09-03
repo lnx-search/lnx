@@ -1,9 +1,9 @@
-mod lru;
 mod fifo;
+mod lru;
 
 use std::sync::Arc;
-use lnx_document::DocBlockReader;
 
+use lnx_document::DocBlockReader;
 
 /// A cache structure used for keeping blocks in memory.
 pub trait Cache: Sized {
@@ -22,7 +22,7 @@ pub trait Cache: Sized {
 ///
 /// This will produce 1 shard for every 8 cpu cores + 1.
 pub struct ShardedCache<C: Cache> {
-    shards: Arc<Vec<C>>
+    shards: Arc<Vec<C>>,
 }
 
 impl<C: Cache> Cache for ShardedCache<C> {
@@ -35,7 +35,9 @@ impl<C: Cache> Cache for ShardedCache<C> {
             shards.push(C::with_capacity(capacity / num_shards as u64));
         }
 
-        Self { shards: Arc::new(shards) }
+        Self {
+            shards: Arc::new(shards),
+        }
     }
 
     #[inline]

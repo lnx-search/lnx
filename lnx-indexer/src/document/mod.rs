@@ -313,12 +313,7 @@ impl Iterator for DocMetadataIter {
             block_store_file_id_field,
             block_store_file_id
         );
-        iter_step!(
-            self,
-            has_completed_doc_id,
-            doc_id_field,
-            doc_id
-        );
+        iter_step!(self, has_completed_doc_id, doc_id_field, doc_id);
         iter_step!(
             self,
             has_completed_timestamp,

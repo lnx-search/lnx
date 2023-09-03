@@ -1,9 +1,15 @@
 use std::time::Duration;
-use tracing::error;
 
-use yorick::{BlobId, BlobInfo, CompactionConfig, FileKey};
-use yorick::{CompactionPolicy, ReadBuffer};
 use lnx_metastore::Metastore;
+use tracing::error;
+use yorick::{
+    BlobId,
+    BlobInfo,
+    CompactionConfig,
+    CompactionPolicy,
+    FileKey,
+    ReadBuffer,
+};
 
 static SAFE_COMPACT_CHECKPOINT_KEY: &str = "lnx_storage__safe_checkpoint";
 
@@ -32,13 +38,16 @@ impl CompactionPolicy for CommitAwareCompactionPolicy {
                 error!(error = ?e, "Failed to retrieve safe compaction checkpoint from metastore");
                 None
             },
-            Ok(res) => {
-                res
-            },
+            Ok(res) => res,
         }
     }
 
-    fn can_delete(&self, _blob_id: BlobId, info: BlobInfo, _data: Option<&ReadBuffer>) -> bool {
+    fn can_delete(
+        &self,
+        _blob_id: BlobId,
+        info: BlobInfo,
+        _data: Option<&ReadBuffer>,
+    ) -> bool {
         info.is_empty()
     }
 }

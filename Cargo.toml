@@ -13,6 +13,7 @@ arc-swap = "1.6.0"
 async-trait = "0.1.68"
 ahash = "0.8.3"
 base64 = "0.21.2"
+bytes = "1"
 crc32fast = "1.3.2"
 cityhasher = "0.1.0"
 dashmap = "5.4.0"
@@ -32,6 +33,7 @@ ryu = "1"
 hashbrown = "0.13.2"
 memmap2 = "0.6.2"
 moka = "0.11"
+stable_deref_trait = "1.2.0"
 
 tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
 # tantivy = { path = "../../chilfish8-projects/tantivy" }
@@ -41,7 +43,7 @@ time = { version = "0.3.21", features = ["parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.42", features = ["strict", "validation", "archive_le"] }
 lz4_flex = { version = "0.11", features = ["std"] }
-datacake = { version = "0.7.1", default-features = false, features = ["datacake-crdt", "datacake-node", "datacake-rpc", "rkyv"], git = "https://github.com/lnx-search/datacake.git" }
+datacake = { version = "0.8", default-features = false, features = ["datacake-crdt", "datacake-node", "datacake-rpc", "rkyv"], git = "https://github.com/lnx-search/datacake.git" }
 yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }
 
 [workspace]
@@ -54,4 +56,5 @@ members = [
     "lnx-tools",
     "lnx-schema",
     "lnx-indexer",
+    "lnx-replication",
 ]
