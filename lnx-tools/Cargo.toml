@@ -13,3 +13,7 @@ tokio = { workspace = true }
 exponential-backoff = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+rkyv = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
