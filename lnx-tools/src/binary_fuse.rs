@@ -1,18 +1,20 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use anyhow::{bail, Result};
-use cityhasher::CityHasher;
 use rkyv::{Archive, Deserialize, Serialize};
+use crate::hashers::NoOpRandomState;
 
 // probability of success should always be > 0.5 so 100 iterations is highly unlikely.
 const XOR_MAX_ITERATIONS: usize = 100;
+
+type FuseHasher = cityhasher::CityHasher;
 
 #[derive(Default)]
 /// A builder for constructing binary fuse filters using
 /// 16 bit masks.
 pub struct Fuse16Builder {
-    keys: BTreeSet<u64>,
+    keys: HashSet<u64, NoOpRandomState>,
 }
 
 impl Fuse16Builder {
@@ -22,7 +24,7 @@ impl Fuse16Builder {
     /// Returns if the key was inserted or not, since the filter does not
     /// accept duplicate keys, it is important to be aware if you have duplicates or not.
     pub fn insert<K: Hash>(&mut self, key: &K) -> bool {
-        let mut hasher = CityHasher::new();
+        let mut hasher = FuseHasher::default();
         key.hash(&mut hasher);
         let key = hasher.finish();
         self.keys.insert(key)
@@ -67,7 +69,7 @@ impl Fuse16 {
     /// positive rate.
     pub fn contains<K: Hash>(&self, key: &K) -> bool {
         let key = {
-            let mut hasher = CityHasher::new();
+            let mut hasher = FuseHasher::default();
             key.hash(&mut hasher);
             hasher.finish()
         };
@@ -86,6 +88,12 @@ impl Fuse16 {
             ^ self.fingerprints[h1 as usize]
             ^ self.fingerprints[h2 as usize];
         f == 0
+    }
+
+    #[inline]
+    /// A reference to the internal fuse fingerprints.
+    pub fn fingerprints(&self) -> &[u16] {
+        &self.fingerprints
     }
 
     fn new(size: u32) -> Self {
@@ -179,7 +187,7 @@ impl Fuse16 {
                 start_pos[segment_index as usize] += 1;
             }
 
-            let mut error: isize = 0;
+            let mut error: usize = 0;
             for rev_order in reverse_order.iter().take(size) {
                 let hash: u64 = *rev_order;
 
@@ -320,12 +328,12 @@ impl Fuse16 {
 }
 
 #[inline]
-pub fn binary_fuse16_fingerprint(hash: u64) -> u64 {
+fn binary_fuse16_fingerprint(hash: u64) -> u64 {
     hash ^ (hash >> 32)
 }
 
 #[inline]
-pub(crate) fn binary_fuse_murmur64(mut h: u64) -> u64 {
+fn binary_fuse_murmur64(mut h: u64) -> u64 {
     h ^= h >> 33;
     h = h.wrapping_mul(0xff51afd7ed558ccd_u64);
     h ^= h >> 33;
@@ -335,13 +343,13 @@ pub(crate) fn binary_fuse_murmur64(mut h: u64) -> u64 {
 }
 
 #[inline]
-pub(crate) fn binary_fuse_mix_split(key: u64, seed: u64) -> u64 {
+fn binary_fuse_mix_split(key: u64, seed: u64) -> u64 {
     binary_fuse_murmur64(key.wrapping_add(seed))
 }
 
 #[inline]
 // returns random number, modifies the seed
-pub(crate) fn binary_fuse_rng_splitmix64(seed: &mut u64) -> u64 {
+fn binary_fuse_rng_splitmix64(seed: &mut u64) -> u64 {
     *seed = seed.wrapping_add(0x9E3779B97F4A7C15_u64);
     let mut z = *seed;
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9_u64);
@@ -350,12 +358,12 @@ pub(crate) fn binary_fuse_rng_splitmix64(seed: &mut u64) -> u64 {
 }
 
 #[inline]
-pub(crate) fn binary_fuse_mulhi(a: u64, b: u64) -> u64 {
+fn binary_fuse_mulhi(a: u64, b: u64) -> u64 {
     (((a as u128) * (b as u128)) >> 64) as u64
 }
 
 #[inline]
-pub(crate) fn binary_fuse_calculate_segment_length(arity: u32, size: u32) -> u32 {
+fn binary_fuse_calculate_segment_length(arity: u32, size: u32) -> u32 {
     let ln_size = (size as f64).ln();
 
     // These parameters are very sensitive. Replacing 'floor' by 'round' can
@@ -377,7 +385,7 @@ fn binary_fuse8_max(a: f64, b: f64) -> f64 {
 }
 
 #[inline]
-pub(crate) fn binary_fuse_calculate_size_factor(arity: u32, size: u32) -> f64 {
+fn binary_fuse_calculate_size_factor(arity: u32, size: u32) -> f64 {
     let ln_size = (size as f64).ln();
     match arity {
         3 => binary_fuse8_max(1.125, 0.875 + 0.250 * 1000000.0_f64.ln() / ln_size),
@@ -387,7 +395,7 @@ pub(crate) fn binary_fuse_calculate_size_factor(arity: u32, size: u32) -> f64 {
 }
 
 #[inline]
-pub(crate) fn binary_fuse_mod3(x: u8) -> u8 {
+fn binary_fuse_mod3(x: u8) -> u8 {
     if x > 2 {
         x - 3
     } else {
@@ -396,7 +404,7 @@ pub(crate) fn binary_fuse_mod3(x: u8) -> u8 {
 }
 
 #[derive(Default)]
-pub(crate) struct BinaryHashes {
+struct BinaryHashes {
     pub(crate) h0: u32,
     pub(crate) h1: u32,
     pub(crate) h2: u32,
@@ -455,7 +463,7 @@ mod tests {
         // contains_key api
         for key in keys.iter() {
             let digest = {
-                let mut hasher = CityHasher::new();
+                let mut hasher = FuseHasher::default();
                 key.hash(&mut hasher);
                 hasher.finish()
             };
