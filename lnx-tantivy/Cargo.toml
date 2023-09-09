@@ -1,5 +1,5 @@
 [package]
-name = "lnx-indexer"
+name = "lnx-tantivy"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,21 +7,19 @@ edition = "2021"
 
 [dependencies]
 lnx-tools = { path = "../lnx-tools" }
-lnx-document = { path = "../lnx-document" }
-lnx-schema = { path = "../lnx-schema" }
-lnx-executor = { path = "../lnx-executor" }
 lnx-metastore = { path = "../lnx-metastore" }
-lnx-block-store = { path = "../lnx-block-store" }
 
+ahash = { workspace = true }
 bytes = { workspace = true }
+datacake = { workspace = true }
 tracing = { workspace = true }
-tokio = { workspace = true }
 anyhow = { workspace = true }
 tantivy = { workspace = true }
+tantivy-common = { workspace = true }
 parking_lot = { workspace = true }
-flume = { workspace = true }
 smallvec = { workspace = true }
-exponential-backoff = { workspace = true }
+dashmap = { workspace = true }
+tokio = { workspace = true }
 stable_deref_trait = { workspace = true }
 
 [dev-dependencies]

@@ -30,13 +30,14 @@ parking_lot = "0.12.1"
 num_cpus = "1.15.0"
 rayon = "1.7.0"
 ryu = "1"
+rand = "0.8.5"
 hashbrown = "0.13.2"
 memmap2 = "0.6.2"
 moka = "0.11"
 stable_deref_trait = "1.2.0"
 
 tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
-# tantivy = { path = "../../chilfish8-projects/tantivy" }
+tantivy-common = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
 tokio = { version = "1.28.2", features = ["full"] }
 heed = { version = "0.20.0-alpha.0", default-features = false }
 time = { version = "0.3.21", features = ["parsing", "formatting"] }
@@ -45,6 +46,7 @@ rkyv = { version = "0.7.42", features = ["strict", "validation", "archive_le"] }
 lz4_flex = { version = "0.11", features = ["std"] }
 datacake = { version = "0.8", default-features = false, features = ["datacake-crdt", "datacake-node", "datacake-rpc", "rkyv"], git = "https://github.com/lnx-search/datacake.git" }
 yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }
+mimalloc = { version = "0.1", default-features = false }
 
 [workspace]
 members = [
@@ -55,6 +57,7 @@ members = [
     "lnx-executor",
     "lnx-tools",
     "lnx-schema",
-    "lnx-indexer",
+    "lnx-tantivy",
     "lnx-replication",
+    "lnx-testing",
 ]
