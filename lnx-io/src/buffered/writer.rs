@@ -29,7 +29,7 @@ impl IoWriterActor for BufferedIoWriter {
         let file = fs::File::create(ctx.path.as_path())?;
         let writer = BufWriter::new(SyncOnFlushFile::new(file));
 
-        crate::io::utils::sync_directory(&ctx.path).await?;
+        crate::utils::sync_directory(&ctx.path).await?;
 
         debug!("Created new file");
 

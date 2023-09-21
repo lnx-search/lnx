@@ -1,8 +1,95 @@
+use std::hash::{BuildHasher, Hash, Hasher};
+use std::sync::Arc;
+
+use ahash::HashMap;
 use anyhow::Result;
+use arc_swap::ArcSwap;
 use datacake::rpc::DataView;
+use parking_lot::Mutex;
 use lnx_tools::binary_fuse::{Fuse16, Fuse16Builder};
 use rkyv::AlignedVec;
+use slab::Slab;
 use tantivy::SegmentId;
+
+
+type FilterSet = ArcSwap<Slab<DocIdFuseFilter>>;
+const FILTER_SHARDS: usize = 12;
+
+#[derive(Clone, Default)]
+/// A structure that maintains the fuse filters
+/// for each segment in order to check if a document ID exists.
+pub struct SegmentDocIds {
+    /// The random hasher state.
+    random_state: ahash::RandomState,
+    /// The currently active segment filters.
+    ///
+    /// This is split into multiple shards to avoid heavy lock contention at
+    /// higher ingestion throughput.
+    segments: Arc<[SegmentShard; FILTER_SHARDS]>,
+}
+
+impl SegmentDocIds {
+    fn get_segment_shard(&self, segment_id: SegmentId) -> &SegmentShard {
+        let key = {
+            let mut hasher = self.random_state.build_hasher();
+            segment_id.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        let shard_id = (key % FILTER_SHARDS as u64) as usize;
+        &self.segments[shard_id]
+    }
+
+    /// Adds a new segment filter.
+    ///
+    /// If the segment already exists this will be ignored.
+    ///
+    /// The method returns if the filter was inserted or not.
+    pub fn add_segment_filter(&self, filter: DocIdFuseFilter) -> bool {
+        let segment_id = filter.segment_id();
+        let shard = self.get_segment_shard(segment_id);
+
+        let mut lock = shard.segment_id_mapper.lock();
+        if lock.contains_key(&segment_id) {
+            return false;
+        }
+
+        let mut last_id = 0;
+        shard.segments.rcu(|inner| {
+            let mut segments = (**inner).clone();
+            last_id = segments.insert(filter.clone());
+            segments
+        });
+
+        lock.insert(segment_id, last_id);
+
+        true
+    }
+
+    /// Removes a segment filter if it exists.
+    pub fn remove_segment_filter(&self, segment_id: SegmentId) {
+        let shard = self.get_segment_shard(segment_id);
+
+        let mut lock = shard.segment_id_mapper.lock();
+        let pos = { lock.remove(&segment_id) };
+
+        if let Some(pos) = pos {
+            shard.segments.rcu(|inner| {
+                let mut segments = (**inner).clone();
+                segments.remove(pos);
+                segments
+            });
+        }
+    }
+}
+
+#[derive(Default)]
+struct SegmentShard {
+    /// A mapping of segment ID to index in the segments list.
+    segment_id_mapper: Mutex<HashMap<SegmentId, usize>>,
+    /// The currently active segment filters.
+    segments: FilterSet,
+}
 
 #[derive(Default)]
 /// A binary fuse filter for document IDs.
@@ -27,6 +114,7 @@ impl DocIdFuseFilterBuilder {
     }
 }
 
+#[derive(Clone)]
 /// A wrapper around a archived fuse filter.
 pub struct DocIdFuseFilter {
     /// The segment the filter belongs to.

@@ -7,9 +7,12 @@ edition = "2021"
 
 [dependencies]
 lnx-tools = { path = "../lnx-tools" }
+lnx-io = { path = "../lnx-io" }
 
 anyhow = { workspace = true }
 ahash = { workspace = true }
+arc-swap = { workspace = true }
+slab = { workspace = true }
 bytes = { workspace = true }
 datacake = { workspace = true }
 tracing = { workspace = true }

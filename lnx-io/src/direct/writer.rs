@@ -27,7 +27,7 @@ impl IoWriterActor for DirectIoWriter {
             .with_buffer_size(128 << 10)
             .build();
 
-        crate::io::utils::sync_directory(&ctx.path).await?;
+        crate::utils::sync_directory(&ctx.path).await?;
 
         debug!("Created new file");
 

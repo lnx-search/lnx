@@ -62,7 +62,8 @@ impl Fuse16Builder {
     }
 }
 
-#[derive(Archive, Serialize, Deserialize)]
+#[derive(Debug, Archive, Serialize, Deserialize)]
+#[archive_attr(derive(Debug))]
 /// A binary fuse filter is a probabilistic data-structure to test membership of an element in a set.
 pub struct Fuse16 {
     seed: u64,

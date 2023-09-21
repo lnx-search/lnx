@@ -16,10 +16,14 @@ use tantivy::{
 };
 
 use crate::directory::memory::LighweightRamDirectory;
-use crate::doc_ids::DocIdFuseFilterBuilder;
 use crate::realtime_reader::RealtimeIndexReader;
 
 const MEMORY_ARENA_SIZE: usize = 80 << 20;
+
+
+
+
+
 
 #[derive(Clone, Default)]
 /// An atomic opstamper for tantivy docs which can be shared between threads.

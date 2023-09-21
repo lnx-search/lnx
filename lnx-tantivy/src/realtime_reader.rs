@@ -6,8 +6,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use lnx_tools::kill_switch::{KillSwitch, KillSwitchWatcher};
-use tantivy::query::{EnableScoring, Query, Weight};
-use tantivy::schema::Field;
+use tantivy::query::{EnableScoring, Query};
 use tantivy::{IndexReader, Searcher, SegmentId};
 use tantivy_common::BitSet;
 use tracing::{error, instrument};
