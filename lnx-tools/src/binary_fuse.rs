@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use anyhow::{bail, Result};
 use rkyv::{Archive, Deserialize, Serialize};
+
 use crate::hashers::NoOpRandomState;
 
 // probability of success should always be > 0.5 so 100 iterations is highly unlikely.
@@ -27,7 +28,17 @@ impl Fuse16Builder {
         let mut hasher = FuseHasher::default();
         key.hash(&mut hasher);
         let key = hasher.finish();
-        self.keys.insert(key)
+        self.insert_digest(key)
+    }
+
+    #[inline]
+    /// Inserts a new key digest into the builder.
+    ///
+    /// WARNING:
+    /// This assumes the digest of suitable hash quality, if the value is
+    /// not high quality then you will likely get invalid data.
+    pub fn insert_digest(&mut self, digest: u64) -> bool {
+        self.keys.insert(digest)
     }
 
     #[inline]
@@ -324,6 +335,47 @@ impl Fuse16 {
         h ^= (hh >> (36 - 18 * index)) & (self.segment_length_mask as u64);
 
         h as u32
+    }
+}
+
+impl ArchivedFuse16 {
+    #[inline]
+    /// Contains tell you whether the key is likely part of the set, with a false
+    /// positive rate.
+    pub fn contains<K: Hash>(&self, key: &K) -> bool {
+        let key = {
+            let mut hasher = FuseHasher::default();
+            key.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        self.contains_digest(key)
+    }
+
+    #[inline]
+    /// Contains tell you whether the key, as pre-computed digest form, is likely
+    /// part of the set, with a false positive rate.
+    pub fn contains_digest(&self, digest: u64) -> bool {
+        let hash = binary_fuse_mix_split(digest, self.seed.value());
+        let mut f = binary_fuse16_fingerprint(hash) as u16;
+        let BinaryHashes { h0, h1, h2 } = self.binary_fuse16_hash_batch(hash);
+        f ^= self.fingerprints[h0 as usize]
+            ^ self.fingerprints[h1 as usize]
+            ^ self.fingerprints[h2 as usize];
+        f == 0
+    }
+
+    #[inline]
+    fn binary_fuse16_hash_batch(&self, hash: u64) -> BinaryHashes {
+        let mut ans = BinaryHashes::default();
+
+        ans.h0 =
+            binary_fuse_mulhi(hash, self.segment_count_length.value().into()) as u32;
+        ans.h1 = ans.h0 + self.segment_length;
+        ans.h2 = ans.h1 + self.segment_length;
+        ans.h1 ^= ((hash >> 18) as u32) & self.segment_length_mask;
+        ans.h2 ^= (hash as u32) & self.segment_length_mask;
+        ans
     }
 }
 

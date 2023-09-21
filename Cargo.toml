@@ -2,10 +2,17 @@
 name = "lnx"
 version = "0.10.0"
 edition = "2021"
+description = "Lightning fast search at any scale."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lnx-tantivy = { path = "lnx-tantivy" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+tracing-subscriber = { workspace = true }
+
 
 [workspace.dependencies]
 anyhow = "1"
@@ -20,6 +27,7 @@ dashmap = "5.4.0"
 exponential-backoff = "1.2.0"
 futures = "0.3.28"
 flume = "0.10.14"
+glommio = "0.8.0"
 serde_json = "1"
 smallvec = "1.10.0"
 itoa = "1"
@@ -36,28 +44,28 @@ memmap2 = "0.6.2"
 moka = "0.11"
 stable_deref_trait = "1.2.0"
 
+# Metastore backends
+scylla = "0.9.0"
+tokio-postgres = "0.7.10"
+rusqlite = { version = "0.29.0", features = ["modern_sqlite"] }
+
 tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
 tantivy-common = { git = "https://github.com/ChillFish8/tantivy.git", branch = "lnx" }
 tokio = { version = "1.28.2", features = ["full"] }
-heed = { version = "0.20.0-alpha.0", default-features = false }
 time = { version = "0.3.21", features = ["parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
 rkyv = { version = "0.7.42", features = ["strict", "validation", "archive_le"] }
 lz4_flex = { version = "0.11", features = ["std"] }
 datacake = { version = "0.8", default-features = false, features = ["datacake-crdt", "datacake-node", "datacake-rpc", "rkyv"], git = "https://github.com/lnx-search/datacake.git" }
-yorick = { version = "0.1.0", git = "https://github.com/lnx-search/yorick.git" }
 mimalloc = { version = "0.1", default-features = false }
+clap = { version = "4", features = ["derive", "env"] }
 
 [workspace]
 members = [
-    "lnx-document",
-    "lnx-block-store",
-    "lnx-transforms",
-    "lnx-metastore",
     "lnx-executor",
     "lnx-tools",
-    "lnx-schema",
     "lnx-tantivy",
-    "lnx-replication",
     "lnx-testing",
+    "lnx-metastore",
+    "lnx-io"
 ]

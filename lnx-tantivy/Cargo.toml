@@ -7,20 +7,21 @@ edition = "2021"
 
 [dependencies]
 lnx-tools = { path = "../lnx-tools" }
-lnx-metastore = { path = "../lnx-metastore" }
 
+anyhow = { workspace = true }
 ahash = { workspace = true }
 bytes = { workspace = true }
 datacake = { workspace = true }
 tracing = { workspace = true }
-anyhow = { workspace = true }
 tantivy = { workspace = true }
 tantivy-common = { workspace = true }
 parking_lot = { workspace = true }
+rkyv = { workspace = true }
 smallvec = { workspace = true }
 dashmap = { workspace = true }
 tokio = { workspace = true }
 stable_deref_trait = { workspace = true }
+
 
 [dev-dependencies]
 serde_json = { workspace = true }
