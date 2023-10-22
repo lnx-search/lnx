@@ -1,44 +1,12 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-
 use bytes::Bytes;
 use tantivy::query::Query;
 use tantivy::schema::{DocumentAccess, Schema};
-use tantivy::{
-    AddOperation,
-    Index,
-    IndexSettings,
-    Opstamp,
-    Result,
-    Segment,
-    SegmentId,
-    SegmentWriter,
-};
+use tantivy::{AddOperation, Index, IndexSettings, Opstamp, Result, Segment, SegmentId, SegmentWriter};
 
 use crate::directory::memory::LighweightRamDirectory;
 use crate::realtime_reader::RealtimeIndexReader;
 
 const MEMORY_ARENA_SIZE: usize = 80 << 20;
-
-
-
-
-
-
-#[derive(Clone, Default)]
-/// An atomic opstamper for tantivy docs which can be shared between threads.
-///
-/// This basically just copies what tantivy does.
-pub struct Stamper {
-    counter: Arc<AtomicU64>,
-}
-
-impl Stamper {
-    /// Gets the next op stamp ID.
-    pub fn next(&self) -> Opstamp {
-        self.counter.fetch_add(1, Ordering::Relaxed)
-    }
-}
 
 #[derive(Clone)]
 /// A indexer factory that produces segments.

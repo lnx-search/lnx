@@ -10,6 +10,7 @@ use tantivy::query::{EnableScoring, Query};
 use tantivy::{IndexReader, Searcher, SegmentId};
 use tantivy_common::BitSet;
 use tracing::{error, instrument};
+use crate::doc_ids::SegmentDocIds;
 
 /// The interval in which readers are refreshed.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
@@ -25,13 +26,19 @@ pub struct RealtimeIndexReader {
     refresh_task_ks: Arc<KillSwitch>,
     /// The signal for telling the refresh task that an update has occurred.
     update_signal: Arc<AtomicU64>,
+    /// The document IDs for the segments.
+    doc_ids_filters: SegmentDocIds,
     /// The actual tantivy reader.
     reader: IndexReader,
 }
 
 impl RealtimeIndexReader {
     /// Creates a new realtime reader from the given tantivy reader.
-    pub async fn create(index_id: &str, reader: IndexReader) -> Self {
+    pub async fn create(
+        index_id: &str,
+        reader: IndexReader,
+        doc_ids_filters: SegmentDocIds,
+    ) -> Self {
         let refresh_task_ks = Arc::new(KillSwitch::default());
         let ks_handle = refresh_task_ks.watcher();
         let update_signal = Arc::new(AtomicU64::default());
@@ -47,6 +54,7 @@ impl RealtimeIndexReader {
             index_id: Arc::new(index_id.to_owned()),
             refresh_task_ks,
             update_signal,
+            doc_ids_filters,
             reader,
         }
     }
@@ -63,6 +71,7 @@ impl RealtimeIndexReader {
         IndexSearcher {
             index_id: self.index_id.clone(),
             inner: self.reader.searcher(),
+            doc_ids_filters: self.doc_ids_filters.clone(),
         }
     }
 }
@@ -72,6 +81,7 @@ impl RealtimeIndexReader {
 pub struct IndexSearcher {
     index_id: Arc<String>,
     inner: Searcher,
+    doc_ids_filters: SegmentDocIds,
 }
 
 impl IndexSearcher {
