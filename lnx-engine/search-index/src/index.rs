@@ -7,10 +7,7 @@ use hashbrown::HashMap;
 use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
-    DocumentHit,
-    DocumentOptions,
-    DocumentValueOptions,
-    IndexContext,
+    DocumentHit, DocumentOptions, DocumentValueOptions, IndexContext, IndexStats,
 };
 use crate::writer::WriterOp;
 use crate::{reader, writer};
@@ -149,6 +146,21 @@ impl Index {
     /// Shuts the index down removing any persistent data along with it.
     pub async fn destroy(&self) -> Result<()> {
         self.0.destroy().await
+    }
+
+    /// Gets the current index document count.
+    pub async fn get_doc_count(&self) -> Result<IndexStats> {
+        let index_meta = self.0._ctx.index.load_metas();
+
+        let mut num_docs: usize = 0;
+        let mut num_deleted_docs: usize = 0;
+
+        for segment in index_meta?.segments {
+            num_docs += segment.num_docs() as usize;
+            num_deleted_docs += segment.num_deleted_docs() as usize;
+        }
+
+        Ok(IndexStats::new(num_docs, num_deleted_docs))
     }
 }
 
@@ -2117,6 +2129,48 @@ mod tests {
 
         let results = index.search(query).await?;
         assert_eq!(results.hits.len(), 1);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn index_stats_searchable_document_count_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+
+        add_documents(&index).await?;
+
+        let stats = index.get_doc_count().await?;
+
+        assert_eq!(stats.docs, NUM_DOCS);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn index_stats_deleted_documents_count_ok() -> Result<()> {
+        init_state();
+
+        let index = get_basic_index(false).await?;
+
+        add_documents(&index).await?;
+
+        let query: QueryPayload = serde_json::from_value(serde_json::json!({
+            "query": {
+                "limit": 1
+            }
+        }))?;
+
+        let result = index.search(query).await?;
+        let doc_id = result.hits[0].document_id;
+
+        index.delete_document(doc_id).await?;
+
+        let stats = index.get_doc_count().await?;
+
+        assert_eq!(stats.docs, NUM_DOCS - 1);
+        assert_eq!(stats.deleted_docs, 1);
 
         Ok(())
     }

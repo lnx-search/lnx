@@ -880,6 +880,20 @@ impl DocumentHit {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct IndexStats {
+    // The number of documents in the index.
+    pub docs: usize,
+    // The number of deleted documents in the index.
+    pub deleted_docs: usize,
+}
+
+impl IndexStats {
+    pub fn new(docs: usize, deleted_docs: usize) -> Self {
+        Self { docs, deleted_docs }
+    }
+}
+
 mod document_id_serializer {
     use serde::Serializer;
 
