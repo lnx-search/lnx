@@ -313,13 +313,7 @@ pub async fn get_index_stats(req: LnxRequest) -> LnxResponse {
     let index = get_or_400!(req.param("index"));
     let index: Index = get_or_400!(state.engine.get_index(index));
 
-    let stats = index.get_doc_count().await?;
+    let stats = index.get_doc_count()?;
 
-    json_response(
-        200,
-        &serde_json::json!({
-            "num_docs": stats.docs,
-            "num_deleted_docs": stats.deleted_docs,
-        }),
-    )
+    json_response(200, &stats)
 }

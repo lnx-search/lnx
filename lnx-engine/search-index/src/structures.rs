@@ -882,15 +882,18 @@ impl DocumentHit {
 
 #[derive(Debug, Serialize)]
 pub struct IndexStats {
-    // The number of documents in the index.
-    pub docs: usize,
-    // The number of deleted documents in the index.
-    pub deleted_docs: usize,
+    /// The number of documents in the index.
+    pub num_docs: usize,
+    /// The number of deleted documents in the index.
+    pub num_deleted_docs: usize,
 }
 
 impl IndexStats {
-    pub fn new(docs: usize, deleted_docs: usize) -> Self {
-        Self { docs, deleted_docs }
+    pub fn new(num_docs: usize, num_deleted_docs: usize) -> Self {
+        Self {
+            num_docs,
+            num_deleted_docs,
+        }
     }
 }
 
