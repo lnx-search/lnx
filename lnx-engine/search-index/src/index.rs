@@ -7,7 +7,11 @@ use hashbrown::HashMap;
 use crate::query::{DocumentId, Occur, QueryData, QuerySelector};
 use crate::reader::{QueryPayload, QueryResults};
 use crate::structures::{
-    DocumentHit, DocumentOptions, DocumentValueOptions, IndexContext, IndexStats,
+    DocumentHit,
+    DocumentOptions,
+    DocumentValueOptions,
+    IndexContext,
+    IndexStats,
 };
 use crate::writer::WriterOp;
 use crate::{reader, writer};
@@ -149,7 +153,7 @@ impl Index {
     }
 
     /// Gets the current index document count.
-    pub async fn get_doc_count(&self) -> Result<IndexStats> {
+    pub fn get_doc_count(&self) -> Result<IndexStats> {
         let index_meta = self.0._ctx.index.load_metas();
 
         let mut num_docs: usize = 0;
@@ -2141,9 +2145,9 @@ mod tests {
 
         add_documents(&index).await?;
 
-        let stats = index.get_doc_count().await?;
+        let stats = index.get_doc_count()?;
 
-        assert_eq!(stats.docs, NUM_DOCS);
+        assert_eq!(stats.num_docs, NUM_DOCS);
 
         Ok(())
     }
@@ -2158,6 +2162,7 @@ mod tests {
 
         let query: QueryPayload = serde_json::from_value(serde_json::json!({
             "query": {
+                "normal": {"ctx": "man"},
                 "limit": 1
             }
         }))?;
@@ -2166,11 +2171,12 @@ mod tests {
         let doc_id = result.hits[0].document_id;
 
         index.delete_document(doc_id).await?;
+        index.commit().await?;
 
-        let stats = index.get_doc_count().await?;
+        let stats = index.get_doc_count()?;
 
-        assert_eq!(stats.docs, NUM_DOCS - 1);
-        assert_eq!(stats.deleted_docs, 1);
+        assert_eq!(stats.num_docs, NUM_DOCS - 1);
+        assert_eq!(stats.num_deleted_docs, 1);
 
         Ok(())
     }
