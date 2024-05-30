@@ -21,10 +21,6 @@ use engine::Engine;
 use hyper::Server;
 use mimalloc::MiMalloc;
 use routerify::RouterService;
-use tracing::Level;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::filter::EnvFilter;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -43,20 +39,13 @@ struct Settings {
     /// be displayed.
     ///
     /// For more detailed control you can use the `RUST_LOG` env var.
-    #[clap(long, default_value = "info", env)]
-    log_level: Level,
+    #[clap(long, default_value = "info,compress=off,tantivy=info", env)]
+    log_level: String,
 
     /// An optional bool to disable ASNI colours and pretty formatting for logs.
     /// You probably want to disable this if using file-based logging.
     #[clap(long, env)]
     disable_asni_logs: bool,
-
-    /// An optional bool to enable verbose logging, this includes additional metadata
-    /// like span targets, thread-names, ids, etc... as well as the existing info.
-    ///
-    /// Generally you probably dont need this unless you're debugging.
-    #[clap(long, env)]
-    verbose_logs: bool,
 
     /// An optional bool to enable pretty formatting logging.
     ///
@@ -72,12 +61,6 @@ struct Settings {
     /// this can come at the cost for performance at very high loads.
     #[clap(long, env)]
     json_logs: bool,
-
-    /// A optional directory to send persistent logs.
-    ///
-    /// Logs are split into hourly chunks.
-    #[clap(long, env)]
-    log_directory: Option<String>,
 
     /// If enabled each search request wont be logged.
     #[clap(long, env)]
@@ -145,13 +128,11 @@ fn main() {
         },
     };
 
-    let _guard = setup_logger(
-        settings.log_level,
-        &settings.log_directory,
+    setup_logger(
+        &settings.log_level,
         !settings.disable_asni_logs,
         settings.pretty_logs,
         settings.json_logs,
-        settings.verbose_logs,
     );
 
     if let Some(snapshot) = settings.load_snapshot {
@@ -187,49 +168,24 @@ fn main() {
 }
 
 fn setup_logger(
-    level: Level,
-    log_dir: &Option<String>,
+    level: &str,
     asni_colours: bool,
     pretty: bool,
     json: bool,
-    verbose: bool,
-) -> Option<WorkerGuard> {
+) {
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", format!("{},compress=off,tantivy=info", level));
+        std::env::set_var("RUST_LOG", level);
     }
 
     let fmt = tracing_subscriber::fmt()
-        .with_target(verbose)
-        .with_thread_names(verbose)
-        .with_thread_ids(verbose)
-        .with_ansi(asni_colours)
-        .with_env_filter(EnvFilter::from_default_env());
+        .with_ansi(asni_colours);
 
-    if let Some(dir) = log_dir {
-        let file_appender = tracing_appender::rolling::hourly(dir, "lnx.log");
-        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
-
-        let fmt = fmt.with_writer(std::io::stdout.and(non_blocking));
-
-        if pretty {
-            fmt.pretty().init();
-        } else if json {
-            fmt.json().init();
-        } else {
-            fmt.compact().init();
-        }
-
-        Some(guard)
+    if pretty {
+        fmt.pretty().init();
+    } else if json {
+        fmt.json().init();
     } else {
-        if pretty {
-            fmt.pretty().init();
-        } else if json {
-            fmt.json().init();
-        } else {
-            fmt.compact().init();
-        }
-
-        None
+        fmt.compact().init();
     }
 }
 

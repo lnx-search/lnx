@@ -7,7 +7,6 @@ use crossbeam::channel::{self, RecvTimeoutError};
 use crossbeam::queue::SegQueue;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
-use sysinfo::SystemExt;
 use tantivy::schema::{Field, Schema};
 use tantivy::{IndexWriter, Opstamp, Term};
 use tokio::sync::oneshot;

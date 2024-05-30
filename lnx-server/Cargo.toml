@@ -8,21 +8,19 @@ description = "The adaptable deployment of the tantivy search engine. Standing o
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["json"] }
+
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt-multi-thread", "rt", "signal", "parking_lot", "macros"] }
-fern = { version = "0.6", features = ["colored"] }
+tokio = { version = "1.38.0", features = ["rt-multi-thread", "rt", "signal", "parking_lot", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 hashbrown = { version = "0.11", features = ["serde"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 sled = { version = "0.34.7", features = ["compression"] }
-tracing-subscriber = { version = "0.3.5", features = ["tracing-log", "parking_lot", "env-filter", "json"] }
 clap = { version = "3", features = ["derive", "env"] }
 zip = { version = "0.5.13", default-features = false, features = ["time", "deflate"] }
 
 walkdir = "2.3.2"
-tracing-appender = "0.2.0"
-tracing = "0.1.29"
-tracing-futures = "0.2.5"
 thiserror = "1.0.30"
 routerify = "2.2.0"
 arc-swap = "1.4.0"

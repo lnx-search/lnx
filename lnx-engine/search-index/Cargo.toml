@@ -28,7 +28,7 @@ anyhow = "1"
 flate2 = "1.0.20"
 arc-swap = "1.4.0"
 num_cpus = "1"
-sysinfo = "0.20.5"
+sysinfo = "0.30.12"
 
 aexecutor = { path = "../aexecutor" }
 
