@@ -1,9 +1,9 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use compose::{Suggestion, SymSpell, Verbosity};
-use hashbrown::HashMap;
 
 pub(crate) type SymSpellCorrectionManager = Arc<SymSpellManager>;
 
@@ -38,17 +38,11 @@ impl SymSpellManager {
     pub(crate) fn adjust_index_frequencies(&self, frequencies: &HashMap<String, u32>) {
         info!("adjusting spell correction system to new frequency count, this may take a while...");
 
-        let frequencies = frequencies
-            .into_iter()
-            .map(|(k, v)| (k.clone(), *v as i64))
-            .collect();
+        let frequencies = frequencies.iter().map(|(k, v)| (k.clone(), *v as i64));
 
         let mut symspell = SymSpell::default();
 
-        // SAFETY:
-        //  This is safe as long as the keys being passed are ASCII. If this uses UTF-8 characters
-        //  there is a chance this can make the algorithm become UB when accessing the wordmap.
-        unsafe { symspell.using_dictionary_frequencies(frequencies, false) };
+        symspell.using_dictionary_frequencies(frequencies, false);
 
         self.sym.store(Arc::from(symspell))
     }

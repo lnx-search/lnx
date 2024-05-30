@@ -1,7 +1,7 @@
+use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 
 use anyhow::{anyhow, Error, Result};
-use hashbrown::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{
     Cardinality,

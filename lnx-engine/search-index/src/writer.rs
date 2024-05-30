@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::mem;
 use std::path::Path;
 use std::sync::Arc;
@@ -5,7 +6,6 @@ use std::sync::Arc;
 use anyhow::{anyhow, Error, Result};
 use crossbeam::channel::{self, RecvTimeoutError};
 use crossbeam::queue::SegQueue;
-use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, Schema};
 use tantivy::{IndexWriter, Opstamp, Term};

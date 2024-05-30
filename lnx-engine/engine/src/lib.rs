@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use arc_swap::ArcSwap;
-use hashbrown::HashMap;
 use parking_lot::Mutex;
 use search_index::structures::IndexDeclaration;
 pub use search_index::{

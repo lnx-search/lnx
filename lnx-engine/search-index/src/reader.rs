@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use aexecutor::SearcherExecutorPool;
 use anyhow::{anyhow, Error, Result};
-use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::fastfield::FastFieldReader;

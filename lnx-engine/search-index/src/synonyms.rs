@@ -1,10 +1,10 @@
+use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use arc_swap::ArcSwap;
 use bincode::Options;
-use hashbrown::{HashMap, HashSet};
 
 use crate::StorageBackend;
 

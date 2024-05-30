@@ -6,9 +6,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parking_lot = "0.11.2"
+parking_lot = "0.12.3"
 anyhow = "1"
-hashbrown = "0.11"
 arc-swap = "1.4.0"
 
 search-index = { path = "../search-index" }

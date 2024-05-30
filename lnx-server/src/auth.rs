@@ -1,10 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use bincode::Options;
 use chrono::{DateTime, Utc};
-use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use serde::{Deserialize, Serialize};

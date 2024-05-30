@@ -1,9 +1,9 @@
 use core::fmt;
+use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
-use hashbrown::HashMap;
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
