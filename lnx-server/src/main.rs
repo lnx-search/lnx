@@ -167,18 +167,12 @@ fn main() {
     }
 }
 
-fn setup_logger(
-    level: &str,
-    asni_colours: bool,
-    pretty: bool,
-    json: bool,
-) {
+fn setup_logger(level: &str, asni_colours: bool, pretty: bool, json: bool) {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", level);
     }
 
-    let fmt = tracing_subscriber::fmt()
-        .with_ansi(asni_colours);
+    let fmt = tracing_subscriber::fmt().with_ansi(asni_colours);
 
     if pretty {
         fmt.pretty().init();
