@@ -3,7 +3,7 @@ mod reader_executor;
 use std::borrow::Borrow;
 
 use anyhow::{Error, Result};
-use tantivy::{LeasedItem, Searcher};
+use tantivy::Searcher;
 use tokio::sync::{oneshot, Semaphore};
 
 use crate::reader_executor::TantivyExecutorPool;
@@ -96,7 +96,7 @@ impl SearcherExecutorPool {
     /// the results once complete.
     pub async fn spawn<F, T>(&self, func: F) -> Result<T>
     where
-        F: FnOnce(LeasedItem<Searcher>, &tantivy::Executor) -> T + Send + 'static,
+        F: FnOnce(Searcher, &tantivy::Executor) -> T + Send + 'static,
         T: Sync + Send + 'static,
     {
         let _permit = self.limiter.acquire().await?;
@@ -117,7 +117,7 @@ impl SearcherExecutorPool {
     }
 
     #[inline]
-    pub fn searcher(&self) -> LeasedItem<Searcher> {
+    pub fn searcher(&self) -> Searcher {
         self.reader.searcher()
     }
 }

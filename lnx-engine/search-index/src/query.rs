@@ -13,6 +13,7 @@ use tantivy::query::{
     BooleanQuery,
     BoostQuery,
     EmptyQuery,
+    EnableScoring,
     FuzzyTermQuery,
     MoreLikeThisQuery,
     Query,
@@ -559,7 +560,7 @@ impl QueryBuilder {
                     .schema
                     .get_field(&v)
                     .map(|field| (field, 0.0f32))
-                    .ok_or_else(|| {
+                    .map_err(|_| {
                         anyhow!(
                             "Unknown field {:?} in fuzzy query config {:?}.",
                             v,
@@ -691,6 +692,7 @@ impl QueryBuilder {
                     &qry,
                     &TopDocs::with_limit(1),
                     executor,
+                    EnableScoring::enabled_from_searcher(&searcher),
                 )?;
                 if results.is_empty() {
                     return Err(Error::msg(format!(
@@ -796,7 +798,7 @@ impl QueryBuilder {
     }
 
     fn get_searchable_field(&self, field: &str) -> Result<Field> {
-        let field = self.schema.get_field(field).ok_or_else(|| {
+        let field = self.schema.get_field(field).map_err(|_| {
             Error::msg(format!("no field exists with name: {:?}", field))
         })?;
 

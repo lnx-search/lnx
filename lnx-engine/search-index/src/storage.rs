@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use bincode::Options;
@@ -64,7 +65,7 @@ impl SledBackedDirectory {
     ///
     /// If OpenType::TempFile is set the system will create a temporary structure,
     /// normally for testing.
-    pub fn new_with_root(path: &OpenType) -> anyhow::Result<Self> {
+    pub fn new_with_root(path: &OpenType) -> Result<Self> {
         let (conn, inner) = match path {
             OpenType::Dir(path) => {
                 std::fs::create_dir_all(path)?;
@@ -103,7 +104,7 @@ impl Directory for SledBackedDirectory {
     fn get_file_handle(
         &self,
         path: &Path,
-    ) -> core::result::Result<Box<dyn FileHandle>, OpenReadError> {
+    ) -> core::result::Result<Arc<dyn FileHandle>, OpenReadError> {
         self.inner.get_file_handle(path)
     }
 
@@ -137,25 +138,25 @@ impl Directory for SledBackedDirectory {
                         OpenReadError::FileDoesNotExist(path.to_path_buf()),
                     sled::Error::Unsupported(_) =>
                         OpenReadError::IoError {
-                            io_error: std::io::Error::new(
+                            io_error: Arc::new(std::io::Error::new(
                                 ErrorKind::InvalidData,
                                 "Metastore has been used in a un-supported way",
-                            ),
+                            )),
                             filepath: path.to_path_buf(),
                         },
                     sled::Error::ReportableBug(e) =>
                         panic!("Failed to perform operation due to unexpected error: {}, Please report this as a bug.", e),
                     sled::Error::Io(e) =>
-                        OpenReadError::IoError { io_error: e, filepath: path.to_path_buf() },
+                        OpenReadError::IoError { io_error: Arc::new(e), filepath: path.to_path_buf() },
                     sled::Error::Corruption { at, .. } =>
                         OpenReadError::IoError {
-                            io_error: std::io::Error::new(
+                            io_error: Arc::new(std::io::Error::new(
                                 ErrorKind::InvalidData,
                                 format!(
                                     "Data corruption has been detected within the metastore system, Possible Info: {:?}",
                                     at,
                                 )
-                            ),
+                            )),
                             filepath: path.to_path_buf(),
                         },
                     #[allow(unreachable_patterns)]

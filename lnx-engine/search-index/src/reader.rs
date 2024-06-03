@@ -7,20 +7,21 @@ use aexecutor::SearcherExecutorPool;
 use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Count, TopDocs};
-use tantivy::fastfield::FastFieldReader;
-use tantivy::query::{Query, TermQuery};
-use tantivy::schema::{Field, FieldType, IndexRecordOption, Schema, Value};
+use tantivy::query::{EnableScoring, Query, TermQuery};
+use tantivy::schema::{Field, FieldType, IndexRecordOption, OwnedValue, Schema};
 use tantivy::{
     DateTime,
     DocAddress,
     DocId,
+    Document,
     Executor,
     IndexReader,
-    LeasedItem,
+    Order,
     ReloadPolicy,
     Score,
     Searcher,
     SegmentReader,
+    TantivyDocument,
     Term,
 };
 
@@ -146,11 +147,17 @@ fn order_and_search<R: AsScore + tantivy::fastfield::FastValue>(
     executor: &Executor,
 ) -> Result<(Vec<(R, DocAddress)>, usize)> {
     let collector = TopDocs::with_limit(limit + offset);
-    let collector = collector.order_by_fast_field(field);
+    let field_name = searcher.schema().get_field_name(field);
+    let collector = collector.order_by_fast_field(field_name, Order::Desc);
     let collector = (collector, Count);
 
     let (result_addresses, count) = searcher
-        .search_with_executor(&query, &collector, executor)
+        .search_with_executor(
+            &query,
+            &collector,
+            executor,
+            EnableScoring::enabled_from_searcher(searcher),
+        )
         .map_err(Error::from)?;
 
     let results = result_addresses
@@ -167,7 +174,12 @@ macro_rules! execute_staged_search {
         let collector = ($collector, Count);
 
         let (results, count) = $searcher
-            .search_with_executor(&$query, &collector, $executor)
+            .search_with_executor(
+                &$query,
+                &collector,
+                $executor,
+                tantivy::query::EnableScoring::enabled_from_searcher(&$searcher),
+            )
             .map_err(Error::from)?;
 
         let results = results
@@ -189,13 +201,13 @@ fn process_search<S: AsScore>(
 ) -> Result<Vec<DocumentHit>> {
     let mut hits = Vec::with_capacity(top_docs.len());
     for (ratio, ref_address) in top_docs {
-        let retrieved_doc = searcher.doc(ref_address)?;
-        let mut doc = schema.to_named_doc(&retrieved_doc);
+        let retrieved_doc: TantivyDocument = searcher.doc(ref_address)?;
+        let mut doc = retrieved_doc.to_named_doc(schema);
         let id = doc.0
             .remove("_id")
             .ok_or_else(|| Error::msg("document has been missed labeled (missing primary key '_id'), the dataset is invalid"))?;
 
-        if let Value::U64(doc_id) = id[0] {
+        if let OwnedValue::U64(doc_id) = id[0] {
             hits.push(DocumentHit::from_tantivy_document(
                 ctx,
                 doc_id,
@@ -226,9 +238,8 @@ fn order_and_sort(
     offset: usize,
     executor: &Executor,
 ) -> Result<(Vec<DocumentHit>, usize)> {
-    let is_multi_value = ctx
-        .multi_value_fields()
-        .contains(schema.get_field_name(field));
+    let field_name = schema.get_field_name(field);
+    let is_multi_value = ctx.multi_value_fields().contains(field_name);
 
     if is_multi_value {
         return Err(anyhow!(
@@ -266,15 +277,17 @@ fn order_and_sort(
     let collector = TopDocs::with_limit(limit + offset);
     let out = match field_type {
         FieldType::I64(_) => {
+            let field_name = field_name.to_owned();
             let collector =
                 collector.custom_score(move |segment_reader: &SegmentReader| {
                     let reader = segment_reader
                         .fast_fields()
-                        .i64(field)
+                        .i64(&field_name)
                         .expect("field exists");
 
                     move |doc: DocId| {
-                        let value: i64 = reader.get(doc);
+                        let value: i64 =
+                            reader.first(doc).expect("Col must not be None");
                         std::cmp::Reverse(value)
                     }
                 });
@@ -285,15 +298,17 @@ fn order_and_sort(
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::U64(_) => {
+            let field_name = field_name.to_owned();
             let collector =
                 collector.custom_score(move |segment_reader: &SegmentReader| {
                     let reader = segment_reader
                         .fast_fields()
-                        .u64(field)
+                        .u64(&field_name)
                         .expect("field exists");
 
                     move |doc: DocId| {
-                        let value: u64 = reader.get(doc);
+                        let value: u64 =
+                            reader.first(doc).expect("Col must not be None");
                         std::cmp::Reverse(value)
                     }
                 });
@@ -304,15 +319,17 @@ fn order_and_sort(
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::F64(_) => {
+            let field_name = field_name.to_owned();
             let collector =
                 collector.custom_score(move |segment_reader: &SegmentReader| {
                     let reader = segment_reader
                         .fast_fields()
-                        .f64(field)
+                        .f64(&field_name)
                         .expect("field exists");
 
                     move |doc: DocId| {
-                        let value: f64 = reader.get(doc);
+                        let value: f64 =
+                            reader.first(doc).expect("Col must not be None");
                         std::cmp::Reverse(value)
                     }
                 });
@@ -323,15 +340,17 @@ fn order_and_sort(
             (process_search(ctx, searcher, schema, out.0)?, out.1)
         },
         FieldType::Date(_) => {
+            let field_name = field_name.to_owned();
             let collector =
                 collector.custom_score(move |segment_reader: &SegmentReader| {
                     let reader = segment_reader
                         .fast_fields()
-                        .date(field)
+                        .date(&field_name)
                         .expect("field exists");
 
                     move |doc: DocId| {
-                        let value: DateTime = reader.get(doc);
+                        let value: DateTime =
+                            reader.first(doc).expect("Col must not be None");
                         std::cmp::Reverse(value)
                     }
                 });
@@ -373,8 +392,7 @@ impl Reader {
         let reader: IndexReader = ctx
             .index
             .reader_builder()
-            .reload_policy(ReloadPolicy::OnCommit)
-            .num_searchers(ctx.reader_ctx.max_concurrency)
+            .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()?;
         info!(
             "index reader created with reload policy=OnCommit, num_searchers={}",
@@ -441,6 +459,7 @@ impl Reader {
                     &qry,
                     &TopDocs::with_limit(1),
                     executor,
+                    EnableScoring::enabled_from_searcher(&searcher),
                 )?;
                 if results.is_empty() {
                     return Err(Error::msg(format!(
@@ -450,10 +469,10 @@ impl Reader {
                 }
 
                 let (_, addr) = results.remove(0);
-                let doc = searcher.doc(addr)?;
+                let doc: TantivyDocument = searcher.doc(addr)?;
                 let schema = searcher.schema();
 
-                Ok(schema.to_named_doc(&doc))
+                Ok(doc.to_named_doc(schema))
             })
             .await??;
 
@@ -487,7 +506,7 @@ impl Reader {
                 let schema = searcher.schema();
                 let order_by = order_by.map(|v| schema.get_field(&v));
 
-                let (hits, count) = if let Some(Some(field)) = order_by {
+                let (hits, count) = if let Some(Ok(field)) = order_by {
                     order_and_sort(
                         sort,
                         field,
@@ -541,7 +560,7 @@ impl Reader {
     ///
     /// This is an internal export to allow the writer
     /// to have access to the segment reader information.
-    pub(crate) fn get_searcher(&self) -> LeasedItem<Searcher> {
+    pub(crate) fn get_searcher(&self) -> Searcher {
         self.pool.searcher()
     }
 }

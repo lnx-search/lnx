@@ -31,9 +31,11 @@ impl SimpleUnicodeTokenizer {
 }
 
 impl Tokenizer for SimpleUnicodeTokenizer {
-    fn token_stream<'a>(&self, text: &'a str) -> BoxTokenStream<'a> {
+    type TokenStream<'a> = BoxTokenStream<'a>;
+
+    fn token_stream<'a>(&'a mut self, text: &'a str) -> BoxTokenStream<'a> {
         let tokens = produce_tokens(text, self.limit);
-        BoxTokenStream::from(SimpleTokenStream { tokens, pointer: 0 })
+        BoxTokenStream::new(SimpleTokenStream { tokens, pointer: 0 })
     }
 }
 
@@ -48,7 +50,7 @@ pub fn produce_tokens(text: &str, num_tokens: usize) -> Vec<Token> {
         }
     }
 
-    let simple = SimpleTokenizer {};
+    let mut simple = SimpleTokenizer::default();
     let mut stream = simple.token_stream(&characters);
 
     let mut tokens = vec![];

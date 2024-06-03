@@ -8,10 +8,9 @@ use anyhow::{anyhow, Context, Error, Result};
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use tantivy::fastfield::FastValue;
-use tantivy::schema::{Facet, FacetParseError, Field, FieldType, Schema, Value};
+use tantivy::schema::{Facet, FacetParseError, Field, FieldType, OwnedValue, Schema};
 use tantivy::time::OffsetDateTime;
-use tantivy::{DateTime, Document as InternalDocument, Index, Score};
+use tantivy::{DateTime, Index, Score, TantivyDocument as InternalDocument};
 use time::format_description::well_known::Rfc3339;
 
 use crate::corrections::{SymSpellCorrectionManager, SymSpellManager};
@@ -395,7 +394,7 @@ impl TryInto<u64> for DocumentValue {
             Self::I64(v) => v as u64,
             Self::F64(v) => v as u64,
             Self::U64(v) => v,
-            Self::Datetime(dt) => dt.as_u64(),
+            Self::Datetime(dt) => dt.into_timestamp_millis() as u64,
             Self::Text(v) => v
                 .parse::<u64>()
                 .map_err(|_| Error::msg("cannot convert value into u64 value"))?,
@@ -642,11 +641,7 @@ impl DocumentPayload {
     ) -> Result<InternalDocument> {
         let mut doc = InternalDocument::new();
 
-        let field = schema.get_field(PRIMARY_KEY).ok_or_else(|| {
-            Error::msg(
-                "index has no field '_id' and has been invalidated (This is a bug)",
-            )
-        })?;
+        let field = schema.get_field(PRIMARY_KEY)?;
 
         let id = rand::random::<DocumentId>();
         doc.add_u64(field, id);
@@ -710,20 +705,20 @@ impl DocumentPayload {
         doc: &mut InternalDocument,
     ) -> Result<()> {
         let value = match field_type {
-            FieldType::U64(_) => Value::U64(value.try_into()?),
-            FieldType::I64(_) => Value::I64(value.try_into()?),
-            FieldType::F64(_) => Value::F64(value.try_into()?),
+            FieldType::U64(_) => OwnedValue::U64(value.try_into()?),
+            FieldType::I64(_) => OwnedValue::I64(value.try_into()?),
+            FieldType::F64(_) => OwnedValue::F64(value.try_into()?),
             FieldType::Date(_) => {
                 let value: DateTime = value.try_into()?;
-                Value::Date(value)
+                OwnedValue::Date(value)
             },
             FieldType::Str(_) => {
                 let value: String = value.try_into()?;
-                Value::Str(value)
+                OwnedValue::Str(value)
             },
             FieldType::Facet(_) => {
                 let facet: Facet = value.try_into()?;
-                Value::Facet(facet)
+                OwnedValue::Facet(facet)
             },
             _ => {
                 return Err(anyhow!(
@@ -815,8 +810,8 @@ impl<'de> Deserialize<'de> for DocumentOptions {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum CompliantDocumentValue {
-    Single(tantivy::schema::Value),
-    Multi(Vec<tantivy::schema::Value>),
+    Single(OwnedValue),
+    Multi(Vec<OwnedValue>),
 }
 
 /// A individual document returned from the index.

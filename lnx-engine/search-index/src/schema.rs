@@ -4,7 +4,6 @@ use std::iter::FromIterator;
 use anyhow::{anyhow, Error, Result};
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{
-    Cardinality,
     FacetOptions,
     Field,
     FieldType,
@@ -18,7 +17,7 @@ use tantivy::schema::{
     INDEXED,
     STORED,
 };
-use tantivy::Score;
+use tantivy::{DateOptions, DateTimePrecision, Score};
 
 use crate::helpers::{Calculated, Validate};
 
@@ -447,13 +446,62 @@ impl From<CalculatedIntOptions> for NumericOptions {
         }
 
         if v.fast {
-            let cardinality = if v.base.multi {
-                Cardinality::MultiValues
-            } else {
-                Cardinality::SingleValue
-            };
+            opts = opts.set_fast();
+        }
 
-            opts = opts.set_fast(cardinality);
+        opts
+    }
+}
+
+/// A set of field options that takes into account if a field is
+/// multi-value or not in order to determine the fast-field cardinality.
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+pub struct CalculatedDateOptions {
+    /// Should the integer be indexed to be searched?
+    #[serde(default)]
+    indexed: bool,
+
+    /// Should fieldnorms be used?
+    ///
+    /// This is only relevant if `indexed = true`.
+    /// By default this is `indexed` if left empty.
+    fieldnorms: Option<bool>,
+
+    #[serde(default)]
+    /// The timestamp precision to use.
+    ///
+    /// Defaults to `seconds`.
+    precision: DateTimePrecision,
+
+    /// Is the field a fast field?.
+    ///
+    /// Fast fields have a similar lookup time to an array.
+    #[serde(default)]
+    fast: bool,
+
+    #[serde(flatten)]
+    base: BaseFieldOptions,
+}
+
+impl From<CalculatedDateOptions> for DateOptions {
+    fn from(v: CalculatedDateOptions) -> Self {
+        let mut opts = DateOptions::default();
+        opts = opts.set_precision(v.precision);
+
+        if v.indexed {
+            opts = opts.set_indexed();
+        }
+
+        if v.base.stored {
+            opts = opts.set_stored();
+        }
+
+        if v.fieldnorms.unwrap_or(v.indexed) {
+            opts = opts.set_fieldnorm();
+        }
+
+        if v.fast {
+            opts = opts.set_fast();
         }
 
         opts
@@ -491,7 +539,7 @@ pub enum FieldDeclaration {
     /// This is treated as a u64 integer timestamp.
     Date {
         #[serde(flatten)]
-        opts: CalculatedIntOptions,
+        opts: CalculatedDateOptions,
     },
 
     /// A string field with given options.

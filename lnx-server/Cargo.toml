@@ -15,7 +15,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "rt", "signal", "parking_lot", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
-sled = { version = "0.34.7", features = ["compression"] }
+sled = { version = "0.34.7" }
 clap = { version = "3", features = ["derive", "env"] }
 zip = { version = "0.5.13", default-features = false, features = ["time", "deflate"] }
 
