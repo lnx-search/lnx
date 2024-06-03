@@ -39,7 +39,7 @@ fn compress_stop_words() -> Result<()> {
     encoder.write_all(&data)?;
     let data = encoder.finish()?;
 
-    fs::write("./_dist/stop_words", &data)?;
+    fs::write("./_dist/stop_words", data)?;
 
     Ok(())
 }

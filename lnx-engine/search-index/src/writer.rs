@@ -258,7 +258,7 @@ impl IndexWriterWorker {
                     info!("running auto commit");
 
                     // We know we wont shutdown.
-                    let _ = self.handle_message(WriterOp::Commit, None);
+                    self.handle_message(WriterOp::Commit, None);
                     op_since_last_commit = false;
                 },
                 Err(RecvTimeoutError::Disconnected) => {

@@ -122,7 +122,7 @@ impl SynonymsManager {
         }
 
         Ok(HashMap::from_iter(new_mapping.into_iter().map(|(k, v)| {
-            let v = Vec::from_iter(v.into_iter()).into_boxed_slice();
+            let v = Vec::from_iter(v).into_boxed_slice();
 
             (k, v)
         })))

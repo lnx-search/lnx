@@ -47,7 +47,7 @@ impl Engine {
             indexes = guard.as_ref().clone();
         }
 
-        if !override_if_exists & indexes.get(index.name()).is_some() {
+        if !override_if_exists & indexes.contains_key(index.name()) {
             return Err(Error::msg("index already exists."));
         }
 

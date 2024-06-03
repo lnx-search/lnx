@@ -87,7 +87,7 @@ fn extract_snapshot(snapshot: PathBuf) -> Result<()> {
         ));
     }
 
-    let reader = std::fs::File::open(&snapshot)?;
+    let reader = File::open(snapshot)?;
     let mut zip = ZipArchive::new(reader)?;
 
     for i in 0..zip.len() {
@@ -169,7 +169,7 @@ fn zip_dir(
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
-            zip.write_all(&*buffer)?;
+            zip.write_all(&buffer)?;
             buffer.clear();
         } else if !name.as_os_str().is_empty() {
             info!("adding dir {:?} as {:?} ...", path, name);
@@ -188,7 +188,7 @@ fn path_to_string(path: &std::path::Path) -> String {
             if !path_str.is_empty() {
                 path_str.push('/');
             }
-            path_str.push_str(&*os_str.to_string_lossy());
+            path_str.push_str(&os_str.to_string_lossy());
         }
     }
     path_str

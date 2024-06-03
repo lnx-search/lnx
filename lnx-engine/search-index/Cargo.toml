@@ -12,7 +12,7 @@ time = { version = "0.3.9", features = ["serde", "parsing", "formatting"] }
 serde = { version = "1", features = ["derive"] }
 sled = { version = "0.34.7" }
 tokio = { version = "1.12", features = ["sync", "fs", "rt"] }
-compose = { git = "https://github.com/lnx-search/compose.git", rev = "77099ad" }
+compose = { git = "https://github.com/lnx-search/compose.git", rev = "a3cf2ef" }
 
 deunicode = "1.6.0"
 tantivy = "0.22.0"
