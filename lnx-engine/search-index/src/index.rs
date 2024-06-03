@@ -403,8 +403,8 @@ mod tests {
     use crate::structures::{DocumentValue, IndexDeclaration};
 
     fn init_state() {
-        let _ = std::env::set_var("RUST_LOG", "debug,sled=info");
-        let _ = pretty_env_logger::try_init_timed();
+        std::env::set_var("RUST_LOG", "debug,sled=info");
+        let _ = tracing_subscriber::fmt::try_init();
     }
 
     async fn get_index_with(value: serde_json::Value) -> Result<Index> {
