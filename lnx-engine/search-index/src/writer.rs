@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::mem;
 use std::path::Path;
@@ -106,13 +107,13 @@ impl WriterContext {
                 info!(
                     "target buffer size of {}KB cannot be reached due \
                     to not enough free memory, defaulting to {}KB",
-                    target_buffer_size,
+                    target_buffer_size / 1_000,
                     buffer / 1_000,
                 );
 
-                buffer = min_buffer;
+                buffer = max(free_mem as usize, min_buffer);
             } else {
-                buffer = (target_buffer_size * 1_000) as usize;
+                buffer = (target_buffer_size) as usize;
             }
         }
 
@@ -122,11 +123,11 @@ impl WriterContext {
         }
 
         let free_mem = sys.free_memory();
-        if buffer > (free_mem * 1000) as usize {
+        if buffer > free_mem as usize {
             return Err(Error::msg(format!(
                 "cannot allocate {}KB due to system not having enough free memory. (Free: {}KB)",
                 buffer / 1_000,
-                free_mem
+                free_mem / 1_000
             )));
         }
 
