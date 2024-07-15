@@ -7,7 +7,7 @@ use chrono::Utc;
 use engine::structures::ROOT_PATH;
 use walkdir::{DirEntry, WalkDir};
 use zip::read::ZipArchive;
-use zip::write::FileOptions;
+use zip::write::{FileOptions, SimpleFileOptions};
 use zip::CompressionMethod;
 
 static IGNORE_FILES: [&str; 1] = [".tantivy-writer.lock"];
@@ -132,7 +132,7 @@ fn zip_dir(
     prefix: &Path,
     writer: File,
 ) -> zip::result::ZipResult<()> {
-    let options;
+    let options: SimpleFileOptions;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -165,7 +165,7 @@ fn zip_dir(
             }
 
             info!("adding file {:?} as {:?} ...", path, name);
-            zip.start_file(path_to_string(path), options)?;
+            zip.start_file(path_to_string(path), options.clone())?;
             let mut f = File::open(path)?;
 
             f.read_to_end(&mut buffer)?;
@@ -173,7 +173,7 @@ fn zip_dir(
             buffer.clear();
         } else if !name.as_os_str().is_empty() {
             info!("adding dir {:?} as {:?} ...", path, name);
-            zip.add_directory(path_to_string(path), options)?;
+            zip.add_directory(path_to_string(path), options.clone())?;
         }
     }
     zip.finish()?;
