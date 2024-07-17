@@ -1,6 +1,6 @@
 use std::ops::Deref;
-use serde::Deserializer;
 
+use serde::Deserializer;
 use serde_derive::Serialize;
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Serialize)]
@@ -22,11 +22,11 @@ impl IndexId {
     /// syntax.
     pub fn try_from_string(id: String) -> Result<Self, IndexIdValidationError> {
         if id.len() < 3 {
-            return Err(IndexIdValidationError::TooShort(id.len()))
+            return Err(IndexIdValidationError::TooShort(id.len()));
         }
 
         if id.len() > 256 {
-            return Err(IndexIdValidationError::TooLong(id.len()))
+            return Err(IndexIdValidationError::TooLong(id.len()));
         }
 
         for char in id.chars() {
@@ -50,7 +50,7 @@ impl Deref for IndexId {
 impl<'de> serde::Deserialize<'de> for IndexId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         let id = String::deserialize(deserializer)?;
 
@@ -65,6 +65,8 @@ pub enum IndexIdValidationError {
     TooLong(usize),
     #[error("provided ID is too short, expected 3 or more characters, got: {0}")]
     TooShort(usize),
-    #[error("provided ID contains characters that are not alphanumerical, `-` or `_`: {0:?}")]
+    #[error(
+        "provided ID contains characters that are not alphanumerical, `-` or `_`: {0:?}"
+    )]
     IllegalCharacters(String),
 }

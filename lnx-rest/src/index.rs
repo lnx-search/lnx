@@ -1,14 +1,11 @@
+use poem_openapi::param::Path;
 use poem_openapi::payload::Json;
 use poem_openapi::{ApiResponse, Enum, Object, OpenApi};
-use poem_openapi::param::Path;
 
 use crate::models::{ApiError, WrapSerde};
 
-
 /// API routes for managing and handling indexes.
-pub struct IndexApiRoutes {
-
-}
+pub struct IndexApiRoutes {}
 
 #[OpenApi(prefix_path = "/index", tag = crate::Tag::Indexes)]
 impl IndexApiRoutes {
@@ -21,9 +18,8 @@ impl IndexApiRoutes {
     /// See the
     async fn create_index(
         &self,
-        Path(index_id): Path<WrapSerde<>>,
+        Path(index_id): Path<WrapSerde>,
     ) -> Result<Json<CreateIndexData>, CreateIndexError> {
-
         todo!()
     }
 
@@ -41,10 +37,7 @@ impl IndexApiRoutes {
     /// NOTE:
     /// You forceful deletes **always** require 2 API requests, one to soft delete initially and a
     /// second to force the removal.
-    async fn delete_index(
-        &self,
-    ) -> Result<Json<DeleteIndexData>, DeleteIndexError> {
-
+    async fn delete_index(&self) -> Result<Json<DeleteIndexData>, DeleteIndexError> {
         todo!()
     }
 
@@ -53,13 +46,10 @@ impl IndexApiRoutes {
     ///
     /// This `GET` method provides general information and metrics about the index and its current
     /// state within the system.
-    async fn inspect_index(
-        &self,
-    ) -> Result<Json<bool>, poem::Error> {
+    async fn inspect_index(&self) -> Result<Json<bool>, poem::Error> {
         todo!()
     }
 }
-
 
 #[derive(ApiResponse)]
 #[oai(bad_request_handler = "Self::bad_request_handler")]
@@ -118,7 +108,6 @@ pub enum DeletionKind {
     Hard,
 }
 
-
 #[derive(ApiResponse)]
 #[oai(bad_request_handler = "Self::bad_request_handler")]
 /// Possible responses during the create index operation.
@@ -144,8 +133,11 @@ pub enum DeleteIndexError {
 impl DeleteIndexError {
     fn bad_request_handler(err: poem::Error) -> Self {
         if err.is::<poem::error::ParseQueryError>() {
-            Self::BadRequest(Json(ApiError::bad_request("Unable to parse the provided query parameters")))
-        } else {  // TODO: Add handling of Index ID. & Mi
+            Self::BadRequest(Json(ApiError::bad_request(
+                "Unable to parse the provided query parameters",
+            )))
+        } else {
+            // TODO: Add handling of Index ID. & Mi
             Self::Internal(Json(ApiError::from(err)))
         }
     }

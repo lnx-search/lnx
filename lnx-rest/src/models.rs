@@ -5,15 +5,21 @@ use std::marker::PhantomData;
 
 use poem::http::StatusCode;
 use poem::Response;
-use poem_openapi::{ApiResponse, Object};
 use poem_openapi::registry::{MetaResponses, MetaSchemaRef, Registry};
-use poem_openapi::types::{ParseError, ParseFromJSON, ParseFromParameter, ParseResult, ToJSON, Type};
+use poem_openapi::types::{
+    ParseError,
+    ParseFromJSON,
+    ParseFromParameter,
+    ParseResult,
+    ToJSON,
+    Type,
+};
+use poem_openapi::{ApiResponse, Object};
 use serde_derive::Serialize;
 use serde_json::Value;
 
 /// An [IndexId] wrapper that can be deserialized by poem.
 pub type WrappedIndexId = WrapSerde<(), String>;
-
 
 #[derive(Debug, thiserror::Error, Object, Serialize)]
 #[error("{message}")]
@@ -48,7 +54,7 @@ impl From<poem::Error> for ApiError {
     fn from(value: poem::Error) -> Self {
         Self {
             status: value.status().as_u16(),
-            message: value.to_string()
+            message: value.to_string(),
         }
     }
 }
@@ -64,7 +70,7 @@ impl ApiError {
     pub fn from_any_error(error: impl std::error::Error) -> Self {
         Self {
             message: error.to_string(),
-            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16()
+            status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
         }
     }
 }
@@ -75,11 +81,10 @@ impl poem::error::ResponseError for ApiError {
     }
 
     fn as_response(&self) -> Response {
-        let body = poem::Body::from_json(self)
-            .unwrap_or_else(|_| poem::Body::from_string("Internal server error".to_owned()));
-        Response::builder()
-            .status(self.status())
-            .body(body)
+        let body = poem::Body::from_json(self).unwrap_or_else(|_| {
+            poem::Body::from_string("Internal server error".to_owned())
+        });
+        Response::builder().status(self.status()).body(body)
     }
 }
 
@@ -98,7 +103,6 @@ impl ApiResponse for ApiError {
         Self::from(err)
     }
 }
-
 
 /// Wraps a desired type `T` that supports serde (de)serialization.
 ///
@@ -134,7 +138,9 @@ where
         Some(&self.inner)
     }
 
-    fn raw_element_iter<'a>(&'a self) -> Box<dyn Iterator<Item=&'a Self::RawElementValueType> + 'a> {
+    fn raw_element_iter<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = &'a Self::RawElementValueType> + 'a> {
         Box::new(std::iter::once(&self.inner))
     }
 }
@@ -161,17 +167,23 @@ where
     fn parse_from_json(value: Option<Value>) -> ParseResult<Self> {
         let value = value
             .ok_or_else(|| ParseError::custom("Unable to deserialize `null` value"))?;
-        let result = serde_json::from_value(value)
-            .map_err(|e| ParseError::custom(
-                format!("Type can not be deserialized from JSON payload due to error {e}")
-            ))?;
-        Ok(Self { inner: result, phantom: PhantomData })
+        let result = serde_json::from_value(value).map_err(|e| {
+            ParseError::custom(format!(
+                "Type can not be deserialized from JSON payload due to error {e}"
+            ))
+        })?;
+        Ok(Self {
+            inner: result,
+            phantom: PhantomData,
+        })
     }
 
     fn parse_from_json_string(s: &str) -> ParseResult<Self> {
-        let result = serde_json::from_str(s)
-            .map_err(ParseError::custom)?;
-        Ok(Self { inner: result, phantom: PhantomData })
+        let result = serde_json::from_str(s).map_err(ParseError::custom)?;
+        Ok(Self {
+            inner: result,
+            phantom: PhantomData,
+        })
     }
 }
 impl<T, O> ParseFromParameter for WrapSerde<T, O>
@@ -180,10 +192,14 @@ where
     O: Type,
 {
     fn parse_from_parameter(value: &str) -> ParseResult<Self> {
-        let result = serde_json::from_str(value)
-            .map_err(|e| ParseError::custom(
-                format!("Type can not be deserialized from query parameter due to error {e}")
-            ))?;
-        Ok(Self { inner: result, phantom: PhantomData })
+        let result = serde_json::from_str(value).map_err(|e| {
+            ParseError::custom(format!(
+                "Type can not be deserialized from query parameter due to error {e}"
+            ))
+        })?;
+        Ok(Self {
+            inner: result,
+            phantom: PhantomData,
+        })
     }
 }

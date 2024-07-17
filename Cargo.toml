@@ -5,7 +5,8 @@ members = [
     "lnx-engine/aexecutor",
     "lnx-engine/search-index",
     "lnx-server",
-    "lnx-rest", "lnx-types",
+    "lnx-rest",
+    "lnx-types",
 ]
 
 [profile.release]
