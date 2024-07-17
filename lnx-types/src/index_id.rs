@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use serde::de::Error;
 use serde::Deserializer;
 use serde_derive::Serialize;
 
@@ -53,8 +54,7 @@ impl<'de> serde::Deserialize<'de> for IndexId {
         D: Deserializer<'de>,
     {
         let id = String::deserialize(deserializer)?;
-
-        Ok(Self(id))
+        Self::try_from_string(id).map_err(Error::custom)
     }
 }
 

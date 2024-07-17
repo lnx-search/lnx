@@ -1349,6 +1349,7 @@ name = "lnx-rest"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "lnx-types",
  "poem",
  "poem-openapi",
  "serde",

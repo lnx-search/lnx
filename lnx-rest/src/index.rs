@@ -2,7 +2,7 @@ use poem_openapi::param::Path;
 use poem_openapi::payload::Json;
 use poem_openapi::{ApiResponse, Enum, Object, OpenApi};
 
-use crate::models::{ApiError, WrapSerde};
+use crate::models::{ApiError, WrappedIndexId};
 
 /// API routes for managing and handling indexes.
 pub struct IndexApiRoutes {}
@@ -18,7 +18,7 @@ impl IndexApiRoutes {
     /// See the
     async fn create_index(
         &self,
-        Path(index_id): Path<WrapSerde>,
+        Path(index_id): Path<WrappedIndexId>,
     ) -> Result<Json<CreateIndexData>, CreateIndexError> {
         todo!()
     }
@@ -37,7 +37,10 @@ impl IndexApiRoutes {
     /// NOTE:
     /// You forceful deletes **always** require 2 API requests, one to soft delete initially and a
     /// second to force the removal.
-    async fn delete_index(&self) -> Result<Json<DeleteIndexData>, DeleteIndexError> {
+    async fn delete_index(
+        &self,
+        Path(index_id): Path<WrappedIndexId>,
+    ) -> Result<Json<DeleteIndexData>, DeleteIndexError> {
         todo!()
     }
 
@@ -46,7 +49,10 @@ impl IndexApiRoutes {
     ///
     /// This `GET` method provides general information and metrics about the index and its current
     /// state within the system.
-    async fn inspect_index(&self) -> Result<Json<bool>, poem::Error> {
+    async fn inspect_index(
+        &self,
+        Path(index_id): Path<WrappedIndexId>,
+    ) -> Result<Json<bool>, poem::Error> {
         todo!()
     }
 }

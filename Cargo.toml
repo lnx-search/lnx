@@ -12,3 +12,15 @@ members = [
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+
+poem = { version = "3.0.1", features = ["anyhow"] }
+poem-openapi = { version = "5.0.2", features = ["redoc", "uuid"] }
+
+lnx-types = { version = "0.1", path = "lnx-types" }

@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::io;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
+use lnx_types::index_id::IndexId;
 use poem::http::StatusCode;
 use poem::Response;
 use poem_openapi::registry::{MetaResponses, MetaSchemaRef, Registry};
@@ -19,7 +21,7 @@ use serde_derive::Serialize;
 use serde_json::Value;
 
 /// An [IndexId] wrapper that can be deserialized by poem.
-pub type WrappedIndexId = WrapSerde<(), String>;
+pub type WrappedIndexId = WrapSerde<IndexId, String>;
 
 #[derive(Debug, thiserror::Error, Object, Serialize)]
 #[error("{message}")]
@@ -111,6 +113,21 @@ impl ApiResponse for ApiError {
 pub struct WrapSerde<T, O = T> {
     inner: T,
     phantom: PhantomData<O>,
+}
+
+impl<T, O> WrapSerde<T, O> {
+    /// Consumes the value returning the inner type.
+    pub fn into_inner(self) -> T {
+        self.inner
+    }
+}
+
+impl<T, O> Deref for WrapSerde<T, O> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl<T, O> Type for WrapSerde<T, O>
