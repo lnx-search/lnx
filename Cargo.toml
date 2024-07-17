@@ -1,9 +1,11 @@
 [workspace]
+resolver = "2"
 members = [
     "lnx-engine/engine",
     "lnx-engine/aexecutor",
     "lnx-engine/search-index",
     "lnx-server",
+    "lnx-rest", "lnx-types",
 ]
 
 [profile.release]
