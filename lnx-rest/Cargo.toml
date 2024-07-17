@@ -9,6 +9,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_derive = { workspace = true }
 serde_json = { workspace = true }
+ulid = { workspace = true }
 poem = { workspace = true }
 poem-openapi = { workspace = true }
 

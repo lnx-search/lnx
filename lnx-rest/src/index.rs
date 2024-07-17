@@ -1,8 +1,10 @@
+use lnx_types::index_id::IndexId;
 use poem_openapi::param::Path;
 use poem_openapi::payload::Json;
 use poem_openapi::{ApiResponse, Enum, Object, OpenApi};
+use ulid::Ulid;
 
-use crate::models::{ApiError, WrappedIndexId};
+use crate::models::{ApiError, WrapSerde};
 
 /// API routes for managing and handling indexes.
 pub struct IndexApiRoutes {}
@@ -18,7 +20,7 @@ impl IndexApiRoutes {
     /// See the
     async fn create_index(
         &self,
-        Path(index_id): Path<WrappedIndexId>,
+        Path(index_id): Path<IndexId>,
     ) -> Result<Json<CreateIndexData>, CreateIndexError> {
         todo!()
     }
@@ -39,7 +41,7 @@ impl IndexApiRoutes {
     /// second to force the removal.
     async fn delete_index(
         &self,
-        Path(index_id): Path<WrappedIndexId>,
+        Path(index_id): Path<IndexId>,
     ) -> Result<Json<DeleteIndexData>, DeleteIndexError> {
         todo!()
     }
@@ -51,7 +53,7 @@ impl IndexApiRoutes {
     /// state within the system.
     async fn inspect_index(
         &self,
-        Path(index_id): Path<WrappedIndexId>,
+        Path(index_id): Path<IndexId>,
     ) -> Result<Json<bool>, poem::Error> {
         todo!()
     }
@@ -100,6 +102,8 @@ pub struct DeleteIndexData {
     deletion_kind: DeletionKind,
     /// Can the index be recovered within the `index_recover_period` time period.
     is_recoverable: bool,
+    /// The unique ID generated in the operation log.
+    operation_id: WrapSerde<Ulid, String>,
 }
 
 #[derive(Enum)]

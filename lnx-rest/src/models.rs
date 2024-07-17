@@ -4,7 +4,6 @@ use std::io;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use lnx_types::index_id::IndexId;
 use poem::http::StatusCode;
 use poem::Response;
 use poem_openapi::registry::{MetaResponses, MetaSchemaRef, Registry};
@@ -19,9 +18,6 @@ use poem_openapi::types::{
 use poem_openapi::{ApiResponse, Object};
 use serde_derive::Serialize;
 use serde_json::Value;
-
-/// An [IndexId] wrapper that can be deserialized by poem.
-pub type WrappedIndexId = WrapSerde<IndexId, String>;
 
 #[derive(Debug, thiserror::Error, Object, Serialize)]
 #[error("{message}")]
@@ -164,15 +160,15 @@ where
 
 impl<T, O> ToJSON for WrapSerde<T, O>
 where
-    T: serde::Serialize + Send + Sync,
+    T: serde::Serialize + Send + Sync + Clone,
     O: Type,
 {
     fn to_json(&self) -> Option<Value> {
-        todo!()
+        Some(serde_json::to_value(self.inner.clone()).unwrap())
     }
 
     fn to_json_string(&self) -> String {
-        todo!()
+        serde_json::to_string(&self.inner).unwrap()
     }
 }
 
@@ -203,6 +199,7 @@ where
         })
     }
 }
+
 impl<T, O> ParseFromParameter for WrapSerde<T, O>
 where
     T: serde::de::DeserializeOwned + Send + Sync,
