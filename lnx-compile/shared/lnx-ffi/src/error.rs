@@ -1,97 +1,118 @@
-use std::ffi::CString;
+use std::ffi::{c_char, CStr, CString};
+use std::{mem, ptr};
 use std::fmt::{Debug, Display, Formatter};
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! short_circuit_error_ptr {
-    ($res:expr) => {{
-        match $res {
-            Ok(v) => v,
-            Err(e) => {                
-                let e = Box::new(e);
-                return Box::into_raw(e);
-            }
-        }
-    }};
-}
-
-
-#[repr(C)]
-#[derive(Debug, thiserror::Error)]
-#[error("{kind:?}: {message}")]
-/// An error that can occur from the document FFI api.
-pub struct DocumentError {
-    pub kind: ErrorKind,
-    message: AssumedSafeCString,
-}
-
-impl DocumentError {
-    /// Creates a new [DocumentError] with the given kind and display message.
-    pub fn new(kind: ErrorKind, message: impl Display) -> Self {
-        Self {
-            kind,
-            message: AssumedSafeCString::from(message.to_string()),
-        }
-    }
-}
-
 
 #[repr(C)]
 #[derive(Debug)]
-/// The kind of error that originated.
+/// An FFI safe [Result] type.
+pub enum FFIResult {
+    /// The function completed Ok.
+    Ok,
+    /// AN error occurred.
+    Err(DocumentError)
+}
+
+impl From<FFIResult> for Result<(), DocumentError> {
+    #[inline]
+    fn from(value: FFIResult) -> Self {
+        match value {
+            FFIResult::Err(e) => Err(e),
+            FFIResult::Ok => Ok(())
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+/// The kind of error that occurred.
 pub enum ErrorKind {
-    /// THe document is malformed.
-    Malformed,
-    /// The provided callback pointer is null.
-    CallbackIsNull,
-    /// The provided document pointer is null.
-    DocIsNull,
-    /// The provided buffer pointer is null.
-    BufferIsNull,
-    /// The document could not be serialized.
+    /// The document couldn't be serialized correctly.
     SerializeError,
-    /// The system failed to access the archived view of the document.
+    /// The document couldn't be deserialized.
+    DeserializeError,
+    /// The document couldn't be accessed via the Rkyv value.
     AccessError,
+    /// The callback pointer is null.
+    CallbackNull,
+    /// The buffer pointer is null.
+    BufferNull,
+    /// The document is null.
+    DocumentNull,
 }
 
+#[repr(C)]
+/// An FFI safe error that can occur.
+///
+/// When dropped, this error will deallocate the message.
+pub struct DocumentError {
+    kind: ErrorKind,
+    message: *mut c_char,
+}
 
-#[derive(Default)]
-#[repr(transparent)]
-/// A wrapper type that internally knows the CString 
-/// is safely UTF-8. This is just for interop.
-struct AssumedSafeCString(CString);
+impl DocumentError {
+    /// Creates a new [DocumentError] with the given kind and message.
+    pub fn new(kind: ErrorKind, message: impl Display) -> Self {
+        let msg = CString::new(message.to_string())
+            .expect("Message cannot contain nul terminator");
+        Self {
+            kind,
+            message: msg.into_raw(),
+        }
+    }
 
-impl AssumedSafeCString {
-    fn as_str(&self) -> &str {
-        let inner = self.0.as_bytes();
-        unsafe { std::str::from_utf8_unchecked(inner) }
+    #[inline]
+    /// Returns the kind of error.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    #[inline]
+    /// Returns the message of the error if provided.
+    pub fn message(&self) -> Option<&str> {
+        if self.message.is_null() {
+            return None;
+        }
+
+        unsafe {
+            let msg = CStr::from_ptr(self.message);
+            msg.to_str().ok()
+        }
     }
 }
 
-impl Display for AssumedSafeCString {
+impl Drop for DocumentError {
+    fn drop(&mut self) {
+        if !self.message.is_null() {
+            let ptr = mem::replace(&mut self.message, ptr::null_mut());
+            unsafe { CString::from_raw(ptr) };
+        }
+    }
+}
+
+impl Display for DocumentError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        <str as Display>::fmt(self.as_str(), f)
+        if let Some(msg) = self.message() {
+            write!(f, "{:?}: {msg}", self.kind)
+        } else {
+            write!(f, "{:?}", self.kind)
+        }
     }
 }
 
-impl Debug for AssumedSafeCString {
+impl Debug for DocumentError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        <str as Debug>::fmt(self.as_str(), f)
+        f.debug_struct("DocumentError")
+            .field("kind", &self.kind)
+            .field("message", &self.message())
+            .finish()
     }
 }
 
-impl From<&str> for AssumedSafeCString {
-    fn from(value: &str) -> Self {
-        let inner = CString::new(value)
-            .expect("String should not contain null terminator within it");
-        Self(inner)
-    }
-}
-
-impl From<String> for AssumedSafeCString {
-    fn from(value: String) -> Self {
-        let inner = CString::new(value)
-            .expect("String should not contain null terminator within it");
-        Self(inner)
+impl From<ErrorKind> for DocumentError {
+    fn from(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            message: ptr::null_mut(),
+        }
     }
 }
