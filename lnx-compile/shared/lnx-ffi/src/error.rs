@@ -5,19 +5,19 @@ use std::fmt::{Debug, Display, Formatter};
 #[repr(C)]
 #[derive(Debug)]
 /// An FFI safe [Result] type.
-pub enum FFIResult {
+pub enum FFIResult<T> {
     /// The function completed Ok.
-    Ok,
+    Ok(T),
     /// AN error occurred.
     Err(DocumentError)
 }
 
-impl From<FFIResult> for Result<(), DocumentError> {
+impl<T> From<FFIResult<T>> for Result<T, DocumentError> {
     #[inline]
-    fn from(value: FFIResult) -> Self {
+    fn from(value: FFIResult<T>) -> Self {
         match value {
             FFIResult::Err(e) => Err(e),
-            FFIResult::Ok => Ok(())
+            FFIResult::Ok(v) => Ok(v)
         }
     }
 }
@@ -47,6 +47,7 @@ pub enum ErrorKind {
 pub struct DocumentError {
     kind: ErrorKind,
     message: *mut c_char,
+    drop_cb: extern "C" fn(*mut c_char),
 }
 
 impl DocumentError {
@@ -57,6 +58,7 @@ impl DocumentError {
         Self {
             kind,
             message: msg.into_raw(),
+            drop_cb: drop_error,
         }
     }
 
@@ -113,6 +115,18 @@ impl From<ErrorKind> for DocumentError {
         Self {
             kind,
             message: ptr::null_mut(),
+            drop_cb: drop_error,
         }
+    }
+}
+
+#[no_mangle]
+extern "C" fn drop_error(ptr: *mut c_char) {
+    if ptr.is_null() {
+        return;
+    }
+    
+    unsafe {
+        let _ = CString::from_raw(ptr);
     }
 }
