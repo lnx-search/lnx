@@ -1,13 +1,38 @@
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! short_circuit_error_ptr {
+    ($res:expr) => {{
+        match $res {
+            Ok(v) => v,
+            Err(e) => {                
+                let e = Box::new(e);
+                return Box::into_raw(e);
+            }
+        }
+    }};
+}
+
+
 #[repr(C)]
 #[derive(Debug, thiserror::Error)]
 #[error("{kind:?}: {message}")]
 /// An error that can occur from the document FFI api.
 pub struct DocumentError {
-    kind: ErrorKind,
+    pub kind: ErrorKind,
     message: AssumedSafeCString,
+}
+
+impl DocumentError {
+    /// Creates a new [DocumentError] with the given kind and display message.
+    pub fn new(kind: ErrorKind, message: impl Display) -> Self {
+        Self {
+            kind,
+            message: AssumedSafeCString::from(message.to_string()),
+        }
+    }
 }
 
 
@@ -17,9 +42,20 @@ pub struct DocumentError {
 pub enum ErrorKind {
     /// THe document is malformed.
     Malformed,
+    /// The provided callback pointer is null.
+    CallbackIsNull,
+    /// The provided document pointer is null.
+    DocIsNull,
+    /// The provided buffer pointer is null.
+    BufferIsNull,
+    /// The document could not be serialized.
+    SerializeError,
+    /// The system failed to access the archived view of the document.
+    AccessError,
 }
 
 
+#[derive(Default)]
 #[repr(transparent)]
 /// A wrapper type that internally knows the CString 
 /// is safely UTF-8. This is just for interop.

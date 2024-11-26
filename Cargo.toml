@@ -12,6 +12,7 @@ members = [
     "lnx-query",
     "lnx-server",
     "lnx-shell",
+    "lnx-compile/compilation-demo"
 ]
 
 [profile.release]
