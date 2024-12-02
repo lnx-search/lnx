@@ -33,13 +33,17 @@ impl Drop for FFISafeBuffer {
 }
 
 impl From<Vec<u8>> for FFISafeBuffer {
-    fn from(mut value: Vec<u8>) -> Self {        
-        Self {
+    fn from(mut value: Vec<u8>) -> Self {       
+        let slf = Self {
             data: value.as_mut_ptr(),
             length: value.len(),
             capacity: value.len(),
             drop_cb: drop_buffer,
-        }
+        };
+        
+        mem::forget(value);
+
+        slf
     }
 }
 
