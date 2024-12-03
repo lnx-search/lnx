@@ -1,0 +1,18 @@
+[package]
+name = "lnx-doc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rkyv = { workspace = true }
+ahash = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_derive = { workspace = true }
+cityhasher = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+zstd = "0.13.2"
+humansize = "2.1.3"
