@@ -5,3 +5,4 @@ lnx-engine/search-index/index
 /meta
 /index/
 /scripts/
+**/datasets/

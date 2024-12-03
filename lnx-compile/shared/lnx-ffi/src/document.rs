@@ -1,6 +1,0 @@
-
-
-
-pub trait Parseable {
-    
-}

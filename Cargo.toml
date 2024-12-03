@@ -1,18 +1,13 @@
 [workspace]
 resolver = "2"
-exclude = [
-    "lnx-compile/lnx-build-core",
-    "lnx-compile/lnx-ffi"
-]
 members = [
     "lnx",
     "lnx-common",
-    "lnx-compile",
     "lnx-fs",
     "lnx-query",
     "lnx-server",
     "lnx-shell",
-    "lnx-compile/compilation-demo"
+    "lnx-doc"
 ]
 
 [profile.release]
@@ -59,4 +54,4 @@ opendal = { version = "0.50.2", default-features = false }
 zstd = { version = "0.13.2", features = ["fat-lto"] }
 rend = { version = "0.5.2", features = ["bytemuck-1"] }
 rkyv = { version = "0.8.8", features = ["little_endian", "pointer_width_32"] }
-chrono = { version = "0.4.38", features = ["rkyv-64", "rkyv-validation"] }
+chrono = { version = "0.4.38" }

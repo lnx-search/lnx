@@ -1,8 +1,0 @@
-[package]
-name = "lnx-ffi"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rkyv = { workspace = true }
-thiserror = { workspace = true }
