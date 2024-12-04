@@ -381,6 +381,7 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for CowBytesAccess<'a> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use super::*;
     
     static RAW_JSON: &str = r#"
@@ -433,5 +434,72 @@ mod tests {
         check_value!(document, "array_field", true, BorrowedValue::Array(_));
         check_value!(document, "object_field", true, BorrowedValue::Object(_));
         check_value!(document, "owned \"keyed\" field", false, BorrowedValue::Str(Cow::Borrowed("demo")));
+    }
+    
+    #[derive(serde_derive::Serialize)]
+    struct MsgpackSampleStruct {
+        u64_field: u64,
+        u32_field: u32,
+        u16_field: u16,
+        u8_field:  u8,
+        i64_field: i64,
+        i32_field: i32,
+        i16_field: i16,
+        i8_field:  i8,
+        f64_field: f64,
+        f32_field: f32,
+        bool_field: bool,
+        null_field: Option<()>,
+        str_field: String,
+        array_field: Vec<bool>,
+        object_field: serde_json::Value,
+        #[serde(rename = "owned \"keyed\" field")]
+        borrowed_escaped_field: String,
+    }
+    
+    #[test]
+    fn test_msgpack_deserialization() {
+        let sample = MsgpackSampleStruct {
+            u64_field: 3453454342345,
+            u32_field: 124232,
+            u16_field: 4234,
+            u8_field: 123,
+            i64_field: -3453454342345,
+            i32_field: -124232,
+            i16_field: -4234,
+            i8_field: -123,
+            f64_field: 12.3,
+            f32_field: 12.3,
+            bool_field: true,
+            null_field: None,
+            str_field: "demo \"text\" here".to_string(),
+            array_field: vec![false, true],
+            object_field: json!({
+                "more": {
+                    "nesting": "bar",
+                    "baz": [1, 2, 3]
+                }
+            }),
+            borrowed_escaped_field: "foo".to_string(),
+        };
+        
+        let data = rmp_serde::to_vec_named(&sample).unwrap();
+        let mut document: BorrowedDocument = rmp_serde::from_slice(&data).unwrap();
+        check_value!(document, "u64_field", true, BorrowedValue::U64(3453454342345));
+        check_value!(document, "u32_field", true, BorrowedValue::U32(124232));
+        check_value!(document, "u16_field", true, BorrowedValue::U16(4234));
+        check_value!(document, "u8_field", true, BorrowedValue::U8(123));
+        check_value!(document, "i64_field", true, BorrowedValue::I64(-3453454342345));
+        check_value!(document, "i32_field", true, BorrowedValue::I32(-124232));
+        check_value!(document, "i16_field", true, BorrowedValue::I16(-4234));
+        check_value!(document, "i8_field", true, BorrowedValue::I8(-123));
+        check_value!(document, "f64_field", true, BorrowedValue::F64(12.3));
+        check_value!(document, "f32_field", true, BorrowedValue::F32(12.3));
+        check_value!(document, "str_field", true, BorrowedValue::Str(Cow::Borrowed("demo \"text\" here")));
+        check_value!(document, "bool_field", true, BorrowedValue::Bool(true));
+        check_value!(document, "null_field", true, BorrowedValue::Null);
+        check_value!(document, "array_field", true, BorrowedValue::Array(_));
+        check_value!(document, "object_field", true, BorrowedValue::Object(_));
+        check_value!(document, "owned \"keyed\" field", true, BorrowedValue::Str(Cow::Borrowed("foo")));
     }
 }
