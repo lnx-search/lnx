@@ -8,7 +8,7 @@ members = [
     "lnx-server",
     "lnx-shell",
     "lnx-doc"
-]
+, "lnx-tantivy"]
 
 [profile.release]
 lto = "fat"
@@ -48,10 +48,9 @@ poem = { version = "3.1", features = ["anyhow"] }
 poem-openapi = { version = "5.1", features = ["redoc", "url", "humantime"] }
 url = { version = "2.5", features = ["serde"] }
 sqlparser = { version = "0.52.0", features = ["sqlparser_derive"] }
-tantivy = { version = "0.22.0", default-features = false, features = ["zstd", "mmap"] }
+tantivy = { git = "https://github.com/ChillFish8/tantivy.git", branch = "expose-segment-add-op", default-features = false }
 sqlx = { version = "0.8.2", default-features = false, features = ["sqlite", "macros", "runtime-tokio"] }
 opendal = { version = "0.50.2", default-features = false }
-zstd = { version = "0.13.2", features = ["fat-lto"] }
 rend = { version = "0.5.2", features = ["bytemuck-1"] }
 rkyv = { version = "0.8.8", features = ["little_endian", "pointer_width_32"] }
 chrono = { version = "0.4.38" }

@@ -1,0 +1,12 @@
+[package]
+name = "lnx-tantivy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = { workspace = true }
+tantivy = { workspace = true }
+tracing = { workspace = true }
+
+lnx-doc = { path = "../lnx-doc" }
+lnx-fs = { path = "../lnx-fs" }
