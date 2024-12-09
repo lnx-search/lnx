@@ -1,4 +1,5 @@
 use std::fmt::Formatter;
+
 use serde::de::Error;
 use serde::Deserializer;
 
@@ -67,20 +68,24 @@ impl<'de> serde::de::Visitor<'de> for FieldIdVisitor {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
     use super::*;
-    
+
     #[test]
     fn test_field_id_str_ok() {
         let sample = json!("example_field");
         let field_id: FieldId = serde_json::from_value(sample).unwrap();
         assert_eq!(field_id, FieldId(9420560873118935924));
     }
-    
+
     #[test]
     fn test_field_id_invalid_type() {
         let sample = json!(12431);
         let err = serde_json::from_value::<FieldId>(sample)
             .expect_err("FieldId should not support deserializing integer");
-        assert_eq!(err.to_string(), "invalid type: integer `12431`, expected A string value");
+        assert_eq!(
+            err.to_string(),
+            "invalid type: integer `12431`, expected A string value"
+        );
     }
 }

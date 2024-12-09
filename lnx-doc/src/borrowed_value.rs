@@ -3,14 +3,14 @@ use std::fmt::Formatter;
 use std::marker::PhantomData;
 
 use ahash::HashMapExt;
-use serde::de::{Error, MapAccess, SeqAccess};
 use serde::de::value::SeqAccessDeserializer;
+use serde::de::{Error, MapAccess, SeqAccess};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Debug, Clone)]
 /// A document object which tries to use as much borrowed data as possible
 /// for initial processing (before type checking and conversion.)
-/// 
+///
 /// This document allows for partial borrowing of both document keys
 /// *and* values if available which can significantly improve the deserializing performance
 /// of things like JSON objects.
@@ -32,7 +32,10 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for DocumentVisitor<'a> {
 
     #[inline]
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "A map object with JSON-like values and string keys")
+        write!(
+            formatter,
+            "A map object with JSON-like values and string keys"
+        )
     }
 
     #[inline]
@@ -43,12 +46,11 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for DocumentVisitor<'a> {
         let mut object = ahash::HashMap::with_capacity(map.size_hint().unwrap_or(1));
         while let Some((k, v)) = map.next_entry()? {
             let key: CowStrWrapper = k;
-            object.insert(key.0, v);            
-        }        
+            object.insert(key.0, v);
+        }
         Ok(BorrowedDocument(object))
     }
 }
-
 
 #[derive(Debug, Clone)]
 /// A JSON-like object that can be used for deserializing incoming payloads
@@ -85,13 +87,13 @@ pub enum BorrowedValue<'a> {
     /// An array of dynamic objects.
     Array(Vec<BorrowedValue<'a>>),
     /// A nested dynamic object.
-    Object(Vec<(Cow<'a, str>, BorrowedValue<'a>)>)
+    Object(Vec<(Cow<'a, str>, BorrowedValue<'a>)>),
 }
 
 impl<'a, 'de: 'a> serde::de::Deserialize<'de> for BorrowedValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>
+        D: Deserializer<'de>,
     {
         deserializer.deserialize_any(ValueVisitor(PhantomData))
     }
@@ -179,7 +181,6 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for ValueVisitor<'a> {
         Ok(BorrowedValue::U64(v))
     }
 
-
     #[inline]
     fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E>
     where
@@ -187,7 +188,6 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for ValueVisitor<'a> {
     {
         Ok(BorrowedValue::F32(v))
     }
-
 
     #[inline]
     fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
@@ -283,7 +283,6 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for ValueVisitor<'a> {
         Ok(BorrowedValue::Object(object))
     }
 }
-
 
 struct CowStrWrapper<'a>(Cow<'a, str>);
 impl<'a, 'de: 'a> serde::de::Deserialize<'de> for CowStrWrapper<'a> {
@@ -382,8 +381,9 @@ impl<'a, 'de: 'a> serde::de::Visitor<'de> for CowBytesAccess<'a> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
     use super::*;
-    
+
     static RAW_JSON: &str = r#"
     {
         "u64_field": 123,
@@ -407,45 +407,72 @@ mod tests {
         "owned \"keyed\" field": "demo"
     }
     "#;
-    
+
     macro_rules! check_value {
         ($document:ident, $key:expr, $key_borrowed:expr, $expected_value:pat) => {{
-            let (key, value) = $document.0.remove_entry(&Cow::Borrowed($key)).expect("Entry should exist");
-            
+            let (key, value) = $document
+                .0
+                .remove_entry(&Cow::Borrowed($key))
+                .expect("Entry should exist");
+
             let is_borrowed = match key {
                 Cow::Owned(_) => false,
                 Cow::Borrowed(_) => true,
             };
-            assert_eq!(is_borrowed, $key_borrowed, "Field name should be borrowed={}", $key_borrowed);
-            assert!(matches!(value, $expected_value), "Field ({:?}) value should be {} got {value:?}", $key, stringify!($expected_value));            
+            assert_eq!(
+                is_borrowed, $key_borrowed,
+                "Field name should be borrowed={}",
+                $key_borrowed
+            );
+            assert!(
+                matches!(value, $expected_value),
+                "Field ({:?}) value should be {} got {value:?}",
+                $key,
+                stringify!($expected_value)
+            );
         }};
     }
-    
+
     #[test]
     fn test_json_deserialization() {
         let mut document: BorrowedDocument = serde_json::from_str(RAW_JSON).unwrap();
         check_value!(document, "u64_field", true, BorrowedValue::U64(123));
         check_value!(document, "i64_field", true, BorrowedValue::I64(-1234));
         check_value!(document, "f64_field", true, BorrowedValue::F64(12.345));
-        check_value!(document, "str_borrowed_field", true, BorrowedValue::Str(Cow::Borrowed("foo")));
-        check_value!(document, "str_owned_field", true, BorrowedValue::Str(Cow::Owned(_)));
+        check_value!(
+            document,
+            "str_borrowed_field",
+            true,
+            BorrowedValue::Str(Cow::Borrowed("foo"))
+        );
+        check_value!(
+            document,
+            "str_owned_field",
+            true,
+            BorrowedValue::Str(Cow::Owned(_))
+        );
         check_value!(document, "bool_field", true, BorrowedValue::Bool(true));
         check_value!(document, "null_field", true, BorrowedValue::Null);
         check_value!(document, "array_field", true, BorrowedValue::Array(_));
         check_value!(document, "object_field", true, BorrowedValue::Object(_));
-        check_value!(document, "owned \"keyed\" field", false, BorrowedValue::Str(Cow::Borrowed("demo")));
+        check_value!(
+            document,
+            "owned \"keyed\" field",
+            false,
+            BorrowedValue::Str(Cow::Borrowed("demo"))
+        );
     }
-    
+
     #[derive(serde_derive::Serialize)]
     struct MsgpackSampleStruct {
         u64_field: u64,
         u32_field: u32,
         u16_field: u16,
-        u8_field:  u8,
+        u8_field: u8,
         i64_field: i64,
         i32_field: i32,
         i16_field: i16,
-        i8_field:  i8,
+        i8_field: i8,
         f64_field: f64,
         f32_field: f32,
         bool_field: bool,
@@ -456,7 +483,7 @@ mod tests {
         #[serde(rename = "owned \"keyed\" field")]
         borrowed_escaped_field: String,
     }
-    
+
     #[test]
     fn test_msgpack_deserialization() {
         let sample = MsgpackSampleStruct {
@@ -482,24 +509,44 @@ mod tests {
             }),
             borrowed_escaped_field: "foo".to_string(),
         };
-        
+
         let data = rmp_serde::to_vec_named(&sample).unwrap();
         let mut document: BorrowedDocument = rmp_serde::from_slice(&data).unwrap();
-        check_value!(document, "u64_field", true, BorrowedValue::U64(3453454342345));
+        check_value!(
+            document,
+            "u64_field",
+            true,
+            BorrowedValue::U64(3453454342345)
+        );
         check_value!(document, "u32_field", true, BorrowedValue::U32(124232));
         check_value!(document, "u16_field", true, BorrowedValue::U16(4234));
         check_value!(document, "u8_field", true, BorrowedValue::U8(123));
-        check_value!(document, "i64_field", true, BorrowedValue::I64(-3453454342345));
+        check_value!(
+            document,
+            "i64_field",
+            true,
+            BorrowedValue::I64(-3453454342345)
+        );
         check_value!(document, "i32_field", true, BorrowedValue::I32(-124232));
         check_value!(document, "i16_field", true, BorrowedValue::I16(-4234));
         check_value!(document, "i8_field", true, BorrowedValue::I8(-123));
         check_value!(document, "f64_field", true, BorrowedValue::F64(12.3));
         check_value!(document, "f32_field", true, BorrowedValue::F32(12.3));
-        check_value!(document, "str_field", true, BorrowedValue::Str(Cow::Borrowed("demo \"text\" here")));
+        check_value!(
+            document,
+            "str_field",
+            true,
+            BorrowedValue::Str(Cow::Borrowed("demo \"text\" here"))
+        );
         check_value!(document, "bool_field", true, BorrowedValue::Bool(true));
         check_value!(document, "null_field", true, BorrowedValue::Null);
         check_value!(document, "array_field", true, BorrowedValue::Array(_));
         check_value!(document, "object_field", true, BorrowedValue::Object(_));
-        check_value!(document, "owned \"keyed\" field", true, BorrowedValue::Str(Cow::Borrowed("foo")));
+        check_value!(
+            document,
+            "owned \"keyed\" field",
+            true,
+            BorrowedValue::Str(Cow::Borrowed("foo"))
+        );
     }
 }

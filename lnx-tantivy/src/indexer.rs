@@ -1,9 +1,9 @@
 use tantivy::directory::{FileSlice, RamDirectory};
-use tantivy::indexer::SegmentWriter;
-use tantivy::{Index, IndexSettings, Opstamp, Segment};
 use tantivy::index::{SegmentComponent, SegmentId};
 use tantivy::indexer::operation::AddOperation;
+use tantivy::indexer::SegmentWriter;
 use tantivy::store::Compressor;
+use tantivy::{Index, IndexSettings, Opstamp, Segment};
 use tracing::{info, instrument};
 
 /// The memory budget isn't actually used since the directory itself is in memory,
@@ -32,7 +32,7 @@ impl SingleSegmentIndexer {
     /// Creates a new [SingleSegmentIndexer] with the given tantivy schema.
     pub fn new(schema: tantivy::schema::Schema) -> Self {
         let settings = IndexSettings {
-            docstore_compression: Compressor::None,  // Compression is handled externally.
+            docstore_compression: Compressor::None, // Compression is handled externally.
             docstore_compress_dedicated_thread: false,
             // Smaller blocks because we bypass tantivy's internal cache and the lower
             // block size increases our external cache granularity and efficiency.
@@ -40,15 +40,13 @@ impl SingleSegmentIndexer {
         };
 
         let directory = RamDirectory::create();
-        let index = Index::create(
-            directory.clone(),
-            schema,
-            settings,
-        ).expect("Index created with memory directory shouldn't error");
+        let index = Index::create(directory.clone(), schema, settings)
+            .expect("Index created with memory directory shouldn't error");
 
         let segment = index.new_segment();
-        let segment_writer = SegmentWriter::for_segment(PSEUDO_MEMORY_BUDGET, segment.clone())
-            .expect("Segment created with memory directory shouldn't error");
+        let segment_writer =
+            SegmentWriter::for_segment(PSEUDO_MEMORY_BUDGET, segment.clone())
+                .expect("Segment created with memory directory shouldn't error");
 
         Self {
             index,
@@ -60,7 +58,10 @@ impl SingleSegmentIndexer {
     }
 
     /// Adds and indexes a new document for the given segment.
-    pub fn add_document(&mut self, doc: tantivy::TantivyDocument) -> tantivy::Result<()> {
+    pub fn add_document(
+        &mut self,
+        doc: tantivy::TantivyDocument,
+    ) -> tantivy::Result<()> {
         self.opstamp += 1;
         let op = AddOperation {
             opstamp: self.opstamp,
@@ -83,7 +84,7 @@ impl SingleSegmentIndexer {
     /// - Positions
     pub fn finish(self) -> tantivy::Result<SegmentMemory> {
         info!(
-            segment_memory_usage_bytes = self.segment_writer.mem_usage(), 
+            segment_memory_usage_bytes = self.segment_writer.mem_usage(),
             num_docs = self.segment_writer.num_docs(),
             "indexing segment finalising",
         );
@@ -125,33 +126,45 @@ pub struct SegmentMemory {
 
 impl SegmentMemory {
     /// Writes the segment memory to the given [lnx_fs::Bucket].
-    pub async fn write_to(self, bucket: &lnx_fs::Bucket) -> Result<()> {
+    pub async fn write_to(
+        self,
+        bucket: &lnx_fs::Bucket,
+    ) -> Result<(), lnx_fs::FileSystemError> {
         // TODO: This needs to have bulk writes added to the bucket
         todo!()
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use tantivy::doc;
-    use tantivy::schema::{IndexRecordOption, Schema, TextFieldIndexing, TextOptions, FAST, INDEXED, STORED};
+    use tantivy::schema::{
+        IndexRecordOption,
+        Schema,
+        TextFieldIndexing,
+        TextOptions,
+        FAST,
+        INDEXED,
+        STORED,
+    };
+
     use super::*;
-    
+
     #[test]
     fn test_add_document_basic() {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field(
-            "text_demo", 
-            TextOptions::default()
-                .set_indexing_options(TextFieldIndexing::default().set_fieldnorms(false))
+            "text_demo",
+            TextOptions::default().set_indexing_options(
+                TextFieldIndexing::default().set_fieldnorms(false),
+            ),
         );
         let schema = schema_builder.build();
-        
+
         let doc = doc!(
             text_field => "Example text with the document here"
         );
-        
+
         let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
@@ -164,7 +177,7 @@ mod tests {
             "text_demo",
             TextOptions::default()
                 .set_stored()
-                .set_indexing_options(TextFieldIndexing::default().set_fieldnorms(true))
+                .set_indexing_options(TextFieldIndexing::default().set_fieldnorms(true)),
         );
         let schema = schema_builder.build();
 
@@ -197,13 +210,11 @@ mod tests {
         let mut schema_builder = Schema::builder();
         let text_field = schema_builder.add_text_field(
             "text_demo",
-            TextOptions::default()
-                .set_stored()
-                .set_indexing_options(
-                    TextFieldIndexing::default()
-                        .set_fieldnorms(true)
-                        .set_index_option(IndexRecordOption::Basic)
-                )
+            TextOptions::default().set_stored().set_indexing_options(
+                TextFieldIndexing::default()
+                    .set_fieldnorms(true)
+                    .set_index_option(IndexRecordOption::Basic),
+            ),
         );
         let schema = schema_builder.build();
 

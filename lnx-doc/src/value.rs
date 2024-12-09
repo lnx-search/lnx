@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::net::IpAddr;
 
-
-use serde::de::{Error, MapAccess, SeqAccess};
 use serde::de::value::{MapAccessDeserializer, SeqAccessDeserializer};
+use serde::de::{Error, MapAccess, SeqAccess};
 use serde::{Deserialize, Deserializer};
+
 use crate::field_id::FieldId;
 
 #[derive(
@@ -48,15 +48,9 @@ pub enum Value {
     /// A datetime which is set to a UTC timezone.
     DateTime(i64),
     /// A `str` value.
-    Str(
-        #[rkyv(with = rkyv::with::AsBox)]
-        String
-    ),
+    Str(#[rkyv(with = rkyv::with::AsBox)] String),
     /// A `bytes` value.
-    Bytes(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<u8>,
-    ),
+    Bytes(#[rkyv(with = rkyv::with::AsBox)] Vec<u8>),
     /// An array of [Value]s.
     Array(Array),
     /// An map of [Value]s.
@@ -79,7 +73,10 @@ impl<'de> serde::de::Visitor<'de> for ValueVisitor {
 
     #[inline]
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "A JSON-like object with additional support for bytes or IP addresses.")
+        write!(
+            formatter,
+            "A JSON-like object with additional support for bytes or IP addresses."
+        )
     }
 
     #[inline]
@@ -205,56 +202,32 @@ impl<'de> serde::de::Visitor<'de> for ValueVisitor {
 /// An array of one specific supported type.
 pub enum Array {
     /// An array of bools
-    Bool(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<bool>
-    ),
+    Bool(#[rkyv(with = rkyv::with::AsBox)] Vec<bool>),
     /// An array of i64s
-    I64(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<i64>
-    ),
+    I64(#[rkyv(with = rkyv::with::AsBox)] Vec<i64>),
     /// And array of u64s
-    U64(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<u64>
-    ),
+    U64(#[rkyv(with = rkyv::with::AsBox)] Vec<u64>),
     /// An array of floats.
-    F64(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<f64>
-    ),
+    F64(#[rkyv(with = rkyv::with::AsBox)] Vec<f64>),
     /// An array of Ips.
-    Ip(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<IpAddr>
-    ),
+    Ip(#[rkyv(with = rkyv::with::AsBox)] Vec<IpAddr>),
     /// An array of datetimes.
-    Datetime(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<i64>
-    ),
+    Datetime(#[rkyv(with = rkyv::with::AsBox)] Vec<i64>),
     /// An array of strings.
-    Str(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<Box<str>>
-    ),
+    Str(#[rkyv(with = rkyv::with::AsBox)] Vec<Box<str>>),
     /// An array of byte arrays.
-    Bytes(
-        #[rkyv(with = rkyv::with::AsBox)]
-        Vec<Box<[u8]>>
-    ),
+    Bytes(#[rkyv(with = rkyv::with::AsBox)] Vec<Box<[u8]>>),
     #[allow(clippy::enum_variant_names)]
     /// An array of arrays.
     Array(
         #[rkyv(omit_bounds)]
         #[rkyv(with = rkyv::with::AsBox)]
-        Vec<Array>
+        Vec<Array>,
     ),
     /// An array of objects.
     Object(
         #[rkyv(omit_bounds)]
         #[rkyv(with = rkyv::with::AsBox)]
-        Vec<HashMap<FieldId, Value, ahash::RandomState>>
+        Vec<HashMap<FieldId, Value, ahash::RandomState>>,
     ),
 }
