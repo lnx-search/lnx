@@ -214,6 +214,24 @@ impl Bucket {
         self.paths.base_path.as_path()
     }
 
+    #[instrument(skip(self))]
+    /// Begins a new bulk operation transaction.
+    ///
+    /// All operations applied via the [BulkBucketTx] will be all-or-nothing,
+    /// meaning either all the operations go through or none of them do.
+    ///
+    /// Be aware that data is still written to disk and the atomic handling
+    /// of operations is done via the metastore. Data which then gets left behind
+    /// after a rollback will be cleaned up eventually by the bucket GC.
+    pub async fn begin_tx(&self) -> Result<BulkBucketTx<'_>, FileSystemError> {
+        let metastore = self.metastore.begin_bulk().await?;
+        Ok(BulkBucketTx {
+            metastore,
+            bucket: self,
+            num_ops_pending: 0,
+        })
+    }
+
     #[instrument(skip(self, body))]
     /// Write a blob body stream to the store with the given path.
     ///
@@ -291,6 +309,21 @@ impl Bucket {
     }
 
     #[instrument(skip(self))]
+    /// Rename a file from one name to another name.
+    ///
+    /// This will overwrite any existing file implicitly.
+    pub async fn rename(
+        &self,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<(), FileSystemError> {
+        let mut bulk = self.metastore.begin_bulk().await?;
+        bulk.rename_file(from_path, to_path).await?;
+        bulk.commit().await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
@@ -360,12 +393,13 @@ impl Bucket {
 /// That being said, it is important to note _data is still written to disk_, it is just
 /// not committed in the metastore and the now written data will eventually be cleaned
 /// up by the bucket's GC system.
-pub struct BulkBucketOp<'bucket> {
+pub struct BulkBucketTx<'bucket> {
     metastore: BulkMetastoreModifyOperation<'bucket>,
     bucket: &'bucket Bucket,
+    num_ops_pending: usize,
 }
 
-impl<'bucket> BulkBucketOp<'bucket> {
+impl<'bucket> BulkBucketTx<'bucket> {
     #[instrument("bulk_write", skip(self, body))]
     /// Write a blob body stream to the store with the given path.
     ///
@@ -396,6 +430,22 @@ impl<'bucket> BulkBucketOp<'bucket> {
         self.metastore.add_file(url, metadata).await?;
         trace!("Metadata updated");
 
+        self.num_ops_pending += 1;
+
+        Ok(())
+    }
+
+    #[instrument("bulk_rename", skip(self))]
+    /// Rename a file from one name to another name.
+    ///
+    /// This will overwrite any existing file implicitly.
+    pub async fn rename(
+        &mut self,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<(), FileSystemError> {
+        self.metastore.rename_file(from_path, to_path).await?;
+        self.num_ops_pending += 1;
         Ok(())
     }
 
@@ -405,6 +455,30 @@ impl<'bucket> BulkBucketOp<'bucket> {
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
         self.metastore.remove_file(path).await?;
+        self.num_ops_pending += 1;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    /// Commits all currently pending bucket operations.
+    pub async fn commit(self) -> Result<(), FileSystemError> {
+        if self.num_ops_pending == 0 {
+            return Ok(());
+        }
+        self.metastore.commit().await?;
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    /// Explicitly rollback all currently pending operations.
+    ///
+    /// This is implicitly ran if the operation is dropped before
+    /// either `rollback` or `commit` is explicitly called.
+    pub async fn rollback(self) -> Result<(), FileSystemError> {
+        if self.num_ops_pending == 0 {
+            return Ok(());
+        }
+        self.metastore.rollback().await?;
         Ok(())
     }
 }
@@ -648,6 +722,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_bucket_rename_file() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let body = Body::complete(Bytes::from_static(b"Hello, World!"));
+        bucket.write("example.txt", body).await.expect("Write file");
+
+        let files = bucket.list_all_files().await.expect("List files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "example.txt");
+
+        bucket
+            .rename("example.txt", "example2.bar")
+            .await
+            .expect("rename file");
+
+        let files = bucket.list_all_files().await.expect("List files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "example2.bar");
+    }
+
+    #[tokio::test]
     async fn test_get_metadata() {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();
         let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
@@ -718,5 +825,142 @@ mod tests {
         assert_eq!(files.len(), 2);
         let files = bucket.list_files_with_ext("bar").await.expect("List files");
         assert_eq!(files.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_bucket_bulk_write_file() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        bulk.write(
+            "example1.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 1!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.write(
+            "example2.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 2!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.write(
+            "example3.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 3!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.commit().await.expect("Commit operation");
+
+        let files = bucket.list_all_files().await.expect("List files");
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].0, "example1.txt");
+        assert_eq!(files[1].0, "example2.txt");
+        assert_eq!(files[2].0, "example3.txt");
+    }
+
+    #[tokio::test]
+    async fn test_bucket_bulk_rename_file() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        bulk.write(
+            "example1.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 1!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.write(
+            "example2.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 2!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.write(
+            "example3.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 3!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.commit().await.expect("Commit operation");
+
+        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        bulk.rename("example1.txt", "example4.txt")
+            .await
+            .expect("Rename file");
+        bulk.rename("example2.txt", "example5.txt")
+            .await
+            .expect("Rename file");
+        bulk.delete("example4.txt").await.expect("Del file");
+        bulk.commit().await.expect("Commit operation");
+
+        let files = bucket.list_all_files().await.expect("List files");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "example5.txt");
+        assert_eq!(files[1].0, "example3.txt");
+    }
+
+    #[tokio::test]
+    async fn test_bucket_transaction_isolation() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        bulk.write(
+            "example1.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 1!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.commit().await.expect("Commit operation");
+
+        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        bulk.write(
+            "example2.txt",
+            Body::complete(Bytes::from_static(b"Hello, World 2!")),
+        )
+        .await
+        .expect("Write file");
+        bulk.delete("example1.txt").await.expect("Del file");
+        bulk.rollback().await.expect("Rollback operation");
+
+        let files = bucket.list_all_files().await.expect("List files");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "example1.txt");
     }
 }

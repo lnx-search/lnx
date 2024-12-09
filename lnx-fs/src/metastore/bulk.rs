@@ -1,5 +1,5 @@
 use sqlx::Transaction;
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 use super::{Cache, FileUrl, MetastoreError, TabletId};
 use crate::FileMetadata;
@@ -140,6 +140,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
         let cache = self.cache;
         let tx = self.tx;
         tx.commit().await?;
+        trace!("Metastore transaction commit OK");
 
         for op in self.mutations {
             match op {
@@ -156,6 +157,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                 },
             }
         }
+        trace!("Metastore cache commit OK");
 
         Ok(())
     }
