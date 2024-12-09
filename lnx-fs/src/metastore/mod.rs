@@ -3,12 +3,18 @@
 //!
 //! Internally it is backed by an SQLite database for each bucket.
 
+mod bulk;
 mod db;
 
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Range;
 
+use tracing::instrument;
+
+pub(crate) use crate::metastore::bulk::BulkMetastoreModifyOperation;
 use crate::metastore::db::MetastoreDB;
+
+pub(crate) type Cache = moka::sync::Cache<String, (TabletId, FileMetadata)>;
 
 /// The maximum amount of metadata to cache in memory in bytes.
 const MAX_CACHE_CAPACITY: u64 = 8 << 10; // 4KB
@@ -36,7 +42,7 @@ pub enum MetastoreError {
 /// A metastore instance for a given bucket.
 pub struct Metastore {
     /// An LRU cache for accessing file information.
-    cache: moka::sync::Cache<String, (TabletId, FileMetadata)>,
+    cache: Cache,
     /// THe SQLite DB wrapper for persisting file information.
     db: MetastoreDB,
 }
@@ -78,41 +84,21 @@ impl Metastore {
         Ok(maybe_file)
     }
 
-    /// Add a file to be tracked in the metastore.
-    pub(crate) async fn add_file(
+    #[instrument(skip_all)]
+    /// Begins a bulk metastore modify operation which can perform multiple mutations
+    /// within a single atomic transaction.
+    pub(crate) async fn begin_bulk(
         &self,
-        url: FileUrl,
-        metadata: FileMetadata,
-    ) -> Result<(), MetastoreError> {
-        self.db.add_file(url.clone(), metadata.clone()).await?;
+    ) -> Result<BulkMetastoreModifyOperation, MetastoreError> {
+        let tx = self.db.begin().await?;
 
-        self.cache.insert(url.path, (url.tablet_id, metadata));
+        let op = BulkMetastoreModifyOperation {
+            tx,
+            cache: &self.cache,
+            mutations: Vec::with_capacity(1),
+        };
 
-        Ok(())
-    }
-
-    /// Remove a file from being tracked in the metastore.
-    pub(crate) async fn remove_file(&self, path: &str) -> Result<(), MetastoreError> {
-        self.db.remove_file(path).await?;
-
-        self.cache.remove(path);
-
-        Ok(())
-    }
-
-    #[allow(unused)] // TODO: Add GC system
-    /// Deletes all files associated on a tablet.
-    pub(crate) async fn delete_tablet_files(
-        &self,
-        tablet: TabletId,
-    ) -> Result<(), MetastoreError> {
-        let changed = self.db.delete_tablet_files(tablet).await?;
-
-        for path in changed {
-            self.cache.remove(&path);
-        }
-
-        Ok(())
+        Ok(op)
     }
 
     /// Returns a list of all files currently within the metastore.
@@ -235,5 +221,478 @@ impl FileMetadata {
     /// Returns the size of the file.
     pub fn size(&self) -> u64 {
         self.position.end - self.position.start
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_add_and_get_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample.gzip", tablet),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let (url, _metadata) = metastore
+            .get_file("foo/sample.gzip")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/sample.gzip");
+        assert_eq!(url.tablet_id, tablet);
+
+        let (url, metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(url.tablet_id, tablet);
+        assert_eq!(metadata.position, 0..128);
+        assert_eq!(metadata.created_at, 12314);
+    }
+
+    #[tokio::test]
+    async fn test_add_and_list_all_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample.gzip", tablet),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let files = metastore.list_all_files().await.expect("List all files");
+        assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_add_and_list_tablets() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample.gzip", tablet),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let files = metastore.list_tablets().await.expect("List all tablets");
+        assert_eq!(files.len(), 1);
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample2.gzip", TabletId::new()),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let files = metastore.list_tablets().await.expect("List all tablets");
+        assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_add_and_list_tablet_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample.gzip", tablet),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample2.gzip", TabletId::new()),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let files = metastore
+            .list_files_in_tablet(tablet)
+            .await
+            .expect("List all files");
+        assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_add_and_list_extension_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample.gzip", tablet),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/sample2.gzip", TabletId::new()),
+                FileMetadata {
+                    position: 42..422,
+                    created_at: 234243234,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let files = metastore
+            .list_files_with_ext("gzip")
+            .await
+            .expect("List files");
+        assert_eq!(files.len(), 2);
+        let files = metastore
+            .list_files_with_ext("txt")
+            .await
+            .expect("List files");
+        assert_eq!(files.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_add_and_remove_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let (url, _metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(url.tablet_id, tablet);
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .remove_file("foo/bar/example.txt")
+            .await
+            .expect("Remove file");
+        bulk_op.commit().await.unwrap();
+
+        let maybe_file = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore");
+        assert!(maybe_file.is_none(), "File should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_remove_missing_file() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .remove_file("foo/sample.gzip")
+            .await
+            .expect("Missing files should be ignored");
+        bulk_op.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_add_duplicate_file() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", TabletId::new()),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", TabletId::new()),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 123,
+                },
+            )
+            .await
+            .expect("Metastore should allow duplicate path keys and update");
+        bulk_op.commit().await.unwrap();
+
+        let (url, metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(metadata.created_at, 123);
+    }
+
+    #[tokio::test]
+    async fn test_rename_file() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", TabletId::new()),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let (url, metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(metadata.created_at, 12314);
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .rename_file("foo/bar/example.txt", "foo/path2/example.bar")
+            .await
+            .expect("Metastore should allow duplicate path keys and update");
+        bulk_op.commit().await.unwrap();
+
+        let maybe_file = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore");
+        assert!(maybe_file.is_none(), "File should be moved");
+        let (url, metadata) = metastore
+            .get_file("foo/path2/example.bar")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/path2/example.bar");
+        assert_eq!(metadata.created_at, 12314);
+    }
+
+    #[tokio::test]
+    async fn test_delete_tablet_files() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let tablet = TabletId::new();
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", tablet),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let (url, metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(metadata.created_at, 12314);
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let _files = bulk_op.delete_tablet_files(tablet).await.unwrap();
+        bulk_op.commit().await.unwrap();
+
+        let maybe_file = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore");
+        assert!(maybe_file.is_none(), "File should not exit");
+    }
+
+    #[tokio::test]
+    async fn test_bulk_operation_abort() {
+        let metastore = Metastore::connect(":memory:")
+            .await
+            .expect("Create metastore SQLite table");
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", TabletId::new()),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.rollback().await.unwrap();
+
+        let maybe_file = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore");
+        assert!(maybe_file.is_none(), "File should not exit");
+
+        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        bulk_op
+            .add_file(
+                FileUrl::new("foo/bar/example.txt", TabletId::new()),
+                FileMetadata {
+                    position: 0..128,
+                    created_at: 12314,
+                },
+            )
+            .await
+            .expect("Add file");
+        bulk_op.commit().await.unwrap();
+
+        let (url, metadata) = metastore
+            .get_file("foo/bar/example.txt")
+            .await
+            .expect("Get file from metastore")
+            .expect("File should exist");
+        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(metadata.created_at, 12314);
     }
 }

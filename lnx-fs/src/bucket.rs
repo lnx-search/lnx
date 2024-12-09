@@ -15,7 +15,13 @@ use crate::io::{
     TabletWriter,
     TabletWriterOptions,
 };
-use crate::metastore::{FileUrl, Metastore, MetastoreError, TabletId};
+use crate::metastore::{
+    BulkMetastoreModifyOperation,
+    FileUrl,
+    Metastore,
+    MetastoreError,
+    TabletId,
+};
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
@@ -231,7 +237,9 @@ impl Bucket {
             created_at: now as i64,
         };
 
-        self.metastore.add_file(url, metadata).await?;
+        let mut bulk = self.metastore.begin_bulk().await?;
+        bulk.add_file(url, metadata).await?;
+        bulk.commit().await?;
         trace!("Metadata updated");
 
         Ok(())
@@ -287,7 +295,9 @@ impl Bucket {
     ///
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
-        self.metastore.remove_file(path).await?;
+        let mut bulk = self.metastore.begin_bulk().await?;
+        bulk.remove_file(path).await?;
+        bulk.commit().await?;
         Ok(())
     }
 
@@ -338,6 +348,64 @@ impl Bucket {
         config: BucketConfig,
     ) -> Result<(), MetastoreError> {
         config.store_in_metastore(&self.metastore).await
+    }
+}
+
+/// A bucket operation that allows applying multiple mutations
+/// as part of a single operation.
+///
+/// This means multiple files can be written, deleted, etc... as part of a single
+/// atomic operation.
+///
+/// That being said, it is important to note _data is still written to disk_, it is just
+/// not committed in the metastore and the now written data will eventually be cleaned
+/// up by the bucket's GC system.
+pub struct BulkBucketOp<'bucket> {
+    metastore: BulkMetastoreModifyOperation<'bucket>,
+    bucket: &'bucket Bucket,
+}
+
+impl<'bucket> BulkBucketOp<'bucket> {
+    #[instrument("bulk_write", skip(self, body))]
+    /// Write a blob body stream to the store with the given path.
+    ///
+    /// Once this call completes, the blob is safely persisted to disk.
+    pub async fn write(
+        &mut self,
+        path: &str,
+        body: Body,
+    ) -> Result<(), FileSystemError> {
+        assert!(!path.ends_with('/'), "Path cannot end with `/`");
+
+        trace!("Begin writing blob");
+
+        let response = self.bucket.writer.write(body).await?;
+        trace!("Blob write complete");
+
+        let url = FileUrl::new(path, response.tablet_id);
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let metadata = FileMetadata {
+            position: response.position,
+            created_at: now as i64,
+        };
+
+        self.metastore.add_file(url, metadata).await?;
+        trace!("Metadata updated");
+
+        Ok(())
+    }
+
+    #[instrument("bulk_delete", skip(self))]
+    /// Deletes a file from the system.
+    ///
+    /// Does nothing if the file doesn't exist.
+    pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
+        self.metastore.remove_file(path).await?;
+        Ok(())
     }
 }
 
