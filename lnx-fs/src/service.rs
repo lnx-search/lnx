@@ -1,4 +1,3 @@
-use std::env::temp_dir;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;

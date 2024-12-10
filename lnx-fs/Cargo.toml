@@ -30,6 +30,7 @@ tempfile = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
+fastrand = { workspace = true }
 
 [features]
 # Enables testing utilities like `VirtualFileSystem::create_for_test()`.

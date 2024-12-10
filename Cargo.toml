@@ -4,11 +4,13 @@ members = [
     "lnx",
     "lnx-common",
     "lnx-fs",
+    "lnx-fs/lnx-fs-benches",
     "lnx-query",
     "lnx-server",
     "lnx-shell",
-    "lnx-doc"
-, "lnx-tantivy"]
+    "lnx-doc",
+    "lnx-tantivy",
+]
 
 [profile.release]
 lto = "fat"
@@ -35,6 +37,8 @@ parking_lot = "0.12.3"
 bytemuck = "1.19"
 cityhasher = "0.1.0"
 stable_deref_trait = "1.2.0"
+fastrand = "2.3.0"
+humansize = "2.1.3"
 
 # Dev Dependencies
 rstest = "0.23.0"

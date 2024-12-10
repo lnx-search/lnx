@@ -19,6 +19,8 @@
       <sourceFolder url="file://$MODULE_DIR$/lnx-compile/compilation-demo/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-doc/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-tantivy/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/lnx-fs/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/lnx-fs/lnx-fs-benches/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-tarp/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
