@@ -5,6 +5,7 @@ use tantivy::indexer::SegmentWriter;
 use tantivy::store::Compressor;
 use tantivy::{Index, IndexSettings, Opstamp, Segment};
 use tracing::{info, instrument};
+use lnx_fs::{Body, Bytes};
 
 /// The memory budget isn't actually used since the directory itself is in memory,
 /// but it allows tantivy to be a bit more efficient with a higher budget in the indexing memory arena.
@@ -116,12 +117,12 @@ impl SingleSegmentIndexer {
 /// The core data forming a single indexing segment.
 pub struct SegmentMemory {
     segment_id: SegmentId,
-    store: FileSlice,
-    terms: FileSlice,
-    postings: FileSlice,
-    positions: FileSlice,
-    field_norms: FileSlice,
-    fast_fields: FileSlice,
+    store: Bytes,
+    terms: Bytes,
+    postings: Bytes,
+    positions: Bytes,
+    field_norms: Bytes,
+    fast_fields: Bytes,
 }
 
 impl SegmentMemory {
@@ -130,8 +131,15 @@ impl SegmentMemory {
         self,
         bucket: &lnx_fs::Bucket,
     ) -> Result<(), lnx_fs::FileSystemError> {
-        // TODO: This needs to have bulk writes added to the bucket
-        todo!()
+        let mut bulk = bucket.begin_tx().await?;
+        bulk.write(&format!("{}.seg-store", self.segment_id), Body::complete(self.store)).await?;
+        bulk.write(&format!("{}.seg-terms", self.segment_id), Body::complete(self.terms)).await?;
+        bulk.write(&format!("{}.seg-postings", self.segment_id), Body::complete(self.postings)).await?;
+        bulk.write(&format!("{}.seg-positions", self.segment_id), Body::complete(self.positions)).await?;
+        bulk.write(&format!("{}.seg-field-norms", self.segment_id), Body::complete(self.field_norms)).await?;
+        bulk.write(&format!("{}.seg-fast-fields", self.segment_id), Body::complete(self.fast_fields)).await?;
+        bulk.commit().await?;
+        Ok(())
     }
 }
 
