@@ -1,11 +1,12 @@
-use tantivy::directory::{FileSlice, RamDirectory};
+use lnx_fs::{Body, Bytes};
 use tantivy::index::{SegmentComponent, SegmentId};
 use tantivy::indexer::operation::AddOperation;
 use tantivy::indexer::SegmentWriter;
 use tantivy::store::Compressor;
 use tantivy::{Index, IndexSettings, Opstamp, Segment};
 use tracing::{info, instrument};
-use lnx_fs::{Body, Bytes};
+
+use crate::directory::MemoryDirectory;
 
 /// The memory budget isn't actually used since the directory itself is in memory,
 /// but it allows tantivy to be a bit more efficient with a higher budget in the indexing memory arena.
@@ -25,7 +26,7 @@ pub struct SingleSegmentIndexer {
     index: Index,
     segment: Segment,
     segment_writer: SegmentWriter,
-    directory: RamDirectory,
+    directory: MemoryDirectory,
     opstamp: Opstamp,
 }
 
@@ -40,7 +41,7 @@ impl SingleSegmentIndexer {
             docstore_blocksize: 128,
         };
 
-        let directory = RamDirectory::create();
+        let directory = MemoryDirectory::default();
         let index = Index::create(directory.clone(), schema, settings)
             .expect("Index created with memory directory shouldn't error");
 
@@ -93,12 +94,24 @@ impl SingleSegmentIndexer {
         self.segment_writer.finalize()?;
 
         // Segment data should now be available to read.
-        let store = self.segment.open_read(SegmentComponent::Store)?;
-        let terms = self.segment.open_read(SegmentComponent::Terms)?;
-        let postings = self.segment.open_read(SegmentComponent::Postings)?;
-        let positions = self.segment.open_read(SegmentComponent::Positions)?;
-        let field_norms = self.segment.open_read(SegmentComponent::FieldNorms)?;
-        let fast_fields = self.segment.open_read(SegmentComponent::FastFields)?;
+        let store = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::Store))?;
+        let terms = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::Terms))?;
+        let postings = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::Postings))?;
+        let positions = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::Positions))?;
+        let field_norms = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::FieldNorms))?;
+        let fast_fields = self
+            .directory
+            .get(&self.segment.relative_path(SegmentComponent::FastFields))?;
         let segment_id = self.segment.id();
 
         Ok(SegmentMemory {
@@ -132,12 +145,36 @@ impl SegmentMemory {
         bucket: &lnx_fs::Bucket,
     ) -> Result<(), lnx_fs::FileSystemError> {
         let mut bulk = bucket.begin_tx().await?;
-        bulk.write(&format!("{}.seg-store", self.segment_id), Body::complete(self.store)).await?;
-        bulk.write(&format!("{}.seg-terms", self.segment_id), Body::complete(self.terms)).await?;
-        bulk.write(&format!("{}.seg-postings", self.segment_id), Body::complete(self.postings)).await?;
-        bulk.write(&format!("{}.seg-positions", self.segment_id), Body::complete(self.positions)).await?;
-        bulk.write(&format!("{}.seg-field-norms", self.segment_id), Body::complete(self.field_norms)).await?;
-        bulk.write(&format!("{}.seg-fast-fields", self.segment_id), Body::complete(self.fast_fields)).await?;
+        bulk.write(
+            &format!("{}.seg-store", self.segment_id),
+            Body::complete(self.store),
+        )
+        .await?;
+        bulk.write(
+            &format!("{}.seg-terms", self.segment_id),
+            Body::complete(self.terms),
+        )
+        .await?;
+        bulk.write(
+            &format!("{}.seg-postings", self.segment_id),
+            Body::complete(self.postings),
+        )
+        .await?;
+        bulk.write(
+            &format!("{}.seg-positions", self.segment_id),
+            Body::complete(self.positions),
+        )
+        .await?;
+        bulk.write(
+            &format!("{}.seg-field-norms", self.segment_id),
+            Body::complete(self.field_norms),
+        )
+        .await?;
+        bulk.write(
+            &format!("{}.seg-fast-fields", self.segment_id),
+            Body::complete(self.fast_fields),
+        )
+        .await?;
         bulk.commit().await?;
         Ok(())
     }
@@ -145,6 +182,7 @@ impl SegmentMemory {
 
 #[cfg(test)]
 mod tests {
+    use lnx_fs::VirtualFileSystem;
     use tantivy::doc;
     use tantivy::schema::{
         IndexRecordOption,
@@ -152,7 +190,6 @@ mod tests {
         TextFieldIndexing,
         TextOptions,
         FAST,
-        INDEXED,
         STORED,
     };
 
@@ -233,5 +270,35 @@ mod tests {
         let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
+    }
+
+    #[tokio::test]
+    async fn test_memory_write_to_bucket() {
+        let (fs, _guard) = VirtualFileSystem::create_for_test()
+            .await
+            .expect("Create FS");
+
+        let bucket = fs.create_bucket("test").await.expect("Create bucket");
+
+        let mut schema_builder = Schema::builder();
+        let text_field = schema_builder.add_text_field(
+            "text_demo",
+            TextOptions::default().set_indexing_options(
+                TextFieldIndexing::default().set_fieldnorms(false),
+            ),
+        );
+        let schema = schema_builder.build();
+
+        let doc = doc!(
+            text_field => "Example text with the document here"
+        );
+
+        let mut indexer = SingleSegmentIndexer::new(schema);
+        indexer.add_document(doc).expect("Index document");
+        let memory = indexer.finish().expect("Indexing finish");
+        memory
+            .write_to(&bucket)
+            .await
+            .expect("Write segment to bucket");
     }
 }

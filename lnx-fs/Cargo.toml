@@ -24,7 +24,13 @@ fnv = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 
+tempfile = { workspace = true, optional = true }
+
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 tempfile = { workspace = true }
+
+[features]
+# Enables testing utilities like `VirtualFileSystem::create_for_test()`.
+test-utils = ["tempfile"]

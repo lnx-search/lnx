@@ -1643,11 +1643,16 @@ dependencies = [
 name = "lnx-tantivy"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "lnx-doc",
  "lnx-fs",
+ "parking_lot",
+ "stable_deref_trait",
  "tantivy",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
+ "ulid",
 ]
 
 [[package]]

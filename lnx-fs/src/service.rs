@@ -1,3 +1,4 @@
+use std::env::temp_dir;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,6 +71,15 @@ impl VirtualFileSystem {
         })
     }
 
+    #[cfg(feature = "test-utils")]
+    pub async fn create_for_test() -> Result<(Self, tempfile::TempDir), FileSystemError>
+    {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dir = tempfile::TempDir::new()?;
+        let fs = Self::mount(dir.path().to_path_buf(), rt_options).await?;
+        Ok((fs, dir))
+    }
+
     /// Returns a clone of the [SharedBucket] if it exists.
     pub fn bucket(&self, bucket: &str) -> Option<SharedBucket> {
         self.buckets.read().get(bucket).cloned()
@@ -78,18 +88,22 @@ impl VirtualFileSystem {
     /// Creates a new bucket with the given [BucketCreateOptions].
     ///
     /// Returns an error if the bucket already exists (on disk.)
-    pub async fn create_bucket(&self, name: &str) -> Result<(), FileSystemError> {
+    pub async fn create_bucket(
+        &self,
+        name: &str,
+    ) -> Result<SharedBucket, FileSystemError> {
         let options = BucketCreateOptions::builder()
             .name(name)
             .bucket_path(self.mount_point.join(name))
             .build();
 
         let bucket = Bucket::create(options, self.runtime.clone()).await?;
+        let shared_bucket = SharedBucket::new(bucket);
 
         let mut lock = self.buckets.write();
-        lock.insert(bucket.name().to_string(), SharedBucket::new(bucket));
+        lock.insert(shared_bucket.name().to_string(), shared_bucket.clone());
 
-        Ok(())
+        Ok(shared_bucket)
     }
 
     /// Attempts to delete the bucket with the given name.

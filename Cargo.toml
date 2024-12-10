@@ -34,6 +34,7 @@ ahash = "0.8.11"
 parking_lot = "0.12.3"
 bytemuck = "1.19"
 cityhasher = "0.1.0"
+stable_deref_trait = "1.2.0"
 
 # Dev Dependencies
 rstest = "0.23.0"

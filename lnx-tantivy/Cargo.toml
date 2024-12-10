@@ -7,6 +7,14 @@ edition = "2021"
 thiserror = { workspace = true }
 tantivy = { workspace = true }
 tracing = { workspace = true }
+parking_lot = { workspace = true }
+bytes = { workspace = true }
+stable_deref_trait = { workspace = true }
 
 lnx-doc = { path = "../lnx-doc" }
 lnx-fs = { path = "../lnx-fs" }
+
+[dev-dependencies]
+tokio = { workspace = true }
+ulid = { workspace = true }
+lnx-fs = { path = "../lnx-fs", features = ["test-utils"] }
