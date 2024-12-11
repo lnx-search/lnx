@@ -7,6 +7,7 @@ pub use self::actors::{
     TabletReaderOptions,
     TabletWriter,
     TabletWriterOptions,
+    Metadata,
 };
 pub use self::body::{Body, BodySender};
 pub use self::runtime::{create_io_runtime, RuntimeDispatcher, RuntimeOptions};

@@ -211,7 +211,7 @@ pub struct FileMetadata {
     /// The start and stop position of the file in the larger tablet.
     pub(crate) position: Range<u64>,
     /// The UNIX timestamp when the file was created in seconds.
-    pub created_at: i64,
+    pub created_at: u64,
 }
 
 impl FileMetadata {

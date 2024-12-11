@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bon::Builder;
 use moka::policy::EvictionPolicy;
@@ -240,25 +240,29 @@ impl Bucket {
         assert!(!path.ends_with('/'), "Path cannot end with `/`");
 
         trace!("Begin writing blob");
+        
+        let now = crate::utils::timestamp_now();
+        let write_metadata = crate::io::Metadata {
+            path: path.to_string(),
+            created_at: now,
+        };
 
-        let response = self.writer.write(body).await?;
+        let response = self.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
+        let now_in = Instant::now();
         let url = FileUrl::new(path, response.tablet_id);
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
         let metadata = FileMetadata {
             position: response.position,
-            created_at: now as i64,
+            created_at: now,
         };
 
         let mut bulk = self.metastore.begin_bulk().await?;
         bulk.add_file(url, metadata).await?;
         bulk.commit().await?;
         trace!("Metadata updated");
+        dbg!(now_in.elapsed());
 
         Ok(())
     }
@@ -413,7 +417,13 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         trace!("Begin writing blob");
 
-        let response = self.bucket.writer.write(body).await?;
+        let now = crate::utils::timestamp_now();
+        let write_metadata = crate::io::Metadata {
+            path: path.to_string(),
+            created_at: now,
+        };
+        
+        let response = self.bucket.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
         let url = FileUrl::new(path, response.tablet_id);
@@ -424,7 +434,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
             .as_secs();
         let metadata = FileMetadata {
             position: response.position,
-            created_at: now as i64,
+            created_at: now,
         };
 
         self.metastore.add_file(url, metadata).await?;

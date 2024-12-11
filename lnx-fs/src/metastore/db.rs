@@ -95,7 +95,7 @@ impl MetastoreDB {
 
         let metadata = FileMetadata {
             position: row.range_start as u64..row.range_end as u64,
-            created_at: row.created_at,
+            created_at: row.created_at as u64,
         };
 
         Ok(Some((file_url, metadata)))
@@ -302,7 +302,7 @@ fn map_rows_to_files(rows: Vec<FileRow>) -> Vec<(FileUrl, FileMetadata)> {
 
             let metadata = FileMetadata {
                 position: row.range_start as u64..row.range_end as u64,
-                created_at: row.created_at,
+                created_at: row.created_at as u64,
             };
 
             Some((file_url, metadata))

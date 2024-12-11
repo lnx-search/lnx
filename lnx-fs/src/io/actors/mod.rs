@@ -23,3 +23,12 @@ pub trait ActorFactory: Send {
 pub(super) fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
     base.join(tablet_id.to_string()).with_extension("tablet")
 }
+
+#[derive(Debug)]
+/// Metadata relating to the blob being written.
+pub struct Metadata {
+    /// The file path for the blob.
+    pub path: String,
+    /// When the file was created.
+    pub created_at: u64,
+}

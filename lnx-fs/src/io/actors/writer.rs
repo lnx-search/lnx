@@ -14,6 +14,7 @@ use tracing::{debug, error, info, instrument};
 use crate::io::actors::ActorFactory;
 use crate::io::actors::header::FileEntryFooter;
 use crate::io::body::Body;
+use crate::io::Metadata;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::metastore::TabletId;
 
@@ -71,7 +72,7 @@ impl TabletWriter {
     /// If the operation is successful a [WriteResponse]
     /// is returned which contains the tablet that wrote the blob and the blob's
     /// position within the tablet file.
-    pub async fn write(&self, metadata: BlobMetadata, body: Body) -> Result<WriteResponse> {
+    pub async fn write(&self, metadata: Metadata, body: Body) -> Result<WriteResponse> {
         let (ack, rx) = oneshot::channel();
         let event = WriterEvent::Write(WriteEvent { metadata, body, ack });
 
@@ -315,7 +316,7 @@ impl TabletWriterActor {
     }
 
     #[instrument(skip(self, body))]
-    async fn write_file_and_flush(&mut self, metadata: BlobMetadata, body: Body) -> Result<usize> {
+    async fn write_file_and_flush(&mut self, metadata: Metadata, body: Body) -> Result<usize> {
         let n_written = self.copy_data_from_event(metadata, body).await?;        
         
         if n_written > 0 {
@@ -327,7 +328,7 @@ impl TabletWriterActor {
     }
 
     #[instrument(skip_all)]
-    async fn copy_data_from_event(&mut self, metadata: BlobMetadata, body: Body) -> Result<usize> {
+    async fn copy_data_from_event(&mut self, metadata: Metadata, body: Body) -> Result<usize> {
         let start_pos = self.writer.current_pos();
         
         let mut n_written = 0;
@@ -354,22 +355,13 @@ impl TabletWriterActor {
     }
 }
 
-#[derive(Debug)]
-/// Metadata relating to the blob being written.
-pub struct BlobMetadata {
-    /// The file path for the blob.
-    pub path: String,
-    /// When the file was created.
-    pub created_at: u64,
-}
-
 enum WriterEvent {
     Write(WriteEvent),
 }
 
 struct WriteEvent {
     /// The file blob metadata.
-    metadata: BlobMetadata,
+    metadata: Metadata,
     /// The incoming body to write to the file.
     body: Body,
     /// The channel sender for acknowledging the write op
@@ -447,7 +439,8 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            async move { writer.write(body).await }
+            let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+            async move { writer.write(metadata, body).await }
         });
 
         // Let system yield and start task.
@@ -490,7 +483,8 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            async move { writer.write(body).await }
+            let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+            async move { writer.write(metadata, body).await }
         });
 
         // Let system yield and start task.
@@ -527,7 +521,8 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::complete(Bytes::from_static(b"Hello, world!"));
-        let response = writer.write(body).await.expect("Write & flush body");
+        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..13);
     }
 
@@ -538,7 +533,8 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::empty();
-        let response = writer.write(body).await.expect("Write & flush body");
+        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..0);
     }
 
@@ -563,7 +559,8 @@ mod tests {
             tx.finish().await;
         });
 
-        let response = writer.write(body).await.expect("Write & flush body");
+        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..num_bytes);
     }
 }

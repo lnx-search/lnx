@@ -45,7 +45,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
             .bind(url.tablet_id.to_string())
             .bind(metadata.position.start as i64)
             .bind(metadata.position.end as i64)
-            .bind(metadata.created_at)
+            .bind(metadata.created_at as i64)
             .execute(&mut *self.tx)
             .await?;
 

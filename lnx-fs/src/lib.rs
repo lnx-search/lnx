@@ -3,6 +3,7 @@ mod config;
 mod io;
 mod metastore;
 mod service;
+mod utils;
 
 pub use bytes::Bytes;
 

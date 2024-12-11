@@ -31,8 +31,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn benchmark_blocking_io() -> Result<()> { 
-    let tmp_dir = tempfile::TempDir::new()?;
+async fn benchmark_blocking_io() -> Result<()> {
+    let tmp_dir = tempfile::TempDir::new_in("./scratch_space/blocking/")?;
     
     for &size in SIZES {
         let mut buffer = vec![0; size];
@@ -66,7 +66,7 @@ async fn benchmark_blocking_io() -> Result<()> {
 
 
 async fn benchmark_vfs_io() -> Result<()> {
-    let tmp_dir = tempfile::TempDir::new()?;
+    let tmp_dir = tempfile::TempDir::new_in("./scratch_space/vfs/")?;
     let rt_options = RuntimeOptions::builder()
         .num_threads(1)
         .build();
