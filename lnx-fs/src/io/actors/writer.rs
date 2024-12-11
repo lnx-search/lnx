@@ -12,9 +12,11 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
 use crate::io::actors::ActorFactory;
+use crate::io::actors::header::FileEntryFooter;
 use crate::io::body::Body;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::metastore::TabletId;
+
 
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
@@ -33,7 +35,7 @@ pub struct TabletWriterOptions {
 ///
 /// This handle can be cloned cheaply.
 pub struct TabletWriter {
-    tx: flume::Sender<WriteEvent>,
+    tx: flume::Sender<WriterEvent>,
     controller: Arc<TabletWriterController>,
 }
 
@@ -69,10 +71,21 @@ impl TabletWriter {
     /// If the operation is successful a [WriteResponse]
     /// is returned which contains the tablet that wrote the blob and the blob's
     /// position within the tablet file.
-    pub async fn write(&self, body: Body) -> Result<WriteResponse> {
+    pub async fn write(&self, metadata: BlobMetadata, body: Body) -> Result<WriteResponse> {
         let (ack, rx) = oneshot::channel();
-        let event = WriteEvent { body, ack };
+        let event = WriterEvent::Write(WriteEvent { metadata, body, ack });
 
+        self.send_to_writer(event).await?;
+
+        rx.await.map_err(|_| {
+            io::Error::new(
+                ErrorKind::Interrupted,
+                "Writer actor panicked and aborted prematurely",
+            )
+        })?
+    }
+        
+    async fn send_to_writer(&self, event: WriterEvent) -> Result<()> {
         self.controller.maybe_spawn_writer().await?;
 
         self.tx.send_async(event).await.map_err(|_| {
@@ -82,18 +95,14 @@ impl TabletWriter {
             );
             io::Error::new(ErrorKind::Other, "Writers failed to start, this is a bug")
         })?;
-
-        rx.await.map_err(|_| {
-            io::Error::new(
-                ErrorKind::Interrupted,
-                "Writer actor panicked and aborted prematurely",
-            )
-        })?
+        
+        Ok(())
     }
+    
 }
 
 struct TabletWriterController {
-    events_rx: flume::Receiver<WriteEvent>,
+    events_rx: flume::Receiver<WriterEvent>,
     alive_writer_semaphore: Arc<Semaphore>,
     active_writer_semaphore: Arc<Semaphore>,
     options: TabletWriterOptions,
@@ -166,7 +175,7 @@ impl TabletWriterController {
 struct TabletWriterActorFactory {
     tablet_id: TabletId,
     file_path: PathBuf,
-    events: flume::Receiver<WriteEvent>,
+    events: flume::Receiver<WriterEvent>,
     alive_guard: OwnedSemaphorePermit,
     active_writer_semaphore: Arc<Semaphore>,
     max_tablet_size: u64,
@@ -235,7 +244,7 @@ pub struct TabletWriterActor {
     /// A single write event represents a single contiguous blob
     /// and has no requirement on previous or future events being
     /// in the right order.
-    events: flume::Receiver<WriteEvent>,
+    events: flume::Receiver<WriterEvent>,
     writer: DmaStreamWriter,
     max_size: u64,
 }
@@ -275,57 +284,96 @@ impl TabletWriterActor {
         self.writer.current_pos() >= self.max_size
     }
 
-    async fn handle_event(&mut self, event: WriteEvent) {
-        let start = self.writer.current_pos();
+    #[instrument(skip_all)]
+    async fn handle_event(&mut self, event: WriterEvent) {
+        match event {
+            WriterEvent::Write(event) => {
+                self.handle_write_event(event).await;
+            },
+        }        
+    }
 
-        let result = self.write_and_flush(&event).await;
+    #[instrument(skip_all)]
+    async fn handle_write_event(&mut self, event: WriteEvent) {
+        let WriteEvent { metadata, body, ack } = event;
+
+        let start = self.writer.current_pos();
+        let result = self.write_file_and_flush(metadata, body).await;
 
         match result {
-            Ok(_) => {
-                let end = self.writer.current_pos();
+            Ok(n_written) => {
                 let response = WriteResponse {
-                    position: start..end,
+                    position: start..start + n_written as u64,
                     tablet_id: self.tablet_id,
                 };
-
-                let _ = event.ack.send(Ok(response));
+                let _ = ack.send(Ok(response));
             },
             Err(e) => {
-                let _ = event.ack.send(Err(e));
+                let _ = ack.send(Err(e));
             },
         }
     }
 
-    async fn write_and_flush(&mut self, event: &WriteEvent) -> Result<()> {
-        debug!("Copy IO data");
-        let n_written = self.copy_data_from_event(&event).await?;
-
-        // No data written
+    #[instrument(skip(self, body))]
+    async fn write_file_and_flush(&mut self, metadata: BlobMetadata, body: Body) -> Result<usize> {
+        let n_written = self.copy_data_from_event(metadata, body).await?;        
+        
         if n_written > 0 {
             debug!("Flush internal buffers");
             self.writer.sync().await?;
         }
 
-        Ok(())
+        Ok(n_written)
     }
 
-    async fn copy_data_from_event(&mut self, event: &WriteEvent) -> Result<usize> {
+    #[instrument(skip_all)]
+    async fn copy_data_from_event(&mut self, metadata: BlobMetadata, body: Body) -> Result<usize> {
+        let start_pos = self.writer.current_pos();
+        
         let mut n_written = 0;
         loop {
-            let Some(chunk) = event.body.next().await? else {
-                return Ok(n_written);
+            let Some(chunk) = body.next().await? else {
+                break;
             };
             self.writer.write_all(&chunk).await?;
             n_written += chunk.len();
         }
+        
+        let end_pos = self.writer.current_pos();
+        let footer = FileEntryFooter {
+            file_path: metadata.path,
+            data_range: start_pos..end_pos,
+            created_at: metadata.created_at,
+        };
+        
+        // Used in recovery of a tablet.
+        let buffer = footer.to_bytes();
+        self.writer.write_all(&buffer).await?;
+        
+        Ok(n_written)
     }
 }
 
+#[derive(Debug)]
+/// Metadata relating to the blob being written.
+pub struct BlobMetadata {
+    /// The file path for the blob.
+    pub path: String,
+    /// When the file was created.
+    pub created_at: u64,
+}
+
+enum WriterEvent {
+    Write(WriteEvent),
+}
+
 struct WriteEvent {
+    /// The file blob metadata.
+    metadata: BlobMetadata,
     /// The incoming body to write to the file.
     body: Body,
     /// The channel sender for acknowledging the write op
-    /// has been completed.
+    /// that has been completed.
     ///
     /// This is only triggered once the body is written and flushed,
     /// or there is an error.
@@ -379,12 +427,12 @@ mod tests {
             .expect("System should create writer");
 
         let alive_writers = writer.controller.num_alive_writers();
-        assert_eq!(alive_writers, 1);
-        let active_writers = writer.controller.num_active_writers();
-        assert_eq!(active_writers, 0);
-    }
-
-    #[tokio::test]
+        assert_eq!(alive_writers, 1); 
+        let active_writers = writer.controller.num_active_writers(); 
+        assert_eq!(active_writers, 0); 
+    } 
+ 
+    #[tokio::test] 
     async fn test_controller_spawns_new_writer_when_all_active() {
         let _ = tracing_subscriber::fmt::try_init();
 

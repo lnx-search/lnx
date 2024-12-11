@@ -7,6 +7,7 @@ use crate::metastore::TabletId;
 
 mod reader;
 mod writer;
+mod header;
 
 pub use self::reader::{TabletReader, TabletReaderOptions};
 pub use self::writer::{TabletWriter, TabletWriterOptions};
