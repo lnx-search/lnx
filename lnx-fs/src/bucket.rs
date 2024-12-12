@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use bon::Builder;
 use moka::policy::EvictionPolicy;
@@ -19,7 +19,6 @@ use crate::metastore::{
     BulkMetastoreModifyOperation,
     FileUrl,
     Metastore,
-    MetastoreEntry,
     MetastoreError,
     TabletId,
 };

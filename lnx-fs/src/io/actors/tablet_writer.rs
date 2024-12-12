@@ -1,5 +1,4 @@
-use std::io;
-use std::io::{ErrorKind, Result};
+use std::io::Result;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -7,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bon::Builder;
 use futures_util::AsyncWriteExt;
-use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder, OpenOptions};
+use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 

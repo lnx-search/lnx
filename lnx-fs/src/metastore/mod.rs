@@ -17,11 +17,6 @@ use tracing::instrument;
 use crate::metastore::db::MetastoreDB;
 pub(crate) use crate::metastore::mutate::BulkMetastoreModifyOperation;
 
-pub(crate) type Cache = moka::sync::Cache<String, (TabletId, FileMetadata)>;
-
-/// The maximum amount of metadata to cache in memory in bytes.
-const MAX_CACHE_CAPACITY: u64 = 8 << 10; // 4KB
-
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts
 /// to track a change in the file system.
@@ -242,8 +237,6 @@ pub struct FileMetadata {
 }
 
 impl FileMetadata {
-    const SIZE_IN_CACHE: usize = size_of::<Self>();
-
     #[inline]
     /// Returns the size of the file.
     pub fn size(&self) -> u64 {

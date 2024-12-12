@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use tracing::{debug, warn};
-
-use crate::metastore::{MetastoreError, TabletId};
+use crate::metastore::MetastoreError;
 
 const POOL_SIZE: u32 = if cfg!(test) { 1 } else { 5 };
 

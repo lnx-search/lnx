@@ -1,10 +1,6 @@
-use std::sync::Arc;
+use tracing::{instrument, trace};
 
-use parking_lot::Mutex;
-use sqlx::Transaction;
-use tracing::{error, instrument, trace};
-
-use super::{Cache, FileUrl, Metastore, MetastoreEntry, MetastoreError, TabletId};
+use super::{FileUrl, Metastore, MetastoreEntry, TabletId};
 use crate::FileMetadata;
 
 /// A metastore operation that allows applying multiple operations

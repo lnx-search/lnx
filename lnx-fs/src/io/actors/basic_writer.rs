@@ -1,19 +1,15 @@
 use std::io;
-use std::io::{ErrorKind, Result};
+use std::io::Result;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::AsyncWriteExt;
-use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder, OpenOptions};
-use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
+use tokio::sync::oneshot;
 use tracing::{debug, error, info, instrument};
 
-use crate::io::actors::tablet_writer::WriteResponse;
 use crate::io::actors::ActorFactory;
-use crate::io::{Metadata, RuntimeDispatcher, TabletWriterOptions};
-use crate::metastore::TabletId;
-use crate::Body;
+use crate::io::RuntimeDispatcher;
 
 #[derive(Clone)]
 /// The handle for writing new files in the background without
