@@ -26,6 +26,7 @@ use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
 static TABLET_PATH: &str = "tablets";
+static TABLET_METADATA_PATH: &str = "tablet_metadata";
 static METASTORE_FILE: &str = "metastore.sqlite";
 const DEFAULT_TTI_SECS: u64 = 60 * 60; // 1 hour.
 const DEFAULT_MAX_OPEN_READERS: usize = 512; // 1 hour.
@@ -129,6 +130,7 @@ impl Bucket {
 
         paths.ensure_bucket_path_exists()?;
         paths.ensure_tablets_path_exists()?;
+        paths.ensure_tablets_metadata_path_exists()?;
         paths.ensure_metastore_file_exists()?;
 
         let metastore = Metastore::connect(&paths.metastore_sqlite_path()).await?;
@@ -167,17 +169,7 @@ impl Bucket {
         metastore: Metastore,
         runtime: RuntimeDispatcher,
     ) -> Result<Self, FileSystemError> {
-        let tablets = metastore.list_tablets();
-
-        // Ensure all the tablets exist, if some are missing, we have an issue.
-        for tablet in tablets {
-            if !paths.tablet_exists(tablet) {
-                return Err(FileSystemError::Corrupted(format!(
-                    "Bucket {:?} is missing tablet file {tablet}",
-                    config.name
-                )));
-            }
-        }
+        // TODO: Add tablet validator and recovery stage...
 
         let writer_options = TabletWriterOptions::builder()
             .base_path(paths.tablets_path.clone())
@@ -520,6 +512,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
 struct BucketPaths {
     metastore_path: PathBuf,
     tablets_path: PathBuf,
+    tablet_metadata_path: PathBuf,
     base_path: PathBuf,
 }
 
@@ -528,6 +521,7 @@ impl BucketPaths {
         Self {
             metastore_path: base_path.join(METASTORE_FILE),
             tablets_path: base_path.join(TABLET_PATH),
+            tablet_metadata_path: base_path.join(TABLET_METADATA_PATH),
             base_path,
         }
     }
@@ -555,6 +549,17 @@ impl BucketPaths {
 
         info!(path = %self.tablets_path.display(), "Create tablet path");
         std::fs::create_dir(self.tablets_path.as_path())?;
+
+        Ok(())
+    }
+
+    fn ensure_tablets_metadata_path_exists(&self) -> io::Result<()> {
+        if self.tablet_metadata_path.try_exists()? {
+            return Ok(());
+        }
+
+        info!(path = %self.tablet_metadata_path.display(), "Create tablet metadata path");
+        std::fs::create_dir(self.tablet_metadata_path.as_path())?;
 
         Ok(())
     }
