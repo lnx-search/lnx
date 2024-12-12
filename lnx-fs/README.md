@@ -57,3 +57,87 @@ async fn main() -> Result<(), FileSystemError> {
     assert_eq!(data, body);
 }
 ```
+
+## Internals
+
+lnx FS internally acts like an LSM tree specifically for blobs, the API it presents is something similar to that
+of S3 but with some additional features and limitations. 
+
+The system itself makes use of io_uring and DIRECT_IO via `glommio`, which is why there is no file cache being
+hit which may or may not impact your reads.
+
+### Reserved paths
+
+Internally lnx FS uses its own file store to hold onto various bits of metadata and signals, to avoid
+accidental corruption of this data, the system will write internal files under the prefix:
+
+```
+__lnx_fs/
+```
+
+The system will not allow you to write a file under this prefix yourself.
+
+
+### Metastore state
+
+Internally, metadata of files is always kept in memory since it is assumed that the amount of memory this takes
+up is very small relative to the amount of data in the blobs themselves. 
+
+Each tablet appends a footer to the end of each blob it writes to a tablet along with a set of magic bytes
+that allow recovery from zero by scanning from the end of the tablet and moving towards the start. 
+
+Alongside this footer, the writers will asynchronously write to a more compact metadata file in `tablet_metadata/`
+that contains a set of MSGPACK buffers with the same data as the blob footer in the main tablet file.
+This is intended to be used as the main source of persistent under normal operations as it is faster
+to scan and read after a restart.
+The metadata file is laid out like so:
+
+```
+<buffer_len_u32><crc32_checksum_u32><mmsgpack_buffer>
+```
+
+#### Metadata file corruption
+
+The metadata files are written asynchronously and only occasionally flushed to disk, this means it is possible
+for data to be missing from these metadata files. 
+
+When the system first starts up, it reads all the content from each metadata file and then works out 
+what tablets it needs to partially, or entirely re-scan in order to recover the original state.
+
+*Once the first write is completed and flushed in the main tablet file, the data is **always** recoverable.*
+
+
+### Operations
+
+The system also has only two "core" operations, `write` and `read`, the rest of the operations
+are pseudo operations:
+
+- **Write** -> Writes an arbitrary non-zero length buffer as a given file.
+- **Read** -> Reads a blob with the given file path from within the virtual file system.
+- **Delete** -> Writes a new instance of an existing file but with **zero-length buffer** which signals
+    that the blob is empty and can be removed.
+
+
+#### Bulk Transactions
+
+One of the key differences between this system and S3, is that it allows writing and deleting multiple files
+in bulk as part of an all-or-nothing operation. 
+
+But there is a problem, as we mentioned earlier, every blob is given a footer when it is first written to disk,
+and our transactions are mostly just around metadata (we still need to write the blob to disk before we commit)
+but our writers have no way of knowing once a file is committed or rolled back, and they don't want to wait or
+try and overwrite failed transactions, that would be too sensitive to abrupt system failure.
+
+So the solution is each time you create a bulk transaction, the system will allocate a `Ulid` called the
+`transaction_id` which is persisted in the footer alongside each blob's metadata.
+
+When a `transaction_id` is present in the blob, the system will expect a signal file to exist under:
+
+```
+__lnx_fs/transactions/<transaction_id>.commit
+```
+
+To indicate that the transaction was a success. If this file is missing, the transaction will be considered
+a failure and the files will be assumed dead.
+
+Writing the commit signal file is the last fallible step in the transaction.
