@@ -21,7 +21,9 @@ use crate::metastore::TabletId;
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
     /// The base path to store tablet files.
-    base_path: PathBuf,
+    tablet_base_path: PathBuf,
+    /// The base path for tablet metadta files.
+    metadata_base_path: PathBuf,
     #[builder(default = 25 << 30)]
     /// The maximum size of a single tablet.
     max_tablet_size: u64,
@@ -129,9 +131,12 @@ impl TabletWriterController {
 
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
-        let file_path = super::get_tablet_file_path(&self.options.base_path, tablet_id);
-        let metadata_file_path =
-            super::get_tablet_metadata_file_path(&self.options.base_path, tablet_id);
+        let file_path =
+            super::get_tablet_file_path(&self.options.tablet_base_path, tablet_id);
+        let metadata_file_path = super::get_tablet_metadata_file_path(
+            &self.options.metadata_base_path,
+            tablet_id,
+        );
 
         let alive_guard = self
             .alive_writer_semaphore
@@ -416,7 +421,8 @@ mod tests {
         let options = TabletWriterOptions::builder()
             .max_active_writers(max_writers)
             .max_tablet_size(2 << 10)
-            .base_path(temp_dir())
+            .tablet_base_path(temp_dir())
+            .metadata_base_path(temp_dir())
             .build();
         TabletWriter::new(options, dispatch)
     }

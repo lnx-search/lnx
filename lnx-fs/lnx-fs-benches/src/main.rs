@@ -1,5 +1,5 @@
 use std::io::{BufWriter, Write};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use humansize::DECIMAL;
@@ -94,6 +94,8 @@ async fn benchmark_vfs_io() -> Result<()> {
 
         info!("VFS IO run: {formatted_size} {elapsed:?} {formatted_rate}/s");
     }
+
+    tokio::time::sleep(Duration::from_secs(30)).await;
 
     Ok(())
 }

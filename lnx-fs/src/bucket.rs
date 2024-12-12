@@ -172,7 +172,8 @@ impl Bucket {
         // TODO: Add tablet validator and recovery stage...
 
         let writer_options = TabletWriterOptions::builder()
-            .base_path(paths.tablets_path.clone())
+            .tablet_base_path(paths.tablets_path.clone())
+            .metadata_base_path(paths.tablet_metadata_path.clone())
             .maybe_max_active_writers(config.max_active_writers())
             .maybe_max_tablet_size(config.max_tablet_size_bytes())
             .build();
