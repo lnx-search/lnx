@@ -342,6 +342,7 @@ impl TabletWriterActor {
             file_path: metadata.path,
             data_range: start_pos..end_pos,
             created_at: metadata.created_at,
+            transaction_id: metadata.transaction_id,
         };
         
         // Used in recovery of a tablet.
@@ -440,7 +441,11 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+            let metadata = Metadata { 
+                path: "example.txt".to_string(),
+                created_at: 12345,
+                transaction_id: None,
+            };
             async move { writer.write(metadata, body).await }
         });
 
@@ -484,7 +489,11 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+            let metadata = Metadata { 
+                path: "example.txt".to_string(),
+                created_at: 12345,
+                transaction_id: None,
+            };
             async move { writer.write(metadata, body).await }
         });
 
@@ -522,7 +531,11 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::complete(Bytes::from_static(b"Hello, world!"));
-        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let metadata = Metadata { 
+            path: "example.txt".to_string(), 
+            created_at: 12345,
+            transaction_id: None,
+        };
         let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..13);
     }
@@ -534,7 +547,11 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::empty();
-        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let metadata = Metadata { 
+            path: "example.txt".to_string(),
+            created_at: 12345,
+            transaction_id: None,
+        };
         let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..0);
     }
@@ -560,7 +577,11 @@ mod tests {
             tx.finish().await;
         });
 
-        let metadata = Metadata { path: "example.txt".to_string(), created_at: 12345 };
+        let metadata = Metadata { 
+            path: "example.txt".to_string(),
+            created_at: 12345,
+            transaction_id: None,
+        };
         let response = writer.write(metadata, body).await.expect("Write & flush body");
         assert_eq!(response.position, 0..num_bytes);
     }

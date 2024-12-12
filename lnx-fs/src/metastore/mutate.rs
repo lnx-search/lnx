@@ -7,7 +7,7 @@ use super::{Cache, FileUrl, Metastore, MetastoreEntry, MetastoreError, TabletId}
 use crate::FileMetadata;
 
 /// A metastore operation that allows applying multiple operations
-/// in bulk as part of a single atomic operation.
+/// in bulk as part of a single state lock operation.
 pub struct BulkMetastoreModifyOperation<'a> {
     pub(super) metastore: &'a Metastore,
     pub(super) mutations: Vec<StateMutationOp>,
@@ -39,30 +39,6 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
         });
     }
 
-    #[instrument(skip(self))]
-    /// Renames a file from one name to another name.
-    ///
-    /// This will implicitly overwrite any file which already exists at the given path.
-    /// 
-    /// If the file does not exist a [MetastoreError::FileNotFound] error is returned.
-    pub(crate) fn rename_file(
-        &mut self,
-        from_path: &str,
-        to_path: &str,
-    ) -> Result<(), MetastoreError> {        
-        let mut entry =  self.metastore
-            .get_file(from_path)
-            .ok_or_else(|| MetastoreError::FileNotFound(from_path.to_string()))?;
-        entry.url.path = to_path.to_string();
-        
-        self.mutations.push(StateMutationOp::Remove {
-            path: from_path.to_string(),
-        });
-        self.mutations.push(StateMutationOp::Add { entry });
-
-        Ok(())
-    }
-
     #[allow(unused)] // TODO: Add GC system
     /// Delete all files for a given tablet.
     pub(crate) fn delete_tablet_files(
@@ -74,7 +50,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
             .into_iter()
             .map(|e| e.url.path)
             .collect::<Vec<_>>();
-        
+
         self.mutations
             .extend(
                 entries
@@ -88,7 +64,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
 
     #[instrument(skip_all)]
     /// Commits the currently pending bulk operations.
-    pub(crate) async fn commit(self) -> Result<(), MetastoreError> {
+    pub(crate) fn commit(self) {
         let mut lock = self.metastore.write_state.lock();
         for op in self.mutations {
             match op {
@@ -102,8 +78,6 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
         }
         lock.publish();
         trace!("Metastore memory commit OK");
-
-        Ok(())
     }
 
     #[instrument(skip_all)]

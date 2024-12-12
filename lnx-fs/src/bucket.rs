@@ -232,11 +232,12 @@ impl Bucket {
     /// of operations is done via the metastore. Data which then gets left behind
     /// after a rollback will be cleaned up eventually by the bucket GC.
     pub fn begin_tx(&self) -> BulkBucketTx<'_> {
-        let metastore = self.metastore.begin_bulk();
+        let metastore = self.metastore.begin_mutate();
         BulkBucketTx {
             metastore,
             bucket: self,
             num_ops_pending: 0,
+            transaction_id: ulid::Ulid::new(),
         }
     }
 
@@ -253,6 +254,7 @@ impl Bucket {
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
             created_at: now,
+            transaction_id: None,
         };
 
         let response = self.writer.write(write_metadata, body).await?;
@@ -264,9 +266,9 @@ impl Bucket {
             created_at: now,
         };
         
-        let mut bulk = self.metastore.begin_bulk();
+        let mut bulk = self.metastore.begin_mutate();
         bulk.add_file(url, metadata);
-        bulk.commit().await?;
+        bulk.commit();
         trace!("Metadata updated");
 
         Ok(())
@@ -317,34 +319,24 @@ impl Bucket {
     }
 
     #[instrument(skip(self))]
-    /// Rename a file from one name to another name.
-    ///
-    /// This will overwrite any existing file implicitly.
-    pub async fn rename(
-        &self,
-        from_path: &str,
-        to_path: &str,
-    ) -> Result<(), FileSystemError> {
-        let mut bulk = self.metastore.begin_bulk();
-        bulk.rename_file(from_path, to_path)
-            .map_err(|e| {
-                match e {
-                    MetastoreError::FileNotFound(path) => FileSystemError::FileNotFound(path),
-                    other => other.into(),
-                }
-            })?;
-        bulk.commit().await?;
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
-        let mut bulk = self.metastore.begin_bulk();
+        trace!("Begin delete blob");
+        let now = crate::utils::timestamp_now();
+        let write_metadata = crate::io::Metadata {
+            path: path.to_string(),
+            created_at: now,
+            transaction_id: None,
+        };
+        self.writer.write(write_metadata, Body::empty()).await?;
+        trace!("Blob delete write complete");
+        
+        let mut bulk = self.metastore.begin_mutate();
         bulk.remove_file(path);
-        bulk.commit().await?;
+        bulk.commit();
+        
         Ok(())
     }
 
@@ -412,6 +404,7 @@ pub struct BulkBucketTx<'bucket> {
     metastore: BulkMetastoreModifyOperation<'bucket>,
     bucket: &'bucket Bucket,
     num_ops_pending: usize,
+    transaction_id: ulid::Ulid,
 }
 
 impl<'bucket> BulkBucketTx<'bucket> {
@@ -425,6 +418,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         body: Body,
     ) -> Result<(), FileSystemError> {
         assert!(!path.ends_with('/'), "Path cannot end with `/`");
+        assert!(!path.starts_with("__lnx_fs/"), "Use of reserved folder name `__lnx_fs/` is not allowed");
 
         trace!("Begin writing blob");
 
@@ -432,6 +426,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
             created_at: now,
+            transaction_id: Some(self.transaction_id),
         };
         
         let response = self.bucket.writer.write(write_metadata, body).await?;
@@ -451,32 +446,24 @@ impl<'bucket> BulkBucketTx<'bucket> {
         Ok(())
     }
 
-    #[instrument("bulk_rename", skip(self))]
-    /// Rename a file from one name to another name.
-    ///
-    /// This will overwrite any existing file implicitly.
-    pub fn rename(
-        &mut self,
-        from_path: &str,
-        to_path: &str,
-    ) -> Result<(), FileSystemError> {
-        self.metastore
-            .rename_file(from_path, to_path)
-            .map_err(|e| {
-                match e {
-                    MetastoreError::FileNotFound(path) => FileSystemError::FileNotFound(path),
-                    other => other.into(),
-                }
-            })?;
-        self.num_ops_pending += 1;
-        Ok(())
-    }
-
     #[instrument("bulk_delete", skip(self))]
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
-    pub fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
+    pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
+        assert!(!path.ends_with('/'), "Path cannot end with `/`");
+        assert!(!path.starts_with("__lnx_fs/"), "Use of reserved folder name `__lnx_fs/` is not allowed");
+        
+        trace!("Begin delete blob");
+        let now = crate::utils::timestamp_now();
+        let write_metadata = crate::io::Metadata {
+            path: path.to_string(),
+            created_at: now,
+            transaction_id: Some(self.transaction_id),
+        };
+        self.bucket.writer.write(write_metadata, Body::empty()).await?;
+        trace!("Blob delete write complete");
+        
         self.metastore.remove_file(path);
         self.num_ops_pending += 1;
         Ok(())
@@ -488,7 +475,18 @@ impl<'bucket> BulkBucketTx<'bucket> {
         if self.num_ops_pending == 0 {
             return Ok(());
         }
-        self.metastore.commit().await?;
+        
+        let now = crate::utils::timestamp_now();
+        let write_metadata = crate::io::Metadata {
+            path: format!("__lnx_fs/transactions/{}.commit", self.transaction_id),
+            created_at: now,
+            transaction_id: Some(self.transaction_id),
+        };
+        self.bucket.writer.write(write_metadata, Body::empty()).await?;
+        trace!("Blob delete write complete");
+        
+        self.metastore.commit();
+        
         Ok(())
     }
 
@@ -741,39 +739,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bucket_rename_file() {
-        let rt_options = RuntimeOptions::builder().num_threads(1).build();
-        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
-
-        let bucket_name = ulid::Ulid::new().to_string();
-
-        let options = BucketCreateOptions::builder()
-            .bucket_path(temp_dir().join(&bucket_name))
-            .name(bucket_name.clone())
-            .build();
-
-        let bucket = Bucket::create(options, dispatch.clone())
-            .await
-            .expect("Create bucket");
-
-        let body = Body::complete(Bytes::from_static(b"Hello, World!"));
-        bucket.write("example.txt", body).await.expect("Write file");
-
-        let files = bucket.list_all_files();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "example.txt");
-
-        bucket
-            .rename("example.txt", "example2.bar")
-            .await
-            .expect("rename file");
-
-        let files = bucket.list_all_files();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "example2.bar");
-    }
-
-    #[tokio::test]
     async fn test_get_metadata() {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();
         let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
@@ -891,57 +856,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bucket_bulk_rename_file() {
-        let rt_options = RuntimeOptions::builder().num_threads(1).build();
-        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
-
-        let bucket_name = ulid::Ulid::new().to_string();
-
-        let options = BucketCreateOptions::builder()
-            .bucket_path(temp_dir().join(&bucket_name))
-            .name(bucket_name.clone())
-            .build();
-
-        let bucket = Bucket::create(options, dispatch.clone())
-            .await
-            .expect("Create bucket");
-
-        let mut bulk = bucket.begin_tx();
-        bulk.write(
-            "example1.txt",
-            Body::complete(Bytes::from_static(b"Hello, World 1!")),
-        )
-        .await
-        .expect("Write file");
-        bulk.write(
-            "example2.txt",
-            Body::complete(Bytes::from_static(b"Hello, World 2!")),
-        )
-        .await
-        .expect("Write file");
-        bulk.write(
-            "example3.txt",
-            Body::complete(Bytes::from_static(b"Hello, World 3!")),
-        )
-        .await
-        .expect("Write file");
-        bulk.commit().await.expect("Commit operation");
-
-        let mut bulk = bucket.begin_tx();
-        bulk.rename("example1.txt", "example4.txt")
-            .expect("Rename file");
-        bulk.rename("example2.txt", "example5.txt")
-            .expect("Rename file");
-        bulk.delete("example4.txt").unwrap();
-        bulk.commit().await.expect("Commit operation");
-
-        let files = bucket.list_all_files();
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].0, "example3.txt");
-        assert_eq!(files[1].0, "example5.txt");
-    }
-
-    #[tokio::test]
     async fn test_bucket_transaction_isolation() {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();
         let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
@@ -973,7 +887,7 @@ mod tests {
         )
         .await
         .expect("Write file");
-        bulk.delete("example1.txt").unwrap();
+        bulk.delete("example1.txt").await.unwrap();
         bulk.rollback();
 
         let files = bucket.list_all_files();

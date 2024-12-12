@@ -38,6 +38,8 @@ pub struct Metadata {
     pub path: String,
     /// When the file was created.
     pub created_at: u64,
+    /// The transaction ID attached to the write event if applicable.
+    pub transaction_id: Option<ulid::Ulid>,
 }
 
 fn writer_closed<E>(_err: E) -> io::Error {

@@ -11,6 +11,11 @@ pub struct FileEntryFooter {
     pub data_range: Range<u64>,
     /// The UNIX timestamp of when the file was created.
     pub created_at: u64,
+    /// The transaction id attached to file.
+    /// 
+    /// If this is Some(ID) the file is part of a bulk transaction
+    /// and is only valid if a transaction commit marker exists.
+    pub transaction_id: Option<ulid::Ulid>,
 }
 
 impl FileEntryFooter {
@@ -41,7 +46,8 @@ mod tests {
         let footer = FileEntryFooter {
             file_path: "example/file/here.txt".to_string(),
             data_range: 0..123,
-            created_at: 11243123
+            created_at: 11243123,
+            transaction_id: None,
         };
         
         let bytes = footer.to_bytes();
@@ -51,11 +57,11 @@ mod tests {
     #[test]
     fn test_footer_deserialize() {
         let footer_bytes: &[u8] = &[
-            147, 181, 101, 120, 97, 109, 112, 108, 101, 47
-            , 102, 105, 108, 101, 47, 104, 101, 114, 101,
-            46, 116, 120, 116, 146, 0, 123, 206, 0, 171, 142,
-            115, 95, 95, 76, 78, 88, 95, 66, 76, 79, 66, 95,
-            69, 78, 84, 82, 89, 95, 95
+            148, 181, 101, 120, 97, 109, 112, 108, 101, 47, 
+            102, 105, 108, 101, 47, 104, 101, 114, 101, 46,
+            116, 120, 116, 146, 0, 123, 206, 0, 171, 142,
+            115, 192, 95, 95, 76, 78, 88, 95, 66, 76, 79,
+            66, 95, 69, 78, 84, 82, 89, 95, 95
         ];
         let footer = FileEntryFooter::from_bytes(footer_bytes)
             .expect("Footer should deserialize correctly");
