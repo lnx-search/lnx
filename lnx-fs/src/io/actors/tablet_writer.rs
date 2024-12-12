@@ -12,7 +12,8 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
 use crate::io::actors::ActorFactory;
-use crate::io::actors::header::FileEntryFooter;
+use crate::io::actors::basic_writer::BasicWriter;
+use crate::io::actors::footer::FileEntryFooter;
 use crate::io::body::Body;
 use crate::io::Metadata;
 use crate::io::runtime::RuntimeDispatcher;
@@ -78,24 +79,16 @@ impl TabletWriter {
 
         self.send_to_writer(event).await?;
 
-        rx.await.map_err(|_| {
-            io::Error::new(
-                ErrorKind::Interrupted,
-                "Writer actor panicked and aborted prematurely",
-            )
-        })?
+        rx.await.map_err(super::writer_closed)?
     }
         
     async fn send_to_writer(&self, event: WriterEvent) -> Result<()> {
         self.controller.maybe_spawn_writer().await?;
 
-        self.tx.send_async(event).await.map_err(|_| {
-            error!(
-                "LIKELY BUG DETECTED: Controller checked to create writers but writer \
-                    channel still closed, system cannot progress"
-            );
-            io::Error::new(ErrorKind::Other, "Writers failed to start, this is a bug")
-        })?;
+        self.tx
+            .send_async(event)
+            .await
+            .map_err(super::writer_controller_bug_log)?;
         
         Ok(())
     }
@@ -136,6 +129,7 @@ impl TabletWriterController {
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
         let file_path = super::get_tablet_file_path(&self.options.base_path, tablet_id);
+        let metadata_file_path = super::get_tablet_metadata_file_path(&self.options.base_path, tablet_id);
 
         let alive_guard = self
             .alive_writer_semaphore
@@ -144,12 +138,18 @@ impl TabletWriterController {
             .await
             .expect("Semaphore should never be closed");
 
+        let metadata_background_writer = BasicWriter::create(
+            metadata_file_path, 
+            self.runtime.clone(),
+        ).await?;
+        
         let factory = TabletWriterActorFactory {
             tablet_id,
             file_path,
             events: self.events_rx.clone(),
             alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
+            metadata_background_writer,
             max_tablet_size: self.options.max_tablet_size,
         };
 
@@ -179,25 +179,17 @@ struct TabletWriterActorFactory {
     events: flume::Receiver<WriterEvent>,
     alive_guard: OwnedSemaphorePermit,
     active_writer_semaphore: Arc<Semaphore>,
+    metadata_background_writer: BasicWriter,
     max_tablet_size: u64,
 }
 
 #[async_trait(?Send)]
 impl ActorFactory for TabletWriterActorFactory {
     async fn spawn_actor(self) -> Result<()> {
-        let file = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .create(true)
-            .dma_open(self.file_path.as_path())
-            .await?;
+        let file = crate::io::utils::create_rw_file_glommio(&self.file_path).await?;
 
         info!("Tablet file created, syncing directory");
-        if let Some(parent) = self.file_path.parent() {
-            let dir = glommio::io::BufferedFile::open(parent).await?;
-            dir.fdatasync().await?;
-            dir.close().await?;
-        }
+        crate::io::utils::sync_directory_glommio(&self.file_path).await?;
 
         let writer = DmaStreamWriterBuilder::new(file)
             .with_write_behind(10)
@@ -209,6 +201,7 @@ impl ActorFactory for TabletWriterActorFactory {
             _alive_guard: self.alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
             events: self.events.clone(),
+            metadata_background_writer: self.metadata_background_writer,
             writer,
             max_size: self.max_tablet_size,
         };
@@ -246,6 +239,9 @@ pub struct TabletWriterActor {
     /// and has no requirement on previous or future events being
     /// in the right order.
     events: flume::Receiver<WriterEvent>,
+    /// The writer for just file metadata which is written and flushed
+    /// in the background.
+    metadata_background_writer: BasicWriter,
     writer: DmaStreamWriter,
     max_size: u64,
 }
@@ -278,6 +274,7 @@ impl TabletWriterActor {
     async fn flush_and_close(&mut self) -> Result<()> {
         self.writer.sync().await?;
         self.writer.close().await?;
+        self.metadata_background_writer.flush().await?;
         Ok(())
     }
 
@@ -321,7 +318,7 @@ impl TabletWriterActor {
         
         if n_written > 0 {
             debug!("Flush internal buffers");
-            self.writer.sync().await?;
+            self.writer.sync().await?;  // TODO: Schedule on a timer.
         }
 
         Ok(n_written)
@@ -350,6 +347,10 @@ impl TabletWriterActor {
         // Used in recovery of a tablet.
         let buffer = footer.to_bytes();
         self.writer.write_all(&buffer).await?;
+        
+        if let Err(e) = self.metadata_background_writer.write(buffer).await {
+            debug!(error = ?e, "Background writer returned and error");
+        }
         
         Ok(n_written)
     }

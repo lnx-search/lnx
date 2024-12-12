@@ -25,6 +25,8 @@ fnv = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 rmp-serde = { workspace = true }
+evmap = { workspace = true }
+crc32fast = { workspace = true }
 
 tempfile = { workspace = true, optional = true }
 

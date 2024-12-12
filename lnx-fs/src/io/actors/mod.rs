@@ -1,16 +1,19 @@
+use std::fmt::Debug;
 use std::io;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-
+use tracing::error;
 use crate::metastore::TabletId;
 
-mod reader;
-mod writer;
-mod header;
+mod tablet_reader;
+mod tablet_writer;
+mod footer;
+mod basic_writer;
 
-pub use self::reader::{TabletReader, TabletReaderOptions};
-pub use self::writer::{TabletWriter, TabletWriterOptions};
+pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
+pub use self::tablet_writer::{TabletWriter, TabletWriterOptions};
 
 #[async_trait(?Send)]
 /// A factory that creates actor tasks from within the context
@@ -24,6 +27,10 @@ pub(super) fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf 
     base.join(tablet_id.to_string()).with_extension("tablet")
 }
 
+pub(super) fn get_tablet_metadata_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
+    base.join(tablet_id.to_string()).with_extension("tablet.meta")
+}
+
 #[derive(Debug)]
 /// Metadata relating to the blob being written.
 pub struct Metadata {
@@ -31,4 +38,20 @@ pub struct Metadata {
     pub path: String,
     /// When the file was created.
     pub created_at: u64,
+}
+
+fn writer_closed<E>(_err: E) -> io::Error {
+    io::Error::new(ErrorKind::Interrupted, "Writer closed or aborted")
+}
+
+fn writer_controller_bug_log<E>(_err: E) -> io::Error {
+    error!(
+        "LIKELY BUG DETECTED: Controller checked to create writers but writer \
+            channel still closed, system cannot progress"
+    );
+    io::Error::new(ErrorKind::Other, "Writers failed to start or aborted, this is a bug")
+}
+
+fn writer_failed_to_start<E>(_err: E) -> io::Error {
+    io::Error::new(ErrorKind::Other, "Writer failed to start or aborted")
 }

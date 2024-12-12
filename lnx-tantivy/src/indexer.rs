@@ -144,7 +144,7 @@ impl SegmentMemory {
         self,
         bucket: &lnx_fs::Bucket,
     ) -> Result<(), lnx_fs::FileSystemError> {
-        let mut bulk = bucket.begin_tx().await?;
+        let mut bulk = bucket.begin_tx();
         bulk.write(
             &format!("{}.seg-store", self.segment_id),
             Body::complete(self.store),

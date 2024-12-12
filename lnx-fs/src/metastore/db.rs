@@ -2,10 +2,11 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use sqlx::FromRow;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::metastore::{FileUrl, MetastoreError, TabletId};
 use crate::FileMetadata;
+use crate::metastore::bulk::StateMutationOp;
 
 const POOL_SIZE: u32 = if cfg!(test) { 1 } else { 5 };
 
@@ -35,7 +36,6 @@ impl MetastoreDB {
         let query = r#"
         CREATE TABLE IF NOT EXISTS lnx__active_files (
             path TEXT NOT NULL PRIMARY KEY,
-            extension TEXT,
             tablet_id TEXT NOT NULL,
             range_start BIGINT NOT NULL,
             range_end BIGINT NOT NULL,
@@ -44,8 +44,7 @@ impl MetastoreDB {
         
         CREATE UNIQUE INDEX IF NOT EXISTS path_lookup ON lnx__active_files (path);
         CREATE INDEX IF NOT EXISTS tablet_lookup ON lnx__active_files (tablet_id);
-        CREATE INDEX IF NOT EXISTS extension_lookup ON lnx__active_files (extension);
-        
+
         CREATE TABLE IF NOT EXISTS lnx__bucket_config (
             key TEXT NOT NULL PRIMARY KEY,
             value TEXT NOT NULL
@@ -101,13 +100,60 @@ impl MetastoreDB {
         Ok(Some((file_url, metadata)))
     }
 
-    /// Create a bulk transaction operation.
-    pub(crate) async fn begin(
+    /// Apply a set of operations as part of the same transaction.
+    pub async fn apply_bulk_operations(
         &self,
-    ) -> Result<sqlx::Transaction<'_, sqlx::Sqlite>, MetastoreError> {
-        self.pool.begin().await.map_err(MetastoreError::from)
-    }
-
+        operations: Vec<StateMutationOp>,
+    ) -> Result<(), MetastoreError> {
+        let mut tx = self.pool.begin().await?;
+                
+        for op in operations {
+            match op {
+                StateMutationOp::Add { entry } => {
+                    let query = r#"
+                        INSERT INTO lnx__active_files (
+                            path,
+                            tablet_id,
+                            range_start,
+                            range_end,
+                            created_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT (path)
+                        DO UPDATE SET
+                            tablet_id = excluded.tablet_id,
+                            range_start = excluded.range_start,
+                            range_end = excluded.range_end,
+                            created_at = excluded.created_at;
+                    "#;
+                    
+                    sqlx::query(query)
+                        .bind(&entry.url.path)
+                        .bind(entry.url.tablet_id.to_string())
+                        .bind(entry.metadata.position.start as i64)
+                        .bind(entry.metadata.position.end as i64)
+                        .bind(entry.metadata.created_at as i64)
+                        .execute(&mut *tx)
+                        .await?;                   
+                },
+                StateMutationOp::Remove { path } => {
+                     let query = r#"
+                         DELETE FROM lnx__active_files WHERE path = ?;
+                     "#;
+                     
+                     sqlx::query(query)
+                         .bind(path)
+                         .execute(&mut *tx)
+                         .await?;
+                },
+            }
+        }
+        
+        tx.commit().await?;
+        debug!("Completes SQLite bulk transaction");
+        
+        Ok(())
+    } 
+    
     /// Returns a list of all files currently within the metastore.
     pub async fn list_all_files(
         &self,

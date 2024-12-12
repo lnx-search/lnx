@@ -15,13 +15,7 @@ use crate::io::{
     TabletWriter,
     TabletWriterOptions,
 };
-use crate::metastore::{
-    BulkMetastoreModifyOperation,
-    FileUrl,
-    Metastore,
-    MetastoreError,
-    TabletId,
-};
+use crate::metastore::{BulkMetastoreModifyOperation, FileUrl, Metastore, MetastoreEntry, MetastoreError, TabletId};
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
@@ -60,16 +54,19 @@ pub struct BucketCreateOptions {
 /// ```text
 /// base_path/
 /// ├── metastore.sqlite
-/// └── tablets/
-///     └── 01JCXNCND5Q2ANW5JD8F08DN3V.tablet
-///     └── 01JCXNCND4PG1S3317HA4JC2B6.tablet
-///     └── 01JCXNCNDRT1YGN3X459XTQSCA.tablet
+/// ├── tablets/
+/// │   ├── 01JCXNCND5Q2ANW5JD8F08DN3V.tablet
+/// │   ├── 01JCXNCND4PG1S3317HA4JC2B6.tablet
+/// │   └── 01JCXNCNDRT1YGN3X459XTQSCA.tablet
+/// └── tablet_metadata/
+///     ├── 01JCXNCND5Q2ANW5JD8F08DN3V.tablet.meta
+///     ├── 01JCXNCND4PG1S3317HA4JC2B6.tablet.meta
+///     └── 01JCXNCNDRT1YGN3X459XTQSCA.tablet.meta
 /// ```
 ///
 /// #### `metastore.sqlite`
 ///
-/// This contains the metadata of live and active files contained within the
-/// `tablets`, along with metadata about the bucket itself, e.g. name, config, etc...
+/// This contains the metadata of the bucket itself, e.g. name, config, etc...
 ///
 /// #### `tablets/`
 ///
@@ -79,6 +76,18 @@ pub struct BucketCreateOptions {
 /// anymore, this is because the system only periodically performs a compaction and GC
 /// of the dead files.
 ///
+/// #### `tablet_metadata/`
+/// 
+/// This contains persisted metadata for the tablet with the matching name, this includes
+/// a compact representation of the files stored within the tablet, the offsets for each blob
+/// and the individual file metadata.
+/// 
+/// These metadata files are written asynchronously in the background and are used to 
+/// avoid re-scanning every tablet in the store after a restart to recover state.
+/// 
+/// These files can be missing or corrupted, the system will simply re-scan the tablet
+/// and re-built the metadata snapshot of the tablet.
+/// 
 pub struct Bucket {
     /// The currently active bucket config.
     config: BucketConfig,
@@ -152,7 +161,7 @@ impl Bucket {
         metastore: Metastore,
         runtime: RuntimeDispatcher,
     ) -> Result<Self, FileSystemError> {
-        let tablets = metastore.list_tablets().await?;
+        let tablets = metastore.list_tablets();
 
         // Ensure all the tablets exist, if some are missing, we have an issue.
         for tablet in tablets {
@@ -214,7 +223,6 @@ impl Bucket {
         self.paths.base_path.as_path()
     }
 
-    #[instrument(skip(self))]
     /// Begins a new bulk operation transaction.
     ///
     /// All operations applied via the [BulkBucketTx] will be all-or-nothing,
@@ -223,13 +231,13 @@ impl Bucket {
     /// Be aware that data is still written to disk and the atomic handling
     /// of operations is done via the metastore. Data which then gets left behind
     /// after a rollback will be cleaned up eventually by the bucket GC.
-    pub async fn begin_tx(&self) -> Result<BulkBucketTx<'_>, FileSystemError> {
-        let metastore = self.metastore.begin_bulk().await?;
-        Ok(BulkBucketTx {
+    pub fn begin_tx(&self) -> BulkBucketTx<'_> {
+        let metastore = self.metastore.begin_bulk();
+        BulkBucketTx {
             metastore,
             bucket: self,
             num_ops_pending: 0,
-        })
+        }
     }
 
     #[instrument(skip(self, body))]
@@ -250,19 +258,16 @@ impl Bucket {
         let response = self.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
-        let now_in = Instant::now();
         let url = FileUrl::new(path, response.tablet_id);
-
         let metadata = FileMetadata {
             position: response.position,
             created_at: now,
         };
-
-        let mut bulk = self.metastore.begin_bulk().await?;
-        bulk.add_file(url, metadata).await?;
+        
+        let mut bulk = self.metastore.begin_bulk();
+        bulk.add_file(url, metadata);
         bulk.commit().await?;
         trace!("Metadata updated");
-        dbg!(now_in.elapsed());
 
         Ok(())
     }
@@ -279,16 +284,15 @@ impl Bucket {
     pub async fn read(&self, path: &str) -> Result<Body, FileSystemError> {
         trace!("Begin reading blob");
 
-        let (url, metadata) = self
+        let entry = self
             .metastore
             .get_file(path)
-            .await?
             .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))?;
-        let tablet_id = url.tablet_id();
+        let tablet_id = entry.url.tablet_id();
 
         if let Some(reader) = self.readers.get(&tablet_id) {
             return reader
-                .read(metadata.position)
+                .read(entry.metadata.position)
                 .await
                 .map_err(FileSystemError::from);
         }
@@ -307,7 +311,7 @@ impl Bucket {
         self.readers.insert(tablet_id, reader.clone());
 
         reader
-            .read(metadata.position)
+            .read(entry.metadata.position)
             .await
             .map_err(FileSystemError::from)
     }
@@ -321,8 +325,14 @@ impl Bucket {
         from_path: &str,
         to_path: &str,
     ) -> Result<(), FileSystemError> {
-        let mut bulk = self.metastore.begin_bulk().await?;
-        bulk.rename_file(from_path, to_path).await?;
+        let mut bulk = self.metastore.begin_bulk();
+        bulk.rename_file(from_path, to_path)
+            .map_err(|e| {
+                match e {
+                    MetastoreError::FileNotFound(path) => FileSystemError::FileNotFound(path),
+                    other => other.into(),
+                }
+            })?;
         bulk.commit().await?;
         Ok(())
     }
@@ -332,47 +342,48 @@ impl Bucket {
     ///
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
-        let mut bulk = self.metastore.begin_bulk().await?;
-        bulk.remove_file(path).await?;
+        let mut bulk = self.metastore.begin_bulk();
+        bulk.remove_file(path);
         bulk.commit().await?;
         Ok(())
     }
 
-    #[instrument(skip(self))]
     /// Returns the file metadata associated with the given file.
-    pub async fn metadata(&self, path: &str) -> Result<FileMetadata, FileSystemError> {
+    pub fn metadata(&self, path: &str) -> Result<FileMetadata, FileSystemError> {
         trace!("Get metadata");
-        let url_and_metadata = self.metastore.get_file(path).await?;
+        let url_and_metadata = self.metastore.get_file(path);
         url_and_metadata
-            .map(|pair| pair.1)
+            .map(|entry| entry.metadata)
             .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))
     }
 
-    #[instrument(skip(self))]
     /// List all files in the bucket
-    pub async fn list_all_files(
+    pub fn list_all_files(
         &self,
-    ) -> Result<Vec<(String, FileMetadata)>, FileSystemError> {
-        let files = self.metastore.list_all_files().await?;
-
-        Ok(files
+    ) -> Vec<(String, FileMetadata)> {
+        let mut files = self.metastore.list_all_files();
+        files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
+        files
             .into_iter()
-            .map(|(url, metadata)| (url.path, metadata))
-            .collect())
+            .map(|entry| (entry.url.path, entry.metadata))
+            .collect()
     }
 
-    #[instrument(skip(self))]
-    /// List all files in the bucket with a given extension
-    pub async fn list_files_with_ext(
+    /// List all files in the bucket with a given predicate match.
+    pub fn list_files_with_predicate<F>(
         &self,
-        extension: &str,
-    ) -> Result<Vec<(String, FileMetadata)>, FileSystemError> {
-        let files = self.metastore.list_files_with_ext(extension).await?;
-
-        Ok(files
+        mut pred: F,
+    ) -> Vec<(String, FileMetadata)> 
+    where 
+        F: FnMut(&String, &FileMetadata) -> bool,
+    {
+        let mut files = self.metastore
+            .list_files_with_predicate(|entry| pred(&entry.url.path, &entry.metadata));
+        files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
+        files
             .into_iter()
-            .map(|(url, metadata)| (url.path, metadata))
-            .collect())
+            .map(|entry| (entry.url.path, entry.metadata))
+            .collect()
     }
 
     #[instrument(skip_all)]
@@ -427,17 +438,12 @@ impl<'bucket> BulkBucketTx<'bucket> {
         trace!("Blob write complete");
 
         let url = FileUrl::new(path, response.tablet_id);
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
         let metadata = FileMetadata {
             position: response.position,
             created_at: now,
         };
 
-        self.metastore.add_file(url, metadata).await?;
+        self.metastore.add_file(url, metadata);
         trace!("Metadata updated");
 
         self.num_ops_pending += 1;
@@ -449,12 +455,19 @@ impl<'bucket> BulkBucketTx<'bucket> {
     /// Rename a file from one name to another name.
     ///
     /// This will overwrite any existing file implicitly.
-    pub async fn rename(
+    pub fn rename(
         &mut self,
         from_path: &str,
         to_path: &str,
     ) -> Result<(), FileSystemError> {
-        self.metastore.rename_file(from_path, to_path).await?;
+        self.metastore
+            .rename_file(from_path, to_path)
+            .map_err(|e| {
+                match e {
+                    MetastoreError::FileNotFound(path) => FileSystemError::FileNotFound(path),
+                    other => other.into(),
+                }
+            })?;
         self.num_ops_pending += 1;
         Ok(())
     }
@@ -463,8 +476,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
-    pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
-        self.metastore.remove_file(path).await?;
+    pub fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
+        self.metastore.remove_file(path);
         self.num_ops_pending += 1;
         Ok(())
     }
@@ -484,12 +497,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
     ///
     /// This is implicitly ran if the operation is dropped before
     /// either `rollback` or `commit` is explicitly called.
-    pub async fn rollback(self) -> Result<(), FileSystemError> {
-        if self.num_ops_pending == 0 {
-            return Ok(());
-        }
-        self.metastore.rollback().await?;
-        Ok(())
+    pub fn rollback(self) {
+        self.metastore.rollback();
     }
 }
 
@@ -674,7 +683,7 @@ mod tests {
         let body = Body::complete(Bytes::from_static(b"Hello, World!"));
         bucket.write("example.txt", body).await.expect("Write file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, "example.txt");
     }
@@ -723,11 +732,11 @@ mod tests {
         let body = Body::complete(Bytes::from_static(b"Hello, World!"));
         bucket.write("example.txt", body).await.expect("Write file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
 
         bucket.delete("example.txt").await.expect("Delete file");
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert!(files.is_empty());
     }
 
@@ -750,7 +759,7 @@ mod tests {
         let body = Body::complete(Bytes::from_static(b"Hello, World!"));
         bucket.write("example.txt", body).await.expect("Write file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, "example.txt");
 
@@ -759,7 +768,7 @@ mod tests {
             .await
             .expect("rename file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, "example2.bar");
     }
@@ -783,10 +792,10 @@ mod tests {
         let body = Body::complete(Bytes::from_static(b"Hello, World!"));
         bucket.write("example.txt", body).await.expect("Write file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
 
-        let metadata = bucket.metadata("example.txt").await.expect("Get metadata");
+        let metadata = bucket.metadata("example.txt").expect("Get metadata");
         assert_eq!(metadata.position, 0..13);
     }
 
@@ -828,12 +837,12 @@ mod tests {
             .await
             .expect("Write file");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 3);
 
-        let files = bucket.list_files_with_ext("txt").await.expect("List files");
+        let files = bucket.list_files_with_predicate(|path, _| path.ends_with(".txt"));
         assert_eq!(files.len(), 2);
-        let files = bucket.list_files_with_ext("bar").await.expect("List files");
+        let files = bucket.list_files_with_predicate(|path, _| path.ends_with(".bar"));
         assert_eq!(files.len(), 1);
     }
 
@@ -853,7 +862,7 @@ mod tests {
             .await
             .expect("Create bucket");
 
-        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        let mut bulk = bucket.begin_tx();
         bulk.write(
             "example1.txt",
             Body::complete(Bytes::from_static(b"Hello, World 1!")),
@@ -874,7 +883,7 @@ mod tests {
         .expect("Write file");
         bulk.commit().await.expect("Commit operation");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 3);
         assert_eq!(files[0].0, "example1.txt");
         assert_eq!(files[1].0, "example2.txt");
@@ -897,7 +906,7 @@ mod tests {
             .await
             .expect("Create bucket");
 
-        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        let mut bulk = bucket.begin_tx();
         bulk.write(
             "example1.txt",
             Body::complete(Bytes::from_static(b"Hello, World 1!")),
@@ -918,20 +927,18 @@ mod tests {
         .expect("Write file");
         bulk.commit().await.expect("Commit operation");
 
-        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        let mut bulk = bucket.begin_tx();
         bulk.rename("example1.txt", "example4.txt")
-            .await
             .expect("Rename file");
         bulk.rename("example2.txt", "example5.txt")
-            .await
             .expect("Rename file");
-        bulk.delete("example4.txt").await.expect("Del file");
+        bulk.delete("example4.txt").unwrap();
         bulk.commit().await.expect("Commit operation");
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 2);
-        assert_eq!(files[0].0, "example5.txt");
-        assert_eq!(files[1].0, "example3.txt");
+        assert_eq!(files[0].0, "example3.txt");
+        assert_eq!(files[1].0, "example5.txt");
     }
 
     #[tokio::test]
@@ -950,7 +957,7 @@ mod tests {
             .await
             .expect("Create bucket");
 
-        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        let mut bulk = bucket.begin_tx();
         bulk.write(
             "example1.txt",
             Body::complete(Bytes::from_static(b"Hello, World 1!")),
@@ -959,17 +966,17 @@ mod tests {
         .expect("Write file");
         bulk.commit().await.expect("Commit operation");
 
-        let mut bulk = bucket.begin_tx().await.expect("Create bulk operation");
+        let mut bulk = bucket.begin_tx();
         bulk.write(
             "example2.txt",
             Body::complete(Bytes::from_static(b"Hello, World 2!")),
         )
         .await
         .expect("Write file");
-        bulk.delete("example1.txt").await.expect("Del file");
-        bulk.rollback().await.expect("Rollback operation");
+        bulk.delete("example1.txt").unwrap();
+        bulk.rollback();
 
-        let files = bucket.list_all_files().await.expect("List files");
+        let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].0, "example1.txt");
     }

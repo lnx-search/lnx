@@ -1,6 +1,7 @@
 mod actors;
 mod body;
 mod runtime;
+mod utils;
 
 pub use self::actors::{
     TabletReader,

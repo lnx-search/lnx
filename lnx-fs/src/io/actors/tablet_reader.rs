@@ -47,7 +47,7 @@ pub struct TabletReaderOptions {
 #[derive(Clone)]
 /// A [TabletReader] allows both random and sequential read access to tablet files.
 ///
-/// Unlike the [TabletWriter](super::writer::TabletWriter), the reader requires
+/// Unlike the [TabletWriter](super::tablet_writer::TabletWriter), the reader requires
 /// to specify what tablet and position you want to read, and reads are executed
 /// concurrently rather than 1 at a time in the file.
 pub struct TabletReader {

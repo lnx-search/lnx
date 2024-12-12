@@ -6,9 +6,11 @@
 mod bulk;
 mod db;
 
+use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Range;
-
+use std::sync::Arc;
+use parking_lot::Mutex;
 use tracing::instrument;
 
 pub(crate) use crate::metastore::bulk::BulkMetastoreModifyOperation;
@@ -32,6 +34,11 @@ pub enum MetastoreError {
     /// This should never occur unless manual tampering of the metastore
     /// was performed.
     Corrupted,
+    #[error("file {0:?} does not exist")]
+    /// The file being targeted by an operation does not exist.
+    /// 
+    /// This is only returned on operations that cannot upsert, like renames.
+    FileNotFound(String),
     #[error("SQLx Error: {0}")]
     SQLxError(#[from] sqlx::Error),
     #[error("Config Serde Error: {0}")]
@@ -41,8 +48,10 @@ pub enum MetastoreError {
 #[derive(Clone)]
 /// A metastore instance for a given bucket.
 pub struct Metastore {
-    /// An LRU cache for accessing file information.
-    cache: Cache,
+    /// The reader view of the metadata store.
+    reader_state: evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>,
+    /// The metastore state writer.
+    write_state: Arc<Mutex<evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>>>,
     /// THe SQLite DB wrapper for persisting file information.
     db: MetastoreDB,
 }
@@ -51,83 +60,99 @@ impl Metastore {
     /// Connect to the metastore located at the given path.
     pub async fn connect(path: &str) -> Result<Self, MetastoreError> {
         let db = MetastoreDB::connect(path).await?;
-        let cache = moka::sync::CacheBuilder::new(MAX_CACHE_CAPACITY)
-            .weigher(|key: &String, _value: &(TabletId, FileMetadata)| {
-                let size = key.as_bytes().len()
-                    + 16  // size of ulid
-                    + FileMetadata::SIZE_IN_CACHE;
+        
+        // # Safety
+        // The types meet the safety requirement and trait constraints for the map
+        // and ahash mimics the same behaviour as the stdlib hasher in regard to consistency.
+        let (wx, rx) = unsafe { evmap::with_hasher((), ahash::RandomState::new()) };
 
-                size as u32
-            })
-            .build();
-
-        Ok(Self { cache, db })
+        Ok(Self {
+            reader_state: rx,
+            write_state: Arc::new(Mutex::new(wx)),
+            db,
+        })
     }
 
     /// Attempt to get a file with the given path.
     ///
     /// Returns the full [FileUrl] and [FileMetadata].
-    pub(crate) async fn get_file(
+    pub(crate) fn get_file(
         &self,
         path: &str,
-    ) -> Result<Option<(FileUrl, FileMetadata)>, MetastoreError> {
-        if let Some((tablet, metadata)) = self.cache.get(path) {
-            return Ok(Some((FileUrl::new(path, tablet), metadata)));
-        }
-
-        let maybe_file = self.db.get_file(path).await?;
-
-        if let Some((url, metadata)) = maybe_file.clone() {
-            self.cache.insert(url.path, (url.tablet_id, metadata));
-        }
-
-        Ok(maybe_file)
+    ) -> Option<MetastoreEntry> {
+        self.reader_state
+            .get_one(path)
+            .map(|e| e.clone())
     }
 
     #[instrument(skip_all)]
     /// Begins a bulk metastore modify operation which can perform multiple mutations
     /// within a single atomic transaction.
-    pub(crate) async fn begin_bulk(
+    pub(crate) fn begin_bulk(
         &self,
-    ) -> Result<BulkMetastoreModifyOperation, MetastoreError> {
-        let tx = self.db.begin().await?;
-
-        let op = BulkMetastoreModifyOperation {
-            tx,
-            cache: &self.cache,
+    ) -> BulkMetastoreModifyOperation {
+        BulkMetastoreModifyOperation {
+            metastore: self,
             mutations: Vec::with_capacity(1),
-        };
-
-        Ok(op)
+        }
     }
 
     /// Returns a list of all files currently within the metastore.
-    pub async fn list_all_files(
+    pub fn list_all_files(
         &self,
-    ) -> Result<Vec<(FileUrl, FileMetadata)>, MetastoreError> {
-        self.db.list_all_files().await
+    ) -> Vec<MetastoreEntry> {
+        let guard = match self.reader_state.enter() {
+            None => return Vec::new(),
+            Some(guard) => guard,
+        };
+        
+        guard.values()
+            .filter_map(|values| values.get_one())
+            .cloned()
+            .collect()
+        
     }
 
-    /// Returns a list of all tablets.
-    pub async fn list_tablets(&self) -> Result<Vec<TabletId>, MetastoreError> {
-        self.db.list_tablets().await
+    /// Returns a list of all tablets forming the bucket.
+    pub fn list_tablets(&self) -> BTreeSet<TabletId> {
+        let guard = match self.reader_state.enter() {
+            None => return BTreeSet::new(),
+            Some(guard) => guard,
+        };
+
+        guard.values()
+            .filter_map(|values| values.get_one())
+            .map(|entry| entry.url.tablet_id)
+            .collect()
     }
 
     #[allow(unused)] // TODO: Add GC system
     /// Returns a list of all files within the given tablet.
-    pub async fn list_files_in_tablet(
+    pub fn list_files_in_tablet(
         &self,
         tablet_id: TabletId,
-    ) -> Result<Vec<(FileUrl, FileMetadata)>, MetastoreError> {
-        self.db.list_files_in_tablet(tablet_id).await
+    ) -> Vec<MetastoreEntry> {
+        self.list_files_with_predicate(|entry| entry.url.tablet_id == tablet_id)
     }
 
-    /// Returns a list of all files with the given extension.
-    pub async fn list_files_with_ext(
+    /// Returns a list of all files which match the given predicate.
+    pub fn list_files_with_predicate<F>(
         &self,
-        extension: &str,
-    ) -> Result<Vec<(FileUrl, FileMetadata)>, MetastoreError> {
-        self.db.list_files_with_ext(extension).await
+        mut pred: F,
+    ) -> Vec<MetastoreEntry> 
+    where 
+        F: FnMut(&MetastoreEntry) -> bool,
+    {
+        let guard = match self.reader_state.enter() {
+            None => return Vec::new(),
+            Some(guard) => guard,
+        };
+
+        guard.values()
+            .filter_map(|values| values.get_one())
+            .filter(|entry | pred(&*entry))
+            .cloned()
+            .collect()
     }
 
     /// Attempts to retrieve a configuration value with the given key.
@@ -161,6 +186,12 @@ impl Metastore {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub(crate) struct MetastoreEntry {
+    pub(crate) url: FileUrl,
+    pub(crate) metadata: FileMetadata,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TabletId(pub(super) ulid::Ulid);
 
@@ -178,7 +209,7 @@ impl Display for TabletId {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
 pub struct FileUrl {
     pub path: String,
     tablet_id: TabletId,
@@ -206,7 +237,7 @@ impl Display for FileUrl {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FileMetadata {
     /// The start and stop position of the file in the larger tablet.
     pub(crate) position: Range<u64>,
@@ -236,7 +267,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -244,9 +275,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample.gzip", tablet),
@@ -254,23 +283,17 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, _metadata) = metastore
+        let MetastoreEntry { url, .. } = metastore
             .get_file("foo/sample.gzip")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/sample.gzip");
         assert_eq!(url.tablet_id, tablet);
 
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(url.tablet_id, tablet);
@@ -286,7 +309,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -294,9 +317,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample.gzip", tablet),
@@ -304,12 +325,10 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let files = metastore.list_all_files().await.expect("List all files");
+        let files = metastore.list_all_files();
         assert_eq!(files.len(), 2);
     }
 
@@ -321,7 +340,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -329,9 +348,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample.gzip", tablet),
@@ -339,15 +356,13 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let files = metastore.list_tablets().await.expect("List all tablets");
+        let files = metastore.list_tablets();
         assert_eq!(files.len(), 1);
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample2.gzip", TabletId::new()),
@@ -355,12 +370,10 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let files = metastore.list_tablets().await.expect("List all tablets");
+        let files = metastore.list_tablets();
         assert_eq!(files.len(), 2);
     }
 
@@ -372,7 +385,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -380,9 +393,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample.gzip", tablet),
@@ -390,9 +401,7 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample2.gzip", TabletId::new()),
@@ -400,15 +409,11 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
         let files = metastore
-            .list_files_in_tablet(tablet)
-            .await
-            .expect("List all files");
+            .list_files_in_tablet(tablet);
         assert_eq!(files.len(), 2);
     }
 
@@ -420,7 +425,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -428,9 +433,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample.gzip", tablet),
@@ -438,9 +441,7 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/sample2.gzip", TabletId::new()),
@@ -448,20 +449,14 @@ mod tests {
                     position: 42..422,
                     created_at: 234243234,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
         let files = metastore
-            .list_files_with_ext("gzip")
-            .await
-            .expect("List files");
+            .list_files_with_predicate(|entry| entry.url.path.ends_with("gzip"));
         assert_eq!(files.len(), 2);
         let files = metastore
-            .list_files_with_ext("txt")
-            .await
-            .expect("List files");
+            .list_files_with_predicate(|entry| entry.url.path.ends_with("txt"));
         assert_eq!(files.len(), 1);
     }
 
@@ -473,7 +468,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -481,30 +476,22 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, _metadata) = metastore
+        let MetastoreEntry { url, .. } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(url.tablet_id, tablet);
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
-            .remove_file("foo/bar/example.txt")
-            .await
-            .expect("Remove file");
+            .remove_file("foo/bar/example.txt");
         bulk_op.commit().await.unwrap();
 
         let maybe_file = metastore
-            .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore");
+            .get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should be deleted");
     }
 
@@ -514,11 +501,9 @@ mod tests {
             .await
             .expect("Create metastore SQLite table");
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
-            .remove_file("foo/sample.gzip")
-            .await
-            .expect("Missing files should be ignored");
+            .remove_file("foo/sample.gzip");
         bulk_op.commit().await.unwrap();
     }
 
@@ -528,7 +513,7 @@ mod tests {
             .await
             .expect("Create metastore SQLite table");
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", TabletId::new()),
@@ -536,10 +521,7 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
-
+            );
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", TabletId::new()),
@@ -547,15 +529,11 @@ mod tests {
                     position: 0..128,
                     created_at: 123,
                 },
-            )
-            .await
-            .expect("Metastore should allow duplicate path keys and update");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(metadata.created_at, 123);
@@ -567,7 +545,7 @@ mod tests {
             .await
             .expect("Create metastore SQLite table");
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", TabletId::new()),
@@ -575,35 +553,26 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(metadata.created_at, 12314);
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .rename_file("foo/bar/example.txt", "foo/path2/example.bar")
-            .await
             .expect("Metastore should allow duplicate path keys and update");
         bulk_op.commit().await.unwrap();
 
         let maybe_file = metastore
-            .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore");
+            .get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should be moved");
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/path2/example.bar")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/path2/example.bar");
         assert_eq!(metadata.created_at, 12314);
@@ -617,7 +586,7 @@ mod tests {
 
         let tablet = TabletId::new();
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", tablet),
@@ -625,27 +594,21 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(metadata.created_at, 12314);
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
-        let _files = bulk_op.delete_tablet_files(tablet).await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
+        let _files = bulk_op.delete_tablet_files(tablet);
         bulk_op.commit().await.unwrap();
 
         let maybe_file = metastore
-            .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore");
+            .get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should not exit");
     }
 
@@ -655,7 +618,7 @@ mod tests {
             .await
             .expect("Create metastore SQLite table");
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", TabletId::new()),
@@ -663,18 +626,14 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
-        bulk_op.rollback().await.unwrap();
+            );
+        bulk_op.rollback();
 
         let maybe_file = metastore
-            .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore");
+            .get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should not exit");
 
-        let mut bulk_op = metastore.begin_bulk().await.unwrap();
+        let mut bulk_op = metastore.begin_bulk();
         bulk_op
             .add_file(
                 FileUrl::new("foo/bar/example.txt", TabletId::new()),
@@ -682,15 +641,11 @@ mod tests {
                     position: 0..128,
                     created_at: 12314,
                 },
-            )
-            .await
-            .expect("Add file");
+            );
         bulk_op.commit().await.unwrap();
 
-        let (url, metadata) = metastore
+        let MetastoreEntry { url, metadata } = metastore
             .get_file("foo/bar/example.txt")
-            .await
-            .expect("Get file from metastore")
             .expect("File should exist");
         assert_eq!(url.path, "foo/bar/example.txt");
         assert_eq!(metadata.created_at, 12314);
