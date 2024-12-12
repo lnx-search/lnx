@@ -11,14 +11,13 @@ use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder, OpenOptions};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
-use crate::io::actors::ActorFactory;
 use crate::io::actors::basic_writer::BasicWriter;
 use crate::io::actors::footer::FileEntryFooter;
+use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
-use crate::io::Metadata;
 use crate::io::runtime::RuntimeDispatcher;
+use crate::io::Metadata;
 use crate::metastore::TabletId;
-
 
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
@@ -75,13 +74,17 @@ impl TabletWriter {
     /// position within the tablet file.
     pub async fn write(&self, metadata: Metadata, body: Body) -> Result<WriteResponse> {
         let (ack, rx) = oneshot::channel();
-        let event = WriterEvent::Write(WriteEvent { metadata, body, ack });
+        let event = WriterEvent::Write(WriteEvent {
+            metadata,
+            body,
+            ack,
+        });
 
         self.send_to_writer(event).await?;
 
         rx.await.map_err(super::writer_closed)?
     }
-        
+
     async fn send_to_writer(&self, event: WriterEvent) -> Result<()> {
         self.controller.maybe_spawn_writer().await?;
 
@@ -89,10 +92,9 @@ impl TabletWriter {
             .send_async(event)
             .await
             .map_err(super::writer_controller_bug_log)?;
-        
+
         Ok(())
     }
-    
 }
 
 struct TabletWriterController {
@@ -129,7 +131,8 @@ impl TabletWriterController {
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
         let file_path = super::get_tablet_file_path(&self.options.base_path, tablet_id);
-        let metadata_file_path = super::get_tablet_metadata_file_path(&self.options.base_path, tablet_id);
+        let metadata_file_path =
+            super::get_tablet_metadata_file_path(&self.options.base_path, tablet_id);
 
         let alive_guard = self
             .alive_writer_semaphore
@@ -138,11 +141,9 @@ impl TabletWriterController {
             .await
             .expect("Semaphore should never be closed");
 
-        let metadata_background_writer = BasicWriter::create(
-            metadata_file_path, 
-            self.runtime.clone(),
-        ).await?;
-        
+        let metadata_background_writer =
+            BasicWriter::create(metadata_file_path, self.runtime.clone()).await?;
+
         let factory = TabletWriterActorFactory {
             tablet_id,
             file_path,
@@ -288,12 +289,16 @@ impl TabletWriterActor {
             WriterEvent::Write(event) => {
                 self.handle_write_event(event).await;
             },
-        }        
+        }
     }
 
     #[instrument(skip_all)]
     async fn handle_write_event(&mut self, event: WriteEvent) {
-        let WriteEvent { metadata, body, ack } = event;
+        let WriteEvent {
+            metadata,
+            body,
+            ack,
+        } = event;
 
         let start = self.writer.current_pos();
         let result = self.write_file_and_flush(metadata, body).await;
@@ -313,21 +318,29 @@ impl TabletWriterActor {
     }
 
     #[instrument(skip(self, body))]
-    async fn write_file_and_flush(&mut self, metadata: Metadata, body: Body) -> Result<usize> {
-        let n_written = self.copy_data_from_event(metadata, body).await?;        
-        
+    async fn write_file_and_flush(
+        &mut self,
+        metadata: Metadata,
+        body: Body,
+    ) -> Result<usize> {
+        let n_written = self.copy_data_from_event(metadata, body).await?;
+
         if n_written > 0 {
             debug!("Flush internal buffers");
-            self.writer.sync().await?;  // TODO: Schedule on a timer.
+            self.writer.sync().await?; // TODO: Schedule on a timer.
         }
 
         Ok(n_written)
     }
 
     #[instrument(skip_all)]
-    async fn copy_data_from_event(&mut self, metadata: Metadata, body: Body) -> Result<usize> {
+    async fn copy_data_from_event(
+        &mut self,
+        metadata: Metadata,
+        body: Body,
+    ) -> Result<usize> {
         let start_pos = self.writer.current_pos();
-        
+
         let mut n_written = 0;
         loop {
             let Some(chunk) = body.next().await? else {
@@ -336,7 +349,7 @@ impl TabletWriterActor {
             self.writer.write_all(&chunk).await?;
             n_written += chunk.len();
         }
-        
+
         let end_pos = self.writer.current_pos();
         let footer = FileEntryFooter {
             file_path: metadata.path,
@@ -344,15 +357,15 @@ impl TabletWriterActor {
             created_at: metadata.created_at,
             transaction_id: metadata.transaction_id,
         };
-        
+
         // Used in recovery of a tablet.
         let buffer = footer.to_bytes();
         self.writer.write_all(&buffer).await?;
-        
+
         if let Err(e) = self.metadata_background_writer.write(buffer).await {
             debug!(error = ?e, "Background writer returned and error");
         }
-        
+
         Ok(n_written)
     }
 }
@@ -421,12 +434,12 @@ mod tests {
             .expect("System should create writer");
 
         let alive_writers = writer.controller.num_alive_writers();
-        assert_eq!(alive_writers, 1); 
-        let active_writers = writer.controller.num_active_writers(); 
-        assert_eq!(active_writers, 0); 
-    } 
- 
-    #[tokio::test] 
+        assert_eq!(alive_writers, 1);
+        let active_writers = writer.controller.num_active_writers();
+        assert_eq!(active_writers, 0);
+    }
+
+    #[tokio::test]
     async fn test_controller_spawns_new_writer_when_all_active() {
         let _ = tracing_subscriber::fmt::try_init();
 
@@ -441,7 +454,7 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            let metadata = Metadata { 
+            let metadata = Metadata {
                 path: "example.txt".to_string(),
                 created_at: 12345,
                 transaction_id: None,
@@ -489,7 +502,7 @@ mod tests {
         let (tx, body) = Body::channel();
         let handle = tokio::spawn({
             let writer = writer.clone();
-            let metadata = Metadata { 
+            let metadata = Metadata {
                 path: "example.txt".to_string(),
                 created_at: 12345,
                 transaction_id: None,
@@ -531,12 +544,15 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::complete(Bytes::from_static(b"Hello, world!"));
-        let metadata = Metadata { 
-            path: "example.txt".to_string(), 
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
             created_at: 12345,
             transaction_id: None,
         };
-        let response = writer.write(metadata, body).await.expect("Write & flush body");
+        let response = writer
+            .write(metadata, body)
+            .await
+            .expect("Write & flush body");
         assert_eq!(response.position, 0..13);
     }
 
@@ -547,12 +563,15 @@ mod tests {
         let writer = create_test_writer(1);
 
         let body = Body::empty();
-        let metadata = Metadata { 
+        let metadata = Metadata {
             path: "example.txt".to_string(),
             created_at: 12345,
             transaction_id: None,
         };
-        let response = writer.write(metadata, body).await.expect("Write & flush body");
+        let response = writer
+            .write(metadata, body)
+            .await
+            .expect("Write & flush body");
         assert_eq!(response.position, 0..0);
     }
 
@@ -577,12 +596,15 @@ mod tests {
             tx.finish().await;
         });
 
-        let metadata = Metadata { 
+        let metadata = Metadata {
             path: "example.txt".to_string(),
             created_at: 12345,
             transaction_id: None,
         };
-        let response = writer.write(metadata, body).await.expect("Write & flush body");
+        let response = writer
+            .write(metadata, body)
+            .await
+            .expect("Write & flush body");
         assert_eq!(response.position, 0..num_bytes);
     }
 }

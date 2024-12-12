@@ -2,17 +2,18 @@ use std::io;
 use std::io::{ErrorKind, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
+
 use async_trait::async_trait;
 use futures_util::AsyncWriteExt;
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder, OpenOptions};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
-use crate::Body;
+
+use crate::io::actors::tablet_writer::WriteResponse;
 use crate::io::actors::ActorFactory;
 use crate::io::{Metadata, RuntimeDispatcher, TabletWriterOptions};
-use crate::io::actors::tablet_writer::WriteResponse;
 use crate::metastore::TabletId;
-
+use crate::Body;
 
 #[derive(Clone)]
 /// The handle for writing new files in the background without
@@ -21,7 +22,7 @@ use crate::metastore::TabletId;
 /// This handle can be cloned cheaply.
 pub struct BasicWriter {
     tx: flume::Sender<WriterEvent>,
-    _runtime: RuntimeDispatcher,  // Used to keep the runtime alive while active.
+    _runtime: RuntimeDispatcher, // Used to keep the runtime alive while active.
 }
 
 impl BasicWriter {
@@ -30,14 +31,14 @@ impl BasicWriter {
     pub async fn create(file_path: PathBuf, runtime: RuntimeDispatcher) -> Result<Self> {
         info!("Creating metadata background writer");
         let (tx, rx) = flume::bounded(256);
-        
+
         let factory = BasicWriterActorFactory {
             file_path,
             events: rx,
         };
-        
+
         runtime.spawn(factory).await?;
-        
+
         Ok(Self {
             tx,
             _runtime: runtime,
@@ -45,7 +46,7 @@ impl BasicWriter {
     }
 
     /// Submits a buffer to be written to the writer.
-    /// 
+    ///
     /// This will not wait for to write to complete and flush.
     pub async fn write(&self, buffer: Vec<u8>) -> Result<()> {
         let event = WriterEvent::Write { buffer };
@@ -54,7 +55,7 @@ impl BasicWriter {
             .send_async(event)
             .await
             .map_err(super::writer_failed_to_start)?;
-        
+
         Ok(())
     }
 
@@ -85,7 +86,7 @@ impl ActorFactory for BasicWriterActorFactory {
 
         info!("Tablet metadata file created, syncing directory");
         crate::io::utils::sync_directory_glommio(&self.file_path).await?;
-        
+
         let writer = DmaStreamWriterBuilder::new(file)
             .with_write_behind(8)
             .with_buffer_size(1 << 10)
@@ -154,7 +155,9 @@ impl BasicWriterActor {
                 }
             },
             WriterEvent::Flush { ack } => {
-                let res = self.writer.sync()
+                let res = self
+                    .writer
+                    .sync()
                     .await
                     .map(|_| ())
                     .map_err(io::Error::from);
@@ -162,7 +165,7 @@ impl BasicWriterActor {
             },
         }
     }
-    
+
     /// Writes a buffer to the file with a prefix of the buffer length and crc32 checksum.
     async fn write_prefixed_buffer(&mut self, buffer: Vec<u8>) -> Result<()> {
         let buffer_len = buffer.len() as u32;
@@ -171,20 +174,15 @@ impl BasicWriterActor {
         self.writer.write_all(&buffer_len.to_le_bytes()).await?;
         self.writer.write_all(&checksum.to_le_bytes()).await?;
         self.writer.write_all(&buffer).await?;
-        
+
         Ok(())
     }
 }
 
 enum WriterEvent {
-    Write {
-        buffer: Vec<u8>,
-    },
-    Flush {
-        ack: oneshot::Sender<Result<()>>,
-    },
+    Write { buffer: Vec<u8> },
+    Flush { ack: oneshot::Sender<Result<()>> },
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -199,10 +197,9 @@ mod tests {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();
         let dispatch = runtime::create_io_runtime(rt_options).unwrap();
         let tmp_file = tempfile::NamedTempFile::new().unwrap();
-        let writer = BasicWriter::create(
-            tmp_file.path().to_path_buf(), 
-            dispatch
-        ).await.unwrap();
+        let writer = BasicWriter::create(tmp_file.path().to_path_buf(), dispatch)
+            .await
+            .unwrap();
         (writer, tmp_file)
     }
 
@@ -213,15 +210,9 @@ mod tests {
         let (writer, mut file) = create_test_writer().await;
 
         static CONTENT: &[u8] = b"Hello, world!";
-        
-        writer
-            .write(CONTENT.to_vec())
-            .await
-            .expect("Write body");
-        writer
-            .flush()
-            .await
-            .expect("Flush body");
+
+        writer.write(CONTENT.to_vec()).await.expect("Write body");
+        writer.flush().await.expect("Flush body");
         drop(writer);
 
         // Allow the actor to shut down and close the file.
@@ -230,7 +221,11 @@ mod tests {
         file.seek(SeekFrom::Start(0)).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        assert_eq!(data.len(), CONTENT.len() + 4 + 4, "Data should have buffer + len and checksum");
+        assert_eq!(
+            data.len(),
+            CONTENT.len() + 4 + 4,
+            "Data should have buffer + len and checksum"
+        );
         assert_eq!(
             u32::from_le_bytes(data[0..4].try_into().unwrap()),
             CONTENT.len() as u32,
@@ -248,26 +243,24 @@ mod tests {
         let _ = tracing_subscriber::fmt::try_init();
 
         let (writer, mut file) = create_test_writer().await;
-        
-        writer
-            .write(Vec::new())
-            .await
-            .expect("write body");
-        writer
-            .flush()
-            .await
-            .expect("Flush body");
+
+        writer.write(Vec::new()).await.expect("write body");
+        writer.flush().await.expect("Flush body");
         drop(writer);
 
         tokio::time::sleep(Duration::from_secs(1)).await;
-        
+
         file.seek(SeekFrom::Start(0)).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        assert_eq!(data.len(), 4 + 4, "Data should have buffer + len and checksum");
+        assert_eq!(
+            data.len(),
+            4 + 4,
+            "Data should have buffer + len and checksum"
+        );
         assert_eq!(
             u32::from_le_bytes(data[0..4].try_into().unwrap()),
-           0,
+            0,
             "Written buffer length does not match"
         );
         assert_eq!(

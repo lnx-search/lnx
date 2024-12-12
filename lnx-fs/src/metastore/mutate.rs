@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use parking_lot::Mutex;
 use sqlx::Transaction;
 use tracing::{error, instrument, trace};
@@ -16,24 +17,14 @@ pub struct BulkMetastoreModifyOperation<'a> {
 impl<'a> BulkMetastoreModifyOperation<'a> {
     #[instrument(skip(self))]
     /// Add a file to be tracked in the metastore.
-    pub(crate) fn add_file(
-        &mut self,
-        url: FileUrl,
-        metadata: FileMetadata,
-    ) {
-        let entry = MetastoreEntry {
-            url,
-            metadata,
-        };
+    pub(crate) fn add_file(&mut self, url: FileUrl, metadata: FileMetadata) {
+        let entry = MetastoreEntry { url, metadata };
         self.mutations.push(StateMutationOp::Add { entry });
     }
 
     #[instrument(skip(self))]
     /// Remove a file from being tracked in the metastore.
-    pub(crate) fn remove_file(
-        &mut self,
-        path: &str,
-    ) {
+    pub(crate) fn remove_file(&mut self, path: &str) {
         self.mutations.push(StateMutationOp::Remove {
             path: path.to_string(),
         });
@@ -41,23 +32,20 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
 
     #[allow(unused)] // TODO: Add GC system
     /// Delete all files for a given tablet.
-    pub(crate) fn delete_tablet_files(
-        &mut self,
-        tablet: TabletId,
-    ) -> Vec<String> {
-        let entries = self.metastore
+    pub(crate) fn delete_tablet_files(&mut self, tablet: TabletId) -> Vec<String> {
+        let entries = self
+            .metastore
             .list_files_in_tablet(tablet)
             .into_iter()
             .map(|e| e.url.path)
             .collect::<Vec<_>>();
 
-        self.mutations
-            .extend(
-                entries
-                    .iter()
-                    .cloned()
-                    .map(|path| StateMutationOp::Remove { path })
-            );
+        self.mutations.extend(
+            entries
+                .iter()
+                .cloned()
+                .map(|path| StateMutationOp::Remove { path }),
+        );
 
         entries
     }
@@ -85,15 +73,11 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
     ///
     /// If this is not called directly it will be aborted on drop.
     pub(crate) fn rollback(self) {
-        drop(self);  // We just ignore the state we've collected.
+        drop(self); // We just ignore the state we've collected.
     }
 }
 
 pub(super) enum StateMutationOp {
-    Add {
-        entry: MetastoreEntry,
-    },
-    Remove {
-        path: String,
-    },
+    Add { entry: MetastoreEntry },
+    Remove { path: String },
 }

@@ -3,18 +3,19 @@
 //!
 //! Internally it is backed by an SQLite database for each bucket.
 
-mod mutate;
 mod db;
+mod mutate;
 
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Range;
 use std::sync::Arc;
+
 use parking_lot::Mutex;
 use tracing::instrument;
 
-pub(crate) use crate::metastore::mutate::BulkMetastoreModifyOperation;
 use crate::metastore::db::MetastoreDB;
+pub(crate) use crate::metastore::mutate::BulkMetastoreModifyOperation;
 
 pub(crate) type Cache = moka::sync::Cache<String, (TabletId, FileMetadata)>;
 
@@ -36,7 +37,7 @@ pub enum MetastoreError {
     Corrupted,
     #[error("file {0:?} does not exist")]
     /// The file being targeted by an operation does not exist.
-    /// 
+    ///
     /// This is only returned on operations that cannot upsert, like renames.
     FileNotFound(String),
     #[error("SQLx Error: {0}")]
@@ -49,9 +50,14 @@ pub enum MetastoreError {
 /// A metastore instance for a given bucket.
 pub struct Metastore {
     /// The reader view of the metadata store.
-    reader_state: evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>,
+    reader_state:
+        evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>,
     /// The metastore state writer.
-    write_state: Arc<Mutex<evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>>>,
+    write_state: Arc<
+        Mutex<
+            evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>,
+        >,
+    >,
     /// THe SQLite DB wrapper for persisting file information.
     db: MetastoreDB,
 }
@@ -60,7 +66,7 @@ impl Metastore {
     /// Connect to the metastore located at the given path.
     pub async fn connect(path: &str) -> Result<Self, MetastoreError> {
         let db = MetastoreDB::connect(path).await?;
-        
+
         // # Safety
         // The types meet the safety requirement and trait constraints for the map
         // and ahash mimics the same behaviour as the stdlib hasher in regard to consistency.
@@ -76,24 +82,17 @@ impl Metastore {
     /// Attempt to get a file with the given path.
     ///
     /// Returns the full [FileUrl] and [FileMetadata].
-    pub(crate) fn get_file(
-        &self,
-        path: &str,
-    ) -> Option<MetastoreEntry> {
-        self.reader_state
-            .get_one(path)
-            .map(|e| e.clone())
+    pub(crate) fn get_file(&self, path: &str) -> Option<MetastoreEntry> {
+        self.reader_state.get_one(path).map(|e| e.clone())
     }
 
     #[instrument(skip_all)]
     /// Begins a bulk metastore modify operation which can perform multiple mutations
     /// within a state lock.
-    /// 
+    ///
     /// NOTE: This does not isolate file operations, once a file is written it is possible
     /// for it to be recovered upon restart.
-    pub(crate) fn begin_mutate(
-        &self,
-    ) -> BulkMetastoreModifyOperation {
+    pub(crate) fn begin_mutate(&self) -> BulkMetastoreModifyOperation {
         BulkMetastoreModifyOperation {
             metastore: self,
             mutations: Vec::with_capacity(1),
@@ -101,19 +100,17 @@ impl Metastore {
     }
 
     /// Returns a list of all files currently within the metastore.
-    pub fn list_all_files(
-        &self,
-    ) -> Vec<MetastoreEntry> {
+    pub fn list_all_files(&self) -> Vec<MetastoreEntry> {
         let guard = match self.reader_state.enter() {
             None => return Vec::new(),
             Some(guard) => guard,
         };
-        
-        guard.values()
+
+        guard
+            .values()
             .filter_map(|values| values.get_one())
             .cloned()
             .collect()
-        
     }
 
     /// Returns a list of all tablets forming the bucket.
@@ -123,7 +120,8 @@ impl Metastore {
             Some(guard) => guard,
         };
 
-        guard.values()
+        guard
+            .values()
             .filter_map(|values| values.get_one())
             .map(|entry| entry.url.tablet_id)
             .collect()
@@ -131,19 +129,13 @@ impl Metastore {
 
     #[allow(unused)] // TODO: Add GC system
     /// Returns a list of all files within the given tablet.
-    pub fn list_files_in_tablet(
-        &self,
-        tablet_id: TabletId,
-    ) -> Vec<MetastoreEntry> {
+    pub fn list_files_in_tablet(&self, tablet_id: TabletId) -> Vec<MetastoreEntry> {
         self.list_files_with_predicate(|entry| entry.url.tablet_id == tablet_id)
     }
 
     /// Returns a list of all files which match the given predicate.
-    pub fn list_files_with_predicate<F>(
-        &self,
-        mut pred: F,
-    ) -> Vec<MetastoreEntry> 
-    where 
+    pub fn list_files_with_predicate<F>(&self, mut pred: F) -> Vec<MetastoreEntry>
+    where
         F: FnMut(&MetastoreEntry) -> bool,
     {
         let guard = match self.reader_state.enter() {
@@ -151,9 +143,10 @@ impl Metastore {
             Some(guard) => guard,
         };
 
-        guard.values()
+        guard
+            .values()
             .filter_map(|values| values.get_one())
-            .filter(|entry | pred(&*entry))
+            .filter(|entry| pred(&*entry))
             .cloned()
             .collect()
     }
@@ -271,22 +264,20 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample.gzip", tablet),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample.gzip", tablet),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
         let MetastoreEntry { url, .. } = metastore
@@ -313,22 +304,20 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample.gzip", tablet),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample.gzip", tablet),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
         let files = metastore.list_all_files();
@@ -344,36 +333,33 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample.gzip", tablet),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample.gzip", tablet),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
         let files = metastore.list_tablets();
         assert_eq!(files.len(), 1);
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample2.gzip", TabletId::new()),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample2.gzip", TabletId::new()),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
         let files = metastore.list_tablets();
@@ -389,34 +375,30 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample.gzip", tablet),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample2.gzip", TabletId::new()),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample.gzip", tablet),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample2.gzip", TabletId::new()),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
-        let files = metastore
-            .list_files_in_tablet(tablet);
+        let files = metastore.list_files_in_tablet(tablet);
         assert_eq!(files.len(), 2);
     }
 
@@ -429,37 +411,34 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample.gzip", tablet),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/sample2.gzip", TabletId::new()),
-                FileMetadata {
-                    position: 42..422,
-                    created_at: 234243234,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample.gzip", tablet),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/sample2.gzip", TabletId::new()),
+            FileMetadata {
+                position: 42..422,
+                created_at: 234243234,
+            },
+        );
         bulk_op.commit();
 
         let files = metastore
             .list_files_with_predicate(|entry| entry.url.path.ends_with("gzip"));
         assert_eq!(files.len(), 2);
-        let files = metastore
-            .list_files_with_predicate(|entry| entry.url.path.ends_with("txt"));
+        let files =
+            metastore.list_files_with_predicate(|entry| entry.url.path.ends_with("txt"));
         assert_eq!(files.len(), 1);
     }
 
@@ -472,14 +451,13 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
         bulk_op.commit();
 
         let MetastoreEntry { url, .. } = metastore
@@ -489,12 +467,10 @@ mod tests {
         assert_eq!(url.tablet_id, tablet);
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .remove_file("foo/bar/example.txt");
+        bulk_op.remove_file("foo/bar/example.txt");
         bulk_op.commit();
 
-        let maybe_file = metastore
-            .get_file("foo/bar/example.txt");
+        let maybe_file = metastore.get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should be deleted");
     }
 
@@ -505,8 +481,7 @@ mod tests {
             .expect("Create metastore SQLite table");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .remove_file("foo/sample.gzip");
+        bulk_op.remove_file("foo/sample.gzip");
         bulk_op.commit();
     }
 
@@ -517,22 +492,20 @@ mod tests {
             .expect("Create metastore SQLite table");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", TabletId::new()),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", TabletId::new()),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 123,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", TabletId::new()),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", TabletId::new()),
+            FileMetadata {
+                position: 0..128,
+                created_at: 123,
+            },
+        );
         bulk_op.commit();
 
         let MetastoreEntry { url, metadata } = metastore
@@ -551,14 +524,13 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", tablet),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", tablet),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
         bulk_op.commit();
 
         let MetastoreEntry { url, metadata } = metastore
@@ -571,8 +543,7 @@ mod tests {
         let _files = bulk_op.delete_tablet_files(tablet);
         bulk_op.commit();
 
-        let maybe_file = metastore
-            .get_file("foo/bar/example.txt");
+        let maybe_file = metastore.get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should not exit");
     }
 
@@ -583,29 +554,26 @@ mod tests {
             .expect("Create metastore SQLite table");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", TabletId::new()),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", TabletId::new()),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
         bulk_op.rollback();
 
-        let maybe_file = metastore
-            .get_file("foo/bar/example.txt");
+        let maybe_file = metastore.get_file("foo/bar/example.txt");
         assert!(maybe_file.is_none(), "File should not exit");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op
-            .add_file(
-                FileUrl::new("foo/bar/example.txt", TabletId::new()),
-                FileMetadata {
-                    position: 0..128,
-                    created_at: 12314,
-                },
-            );
+        bulk_op.add_file(
+            FileUrl::new("foo/bar/example.txt", TabletId::new()),
+            FileMetadata {
+                position: 0..128,
+                created_at: 12314,
+            },
+        );
         bulk_op.commit();
 
         let MetastoreEntry { url, metadata } = metastore

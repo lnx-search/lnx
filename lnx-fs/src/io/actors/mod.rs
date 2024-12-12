@@ -5,12 +5,13 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use tracing::error;
+
 use crate::metastore::TabletId;
 
+mod basic_writer;
+mod footer;
 mod tablet_reader;
 mod tablet_writer;
-mod footer;
-mod basic_writer;
 
 pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
 pub use self::tablet_writer::{TabletWriter, TabletWriterOptions};
@@ -27,8 +28,12 @@ pub(super) fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf 
     base.join(tablet_id.to_string()).with_extension("tablet")
 }
 
-pub(super) fn get_tablet_metadata_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
-    base.join(tablet_id.to_string()).with_extension("tablet.meta")
+pub(super) fn get_tablet_metadata_file_path(
+    base: &Path,
+    tablet_id: TabletId,
+) -> PathBuf {
+    base.join(tablet_id.to_string())
+        .with_extension("tablet.meta")
 }
 
 #[derive(Debug)]
@@ -51,7 +56,10 @@ fn writer_controller_bug_log<E>(_err: E) -> io::Error {
         "LIKELY BUG DETECTED: Controller checked to create writers but writer \
             channel still closed, system cannot progress"
     );
-    io::Error::new(ErrorKind::Other, "Writers failed to start or aborted, this is a bug")
+    io::Error::new(
+        ErrorKind::Other,
+        "Writers failed to start or aborted, this is a bug",
+    )
 }
 
 fn writer_failed_to_start<E>(_err: E) -> io::Error {

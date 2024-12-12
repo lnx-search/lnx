@@ -1,5 +1,6 @@
 use std::io;
 use std::path::Path;
+
 use glommio::io::{DmaFile, OpenOptions};
 
 /// Syncs the given file's parent directory.
@@ -22,4 +23,3 @@ pub(super) async fn create_rw_file_glommio(file_path: &Path) -> io::Result<DmaFi
         .await?;
     Ok(file)
 }
-

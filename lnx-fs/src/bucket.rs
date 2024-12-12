@@ -15,7 +15,14 @@ use crate::io::{
     TabletWriter,
     TabletWriterOptions,
 };
-use crate::metastore::{BulkMetastoreModifyOperation, FileUrl, Metastore, MetastoreEntry, MetastoreError, TabletId};
+use crate::metastore::{
+    BulkMetastoreModifyOperation,
+    FileUrl,
+    Metastore,
+    MetastoreEntry,
+    MetastoreError,
+    TabletId,
+};
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
@@ -77,17 +84,17 @@ pub struct BucketCreateOptions {
 /// of the dead files.
 ///
 /// #### `tablet_metadata/`
-/// 
+///
 /// This contains persisted metadata for the tablet with the matching name, this includes
 /// a compact representation of the files stored within the tablet, the offsets for each blob
 /// and the individual file metadata.
-/// 
-/// These metadata files are written asynchronously in the background and are used to 
+///
+/// These metadata files are written asynchronously in the background and are used to
 /// avoid re-scanning every tablet in the store after a restart to recover state.
-/// 
+///
 /// These files can be missing or corrupted, the system will simply re-scan the tablet
 /// and re-built the metadata snapshot of the tablet.
-/// 
+///
 pub struct Bucket {
     /// The currently active bucket config.
     config: BucketConfig,
@@ -249,7 +256,7 @@ impl Bucket {
         assert!(!path.ends_with('/'), "Path cannot end with `/`");
 
         trace!("Begin writing blob");
-        
+
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
@@ -265,7 +272,7 @@ impl Bucket {
             position: response.position,
             created_at: now,
         };
-        
+
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_file(url, metadata);
         bulk.commit();
@@ -332,11 +339,11 @@ impl Bucket {
         };
         self.writer.write(write_metadata, Body::empty()).await?;
         trace!("Blob delete write complete");
-        
+
         let mut bulk = self.metastore.begin_mutate();
         bulk.remove_file(path);
         bulk.commit();
-        
+
         Ok(())
     }
 
@@ -350,9 +357,7 @@ impl Bucket {
     }
 
     /// List all files in the bucket
-    pub fn list_all_files(
-        &self,
-    ) -> Vec<(String, FileMetadata)> {
+    pub fn list_all_files(&self) -> Vec<(String, FileMetadata)> {
         let mut files = self.metastore.list_all_files();
         files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
         files
@@ -365,11 +370,12 @@ impl Bucket {
     pub fn list_files_with_predicate<F>(
         &self,
         mut pred: F,
-    ) -> Vec<(String, FileMetadata)> 
-    where 
+    ) -> Vec<(String, FileMetadata)>
+    where
         F: FnMut(&String, &FileMetadata) -> bool,
     {
-        let mut files = self.metastore
+        let mut files = self
+            .metastore
             .list_files_with_predicate(|entry| pred(&entry.url.path, &entry.metadata));
         files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
         files
@@ -418,7 +424,10 @@ impl<'bucket> BulkBucketTx<'bucket> {
         body: Body,
     ) -> Result<(), FileSystemError> {
         assert!(!path.ends_with('/'), "Path cannot end with `/`");
-        assert!(!path.starts_with("__lnx_fs/"), "Use of reserved folder name `__lnx_fs/` is not allowed");
+        assert!(
+            !path.starts_with("__lnx_fs/"),
+            "Use of reserved folder name `__lnx_fs/` is not allowed"
+        );
 
         trace!("Begin writing blob");
 
@@ -428,7 +437,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
             created_at: now,
             transaction_id: Some(self.transaction_id),
         };
-        
+
         let response = self.bucket.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
@@ -452,8 +461,11 @@ impl<'bucket> BulkBucketTx<'bucket> {
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
         assert!(!path.ends_with('/'), "Path cannot end with `/`");
-        assert!(!path.starts_with("__lnx_fs/"), "Use of reserved folder name `__lnx_fs/` is not allowed");
-        
+        assert!(
+            !path.starts_with("__lnx_fs/"),
+            "Use of reserved folder name `__lnx_fs/` is not allowed"
+        );
+
         trace!("Begin delete blob");
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
@@ -461,9 +473,12 @@ impl<'bucket> BulkBucketTx<'bucket> {
             created_at: now,
             transaction_id: Some(self.transaction_id),
         };
-        self.bucket.writer.write(write_metadata, Body::empty()).await?;
+        self.bucket
+            .writer
+            .write(write_metadata, Body::empty())
+            .await?;
         trace!("Blob delete write complete");
-        
+
         self.metastore.remove_file(path);
         self.num_ops_pending += 1;
         Ok(())
@@ -475,18 +490,21 @@ impl<'bucket> BulkBucketTx<'bucket> {
         if self.num_ops_pending == 0 {
             return Ok(());
         }
-        
+
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: format!("__lnx_fs/transactions/{}.commit", self.transaction_id),
             created_at: now,
             transaction_id: Some(self.transaction_id),
         };
-        self.bucket.writer.write(write_metadata, Body::empty()).await?;
+        self.bucket
+            .writer
+            .write(write_metadata, Body::empty())
+            .await?;
         trace!("Blob delete write complete");
-        
+
         self.metastore.commit();
-        
+
         Ok(())
     }
 
