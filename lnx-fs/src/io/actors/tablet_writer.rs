@@ -132,8 +132,8 @@ impl TabletWriterController {
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
         let file_path =
-            super::get_tablet_file_path(&self.options.tablet_base_path, tablet_id);
-        let metadata_file_path = super::get_tablet_metadata_file_path(
+            crate::io::utils::get_tablet_file_path(&self.options.tablet_base_path, tablet_id);
+        let metadata_file_path = crate::io::utils::get_tablet_metadata_file_path(
             &self.options.metadata_base_path,
             tablet_id,
         );

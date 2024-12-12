@@ -1,15 +1,12 @@
 use std::fmt::Debug;
 use std::io;
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use tracing::error;
 
-use crate::metastore::TabletId;
-
 mod basic_writer;
-mod footer;
+pub(crate) mod footer;
 mod tablet_reader;
 mod tablet_writer;
 
@@ -22,18 +19,6 @@ pub use self::tablet_writer::{TabletWriter, TabletWriterOptions};
 pub trait ActorFactory: Send {
     /// Spawns an actor instance with the pre-configured state in factory.
     async fn spawn_actor(self) -> io::Result<()>;
-}
-
-pub(super) fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
-    base.join(tablet_id.to_string()).with_extension("tablet")
-}
-
-pub(super) fn get_tablet_metadata_file_path(
-    base: &Path,
-    tablet_id: TabletId,
-) -> PathBuf {
-    base.join(tablet_id.to_string())
-        .with_extension("tablet.meta")
 }
 
 #[derive(Debug)]
@@ -64,4 +49,20 @@ fn writer_controller_bug_log<E>(_err: E) -> io::Error {
 
 fn writer_failed_to_start<E>(_err: E) -> io::Error {
     io::Error::new(ErrorKind::Other, "Writer failed to start or aborted")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    // Mostly just used to make code-cov happy.
+    #[test]
+    fn test_error_conversions() {
+        let err = writer_closed(());
+        assert_eq!(err.kind(), ErrorKind::Interrupted);
+        let err = writer_controller_bug_log(());
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = writer_failed_to_start(());
+        assert_eq!(err.kind(), ErrorKind::Other);        
+    }
 }

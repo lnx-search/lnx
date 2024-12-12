@@ -5,6 +5,7 @@
 
 mod db;
 mod mutate;
+mod recovery;
 
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};

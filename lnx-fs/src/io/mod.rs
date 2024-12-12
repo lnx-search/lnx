@@ -2,6 +2,7 @@ mod actors;
 mod body;
 mod runtime;
 mod utils;
+mod metadata;
 
 pub use self::actors::{
     Metadata,
