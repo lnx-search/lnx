@@ -141,6 +141,12 @@ pub enum FileSystemError {
     #[error("File not found: {0:?}")]
     /// No file exists within the bucket with the given name.
     FileNotFound(String),
+    #[error("Path for file is too long: {0:?}")]
+    /// The provided file path is too long.
+    PathTooLong(String),
+    #[error("Path invalid: {0}")]
+    /// The provided file path is invalid
+    PathInvalid(String),
     #[error("Bucket already exists: {0:?}")]
     /// A bucket with the provided name already exists.
     BucketAlreadyExists(String),

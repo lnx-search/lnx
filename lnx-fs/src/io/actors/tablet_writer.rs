@@ -11,7 +11,7 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
 use crate::io::actors::basic_writer::BasicWriter;
-use crate::io::actors::footer::FileEntryFooter;
+use crate::io::footer::FileEntryFooter;
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
 use crate::io::runtime::RuntimeDispatcher;

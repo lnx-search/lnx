@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use tracing::error;
 
 mod basic_writer;
-pub(crate) mod footer;
 mod tablet_reader;
 mod tablet_writer;
 

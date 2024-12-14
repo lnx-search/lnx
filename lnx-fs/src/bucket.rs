@@ -30,6 +30,7 @@ static TABLET_METADATA_PATH: &str = "tablet_metadata";
 static METASTORE_FILE: &str = "metastore.sqlite";
 const DEFAULT_TTI_SECS: u64 = 60 * 60; // 1 hour.
 const DEFAULT_MAX_OPEN_READERS: usize = 512; // 1 hour.
+const MAX_PATH_LENGTH: usize = 1 << 10;
 
 /// A bucket that can be cheaply cloned and shared
 /// by being wrapped in an [Arc].
@@ -221,7 +222,7 @@ impl Bucket {
     pub fn path(&self) -> &Path {
         self.paths.base_path.as_path()
     }
-
+    
     /// Begins a new bulk operation transaction.
     ///
     /// All operations applied via the [BulkBucketTx] will be all-or-nothing,
@@ -245,7 +246,7 @@ impl Bucket {
     ///
     /// Once this call completes, the blob is safely persisted to disk.
     pub async fn write(&self, path: &str, body: Body) -> Result<(), FileSystemError> {
-        assert!(!path.ends_with('/'), "Path cannot end with `/`");
+        validate_path(path)?;
 
         trace!("Begin writing blob");
 
@@ -283,6 +284,8 @@ impl Bucket {
     /// To minimise this impact, it is important to have a suitably sized
     /// reader cache allowance.
     pub async fn read(&self, path: &str) -> Result<Body, FileSystemError> {
+        validate_path(path)?;
+        
         trace!("Begin reading blob");
 
         let entry = self
@@ -322,6 +325,8 @@ impl Bucket {
     ///
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
+        validate_path(path)?;
+        
         trace!("Begin delete blob");
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
@@ -415,11 +420,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         path: &str,
         body: Body,
     ) -> Result<(), FileSystemError> {
-        assert!(!path.ends_with('/'), "Path cannot end with `/`");
-        assert!(
-            !path.starts_with("__lnx_fs/"),
-            "Use of reserved folder name `__lnx_fs/` is not allowed"
-        );
+        validate_path(path)?;
 
         trace!("Begin writing blob");
 
@@ -452,12 +453,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
     ///
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
-        assert!(!path.ends_with('/'), "Path cannot end with `/`");
-        assert!(
-            !path.starts_with("__lnx_fs/"),
-            "Use of reserved folder name `__lnx_fs/` is not allowed"
-        );
-
+        validate_path(path)?;
+        
         trace!("Begin delete blob");
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
@@ -589,6 +586,19 @@ impl BucketPaths {
 
     fn tablet_exists(&self, tablet_id: TabletId) -> bool {
         self.tablets_path.join(tablet_id.to_string()).exists()
+    }
+}
+
+
+fn validate_path(path: &str) -> Result<(), FileSystemError> {
+    if path.starts_with("__lnx_fs/") {
+        Err(FileSystemError::PathInvalid(format!("path {path:?} uses reserved file prefix")))
+    } else if path.ends_with('/') {
+        Err(FileSystemError::PathInvalid(format!("path {path:?} ends with `/` which is not allowed")))
+    } else if path.len() > MAX_PATH_LENGTH {
+        Err(FileSystemError::PathTooLong(path.to_string()))
+    } else {
+        Ok(())
     }
 }
 
