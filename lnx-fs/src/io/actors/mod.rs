@@ -11,6 +11,7 @@ mod tablet_writer;
 pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
 pub use self::tablet_writer::{TabletWriter, TabletWriterOptions};
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait(?Send)]
 /// A factory that creates actor tasks from within the context
 /// of a glommio runtime.
@@ -43,10 +44,6 @@ fn writer_controller_bug_log<E>(_err: E) -> io::Error {
     )
 }
 
-fn writer_failed_to_start<E>(_err: E) -> io::Error {
-    io::Error::new(ErrorKind::Other, "Writer failed to start or aborted")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -57,8 +54,6 @@ mod tests {
         let err = writer_closed(());
         assert_eq!(err.kind(), ErrorKind::Interrupted);
         let err = writer_controller_bug_log(());
-        assert_eq!(err.kind(), ErrorKind::Other);
-        let err = writer_failed_to_start(());
         assert_eq!(err.kind(), ErrorKind::Other);
     }
 }

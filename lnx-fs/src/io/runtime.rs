@@ -119,12 +119,34 @@ impl RuntimeDispatcher {
 
 #[cfg(test)]
 mod tests {
+    use crate::io::actors::MockActorFactory;
     use super::*;
 
-    #[test]
-    fn test_create_runtime() {
+    #[tokio::test]
+    async fn test_runtime_dispatch_pass_result() {
         let options = RuntimeOptions::builder().build();
 
-        let _dispatch = create_io_runtime(options).expect("Runtime should be created");
+        let dispatch = create_io_runtime(options)
+            .expect("Runtime should be created");
+        
+        let mut mock_factory = MockActorFactory::new();
+        mock_factory
+            .expect_spawn_actor()
+            .return_once(|| {
+                Ok(())
+            });
+        let result = dispatch.spawn(mock_factory).await;
+        assert!(result.is_ok(), "Spawn actor ok");
+        
+        let mut mock_factory = MockActorFactory::new();
+        mock_factory
+            .expect_spawn_actor()
+            .return_once(|| {
+                Err(io::Error::new(ErrorKind::AddrInUse, "Oops!"))
+            });
+        let err = dispatch.spawn(mock_factory)
+            .await
+            .expect_err("Error should be returned from spawning.");
+        assert_eq!(err.kind(), ErrorKind::AddrInUse);
     }
 }
