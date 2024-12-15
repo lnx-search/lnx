@@ -28,7 +28,8 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                     file_path,
                     data_range,
                 } => {
-                    lock.insert(
+                    dbg!(&file_path, tablet_id);
+                    lock.update(
                         file_path.clone(),
                         MetastoreEntry {
                             path: file_path,

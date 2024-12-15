@@ -222,6 +222,11 @@ impl Bucket {
         self.paths.base_path.as_path()
     }
 
+    /// Returns if a file with a given path exists.
+    pub fn exists(&self, path: &str) -> bool {
+        self.metastore.exists(path)
+    }
+
     /// Begins a new bulk operation transaction.
     ///
     /// All operations applied via the [BulkBucketTx] will be all-or-nothing,
@@ -249,12 +254,12 @@ impl Bucket {
 
         trace!("Begin writing blob");
 
-        let write_metadata = crate::io::Metadata {
+        let metadata = crate::io::Metadata {
             path: path.to_string(),
             transaction_id: None,
         };
 
-        let response = self.writer.write(write_metadata, body).await?;
+        let response = self.writer.write(metadata, body).await?;
         trace!("Blob write complete");
 
         let mut bulk = self.metastore.begin_mutate();
@@ -319,11 +324,43 @@ impl Bucket {
         validate_path(path)?;
 
         trace!("Begin delete blob");
-        let write_metadata = crate::io::Metadata {
+        let metadata = crate::io::Metadata {
             path: path.to_string(),
             transaction_id: None,
         };
-        let response = self.writer.write(write_metadata, Body::empty()).await?;
+        let response = self.writer.delete(metadata).await?;
+        trace!("Blob delete write complete");
+
+        let mut bulk = self.metastore.begin_mutate();
+        bulk.add_event(response.tablet_id, response.event);
+        bulk.commit();
+
+        Ok(())
+    }
+
+    #[instrument(skip(self))]
+    /// Renames a file from the provided path to a new provided path.
+    ///
+    /// Returns a [FileSystemError::FileNotFound] error if the file being
+    /// targeted does not exist.
+    pub async fn rename(
+        &self,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<(), FileSystemError> {
+        validate_path(from_path)?;
+        validate_path(to_path)?;
+
+        if !self.exists(from_path) {
+            return Err(FileSystemError::FileNotFound(from_path.to_string()));
+        }
+
+        trace!("Begin delete blob");
+        let metadata = crate::io::Metadata {
+            path: from_path.to_string(),
+            transaction_id: None,
+        };
+        let response = self.writer.rename(metadata, to_path.to_string()).await?;
         trace!("Blob delete write complete");
 
         let mut bulk = self.metastore.begin_mutate();
@@ -433,11 +470,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
             transaction_id: Some(self.transaction_id),
         };
 
-        let response = self
-            .bucket
-            .writer
-            .write(write_metadata, Body::empty())
-            .await?;
+        let response = self.bucket.writer.delete(write_metadata).await?;
         trace!("Blob delete write complete");
 
         self.metastore.add_event(response.tablet_id, response.event);

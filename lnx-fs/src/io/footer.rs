@@ -161,6 +161,7 @@ mod tests {
         let footer = FileEvent::delete(None, "example/foo/bar.txt".into());
 
         let bytes = footer.to_bytes();
+        println!("{bytes:?}");
         assert_eq!(
             &bytes[..FOOTER_MAGIC_BYTES_LEN],
             FOOTER_MAGIC_BYTES,

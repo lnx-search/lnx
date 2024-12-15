@@ -110,12 +110,15 @@ what tablets it needs to partially, or entirely re-scan in order to recover the 
 ### Operations
 
 The system also has only two "core" operations, `write` and `read`, the rest of the operations
-are pseudo operations:
+are pseudo operations
 
-- **Write** -> Writes an arbitrary non-zero length buffer as a given file.
+- **Write** -> Writes an arbitrary non-zero length buffer as a given file, the file event kind is `Create`.
 - **Read** -> Reads a blob with the given file path from within the virtual file system.
-- **Delete** -> Writes a new instance of an existing file but with **zero-length buffer** which signals
-    that the blob is empty and can be removed.
+- **Delete** -> Writes new entry in the tablet but with a zero-length buffer, the file event kind is `Delete`.
+- **Rename** -> Writes a new entry in the tablet but with zero-length buffer, the file event kind is `Rename`.
+
+NOTE: File events are attached to each operation written to the tablet, this is how the system knows how
+to apply operations even if they all look like zero-length writes.
 
 
 #### Bulk Transactions

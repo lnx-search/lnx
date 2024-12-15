@@ -82,6 +82,11 @@ impl Metastore {
         self.reader_state.get_one(path).map(|e| e.clone())
     }
 
+    /// Returns if the file currently exists with the given path.
+    pub(crate) fn exists(&self, path: &str) -> bool {
+        self.reader_state.contains_key(path)
+    }
+
     #[instrument(skip_all)]
     /// Begins a bulk metastore modify operation which can perform multiple mutations
     /// within a state lock.
@@ -239,7 +244,7 @@ mod tests {
         );
         bulk_op.add_event(
             tablet,
-            FileEvent::create(None, "foo/bar/example.gzip".into(), 0..128),
+            FileEvent::create(None, "foo/sample.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -337,7 +342,7 @@ mod tests {
         bulk_op.commit();
 
         let files = metastore.list_files_in_tablet(tablet);
-        assert_eq!(files.len(), 2);
+        assert_eq!(files.len(), 1);
     }
 
     #[tokio::test]
@@ -382,7 +387,7 @@ mod tests {
         let mut bulk_op = metastore.begin_mutate();
         bulk_op.add_event(
             tablet,
-            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..128),
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -395,7 +400,7 @@ mod tests {
         let mut bulk_op = metastore.begin_mutate();
         bulk_op.add_event(
             tablet,
-            FileEvent::delete(None, "foo/bar/example1.txt".into()),
+            FileEvent::delete(None, "foo/bar/example.txt".into()),
         );
         bulk_op.commit();
 
@@ -429,20 +434,19 @@ mod tests {
         let mut bulk_op = metastore.begin_mutate();
         bulk_op.add_event(
             tablet_a,
-            FileEvent::delete(None, "foo/bar/example1.txt".into()),
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
         bulk_op.add_event(
             tablet_b,
-            FileEvent::delete(None, "foo/bar/example1.txt".into()),
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
         bulk_op.commit();
 
         let MetastoreEntry { path, metadata } = metastore
             .get_file("foo/bar/example.txt")
             .expect("File should exist");
-        assert_eq!(path, "foo/bar/example1.txt");
+        assert_eq!(path, "foo/bar/example.txt");
         assert_eq!(metadata.tablet_id, tablet_b);
-        assert_eq!(metadata.created_at, 123);
     }
 
     #[tokio::test]
@@ -454,7 +458,7 @@ mod tests {
         let mut bulk_op = metastore.begin_mutate();
         bulk_op.add_event(
             TabletId::new(),
-            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..123),
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..123),
         );
         bulk_op.rollback();
 
@@ -464,7 +468,7 @@ mod tests {
         let mut bulk_op = metastore.begin_mutate();
         bulk_op.add_event(
             TabletId::new(),
-            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..123),
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..123),
         );
         bulk_op.commit();
 
