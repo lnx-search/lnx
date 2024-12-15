@@ -375,13 +375,11 @@ impl TabletWriterActor {
     ) -> Result<FileEvent> {
         let start_pos = self.writer.current_pos();
 
-        let mut n_written = 0;
         loop {
             let Some(chunk) = body.next().await? else {
                 break;
             };
             self.writer.write_all(&chunk).await?;
-            n_written += chunk.len();
         }
 
         let end_pos = self.writer.current_pos();
