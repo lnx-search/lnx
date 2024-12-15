@@ -21,51 +21,55 @@ pub struct FileEntryFooter {
 }
 
 impl FileEntryFooter {
-    pub const FOOTER_ADDITIONAL_OVERHEAD_SIZE: usize = FOOTER_MAGIC_BYTES_LEN + size_of::<u32>();
-    
+    pub const FOOTER_LENGTH_BYTES: usize = size_of::<u32>();
+    pub const FOOTER_ADDITIONAL_OVERHEAD_SIZE: usize =
+        FOOTER_MAGIC_BYTES_LEN + Self::FOOTER_LENGTH_BYTES;
+
     #[inline]
     /// Returns the size of the blob.
     pub fn blob_size(&self) -> u64 {
         self.data_range.end - self.data_range.start
     }
-    
+
     /// Serializes the footer into a byte buffer.
+    ///
+    /// This will prefix the buffer with the [FOOTER_MAGIC_BYTES] and an u32 length
+    /// of the buffer.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf =
-            rmp_serde::to_vec(self).expect("Footer serialization should never fail");
-        let len = buf.len() as u32;
-        buf.extend_from_slice(&len.to_le_bytes());
-        buf.extend_from_slice(FOOTER_MAGIC_BYTES);
-        buf
+        let mut output = Vec::new();
+        output.extend_from_slice(FOOTER_MAGIC_BYTES);
+        output.extend_from_slice(&[0; size_of::<u32>()]);
+
+        rmp_serde::encode::write(&mut output, self)
+            .expect("Footer serializer should never fail");
+
+        let len = (output.len() - Self::FOOTER_ADDITIONAL_OVERHEAD_SIZE) as u32;
+        output[FOOTER_MAGIC_BYTES_LEN..FOOTER_MAGIC_BYTES_LEN + size_of::<u32>()]
+            .copy_from_slice(&len.to_le_bytes());
+
+        output
     }
 
     /// Deserializes the footer from a byte buffer.
     ///
-    /// This method expects the buffer length as u32 and [FOOTER_MAGIC_BYTES] to be at the end of the buffer.
-    pub fn from_bytes(mut buffer: &[u8]) -> Option<Self> {
-        assert!(
-            buffer.len() > FOOTER_MAGIC_BYTES_LEN + size_of::<u32>() + 1, 
-            "Buffer is too small to be a footer",
-        );
-        let end = buffer.len();
-        buffer = &buffer[..end - FOOTER_MAGIC_BYTES_LEN + size_of::<u32>()];
-        rmp_serde::from_slice(buffer).ok()
-    }
-    
-    /// Returns the length of the footer in bytes if applicable.
-    pub fn get_footer_length(buffer: &[u8]) -> Option<usize> {
-        if buffer.len() < FOOTER_MAGIC_BYTES_LEN + size_of::<u32>() {
+    /// This method expects the [FOOTER_MAGIC_BYTES] and buffer length as u32 and  to be at the start of the buffer.
+    pub fn from_bytes(buffer: &[u8]) -> Option<Self> {
+        if buffer.len() < Self::FOOTER_ADDITIONAL_OVERHEAD_SIZE + 1 {
             return None;
         }
-        
-        let end = buffer.len();
-        
-        let magic_bytes = &buffer[end - FOOTER_MAGIC_BYTES_LEN..];     
-        assert_eq!(magic_bytes, FOOTER_MAGIC_BYTES, "Footer magic bytes do not match");
-        
-        let slice_at = end-FOOTER_MAGIC_BYTES_LEN-size_of::<u32>()..end-FOOTER_MAGIC_BYTES_LEN;
-        let len_bytes = u32::from_le_bytes(buffer[slice_at].try_into().unwrap());
-        Some(len_bytes as usize)
+
+        let len = u32::from_le_bytes(
+            buffer[FOOTER_MAGIC_BYTES_LEN..FOOTER_MAGIC_BYTES_LEN + size_of::<u32>()]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let offset = Self::FOOTER_ADDITIONAL_OVERHEAD_SIZE;
+
+        if buffer.len() < Self::FOOTER_ADDITIONAL_OVERHEAD_SIZE + len {
+            return None;
+        }
+
+        rmp_serde::from_slice(&buffer[offset..offset + len]).ok()
     }
 }
 
@@ -84,7 +88,7 @@ mod tests {
 
         let bytes = footer.to_bytes();
         assert_eq!(
-            &bytes[bytes.len() - FOOTER_MAGIC_BYTES.len()..],
+            &bytes[..FOOTER_MAGIC_BYTES_LEN],
             FOOTER_MAGIC_BYTES,
             "Footer magic bytes have not been appended to buffer"
         );
@@ -93,10 +97,10 @@ mod tests {
     #[test]
     fn test_footer_deserialize() {
         let footer_bytes: &[u8] = &[
-            148, 181, 101, 120, 97, 109, 112, 108, 101, 47, 102, 105, 108, 
-            101, 47, 104, 101, 114, 101, 46, 116, 120, 116, 146, 0, 123, 
-            206, 0, 171, 142, 115, 192, 32, 0, 0, 0, 95, 95, 76, 78, 88, 
-            95, 66, 76, 79, 66, 95, 69, 78, 84, 82, 89, 95, 95
+            95, 95, 76, 78, 88, 95, 66, 76, 79, 66, 95, 69, 78, 84, 82, 89, 95, 95, 32,
+            0, 0, 0, 148, 181, 101, 120, 97, 109, 112, 108, 101, 47, 102, 105, 108, 101,
+            47, 104, 101, 114, 101, 46, 116, 120, 116, 146, 0, 123, 206, 0, 171, 142,
+            115, 192,
         ];
         let footer = FileEntryFooter::from_bytes(footer_bytes)
             .expect("Footer should deserialize correctly");
@@ -105,38 +109,9 @@ mod tests {
         assert_eq!(footer.created_at, 11243123);
     }
 
-
     #[test]
-    fn test_footer_get_size() {
-        let footer_bytes: &[u8] = &[
-            148, 181, 101, 120, 97, 109, 112, 108, 101, 47, 102, 105, 108,
-            101, 47, 104, 101, 114, 101, 46, 116, 120, 116, 146, 0, 123,
-            206, 0, 171, 142, 115, 192, 32, 0, 0, 0, 95, 95, 76, 78, 88,
-            95, 66, 76, 79, 66, 95, 69, 78, 84, 82, 89, 95, 95
-        ];
-        let footer = FileEntryFooter::get_footer_length(footer_bytes)
-            .expect("Footer should get size correctly");
-        assert_eq!(footer, 32, "Footer size should match");
-        
-        let footer = FileEntryFooter::get_footer_length(&[1, 2, 3]);
-        assert_eq!(footer, None, "Footer should be None because it is too small");
-    }
-    
-    #[should_panic]
-    #[test]
-    fn test_footer_too_small_panic() {
-        FileEntryFooter::from_bytes(&[]);
-    }
-
-    #[should_panic]
-    #[test]
-    fn test_footer_get_size_magic_bytes_missmatch() {
-        let footer_bytes: &[u8] = &[
-            148, 181, 101, 120, 97, 109, 112, 108, 101, 47, 102, 105, 108,
-            101, 47, 104, 101, 114, 101, 46, 116, 120, 116, 146, 0, 123,
-            206, 0, 171, 142, 115, 192, 32, 0, 0, 0, 95, 95, 76, 78, 88,
-            95, 66, 76, 79, 66, 95, 69, 78, 84, 95, 89, 95, 95
-        ];
-        let _ = FileEntryFooter::get_footer_length(footer_bytes);
+    fn test_footer_too_small_none() {
+        let footer = FileEntryFooter::from_bytes(&[]);
+        assert!(footer.is_none());
     }
 }

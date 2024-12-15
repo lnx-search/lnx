@@ -164,13 +164,7 @@ impl BasicWriterActor {
 
     /// Writes a buffer to the file with a prefix of the buffer length and crc32 checksum.
     async fn write_prefixed_buffer(&mut self, buffer: Vec<u8>) -> Result<()> {
-        let buffer_len = buffer.len() as u32;
-        let checksum = crc32fast::hash(&buffer);
-
-        self.writer.write_all(&buffer_len.to_le_bytes()).await?;
-        self.writer.write_all(&checksum.to_le_bytes()).await?;
         self.writer.write_all(&buffer).await?;
-
         Ok(())
     }
 }
@@ -219,18 +213,8 @@ mod tests {
         file.read_to_end(&mut data).unwrap();
         assert_eq!(
             data.len(),
-            CONTENT.len() + 4 + 4,
+            CONTENT.len(),
             "Data should have buffer + len and checksum"
-        );
-        assert_eq!(
-            u32::from_le_bytes(data[0..4].try_into().unwrap()),
-            CONTENT.len() as u32,
-            "Written buffer length does not match"
-        );
-        assert_eq!(
-            u32::from_le_bytes(data[4..8].try_into().unwrap()),
-            crc32fast::hash(CONTENT),
-            "Checksums should match"
         );
     }
 
@@ -249,20 +233,6 @@ mod tests {
         file.seek(SeekFrom::Start(0)).unwrap();
         let mut data = Vec::new();
         file.read_to_end(&mut data).unwrap();
-        assert_eq!(
-            data.len(),
-            4 + 4,
-            "Data should have buffer + len and checksum"
-        );
-        assert_eq!(
-            u32::from_le_bytes(data[0..4].try_into().unwrap()),
-            0,
-            "Written buffer length does not match"
-        );
-        assert_eq!(
-            u32::from_le_bytes(data[4..8].try_into().unwrap()),
-            crc32fast::hash(&[]),
-            "Checksums should match"
-        );
+        assert!(data.is_empty(), "Data should be empty");
     }
 }

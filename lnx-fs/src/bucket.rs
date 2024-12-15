@@ -222,7 +222,7 @@ impl Bucket {
     pub fn path(&self) -> &Path {
         self.paths.base_path.as_path()
     }
-    
+
     /// Begins a new bulk operation transaction.
     ///
     /// All operations applied via the [BulkBucketTx] will be all-or-nothing,
@@ -285,7 +285,7 @@ impl Bucket {
     /// reader cache allowance.
     pub async fn read(&self, path: &str) -> Result<Body, FileSystemError> {
         validate_path(path)?;
-        
+
         trace!("Begin reading blob");
 
         let entry = self
@@ -326,7 +326,7 @@ impl Bucket {
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
         validate_path(path)?;
-        
+
         trace!("Begin delete blob");
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
@@ -454,7 +454,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
     /// Does nothing if the file doesn't exist.
     pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
         validate_path(path)?;
-        
+
         trace!("Begin delete blob");
         let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
@@ -589,12 +589,15 @@ impl BucketPaths {
     }
 }
 
-
 fn validate_path(path: &str) -> Result<(), FileSystemError> {
     if path.starts_with("__lnx_fs/") {
-        Err(FileSystemError::PathInvalid(format!("path {path:?} uses reserved file prefix")))
+        Err(FileSystemError::PathInvalid(format!(
+            "path {path:?} uses reserved file prefix"
+        )))
     } else if path.ends_with('/') {
-        Err(FileSystemError::PathInvalid(format!("path {path:?} ends with `/` which is not allowed")))
+        Err(FileSystemError::PathInvalid(format!(
+            "path {path:?} ends with `/` which is not allowed"
+        )))
     } else if path.len() > MAX_PATH_LENGTH {
         Err(FileSystemError::PathTooLong(path.to_string()))
     } else {

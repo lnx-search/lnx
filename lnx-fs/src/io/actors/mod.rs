@@ -53,7 +53,7 @@ fn writer_failed_to_start<E>(_err: E) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     // Mostly just used to make code-cov happy.
     #[test]
     fn test_error_conversions() {
@@ -62,6 +62,6 @@ mod tests {
         let err = writer_controller_bug_log(());
         assert_eq!(err.kind(), ErrorKind::Other);
         let err = writer_failed_to_start(());
-        assert_eq!(err.kind(), ErrorKind::Other);        
+        assert_eq!(err.kind(), ErrorKind::Other);
     }
 }

@@ -65,8 +65,10 @@ impl TabletReader {
     ) -> Result<Self> {
         let (events_tx, events_rx) = flume::bounded(options.max_concurrent_reads);
 
-        let file_path =
-            crate::io::utils::get_tablet_file_path(&options.base_path, options.tablet_id);
+        let file_path = crate::io::utils::get_tablet_file_path(
+            &options.base_path,
+            options.tablet_id,
+        );
 
         let factory = TabletReaderActorFactory {
             tablet_id: options.tablet_id,

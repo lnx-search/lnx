@@ -11,9 +11,9 @@ use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
 use crate::io::actors::basic_writer::BasicWriter;
-use crate::io::footer::FileEntryFooter;
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
+use crate::io::footer::FileEntryFooter;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
@@ -131,8 +131,10 @@ impl TabletWriterController {
 
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
-        let file_path =
-            crate::io::utils::get_tablet_file_path(&self.options.tablet_base_path, tablet_id);
+        let file_path = crate::io::utils::get_tablet_file_path(
+            &self.options.tablet_base_path,
+            tablet_id,
+        );
         let metadata_file_path = crate::io::utils::get_tablet_metadata_file_path(
             &self.options.metadata_base_path,
             tablet_id,

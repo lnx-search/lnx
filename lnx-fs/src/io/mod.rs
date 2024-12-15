@@ -1,10 +1,9 @@
 mod actors;
 mod body;
+mod footer;
+mod metadata;
 mod runtime;
 mod utils;
-mod metadata;
-mod recover;
-mod footer;
 
 pub use self::actors::{
     Metadata,
