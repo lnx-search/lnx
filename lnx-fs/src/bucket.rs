@@ -173,8 +173,7 @@ impl Bucket {
         // TODO: Add tablet validator and recovery stage...
 
         let writer_options = TabletWriterOptions::builder()
-            .tablet_base_path(paths.tablets_path.clone())
-            .metadata_base_path(paths.tablet_metadata_path.clone())
+            .base_path(paths.tablets_path.clone())
             .maybe_max_active_writers(config.max_active_writers())
             .maybe_max_tablet_size(config.max_tablet_size_bytes())
             .build();
@@ -250,10 +249,8 @@ impl Bucket {
 
         trace!("Begin writing blob");
 
-        let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
-            created_at: now,
             transaction_id: None,
         };
 
@@ -261,13 +258,10 @@ impl Bucket {
         trace!("Blob write complete");
 
         let url = FileUrl::new(path, response.tablet_id);
-        let metadata = FileMetadata {
-            position: response.position,
-            created_at: now,
-        };
+        let event = response.event;
 
         let mut bulk = self.metastore.begin_mutate();
-        bulk.add_file(url, metadata);
+        // TODO: bulk.add_file(url, metadata);
         bulk.commit();
         trace!("Metadata updated");
 
@@ -328,10 +322,8 @@ impl Bucket {
         validate_path(path)?;
 
         trace!("Begin delete blob");
-        let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
-            created_at: now,
             transaction_id: None,
         };
         self.writer.write(write_metadata, Body::empty()).await?;
@@ -424,10 +416,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         trace!("Begin writing blob");
 
-        let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
-            created_at: now,
             transaction_id: Some(self.transaction_id),
         };
 
@@ -435,12 +425,9 @@ impl<'bucket> BulkBucketTx<'bucket> {
         trace!("Blob write complete");
 
         let url = FileUrl::new(path, response.tablet_id);
-        let metadata = FileMetadata {
-            position: response.position,
-            created_at: now,
-        };
-
-        self.metastore.add_file(url, metadata);
+        let event = response.event;
+        
+        // TODO: self.metastore.add_file(url, metadata);
         trace!("Metadata updated");
 
         self.num_ops_pending += 1;
@@ -456,10 +443,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
         validate_path(path)?;
 
         trace!("Begin delete blob");
-        let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: path.to_string(),
-            created_at: now,
             transaction_id: Some(self.transaction_id),
         };
         self.bucket
@@ -480,10 +465,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
             return Ok(());
         }
 
-        let now = crate::utils::timestamp_now();
         let write_metadata = crate::io::Metadata {
             path: format!("__lnx_fs/transactions/{}.commit", self.transaction_id),
-            created_at: now,
             transaction_id: Some(self.transaction_id),
         };
         self.bucket

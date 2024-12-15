@@ -10,10 +10,9 @@ use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, error, info, instrument};
 
-use crate::io::actors::basic_writer::BasicWriter;
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
-use crate::io::footer::FileEntryFooter;
+use crate::io::footer::FileEvent;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
@@ -21,9 +20,7 @@ use crate::metastore::TabletId;
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
     /// The base path to store tablet files.
-    tablet_base_path: PathBuf,
-    /// The base path for tablet metadta files.
-    metadata_base_path: PathBuf,
+    base_path: PathBuf,
     #[builder(default = 25 << 30)]
     /// The maximum size of a single tablet.
     max_tablet_size: u64,
@@ -132,11 +129,7 @@ impl TabletWriterController {
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
         let file_path = crate::io::utils::get_tablet_file_path(
-            &self.options.tablet_base_path,
-            tablet_id,
-        );
-        let metadata_file_path = crate::io::utils::get_tablet_metadata_file_path(
-            &self.options.metadata_base_path,
+            &self.options.base_path,
             tablet_id,
         );
 
@@ -147,16 +140,12 @@ impl TabletWriterController {
             .await
             .expect("Semaphore should never be closed");
 
-        let metadata_background_writer =
-            BasicWriter::create(metadata_file_path, self.runtime.clone()).await?;
-
         let factory = TabletWriterActorFactory {
             tablet_id,
             file_path,
             events: self.events_rx.clone(),
             alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
-            metadata_background_writer,
             max_tablet_size: self.options.max_tablet_size,
         };
 
@@ -186,7 +175,6 @@ struct TabletWriterActorFactory {
     events: flume::Receiver<WriterEvent>,
     alive_guard: OwnedSemaphorePermit,
     active_writer_semaphore: Arc<Semaphore>,
-    metadata_background_writer: BasicWriter,
     max_tablet_size: u64,
 }
 
@@ -208,7 +196,6 @@ impl ActorFactory for TabletWriterActorFactory {
             _alive_guard: self.alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
             events: self.events.clone(),
-            metadata_background_writer: self.metadata_background_writer,
             writer,
             max_size: self.max_tablet_size,
         };
@@ -246,9 +233,6 @@ pub struct TabletWriterActor {
     /// and has no requirement on previous or future events being
     /// in the right order.
     events: flume::Receiver<WriterEvent>,
-    /// The writer for just file metadata which is written and flushed
-    /// in the background.
-    metadata_background_writer: BasicWriter,
     writer: DmaStreamWriter,
     max_size: u64,
 }
@@ -281,7 +265,6 @@ impl TabletWriterActor {
     async fn flush_and_close(&mut self) -> Result<()> {
         self.writer.sync().await?;
         self.writer.close().await?;
-        self.metadata_background_writer.flush().await?;
         Ok(())
     }
 
@@ -306,14 +289,13 @@ impl TabletWriterActor {
             ack,
         } = event;
 
-        let start = self.writer.current_pos();
         let result = self.write_file_and_flush(metadata, body).await;
 
         match result {
-            Ok(n_written) => {
+            Ok(event) => {
                 let response = WriteResponse {
-                    position: start..start + n_written as u64,
                     tablet_id: self.tablet_id,
+                    event,
                 };
                 let _ = ack.send(Ok(response));
             },
@@ -328,23 +310,23 @@ impl TabletWriterActor {
         &mut self,
         metadata: Metadata,
         body: Body,
-    ) -> Result<usize> {
-        let n_written = self.copy_data_from_event(metadata, body).await?;
+    ) -> Result<FileEvent> {
+        let (file_event, n_written) = self.write_blob_to_disk(metadata, body).await?;
 
         if n_written > 0 {
             debug!("Flush internal buffers");
             self.writer.sync().await?; // TODO: Schedule on a timer.
         }
 
-        Ok(n_written)
+        Ok(file_event)
     }
 
     #[instrument(skip_all)]
-    async fn copy_data_from_event(
+    async fn write_blob_to_disk(
         &mut self,
         metadata: Metadata,
         body: Body,
-    ) -> Result<usize> {
+    ) -> Result<(FileEvent, usize)> {
         let start_pos = self.writer.current_pos();
 
         let mut n_written = 0;
@@ -357,22 +339,17 @@ impl TabletWriterActor {
         }
 
         let end_pos = self.writer.current_pos();
-        let footer = FileEntryFooter {
-            file_path: metadata.path,
-            data_range: start_pos..end_pos,
-            created_at: metadata.created_at,
-            transaction_id: metadata.transaction_id,
-        };
+        let footer = FileEvent::create(
+            metadata.transaction_id,
+            metadata.path,
+            start_pos..end_pos,
+        );
 
         // Used in recovery of a tablet.
         let buffer = footer.to_bytes();
         self.writer.write_all(&buffer).await?;
 
-        if let Err(e) = self.metadata_background_writer.write(buffer).await {
-            debug!(error = ?e, "Background writer returned and error");
-        }
-
-        Ok(n_written)
+        Ok((footer, n_written))
     }
 }
 
@@ -399,10 +376,10 @@ struct WriteEvent {
 /// This contains basic metadata about where the blob was written
 /// and in what tablet.
 pub struct WriteResponse {
-    /// The position of the blob with a given start and stop.
-    pub position: Range<u64>,
     /// The ID of the tablet that completed this write.
     pub tablet_id: TabletId,
+    /// The completed file event and associated metadata.
+    pub event: FileEvent,
 }
 
 #[cfg(test)]
@@ -411,7 +388,7 @@ mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
-
+    use crate::io::footer::EventData;
     use super::*;
     use crate::io::runtime;
     use crate::io::runtime::RuntimeOptions;
@@ -423,8 +400,7 @@ mod tests {
         let options = TabletWriterOptions::builder()
             .max_active_writers(max_writers)
             .max_tablet_size(2 << 10)
-            .tablet_base_path(temp_dir())
-            .metadata_base_path(temp_dir())
+            .base_path(temp_dir())
             .build();
         TabletWriter::new(options, dispatch)
     }
@@ -463,7 +439,6 @@ mod tests {
             let writer = writer.clone();
             let metadata = Metadata {
                 path: "example.txt".to_string(),
-                created_at: 12345,
                 transaction_id: None,
             };
             async move { writer.write(metadata, body).await }
@@ -511,7 +486,6 @@ mod tests {
             let writer = writer.clone();
             let metadata = Metadata {
                 path: "example.txt".to_string(),
-                created_at: 12345,
                 transaction_id: None,
             };
             async move { writer.write(metadata, body).await }
@@ -553,14 +527,19 @@ mod tests {
         let body = Body::complete(Bytes::from_static(b"Hello, world!"));
         let metadata = Metadata {
             path: "example.txt".to_string(),
-            created_at: 12345,
             transaction_id: None,
         };
         let response = writer
             .write(metadata, body)
             .await
             .expect("Write & flush body");
-        assert_eq!(response.position, 0..13);
+        match response.event.data {
+            EventData::Create { file_path, data_range } => {
+                assert_eq!(data_range, 0..13);
+                assert_eq!(file_path, "example.txt");
+            },
+            other => panic!("Expected create event got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -572,14 +551,20 @@ mod tests {
         let body = Body::empty();
         let metadata = Metadata {
             path: "example.txt".to_string(),
-            created_at: 12345,
             transaction_id: None,
         };
         let response = writer
             .write(metadata, body)
             .await
             .expect("Write & flush body");
-        assert_eq!(response.position, 0..0);
+        
+        match response.event.data {
+            EventData::Create { file_path, data_range } => {
+                assert_eq!(data_range, 0..13);
+                assert_eq!(file_path, "example.txt");
+            },
+            other => panic!("Expected create event got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -605,13 +590,18 @@ mod tests {
 
         let metadata = Metadata {
             path: "example.txt".to_string(),
-            created_at: 12345,
             transaction_id: None,
         };
         let response = writer
             .write(metadata, body)
             .await
             .expect("Write & flush body");
-        assert_eq!(response.position, 0..num_bytes);
+        match response.event.data {
+            EventData::Create { file_path, data_range } => {
+                assert_eq!(data_range, 0..num_bytes);
+                assert_eq!(file_path, "example.txt");
+            },
+            other => panic!("Expected create event got {other:?}"),
+        }
     }
 }

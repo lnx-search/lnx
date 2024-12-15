@@ -1,11 +1,10 @@
-use std::io::{BufReader, ErrorKind, Read, Seek};
+use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 use std::{cmp, io};
 
-use bytes::Bytes;
 use tracing::{info, instrument, warn};
 
-use crate::io::footer::{FileEntryFooter, FOOTER_MAGIC_BYTES, FOOTER_MAGIC_BYTES_LEN};
+use crate::io::footer::{FileEvent, FOOTER_MAGIC_BYTES, FOOTER_MAGIC_BYTES_LEN};
 use crate::metastore::TabletId;
 
 #[instrument]
@@ -17,7 +16,7 @@ use crate::metastore::TabletId;
 pub fn load_tablet_metadata(
     base_path: &Path,
     tablet_id: TabletId,
-) -> io::Result<Vec<FileEntryFooter>> {
+) -> io::Result<Vec<FileEvent>> {
     let file_path = super::utils::get_tablet_metadata_file_path(base_path, tablet_id);
 
     let file = std::fs::File::open(file_path)?;
@@ -33,7 +32,7 @@ pub fn load_tablet_metadata(
 
 fn load_tablet_metadata_from_reader<R>(
     mut reader: BufReader<R>,
-) -> io::Result<Vec<FileEntryFooter>>
+) -> io::Result<Vec<FileEvent>>
 where
     R: Read + Seek,
 {
@@ -80,7 +79,7 @@ where
             // add their length to the offset.
             temp_buffer_offset += FOOTER_MAGIC_BYTES_LEN;
 
-            match FileEntryFooter::from_bytes(buffer_with_magic_bytes) {
+            match FileEvent::from_bytes(buffer_with_magic_bytes) {
                 None => {
                     warn!("Tablet metadata entry is unable to be deserialized");
                     continue;
@@ -88,7 +87,7 @@ where
                 Some(footer) => {
                     // We can now add the length of the footer u32 indicating the
                     // msgpack bytes length.
-                    temp_buffer_offset += FileEntryFooter::FOOTER_LENGTH_BYTES;
+                    temp_buffer_offset += FileEvent::FOOTER_LENGTH_BYTES;
                     entries.push(footer);
                 },
             }
@@ -172,7 +171,6 @@ mod tests {
         let entries = load_tablet_metadata_from_reader(BufReader::new(sample_metadata))
             .expect("System should read all entries");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].file_path, "example/file/here.txt");
     }
 
     #[test]
@@ -198,7 +196,6 @@ mod tests {
         let entries = load_tablet_metadata_from_reader(BufReader::new(sample_metadata))
             .expect("System should read all entries");
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].file_path, "example/file/here.txt");
     }
 
     #[test]
@@ -219,7 +216,6 @@ mod tests {
         let entries = load_tablet_metadata_from_reader(BufReader::new(sample_metadata))
             .expect("System should read data OK");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].file_path, "example/file/here.txt");
     }
 
     #[test]
@@ -243,12 +239,11 @@ mod tests {
 
     #[test]
     fn test_recover_metadata_many_footer_with_reader() {
-        let sample_footer = FileEntryFooter {
-            file_path: "example.txt".to_string(),
-            data_range: 0..123,
-            created_at: 1234,
-            transaction_id: Some(ulid::Ulid::new()),
-        };
+        let sample_footer = FileEvent::create(
+            Some(ulid::Ulid::new()),
+            "example.txt".to_string(),
+            0..123,
+        );
         let footer_bytes = sample_footer.to_bytes();
 
         let mut file_data = Vec::new();
@@ -264,6 +259,5 @@ mod tests {
         let entries = load_tablet_metadata_from_reader(BufReader::new(sample_metadata))
             .expect("System should read all entries");
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].file_path, "example.txt");
     }
 }

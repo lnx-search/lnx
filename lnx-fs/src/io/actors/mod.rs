@@ -5,7 +5,6 @@ use std::io::ErrorKind;
 use async_trait::async_trait;
 use tracing::error;
 
-mod basic_writer;
 mod tablet_reader;
 mod tablet_writer;
 
@@ -25,8 +24,6 @@ pub trait ActorFactory: Send {
 pub struct Metadata {
     /// The file path for the blob.
     pub path: String,
-    /// When the file was created.
-    pub created_at: u64,
     /// The transaction ID attached to the write event if applicable.
     pub transaction_id: Option<ulid::Ulid>,
 }
