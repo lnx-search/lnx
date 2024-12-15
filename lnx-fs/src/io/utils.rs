@@ -1,6 +1,5 @@
-use std::io::{ErrorKind, Read};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::{cmp, io};
 
 use glommio::io::{DmaFile, OpenOptions};
 

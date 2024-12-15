@@ -119,14 +119,14 @@ impl Metastore {
         guard
             .values()
             .filter_map(|values| values.get_one())
-            .map(|entry| entry.url.tablet_id)
+            .map(|entry| entry.metadata.tablet_id)
             .collect()
     }
 
     #[allow(unused)] // TODO: Add GC system
     /// Returns a list of all files within the given tablet.
     pub fn list_files_in_tablet(&self, tablet_id: TabletId) -> Vec<MetastoreEntry> {
-        self.list_files_with_predicate(|entry| entry.url.tablet_id == tablet_id)
+        self.list_files_with_predicate(|entry| entry.metadata.tablet_id == tablet_id)
     }
 
     /// Returns a list of all files which match the given predicate.
@@ -179,9 +179,9 @@ impl Metastore {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub(crate) struct MetastoreEntry {
-    pub(crate) url: FileUrl,
-    pub(crate) metadata: FileMetadata,
+pub struct MetastoreEntry {
+    pub path: String,
+    pub metadata: FileMetadata,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -201,36 +201,10 @@ impl Display for TabletId {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Hash)]
-pub struct FileUrl {
-    pub path: String,
-    tablet_id: TabletId,
-}
-
-impl FileUrl {
-    /// Creates a new [FileUrl] using the given components.
-    pub fn new(path: &str, tablet_id: TabletId) -> Self {
-        Self {
-            path: path.to_string(),
-            tablet_id,
-        }
-    }
-
-    #[inline]
-    /// Returns the [TabletId] of where the file is stored.
-    pub(crate) fn tablet_id(&self) -> TabletId {
-        self.tablet_id
-    }
-}
-
-impl Display for FileUrl {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "lnx://{}/{}", self.tablet_id, self.path)
-    }
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FileMetadata {
+    /// The tablet ID containing the file data.
+    pub tablet_id: TabletId,
     /// The start and stop position of the file in the larger tablet.
     pub(crate) position: Range<u64>,
     /// The UNIX timestamp when the file was created in seconds.
@@ -248,6 +222,7 @@ impl FileMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::FileEvent;
 
     #[tokio::test]
     async fn test_add_and_get_files() {
@@ -258,35 +233,28 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample.gzip", tablet),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
-        let MetastoreEntry { url, .. } = metastore
+        let MetastoreEntry { path, metadata } = metastore
             .get_file("foo/sample.gzip")
             .expect("File should exist");
-        assert_eq!(url.path, "foo/sample.gzip");
-        assert_eq!(url.tablet_id, tablet);
+        assert_eq!(path, "foo/sample.gzip");
+        assert_eq!(metadata.tablet_id, tablet);
 
-        let MetastoreEntry { url, metadata } = metastore
+        let MetastoreEntry { path, metadata } = metastore
             .get_file("foo/bar/example.txt")
             .expect("File should exist");
-        assert_eq!(url.path, "foo/bar/example.txt");
-        assert_eq!(url.tablet_id, tablet);
+        assert_eq!(path, "foo/bar/example.txt");
+        assert_eq!(metadata.tablet_id, tablet);
         assert_eq!(metadata.position, 0..128);
-        assert_eq!(metadata.created_at, 12314);
     }
 
     #[tokio::test]
@@ -298,19 +266,13 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample.gzip", tablet),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/example.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -327,19 +289,13 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample.gzip", tablet),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/sample.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -347,12 +303,9 @@ mod tests {
         assert_eq!(files.len(), 1);
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/sample2.gzip", TabletId::new()),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "foo/sample2.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -369,26 +322,17 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample.gzip", tablet),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example2.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample2.gzip", TabletId::new()),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "foo/bar/example2.txt".into(), 0..128),
         );
         bulk_op.commit();
 
@@ -405,34 +349,25 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample.gzip", tablet),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example2.gzip".into(), 0..128),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/sample2.gzip", TabletId::new()),
-            FileMetadata {
-                position: 42..422,
-                created_at: 234243234,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example3.gzip".into(), 0..128),
         );
         bulk_op.commit();
 
-        let files = metastore
-            .list_files_with_predicate(|entry| entry.url.path.ends_with("gzip"));
+        let files =
+            metastore.list_files_with_predicate(|entry| entry.path.ends_with("gzip"));
         assert_eq!(files.len(), 2);
         let files =
-            metastore.list_files_with_predicate(|entry| entry.url.path.ends_with("txt"));
+            metastore.list_files_with_predicate(|entry| entry.path.ends_with("txt"));
         assert_eq!(files.len(), 1);
     }
 
@@ -445,23 +380,23 @@ mod tests {
         let tablet = TabletId::new();
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet,
+            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..128),
         );
         bulk_op.commit();
 
-        let MetastoreEntry { url, .. } = metastore
+        let MetastoreEntry { path, metadata } = metastore
             .get_file("foo/bar/example.txt")
             .expect("File should exist");
-        assert_eq!(url.path, "foo/bar/example.txt");
-        assert_eq!(url.tablet_id, tablet);
+        assert_eq!(path, "foo/bar/example.txt");
+        assert_eq!(metadata.tablet_id, tablet);
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.remove_file("foo/bar/example.txt");
+        bulk_op.add_event(
+            tablet,
+            FileEvent::delete(None, "foo/bar/example1.txt".into()),
+        );
         bulk_op.commit();
 
         let maybe_file = metastore.get_file("foo/bar/example.txt");
@@ -475,7 +410,10 @@ mod tests {
             .expect("Create metastore SQLite table");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.remove_file("foo/sample.gzip");
+        bulk_op.add_event(
+            TabletId::new(),
+            FileEvent::delete(None, "foo/bar/example1.txt".into()),
+        );
         bulk_op.commit();
     }
 
@@ -485,60 +423,26 @@ mod tests {
             .await
             .expect("Create metastore SQLite table");
 
+        let tablet_a = TabletId::new();
+        let tablet_b = TabletId::new();
+
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", TabletId::new()),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            tablet_a,
+            FileEvent::delete(None, "foo/bar/example1.txt".into()),
         );
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", TabletId::new()),
-            FileMetadata {
-                position: 0..128,
-                created_at: 123,
-            },
+        bulk_op.add_event(
+            tablet_b,
+            FileEvent::delete(None, "foo/bar/example1.txt".into()),
         );
         bulk_op.commit();
 
-        let MetastoreEntry { url, metadata } = metastore
+        let MetastoreEntry { path, metadata } = metastore
             .get_file("foo/bar/example.txt")
             .expect("File should exist");
-        assert_eq!(url.path, "foo/bar/example.txt");
+        assert_eq!(path, "foo/bar/example1.txt");
+        assert_eq!(metadata.tablet_id, tablet_b);
         assert_eq!(metadata.created_at, 123);
-    }
-
-    #[tokio::test]
-    async fn test_delete_tablet_files() {
-        let metastore = Metastore::connect(":memory:")
-            .await
-            .expect("Create metastore SQLite table");
-
-        let tablet = TabletId::new();
-
-        let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", tablet),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
-        );
-        bulk_op.commit();
-
-        let MetastoreEntry { url, metadata } = metastore
-            .get_file("foo/bar/example.txt")
-            .expect("File should exist");
-        assert_eq!(url.path, "foo/bar/example.txt");
-        assert_eq!(metadata.created_at, 12314);
-
-        let mut bulk_op = metastore.begin_mutate();
-        let _files = bulk_op.delete_tablet_files(tablet);
-        bulk_op.commit();
-
-        let maybe_file = metastore.get_file("foo/bar/example.txt");
-        assert!(maybe_file.is_none(), "File should not exit");
     }
 
     #[tokio::test]
@@ -548,12 +452,9 @@ mod tests {
             .expect("Create metastore SQLite table");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", TabletId::new()),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..123),
         );
         bulk_op.rollback();
 
@@ -561,19 +462,16 @@ mod tests {
         assert!(maybe_file.is_none(), "File should not exit");
 
         let mut bulk_op = metastore.begin_mutate();
-        bulk_op.add_file(
-            FileUrl::new("foo/bar/example.txt", TabletId::new()),
-            FileMetadata {
-                position: 0..128,
-                created_at: 12314,
-            },
+        bulk_op.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "foo/bar/example1.txt".into(), 0..123),
         );
         bulk_op.commit();
 
-        let MetastoreEntry { url, metadata } = metastore
+        let MetastoreEntry { path, metadata, .. } = metastore
             .get_file("foo/bar/example.txt")
             .expect("File should exist");
-        assert_eq!(url.path, "foo/bar/example.txt");
-        assert_eq!(metadata.created_at, 12314);
+        assert_eq!(path, "foo/bar/example.txt");
+        assert_eq!(metadata.position, 0..123);
     }
 }

@@ -1,5 +1,4 @@
 use std::io::Result;
-use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -128,10 +127,8 @@ impl TabletWriterController {
 
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
-        let file_path = crate::io::utils::get_tablet_file_path(
-            &self.options.base_path,
-            tablet_id,
-        );
+        let file_path =
+            crate::io::utils::get_tablet_file_path(&self.options.base_path, tablet_id);
 
         let alive_guard = self
             .alive_writer_semaphore
@@ -388,8 +385,9 @@ mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
-    use crate::io::footer::EventData;
+
     use super::*;
+    use crate::io::footer::EventData;
     use crate::io::runtime;
     use crate::io::runtime::RuntimeOptions;
 
@@ -534,7 +532,10 @@ mod tests {
             .await
             .expect("Write & flush body");
         match response.event.data {
-            EventData::Create { file_path, data_range } => {
+            EventData::Create {
+                file_path,
+                data_range,
+            } => {
                 assert_eq!(data_range, 0..13);
                 assert_eq!(file_path, "example.txt");
             },
@@ -557,9 +558,12 @@ mod tests {
             .write(metadata, body)
             .await
             .expect("Write & flush body");
-        
+
         match response.event.data {
-            EventData::Create { file_path, data_range } => {
+            EventData::Create {
+                file_path,
+                data_range,
+            } => {
                 assert_eq!(data_range, 0..13);
                 assert_eq!(file_path, "example.txt");
             },
@@ -597,7 +601,10 @@ mod tests {
             .await
             .expect("Write & flush body");
         match response.event.data {
-            EventData::Create { file_path, data_range } => {
+            EventData::Create {
+                file_path,
+                data_range,
+            } => {
                 assert_eq!(data_range, 0..num_bytes);
                 assert_eq!(file_path, "example.txt");
             },

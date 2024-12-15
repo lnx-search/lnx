@@ -13,4 +13,5 @@ pub use self::actors::{
     TabletWriterOptions,
 };
 pub use self::body::{Body, BodySender};
+pub use self::footer::{EventData, FileEvent};
 pub use self::runtime::{create_io_runtime, RuntimeDispatcher, RuntimeOptions};

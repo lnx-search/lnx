@@ -30,30 +30,25 @@ impl FileEvent {
         data_range: Range<u64>,
     ) -> Self {
         let created_at = crate::utils::timestamp_now();
-        
+
         Self {
             created_at,
             transaction_id,
             data: EventData::Create {
                 file_path,
                 data_range,
-            }
+            },
         }
     }
 
     /// Creates a new "DELETE" file event.
-    pub fn delete(
-        transaction_id: Option<ulid::Ulid>,
-        file_path: String,
-    ) -> Self {
+    pub fn delete(transaction_id: Option<ulid::Ulid>, file_path: String) -> Self {
         let created_at = crate::utils::timestamp_now();
 
         Self {
             created_at,
             transaction_id,
-            data: EventData::Delete {
-                file_path,
-            }
+            data: EventData::Delete { file_path },
         }
     }
 
@@ -68,10 +63,7 @@ impl FileEvent {
         Self {
             created_at,
             transaction_id,
-            data: EventData::Rename {
-                from_path,
-                to_path,
-            }
+            data: EventData::Rename { from_path, to_path },
         }
     }
 
@@ -134,11 +126,11 @@ pub enum EventData {
     },
     /// A file rename event.
     Rename {
-        /// The original name of the file before rename. 
+        /// The original name of the file before rename.
         from_path: String,
         /// The new name of the file after rename.
         to_path: String,
-    }
+    },
 }
 
 #[cfg(test)]
@@ -147,11 +139,7 @@ mod tests {
 
     #[test]
     fn test_create_footer_de_serialize() {
-        let footer = FileEvent::create(
-            None,
-            "example/foo/bar.txt".into(),
-            0..123,
-        );
+        let footer = FileEvent::create(None, "example/foo/bar.txt".into(), 0..123);
 
         let bytes = footer.to_bytes();
         assert_eq!(
@@ -159,7 +147,7 @@ mod tests {
             FOOTER_MAGIC_BYTES,
             "Footer magic bytes have not been appended to buffer"
         );
-        
+
         let read_footer = FileEvent::from_bytes(&bytes);
         assert_eq!(
             read_footer,
@@ -167,13 +155,10 @@ mod tests {
             "Deserialized footer does not match",
         );
     }
-    
+
     #[test]
     fn test_delete_footer_de_serialize() {
-        let footer = FileEvent::delete(
-            None,
-            "example/foo/bar.txt".into(),
-        );
+        let footer = FileEvent::delete(None, "example/foo/bar.txt".into());
 
         let bytes = footer.to_bytes();
         assert_eq!(
@@ -212,7 +197,7 @@ mod tests {
             "Deserialized footer does not match",
         );
     }
-    
+
     #[test]
     fn test_footer_too_small_none() {
         let footer = FileEvent::from_bytes(&[]);

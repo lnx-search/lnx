@@ -17,8 +17,8 @@ use crate::io::{
 };
 use crate::metastore::{
     BulkMetastoreModifyOperation,
-    FileUrl,
     Metastore,
+    MetastoreEntry,
     MetastoreError,
     TabletId,
 };
@@ -257,11 +257,8 @@ impl Bucket {
         let response = self.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
-        let url = FileUrl::new(path, response.tablet_id);
-        let event = response.event;
-
         let mut bulk = self.metastore.begin_mutate();
-        // TODO: bulk.add_file(url, metadata);
+        bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
         trace!("Metadata updated");
 
@@ -286,7 +283,7 @@ impl Bucket {
             .metastore
             .get_file(path)
             .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))?;
-        let tablet_id = entry.url.tablet_id();
+        let tablet_id = entry.metadata.tablet_id;
 
         if let Some(reader) = self.readers.get(&tablet_id) {
             return reader
@@ -326,11 +323,11 @@ impl Bucket {
             path: path.to_string(),
             transaction_id: None,
         };
-        self.writer.write(write_metadata, Body::empty()).await?;
+        let response = self.writer.write(write_metadata, Body::empty()).await?;
         trace!("Blob delete write complete");
 
         let mut bulk = self.metastore.begin_mutate();
-        bulk.remove_file(path);
+        bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
 
         Ok(())
@@ -346,31 +343,22 @@ impl Bucket {
     }
 
     /// List all files in the bucket
-    pub fn list_all_files(&self) -> Vec<(String, FileMetadata)> {
+    pub fn list_all_files(&self) -> Vec<MetastoreEntry> {
         let mut files = self.metastore.list_all_files();
-        files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
+        files.sort_by(|a, b| a.path.cmp(&b.path));
         files
-            .into_iter()
-            .map(|entry| (entry.url.path, entry.metadata))
-            .collect()
     }
 
     /// List all files in the bucket with a given predicate match.
-    pub fn list_files_with_predicate<F>(
-        &self,
-        mut pred: F,
-    ) -> Vec<(String, FileMetadata)>
+    pub fn list_files_with_predicate<F>(&self, mut pred: F) -> Vec<MetastoreEntry>
     where
         F: FnMut(&String, &FileMetadata) -> bool,
     {
         let mut files = self
             .metastore
-            .list_files_with_predicate(|entry| pred(&entry.url.path, &entry.metadata));
-        files.sort_by(|a, b| a.url.path.cmp(&b.url.path));
+            .list_files_with_predicate(|entry| pred(&entry.path, &entry.metadata));
+        files.sort_by(|a, b| a.path.cmp(&b.path));
         files
-            .into_iter()
-            .map(|entry| (entry.url.path, entry.metadata))
-            .collect()
     }
 
     #[instrument(skip_all)]
@@ -424,10 +412,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self.bucket.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
-        let url = FileUrl::new(path, response.tablet_id);
-        let event = response.event;
-        
-        // TODO: self.metastore.add_file(url, metadata);
+        self.metastore.add_event(response.tablet_id, response.event);
         trace!("Metadata updated");
 
         self.num_ops_pending += 1;
@@ -447,13 +432,16 @@ impl<'bucket> BulkBucketTx<'bucket> {
             path: path.to_string(),
             transaction_id: Some(self.transaction_id),
         };
-        self.bucket
+
+        let response = self
+            .bucket
             .writer
             .write(write_metadata, Body::empty())
             .await?;
         trace!("Blob delete write complete");
 
-        self.metastore.remove_file(path);
+        self.metastore.add_event(response.tablet_id, response.event);
+
         self.num_ops_pending += 1;
         Ok(())
     }
@@ -702,7 +690,7 @@ mod tests {
 
         let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "example.txt");
+        assert_eq!(files[0].path, "example.txt");
     }
 
     #[tokio::test]
@@ -869,9 +857,9 @@ mod tests {
 
         let files = bucket.list_all_files();
         assert_eq!(files.len(), 3);
-        assert_eq!(files[0].0, "example1.txt");
-        assert_eq!(files[1].0, "example2.txt");
-        assert_eq!(files[2].0, "example3.txt");
+        assert_eq!(files[0].path, "example1.txt");
+        assert_eq!(files[1].path, "example2.txt");
+        assert_eq!(files[2].path, "example3.txt");
     }
 
     #[tokio::test]
@@ -911,6 +899,6 @@ mod tests {
 
         let files = bucket.list_all_files();
         assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0, "example1.txt");
+        assert_eq!(files[0].path, "example1.txt");
     }
 }
