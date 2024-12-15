@@ -5,7 +5,7 @@ use serde_derive::{Deserialize, Serialize};
 pub static FOOTER_MAGIC_BYTES: &[u8] = b"__LNX_BLOB_ENTRY__";
 pub const FOOTER_MAGIC_BYTES_LEN: usize = 18;
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FileEvent {
     /// The UNIX timestamp of when the file was created.
     pub created_at: u64,
@@ -109,7 +109,7 @@ impl FileEvent {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 /// The event-specific data.
 pub enum EventData {
     /// A file create event.

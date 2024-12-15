@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::io::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use bon::Builder;
 use futures_util::AsyncWriteExt;
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, trace};
 
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
@@ -15,6 +16,8 @@ use crate::io::footer::FileEvent;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
+
+type EventHooks = Arc<Vec<Box<dyn ControllerEventHook>>>;
 
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
@@ -26,6 +29,9 @@ pub struct TabletWriterOptions {
     #[builder(default = 8)]
     /// The maximum number of active writers.
     max_active_writers: usize,
+    #[builder(default, into)]
+    /// A set of event hooks to trigger during writer life cycle events.
+    event_hooks: EventHooks,
 }
 
 #[derive(Clone)]
@@ -175,6 +181,7 @@ impl TabletWriterController {
             alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
             max_tablet_size: self.options.max_tablet_size,
+            event_hooks: self.options.event_hooks.clone(),
         };
 
         self.runtime.spawn(factory).await?;
@@ -204,6 +211,7 @@ struct TabletWriterActorFactory {
     alive_guard: OwnedSemaphorePermit,
     active_writer_semaphore: Arc<Semaphore>,
     max_tablet_size: u64,
+    event_hooks: EventHooks,
 }
 
 #[async_trait(?Send)]
@@ -226,6 +234,7 @@ impl ActorFactory for TabletWriterActorFactory {
             events: self.events.clone(),
             writer,
             max_size: self.max_tablet_size,
+            event_hooks: self.event_hooks.clone(),
         };
 
         glommio::spawn_local(actor.run()).detach();
@@ -261,13 +270,21 @@ pub struct TabletWriterActor {
     /// and has no requirement on previous or future events being
     /// in the right order.
     events: flume::Receiver<WriterEvent>,
+    /// The inner file writer.
     writer: DmaStreamWriter,
+    /// The soft-maximum size of the tablet.
     max_size: u64,
+    /// Callback triggers to invoke on certain writer life cycle events.
+    event_hooks: EventHooks,
 }
 
 impl TabletWriterActor {
     #[instrument("tablet-writer", skip(self), fields(tablet_id = %self.tablet_id))]
     async fn run(mut self) {
+        for hook in self.event_hooks.iter() {
+            hook.on_writer_start(self.tablet_id);
+        }
+        
         info!("Writer is ready to process events");
         while let Ok(event) = self.events.recv_async().await {
             debug!("Handling IO event");
@@ -287,6 +304,12 @@ impl TabletWriterActor {
         if let Err(e) = self.flush_and_close().await {
             error!(error = ?e, "Failed to flush and sync file data");
         }
+
+        trace!("Running event hooks for shutdown");
+        for hook in self.event_hooks.iter() {
+            hook.on_writer_close(self.tablet_id);
+        }
+        
         debug!("Writer has exited");
     }
 
@@ -328,8 +351,14 @@ impl TabletWriterActor {
             Ok(event) => {
                 let response = WriterResponse {
                     tablet_id: self.tablet_id,
+                    writer_position: self.writer.current_pos(),
                     event,
                 };
+                
+                for hook in self.event_hooks.iter() {
+                    hook.on_writer_response(response.clone());
+                }
+                
                 let _ = ack.send(Ok(response));
             },
             Err(e) => {
@@ -422,7 +451,7 @@ struct RenameEvent {
     new_path: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// The response of a successful writer op.
 ///
 /// This contains the tablet ID that completed the operation
@@ -430,8 +459,23 @@ struct RenameEvent {
 pub struct WriterResponse {
     /// The ID of the tablet that completed this write.
     pub tablet_id: TabletId,
+    /// The writer's current position in the file.
+    pub writer_position: u64,
     /// The completed file event and associated metadata.
     pub event: FileEvent,
+}
+
+#[cfg_attr(test, mockall::automock)]
+/// A set of event hooks triggered by the writer during various life cycle triggers.
+pub trait ControllerEventHook: Debug + Send + Sync {
+    /// Triggered when the writer first starts.
+    fn on_writer_start(&self, tablet_id: TabletId);
+    
+    /// Triggered when a new file event is completed.
+    fn on_writer_response(&self, response: WriterResponse);
+    
+    /// Triggered when the writer closes.
+    fn on_writer_close(&self, tablet_id: TabletId);
 }
 
 #[cfg(test)]
@@ -665,5 +709,44 @@ mod tests {
             },
             other => panic!("Expected create event got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_actor_event_hooks() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
+
+        let mut mock_hook = MockControllerEventHook::new();
+        mock_hook
+            .expect_on_writer_start()
+            .return_once(|_tablet_id| ());
+        mock_hook
+            .expect_on_writer_close()
+            .return_once(|_tablet_id| ());
+        mock_hook
+            .expect_on_writer_response()
+            .return_once(|_tablet_id| ());
+        
+        let options = TabletWriterOptions::builder()
+            .max_active_writers(1)
+            .max_tablet_size(2 << 10)
+            .event_hooks(vec![Box::new(mock_hook) as Box<dyn ControllerEventHook>])
+            .base_path(temp_dir())
+            .build();
+        
+        let writer = TabletWriter::new(options, dispatch);
+
+        let body = Body::empty();
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
+            transaction_id: None,
+        };
+        let _response = writer
+            .write(metadata, body)
+            .await
+            .expect("Write & flush body");
+        
+        drop(writer);
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
