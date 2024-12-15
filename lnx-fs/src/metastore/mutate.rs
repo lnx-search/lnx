@@ -134,4 +134,42 @@ mod tests {
         assert!(!metastore.exists("example1.txt"));
         assert!(metastore.exists("example2.txt"));
     }
+
+    #[tokio::test]
+    async fn test_bulk_mutate_after_commit() {
+        let metastore = Metastore::connect(":memory:").await.unwrap();
+        
+        let mut bulk = BulkMetastoreModifyOperation {
+            metastore: &metastore,
+            mutations: Vec::new(),
+        };
+        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
+        assert_eq!(bulk.mutations.len(), 1);
+        bulk.commit();
+        let mut bulk = BulkMetastoreModifyOperation {
+            metastore: &metastore,
+            mutations: Vec::new(),
+        };
+        bulk.add_event(TabletId::new(), FileEvent::delete(None, "example1.txt".into()));
+        assert_eq!(bulk.mutations.len(), 1);
+        bulk.commit();        
+        assert!(!metastore.exists("example1.txt"));
+        
+        let mut bulk = BulkMetastoreModifyOperation {
+            metastore: &metastore,
+            mutations: Vec::new(),
+        };
+        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
+        assert_eq!(bulk.mutations.len(), 1);
+        bulk.commit();
+        let mut bulk = BulkMetastoreModifyOperation {
+            metastore: &metastore,
+            mutations: Vec::new(),
+        };
+        bulk.add_event(TabletId::new(), FileEvent::rename(None, "example1.txt".into(), "example2.txt".into()));
+        assert_eq!(bulk.mutations.len(), 1);
+        bulk.commit();
+        assert!(!metastore.exists("example1.txt"));
+        assert!(metastore.exists("example2.txt"));
+    }
 }
