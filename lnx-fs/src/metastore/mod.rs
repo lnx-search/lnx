@@ -6,17 +6,25 @@
 pub(crate) mod checkpoint;
 mod db;
 mod mutate;
+pub(crate) mod recovery;
 
 use std::collections::BTreeSet;
 use std::fmt::{Debug, Display, Formatter};
+use std::io;
 use std::ops::Range;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 use tracing::instrument;
 
-use crate::metastore::db::MetastoreDB;
 pub(crate) use self::mutate::BulkMetastoreModifyOperation;
+use crate::metastore::db::MetastoreDB;
+
+pub(super) type ReaderState =
+    evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>;
+pub(super) type WriterState =
+    evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts
@@ -40,20 +48,18 @@ pub enum MetastoreError {
     SQLxError(#[from] sqlx::Error),
     #[error("Config Serde Error: {0}")]
     ConfigSerdeError(serde_json::Error),
+    #[error("Recovery Error: {0}")]
+    /// An error occurred while recovering the metastore state.
+    RecoverError(io::Error),
 }
 
 #[derive(Clone)]
 /// A metastore instance for a given bucket.
 pub struct Metastore {
     /// The reader view of the metadata store.
-    reader_state:
-        evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>,
+    reader_state: ReaderState,
     /// The metastore state writer.
-    write_state: Arc<
-        Mutex<
-            evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>,
-        >,
-    >,
+    write_state: Arc<Mutex<WriterState>>,
     /// THe SQLite DB wrapper for persisting file information.
     db: MetastoreDB,
 }
@@ -190,6 +196,9 @@ pub struct MetastoreEntry {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// A tablet ID is an identifier for the raw storage on the file system.
+///
+/// Each ID is unique and can be lexicographically sorted for timestamp ordering.
 pub struct TabletId(pub(super) ulid::Ulid);
 
 impl TabletId {
@@ -203,6 +212,15 @@ impl TabletId {
 impl Display for TabletId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         <ulid::Ulid as Display>::fmt(&self.0, f)
+    }
+}
+
+impl FromStr for TabletId {
+    type Err = ulid::DecodeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let inner = ulid::Ulid::from_str(s)?;
+        Ok(Self(inner))
     }
 }
 

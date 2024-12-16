@@ -2,6 +2,8 @@ use std::ops::Range;
 
 use serde_derive::{Deserialize, Serialize};
 
+use crate::config::COMMIT_MARKER_PREFIX;
+
 pub static FOOTER_MAGIC_BYTES: &[u8] = b"__LNX_BLOB_ENTRY__";
 pub const FOOTER_MAGIC_BYTES_LEN: usize = 18;
 
@@ -64,6 +66,17 @@ impl FileEvent {
             created_at,
             transaction_id,
             data: EventData::Rename { from_path, to_path },
+        }
+    }
+
+    /// Returns if the event is a transaction commit marker.
+    pub fn is_commit(&self) -> bool {
+        match &self.data {
+            EventData::Create { file_path, .. } => {
+                file_path.starts_with(COMMIT_MARKER_PREFIX)
+                    && file_path.ends_with(".commit")
+            },
+            _ => false,
         }
     }
 

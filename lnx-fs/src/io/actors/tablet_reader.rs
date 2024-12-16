@@ -65,10 +65,8 @@ impl TabletReader {
     ) -> Result<Self> {
         let (events_tx, events_rx) = flume::bounded(options.max_concurrent_reads);
 
-        let file_path = crate::io::utils::get_tablet_file_path(
-            &options.base_path,
-            options.tablet_id,
-        );
+        let file_path =
+            crate::io::get_tablet_file_path(&options.base_path, options.tablet_id);
 
         let factory = TabletReaderActorFactory {
             tablet_id: options.tablet_id,
@@ -403,7 +401,7 @@ mod tests {
     use crate::io::runtime::RuntimeOptions;
 
     fn create_test_tablet(tablet_id: TabletId, size: usize) -> tempfile::NamedTempFile {
-        let path = crate::io::utils::get_tablet_file_path(&temp_dir(), tablet_id);
+        let path = crate::io::get_tablet_file_path(&temp_dir(), tablet_id);
         let tmp_path = TempPath::from_path(&path);
 
         let file = File::create(&path).unwrap();

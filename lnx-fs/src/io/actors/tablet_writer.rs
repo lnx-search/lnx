@@ -12,7 +12,7 @@ use tracing::{debug, error, info, instrument, trace};
 
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
-use crate::io::footer::FileEvent;
+use crate::io::event::FileEvent;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
@@ -165,7 +165,7 @@ impl TabletWriterController {
     async fn spawn_writer(&self) -> Result<()> {
         let tablet_id = TabletId::new();
         let file_path =
-            crate::io::utils::get_tablet_file_path(&self.options.base_path, tablet_id);
+            crate::io::get_tablet_file_path(&self.options.base_path, tablet_id);
 
         let alive_guard = self
             .alive_writer_semaphore
@@ -484,7 +484,7 @@ mod tests {
     use bytes::Bytes;
 
     use super::*;
-    use crate::io::footer::EventData;
+    use crate::io::event::EventData;
     use crate::io::runtime;
     use crate::io::runtime::RuntimeOptions;
 

@@ -3,6 +3,14 @@ use tracing::info;
 
 use crate::metastore::{Metastore, MetastoreError};
 
+pub static COMMIT_MARKER_PREFIX: &str = "__lnx_fs/transactions";
+pub static TABLET_PATH: &str = "tablets";
+pub static TABLET_METADATA_PATH: &str = "tablet_metadata";
+pub static METASTORE_FILE: &str = "metastore.sqlite";
+pub const DEFAULT_TTI_SECS: u64 = 60 * 60; // 1 hour.
+pub const DEFAULT_MAX_OPEN_READERS: usize = 512; // 1 hour.
+pub const MAX_PATH_LENGTH: usize = 1 << 10;
+
 macro_rules! set_config {
     ($slf:ident, $metastore:expr, $key:ident) => {{
         match &$slf.$key {

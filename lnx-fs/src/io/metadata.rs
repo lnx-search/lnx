@@ -1,10 +1,10 @@
-use std::io::{BufReader, Read, Seek};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::{cmp, io};
 
 use tracing::{info, instrument, warn};
 
-use crate::io::footer::{FileEvent, FOOTER_MAGIC_BYTES, FOOTER_MAGIC_BYTES_LEN};
+use crate::io::event::{FileEvent, FOOTER_MAGIC_BYTES, FOOTER_MAGIC_BYTES_LEN};
 use crate::metastore::TabletId;
 
 #[instrument]
@@ -16,10 +16,12 @@ use crate::metastore::TabletId;
 pub fn load_tablet_metadata(
     base_path: &Path,
     tablet_id: TabletId,
+    start_from: u64,
 ) -> io::Result<Vec<FileEvent>> {
-    let file_path = super::utils::get_tablet_metadata_file_path(base_path, tablet_id);
+    let file_path = super::get_tablet_file_path(base_path, tablet_id);
 
-    let file = std::fs::File::open(file_path)?;
+    let mut file = std::fs::File::open(file_path)?;
+    file.seek(SeekFrom::Start(start_from))?;
     let reader = BufReader::with_capacity(10 << 20, file);
 
     let entries = load_tablet_metadata_from_reader(reader)?;
@@ -224,8 +226,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let tablet_id = TabletId::new();
 
-        let file_path =
-            crate::io::utils::get_tablet_metadata_file_path(dir.path(), tablet_id);
+        let file_path = crate::io::get_tablet_file_path(dir.path(), tablet_id);
 
         let mut file_data = Vec::new();
         file_data.extend_from_slice(&(FOOTER_SAMPLE.len() as u32).to_le_bytes());
@@ -234,7 +235,7 @@ mod tests {
         std::fs::write(file_path, file_data).unwrap();
 
         let entries =
-            load_tablet_metadata(dir.path(), tablet_id).expect("Read metadata OK");
+            load_tablet_metadata(dir.path(), tablet_id, 0).expect("Read metadata OK");
         assert_eq!(entries.len(), 1);
     }
 

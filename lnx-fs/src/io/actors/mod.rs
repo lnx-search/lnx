@@ -10,9 +10,9 @@ mod tablet_writer;
 
 pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
 pub use self::tablet_writer::{
-    WriterEventHook,
     TabletWriter,
     TabletWriterOptions,
+    WriterEventHook,
     WriterResponse,
 };
 

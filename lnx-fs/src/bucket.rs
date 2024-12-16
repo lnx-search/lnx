@@ -7,17 +7,34 @@ use bon::Builder;
 use moka::policy::EvictionPolicy;
 use tracing::{debug, info, instrument, trace};
 
-use crate::io::{Body, RuntimeDispatcher, TabletReader, TabletReaderOptions, TabletWriter, TabletWriterOptions, WriterEventHook};
-use crate::metastore::{checkpoint, BulkMetastoreModifyOperation, Metastore, MetastoreEntry, MetastoreError, TabletId};
+use crate::config::{
+    COMMIT_MARKER_PREFIX,
+    DEFAULT_MAX_OPEN_READERS,
+    DEFAULT_TTI_SECS,
+    MAX_PATH_LENGTH,
+    METASTORE_FILE,
+    TABLET_METADATA_PATH,
+    TABLET_PATH,
+};
+use crate::io::{
+    Body,
+    RuntimeDispatcher,
+    TabletReader,
+    TabletReaderOptions,
+    TabletWriter,
+    TabletWriterOptions,
+    WriterEventHook,
+};
+use crate::metastore::{
+    checkpoint,
+    BulkMetastoreModifyOperation,
+    Metastore,
+    MetastoreEntry,
+    MetastoreError,
+    TabletId,
+};
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
-
-static TABLET_PATH: &str = "tablets";
-static TABLET_METADATA_PATH: &str = "tablet_metadata";
-static METASTORE_FILE: &str = "metastore.sqlite";
-const DEFAULT_TTI_SECS: u64 = 60 * 60; // 1 hour.
-const DEFAULT_MAX_OPEN_READERS: usize = 512; // 1 hour.
-const MAX_PATH_LENGTH: usize = 1 << 10;
 
 /// A bucket that can be cheaply cloned and shared
 /// by being wrapped in an [Arc].
@@ -80,7 +97,7 @@ pub struct BucketCreateOptions {
 /// These metadata files are written asynchronously as snapshots of the memory state,
 /// _IT IS OK FOR THESE FILES TO BE MISSING OR CORRUPTED_, the system will re-build the state
 /// from the main `.tablet` files in this event.
-/// 
+///
 pub struct Bucket {
     /// The currently active bucket config.
     config: BucketConfig,
@@ -157,15 +174,17 @@ impl Bucket {
         metastore: Metastore,
         runtime: RuntimeDispatcher,
     ) -> Result<Self, FileSystemError> {
-        // TODO: Add tablet validator and recovery stage...
-        
+        info!("Loading existing metastore state from checkpoints");
+        crate::metastore::recovery::load_metastore_state_from_disk(
+            metastore.clone(),
+            &paths.tablets_path,
+            &paths.metastore_path,
+        )
+        .await?;
+
         info!("Setting up tablet writer");
-        let writer = setup_tablet_writer(
-            &paths,
-            &config,
-            runtime.clone(),
-        ).await?;
-        
+        let writer = setup_tablet_writer(&paths, &config, runtime.clone()).await?;
+
         let max_open_readers = config
             .max_open_readers()
             .unwrap_or(DEFAULT_MAX_OPEN_READERS);
@@ -174,9 +193,9 @@ impl Bucket {
                 .readers_time_to_idle_secs()
                 .unwrap_or(DEFAULT_TTI_SECS),
         );
-        
+
         info!(
-            max_open_readers = max_open_readers, 
+            max_open_readers = max_open_readers,
             time_to_idle = ?time_to_idle,
             "Creating reader cache",
         );
@@ -449,7 +468,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         Ok(())
     }
 
-    #[instrument("bulk_rename", skip(self, body))]
+    #[instrument("bulk_rename", skip(self))]
     /// Renames a file from the provided path to a new provided path.
     ///
     /// Returns a [FileSystemError::FileNotFound] error if the file being
@@ -464,7 +483,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         trace!("Begin writing blob");
 
-        if !self.exists(from_path) {
+        if !self.bucket.exists(from_path) {
             return Err(FileSystemError::FileNotFound(from_path.to_string()));
         }
 
@@ -476,7 +495,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self
             .bucket
             .writer
-            .rename(metadata, to_path.to_string()).await?;
+            .rename(metadata, to_path.to_string())
+            .await?;
         trace!("Blob delete write complete");
 
         self.metastore.add_event(response.tablet_id, response.event);
@@ -486,7 +506,6 @@ impl<'bucket> BulkBucketTx<'bucket> {
         Ok(())
     }
 
-    
     #[instrument("bulk_delete", skip(self))]
     /// Deletes a file from the system.
     ///
@@ -517,7 +536,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         }
 
         let write_metadata = crate::io::Metadata {
-            path: format!("__lnx_fs/transactions/{}.commit", self.transaction_id),
+            path: format!("{COMMIT_MARKER_PREFIX}/{}.commit", self.transaction_id),
             transaction_id: Some(self.transaction_id),
         };
         self.bucket
@@ -617,10 +636,6 @@ impl BucketPaths {
 
         Ok(())
     }
-
-    fn tablet_exists(&self, tablet_id: TabletId) -> bool {
-        self.tablets_path.join(tablet_id.to_string()).exists()
-    }
 }
 
 fn validate_path(path: &str) -> Result<(), FileSystemError> {
@@ -649,19 +664,18 @@ async fn setup_tablet_writer(
         .build();
 
     info!("Spawning checkpointing actor");
-    let checkpoint_hook = checkpoint::spawn_checkpoint_actor(checkpoint_options.clone()).await?;
+    let checkpoint_hook =
+        checkpoint::spawn_checkpoint_actor(checkpoint_options.clone()).await?;
 
     let writer_options = TabletWriterOptions::builder()
         .base_path(paths.tablets_path.clone())
         .maybe_max_active_writers(config.max_active_writers())
         .maybe_max_tablet_size(config.max_tablet_size_bytes())
-        .event_hooks(vec![
-            Box::new(checkpoint_hook) as Box<dyn WriterEventHook>,
-        ])
+        .event_hooks(vec![Box::new(checkpoint_hook) as Box<dyn WriterEventHook>])
         .build();
-    
+
     let writer = TabletWriter::new(writer_options, runtime);
-    
+
     Ok(writer)
 }
 

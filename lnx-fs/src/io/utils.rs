@@ -1,13 +1,7 @@
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use glommio::io::{DmaFile, OpenOptions};
-
-use crate::metastore::TabletId;
-
-pub(super) fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
-    base.join(tablet_id.to_string()).with_extension("tablet")
-}
 
 /// Syncs the given file's parent directory.
 pub(super) async fn sync_directory_glommio(file_path: &Path) -> io::Result<()> {

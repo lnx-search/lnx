@@ -1,11 +1,12 @@
 mod actors;
 mod body;
-mod footer;
-// mod metadata;
+mod event;
+pub(crate) mod metadata;
 mod runtime;
 mod utils;
 
-pub(crate) use self::actors::{WriterEventHook, WriterResponse};
+use std::path::{Path, PathBuf};
+
 pub use self::actors::{
     Metadata,
     TabletReader,
@@ -13,6 +14,12 @@ pub use self::actors::{
     TabletWriter,
     TabletWriterOptions,
 };
+pub(crate) use self::actors::{WriterEventHook, WriterResponse};
 pub use self::body::{Body, BodySender};
-pub use self::footer::{EventData, FileEvent};
+pub use self::event::{EventData, FileEvent};
 pub use self::runtime::{create_io_runtime, RuntimeDispatcher, RuntimeOptions};
+use crate::metastore::TabletId;
+
+pub fn get_tablet_file_path(base: &Path, tablet_id: TabletId) -> PathBuf {
+    base.join(tablet_id.to_string()).with_extension("tablet")
+}

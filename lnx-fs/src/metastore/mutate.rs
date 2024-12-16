@@ -14,6 +14,11 @@ pub struct BulkMetastoreModifyOperation<'a> {
 }
 
 impl<'a> BulkMetastoreModifyOperation<'a> {
+    /// The number of changes currently in the transaction.
+    pub fn num_changes(&self) -> usize {
+        self.mutations.len()
+    }
+
     #[instrument(skip(self))]
     /// Add a file to be tracked in the metastore.
     pub(crate) fn add_event(&mut self, tablet_id: TabletId, event: FileEvent) {
