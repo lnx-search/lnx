@@ -124,7 +124,87 @@ mod tests {
         let chunk = body.next().await.expect("Body read should be OK");
         assert!(chunk.is_none());
     }
+    
+    #[tokio::test]
+    async fn test_body_stream() {
+        let (tx, body) = Body::channel();
+        
+        tokio::spawn(async move {
+            let res = tx.try_send(Bytes::from_static(b"Hello, World!"));
+            assert!(res.is_ok());
+            
+            for _ in 0..3 {
+                tx.send(Bytes::from_static(b"Hello, World!")).await;
+            }
+            tx.finish().await;
+        });
+        
+        let mut count = 0;
+        while let Some(chunk) = body.next().await.unwrap() {
+            assert_eq!(chunk, Bytes::from_static(b"Hello, World!"));
+            count += 1;
+        }        
+        assert_eq!(count, 4);
+    }
 
+    #[tokio::test]
+    async fn test_body_many_chunks_collect() {
+        let (tx, body) = Body::channel();
+
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                tx.send(Bytes::from_static(b"hello")).await;
+            }
+            tx.finish().await;
+        });
+
+        let body = body.collect().await.expect("Read body");
+        assert_eq!(body, Bytes::from_static(b"hellohellohello"))
+    }
+    
+    #[tokio::test]
+    async fn test_body_dropped_mid_stream() {
+        let (tx, body) = Body::channel();
+
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                tx.send(Bytes::from_static(b"hello")).await;
+            }
+        });
+
+        let err = body.collect()
+            .await
+            .expect_err("Read body should error");
+        assert_eq!(err.kind(), ErrorKind::Interrupted);
+    }
+    
+    #[test]
+    fn test_try_methods() {
+        let (tx, _body) = Body::channel();
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        assert!(tx.try_finish().is_ok());
+        
+        let (tx, _body) = Body::channel();
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_err());
+        
+        let (tx, _body) = Body::channel();
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        assert!(tx.try_finish().is_err());
+        
+        let (tx, body) = Body::channel();
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        drop(body);
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_err());
+        
+        let (tx, body) = Body::channel();
+        assert!(tx.try_send(Bytes::from_static(b"Hello, world!")).is_ok());
+        drop(body);
+        assert!(tx.try_finish().is_err());
+    }
+    
     #[tokio::test]
     async fn test_body_complete() {
         let msg = Bytes::from_static(b"Hello, World!");
