@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+
 use tracing::{instrument, trace};
 
 use super::{Metastore, MetastoreEntry, TabletId};
@@ -23,7 +24,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
     /// Commits the currently pending bulk operations.
     pub(crate) fn commit(self) {
         let mut local_inserts = BTreeMap::new();
-        
+
         let mut lock = self.metastore.write_state.lock();
         for (tablet_id, event) in self.mutations {
             match event.data {
@@ -39,9 +40,9 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                             created_at: event.created_at,
                         },
                     };
-                    
+
                     // A local copy for performing intra-transaction ops.
-                    local_inserts.insert(file_path.clone(), entry.clone());                    
+                    local_inserts.insert(file_path.clone(), entry.clone());
                     lock.update(file_path, entry);
                 },
                 EventData::Delete { file_path } => {
@@ -51,13 +52,10 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                 EventData::Rename { from_path, to_path } => {
                     let maybe_existing = local_inserts
                         .remove(&from_path)
-                        .or_else(|| {
-                            lock.get_one(&from_path)
-                                .map(|e| e.clone())
-                        });
-                    
+                        .or_else(|| lock.get_one(&from_path).map(|e| e.clone()));
+
                     lock.remove_entry(from_path);
-                    
+
                     if let Some(mut entry) = maybe_existing {
                         entry.path = to_path.clone();
                         lock.insert(to_path, entry);
@@ -81,7 +79,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_bulk_mutate_basic_ops() {
         let metastore = Metastore::connect(":memory:").await.unwrap();
@@ -90,12 +88,21 @@ mod tests {
             mutations: Vec::new(),
         };
 
-        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
-        bulk.add_event(TabletId::new(), FileEvent::delete(None, "example2.txt".into()));
-        bulk.add_event(TabletId::new(), FileEvent::rename(None, "example3.txt".into(), "example4.txt".into()));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "example1.txt".into(), 0..123),
+        );
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::delete(None, "example2.txt".into()),
+        );
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::rename(None, "example3.txt".into(), "example4.txt".into()),
+        );
         assert_eq!(bulk.mutations.len(), 3);
         bulk.commit();
-        
+
         assert!(metastore.exists("example1.txt"));
         assert!(!metastore.exists("example2.txt"));
         assert!(!metastore.exists("example3.txt"));
@@ -110,8 +117,14 @@ mod tests {
             mutations: Vec::new(),
         };
 
-        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
-        bulk.add_event(TabletId::new(), FileEvent::delete(None, "example1.txt".into()));        
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "example1.txt".into(), 0..123),
+        );
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::delete(None, "example1.txt".into()),
+        );
         assert_eq!(bulk.mutations.len(), 2);
         bulk.commit();
 
@@ -126,8 +139,14 @@ mod tests {
             mutations: Vec::new(),
         };
 
-        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
-        bulk.add_event(TabletId::new(), FileEvent::rename(None, "example1.txt".into(), "example2.txt".into()));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "example1.txt".into(), 0..123),
+        );
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::rename(None, "example1.txt".into(), "example2.txt".into()),
+        );
         assert_eq!(bulk.mutations.len(), 2);
         bulk.commit();
 
@@ -138,35 +157,47 @@ mod tests {
     #[tokio::test]
     async fn test_bulk_mutate_after_commit() {
         let metastore = Metastore::connect(":memory:").await.unwrap();
-        
+
         let mut bulk = BulkMetastoreModifyOperation {
             metastore: &metastore,
             mutations: Vec::new(),
         };
-        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "example1.txt".into(), 0..123),
+        );
         assert_eq!(bulk.mutations.len(), 1);
         bulk.commit();
         let mut bulk = BulkMetastoreModifyOperation {
             metastore: &metastore,
             mutations: Vec::new(),
         };
-        bulk.add_event(TabletId::new(), FileEvent::delete(None, "example1.txt".into()));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::delete(None, "example1.txt".into()),
+        );
         assert_eq!(bulk.mutations.len(), 1);
-        bulk.commit();        
+        bulk.commit();
         assert!(!metastore.exists("example1.txt"));
-        
+
         let mut bulk = BulkMetastoreModifyOperation {
             metastore: &metastore,
             mutations: Vec::new(),
         };
-        bulk.add_event(TabletId::new(), FileEvent::create(None, "example1.txt".into(), 0..123));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::create(None, "example1.txt".into(), 0..123),
+        );
         assert_eq!(bulk.mutations.len(), 1);
         bulk.commit();
         let mut bulk = BulkMetastoreModifyOperation {
             metastore: &metastore,
             mutations: Vec::new(),
         };
-        bulk.add_event(TabletId::new(), FileEvent::rename(None, "example1.txt".into(), "example2.txt".into()));
+        bulk.add_event(
+            TabletId::new(),
+            FileEvent::rename(None, "example1.txt".into(), "example2.txt".into()),
+        );
         assert_eq!(bulk.mutations.len(), 1);
         bulk.commit();
         assert!(!metastore.exists("example1.txt"));

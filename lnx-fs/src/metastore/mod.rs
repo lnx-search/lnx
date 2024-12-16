@@ -3,6 +3,7 @@
 //!
 //! Internally it is backed by an SQLite database for each bucket.
 
+mod checkpoint;
 mod db;
 mod mutate;
 mod recovery;

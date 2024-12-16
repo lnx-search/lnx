@@ -284,7 +284,7 @@ impl TabletWriterActor {
         for hook in self.event_hooks.iter() {
             hook.on_writer_start(self.tablet_id);
         }
-        
+
         info!("Writer is ready to process events");
         while let Ok(event) = self.events.recv_async().await {
             debug!("Handling IO event");
@@ -309,7 +309,7 @@ impl TabletWriterActor {
         for hook in self.event_hooks.iter() {
             hook.on_writer_close(self.tablet_id);
         }
-        
+
         debug!("Writer has exited");
     }
 
@@ -354,11 +354,11 @@ impl TabletWriterActor {
                     writer_position: self.writer.current_pos(),
                     event,
                 };
-                
+
                 for hook in self.event_hooks.iter() {
                     hook.on_writer_response(response.clone());
                 }
-                
+
                 let _ = ack.send(Ok(response));
             },
             Err(e) => {
@@ -468,10 +468,10 @@ pub struct WriterResponse {
 pub trait ControllerEventHook: Debug + Send + Sync {
     /// Triggered when the writer first starts.
     fn on_writer_start(&self, tablet_id: TabletId);
-    
+
     /// Triggered when a new file event is completed.
     fn on_writer_response(&self, response: WriterResponse);
-    
+
     /// Triggered when the writer closes.
     fn on_writer_close(&self, tablet_id: TabletId);
 }
@@ -724,14 +724,14 @@ mod tests {
         mock_hook
             .expect_on_writer_response()
             .return_once(|_tablet_id| ());
-        
+
         let options = TabletWriterOptions::builder()
             .max_active_writers(1)
             .max_tablet_size(2 << 10)
             .event_hooks(vec![Box::new(mock_hook) as Box<dyn ControllerEventHook>])
             .base_path(temp_dir())
             .build();
-        
+
         let writer = TabletWriter::new(options, dispatch);
 
         let body = Body::empty();
@@ -743,7 +743,7 @@ mod tests {
             .write(metadata, body)
             .await
             .expect("Write & flush body");
-        
+
         drop(writer);
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

@@ -9,7 +9,12 @@ mod tablet_reader;
 mod tablet_writer;
 
 pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
-pub use self::tablet_writer::{TabletWriter, TabletWriterOptions};
+pub use self::tablet_writer::{
+    ControllerEventHook,
+    TabletWriter,
+    TabletWriterOptions,
+    WriterResponse,
+};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait(?Send)]

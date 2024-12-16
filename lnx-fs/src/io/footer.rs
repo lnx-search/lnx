@@ -198,15 +198,19 @@ mod tests {
             "Deserialized footer does not match",
         );
     }
-    
+
     #[test]
     fn test_footer_deserialize_buffer_too_short() {
         let footer = FileEvent::delete(None, "example/foo/bar.txt".into());
         let mut bytes = footer.to_bytes();
-        bytes[FOOTER_MAGIC_BYTES_LEN..FOOTER_MAGIC_BYTES_LEN+4].copy_from_slice(&1000u32.to_le_bytes());
+        bytes[FOOTER_MAGIC_BYTES_LEN..FOOTER_MAGIC_BYTES_LEN + 4]
+            .copy_from_slice(&1000u32.to_le_bytes());
 
         let read_footer = FileEvent::from_bytes(&bytes);
-        assert!(read_footer.is_none(), "Footer should be none due to size missmatch");
+        assert!(
+            read_footer.is_none(),
+            "Footer should be none due to size missmatch"
+        );
     }
 
     #[test]
