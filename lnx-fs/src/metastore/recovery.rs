@@ -209,8 +209,6 @@ fn parse_tablet_ids(tablet_storage_path: &Path) -> io::Result<Vec<TabletId>> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
     use crate::config::COMMIT_MARKER_PREFIX;
     use crate::metastore::checkpoint::TabletCheckpoint;

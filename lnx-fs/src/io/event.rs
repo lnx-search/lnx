@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -6,11 +7,29 @@ use crate::config::COMMIT_MARKER_PREFIX;
 
 pub static FOOTER_MAGIC_BYTES: &[u8] = b"__LNX_BLOB_ENTRY__";
 pub const FOOTER_MAGIC_BYTES_LEN: usize = 18;
+static EVENT_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+/// A unique, sortable event ID.
+///
+/// This is generated and maintains process-local guaranteed ordering.
+pub struct EventId {
+    ts: u64,
+    uc: u64,
+}
+
+impl Default for EventId {
+    fn default() -> Self {
+        let ts = crate::utils::timestamp_now_ms();
+        let uc = EVENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+        Self { ts, uc }
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FileEvent {
     /// The unique ID assigned when the event was created.
-    pub event_id: ulid::Ulid,
+    pub event_id: EventId,
     /// The transaction id attached to file.
     ///
     /// If this is Some(ID) the file is part of a bulk transaction
@@ -31,10 +50,8 @@ impl FileEvent {
         file_path: String,
         data_range: Range<u64>,
     ) -> Self {
-        let created_at = ulid::Ulid::new();
-
         Self {
-            event_id: created_at,
+            event_id: EventId::default(),
             transaction_id,
             data: EventData::Create {
                 file_path,
@@ -45,10 +62,8 @@ impl FileEvent {
 
     /// Creates a new "DELETE" file event.
     pub fn delete(transaction_id: Option<ulid::Ulid>, file_path: String) -> Self {
-        let created_at = ulid::Ulid::new();
-
         Self {
-            event_id: created_at,
+            event_id: EventId::default(),
             transaction_id,
             data: EventData::Delete { file_path },
         }
@@ -60,10 +75,8 @@ impl FileEvent {
         from_path: String,
         to_path: String,
     ) -> Self {
-        let created_at = ulid::Ulid::new();
-
         Self {
-            event_id: created_at,
+            event_id: EventId::default(),
             transaction_id,
             data: EventData::Rename { from_path, to_path },
         }
@@ -83,7 +96,7 @@ impl FileEvent {
     #[inline]
     /// Returns the timestamp in milliseconds when the event was created.
     pub fn created_at(&self) -> u64 {
-        self.event_id.timestamp_ms()
+        self.event_id.ts
     }
 
     /// Serializes the footer into a byte buffer.
