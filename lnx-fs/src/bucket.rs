@@ -54,9 +54,9 @@ pub struct BucketCreateOptions {
 /// │   ├── 01JCXNCND4PG1S3317HA4JC2B6.tablet
 /// │   └── 01JCXNCNDRT1YGN3X459XTQSCA.tablet
 /// └── tablet_metadata/
-///     ├── 01JCXNCND5Q2ANW5JD8F08DN3V.tablet.meta
-///     ├── 01JCXNCND4PG1S3317HA4JC2B6.tablet.meta
-///     └── 01JCXNCNDRT1YGN3X459XTQSCA.tablet.meta
+///     ├── 01JCXNCND5Q2ANW5JD8F08DN3V.ckpt
+///     ├── 01JCXNCND4PG1S3317HA4JC2B6.ckpt
+///     └── 01JCXNCNDRT1YGN3X459XTQSCA.ckpt
 /// ```
 ///
 /// #### `metastore.sqlite`
@@ -77,12 +77,10 @@ pub struct BucketCreateOptions {
 /// a compact representation of the files stored within the tablet, the offsets for each blob
 /// and the individual file metadata.
 ///
-/// These metadata files are written asynchronously in the background and are used to
-/// avoid re-scanning every tablet in the store after a restart to recover state.
-///
-/// These files can be missing or corrupted, the system will simply re-scan the tablet
-/// and re-built the metadata snapshot of the tablet.
-///
+/// These metadata files are written asynchronously as snapshots of the memory state,
+/// _IT IS OK FOR THESE FILES TO BE MISSING OR CORRUPTED_, the system will re-build the state
+/// from the main `.tablet` files in this event.
+/// 
 pub struct Bucket {
     /// The currently active bucket config.
     config: BucketConfig,
@@ -102,6 +100,7 @@ pub struct Bucket {
 }
 
 impl Bucket {
+    #[instrument(skip(runtime))]
     /// Creates a new bucket with the given runtime.
     ///
     /// If a bucket already exist at the target path a [FileSystemError::BucketAlreadyExists]
@@ -129,6 +128,7 @@ impl Bucket {
         Self::open_bucket_inner(config, paths, metastore, runtime).await
     }
 
+    #[instrument(skip(runtime))]
     /// Opens an existing bucket with the given runtime.
     ///
     /// If no bucket exists in the given folder a [FileSystemError::BucketNotFound]

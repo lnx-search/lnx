@@ -106,6 +106,49 @@ what tablets it needs to partially, or entirely re-scan in order to recover the 
 
 *Once the first write is completed and flushed in the main tablet file, the data is **always** recoverable.*
 
+#### Checkpoint file layout
+
+The actual formatting of `.ckpt` files is a `MSGPACK` format with the layout:
+
+```
+{
+    "events": [
+        {
+            "created_at": u64,
+            "transaction_id": string | null,
+            "data": {
+                "Create": {
+                    "file_path": string,
+                    "data_range": {
+                        "start": u64,
+                        "end": u64
+                    }
+                }
+            }
+        },
+        {
+            "created_at": u64,
+            "transaction_id": string | null,
+            "data": {
+                "Delete": {
+                    "file_path": string
+                }
+            }
+        },
+        {
+            "created_at": u64,
+            "transaction_id": string | null,
+            "data": {
+                "Rename": {
+                    "from_path": string,
+                    "to_path": string
+                }
+            }
+        },
+    ],
+    "observed_writer_position": u64,
+}
+```
 
 ### Operations
 

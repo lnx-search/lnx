@@ -225,6 +225,7 @@ impl MetadataCheckpointActor {
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
+// WARNING: Changing this layout requires updating the bucket documentation.
 pub struct TabletCheckpoint {
     /// The current file events that occurred for the tablet.
     pub events: Vec<FileEvent>,
