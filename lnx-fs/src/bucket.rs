@@ -158,24 +158,14 @@ impl Bucket {
         runtime: RuntimeDispatcher,
     ) -> Result<Self, FileSystemError> {
         // TODO: Add tablet validator and recovery stage...
-
-        let checkpoint_options = checkpoint::CheckpointOptions::builder()
-            .base_path(paths.tablet_metadata_path.as_path())
-            .build();
         
-        info!("Spawning checkpointing actor");
-        let checkpoint_hook = checkpoint::spawn_checkpoint_actor(checkpoint_options.clone()).await?;
+        info!("Setting up tablet writer");
+        let writer = setup_tablet_writer(
+            &paths,
+            &config,
+            runtime.clone(),
+        ).await?;
         
-        let writer_options = TabletWriterOptions::builder()
-            .base_path(paths.tablets_path.clone())
-            .maybe_max_active_writers(config.max_active_writers())
-            .maybe_max_tablet_size(config.max_tablet_size_bytes())
-            .event_hooks(vec![
-                Box::new(checkpoint_hook) as Box<dyn WriterEventHook>,
-            ])
-            .build();
-        let writer = TabletWriter::new(writer_options, runtime.clone());
-
         let max_open_readers = config
             .max_open_readers()
             .unwrap_or(DEFAULT_MAX_OPEN_READERS);
@@ -184,7 +174,12 @@ impl Bucket {
                 .readers_time_to_idle_secs()
                 .unwrap_or(DEFAULT_TTI_SECS),
         );
-
+        
+        info!(
+            max_open_readers = max_open_readers, 
+            time_to_idle = ?time_to_idle,
+            "Creating reader cache",
+        );
         let readers = moka::sync::CacheBuilder::new(max_open_readers as u64)
             .eviction_policy(EvictionPolicy::tiny_lfu())
             .time_to_idle(time_to_idle)
@@ -642,6 +637,32 @@ fn validate_path(path: &str) -> Result<(), FileSystemError> {
     } else {
         Ok(())
     }
+}
+
+async fn setup_tablet_writer(
+    paths: &BucketPaths,
+    config: &BucketConfig,
+    runtime: RuntimeDispatcher,
+) -> Result<TabletWriter, FileSystemError> {
+    let checkpoint_options = checkpoint::CheckpointOptions::builder()
+        .base_path(paths.tablet_metadata_path.as_path())
+        .build();
+
+    info!("Spawning checkpointing actor");
+    let checkpoint_hook = checkpoint::spawn_checkpoint_actor(checkpoint_options.clone()).await?;
+
+    let writer_options = TabletWriterOptions::builder()
+        .base_path(paths.tablets_path.clone())
+        .maybe_max_active_writers(config.max_active_writers())
+        .maybe_max_tablet_size(config.max_tablet_size_bytes())
+        .event_hooks(vec![
+            Box::new(checkpoint_hook) as Box<dyn WriterEventHook>,
+        ])
+        .build();
+    
+    let writer = TabletWriter::new(writer_options, runtime);
+    
+    Ok(writer)
 }
 
 #[cfg(test)]
