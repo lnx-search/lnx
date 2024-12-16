@@ -527,10 +527,6 @@ mod tests {
         let event_1 = FileEvent::create(None, "example1.txt".into(), 0..123);
         let event_2 = FileEvent::create(None, "example2.txt".into(), 0..123);
         let event_3 = FileEvent::create(None, "example3.txt".into(), 0..123);
-
-        // Simulate the event happening later
-        tokio::time::sleep(Duration::from_millis(5)).await;
-
         let event_4 = FileEvent::create(None, "example3.txt".into(), 0..123);
         let event_5 = FileEvent::create(None, "example4.txt".into(), 0..123);
 
