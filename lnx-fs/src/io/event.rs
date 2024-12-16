@@ -231,4 +231,18 @@ mod tests {
         let footer = FileEvent::from_bytes(&[]);
         assert!(footer.is_none());
     }
+    
+    #[test]
+    fn test_is_commit() {
+        let event = FileEvent::create(None, "__lnx_fs/transactions/foo.commit".into(), 0..0);
+        assert!(event.is_commit());
+        let event = FileEvent::create(None, "__lnx_fs/foo.commit".into(), 0..0);
+        assert!(!event.is_commit());
+        let event = FileEvent::create(None, "example/transactions/foo.commit".into(), 0..0);
+        assert!(!event.is_commit());
+        let event = FileEvent::rename(None, "example/transactions/foo.commit".into(), "other.txt".into());
+        assert!(!event.is_commit());
+        let event = FileEvent::delete(None, "example/transactions/foo.commit".into());
+        assert!(!event.is_commit());
+    }
 }
