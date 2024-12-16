@@ -223,7 +223,7 @@ pub(super) fn persist_checkpoint(
     tablet_id: TabletId,
     checkpoint: &TabletCheckpoint,
 ) -> io::Result<()> {
-    let tmp_dir = tempfile::TempDir::with_prefix_in(TEMP_DIR_PREFIX, &export_base_path)?;
+    let tmp_dir = tempfile::TempDir::with_prefix_in(TEMP_DIR_PREFIX, export_base_path)?;
 
     atomic_write_checkpoint(tmp_dir.path(), export_base_path, tablet_id, checkpoint)?;
 

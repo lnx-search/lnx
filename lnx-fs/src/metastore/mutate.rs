@@ -32,6 +32,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
 
         let mut lock = self.metastore.write_state.lock();
         for (tablet_id, event) in self.mutations {
+            let created_at = event.created_at();
             match event.data {
                 EventData::Create {
                     file_path,
@@ -42,7 +43,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                         metadata: FileMetadata {
                             tablet_id,
                             position: data_range,
-                            created_at: event.created_at,
+                            created_at,
                         },
                     };
 

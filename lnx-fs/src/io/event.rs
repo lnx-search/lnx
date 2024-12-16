@@ -9,8 +9,8 @@ pub const FOOTER_MAGIC_BYTES_LEN: usize = 18;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct FileEvent {
-    /// The UNIX timestamp of when the file was created.
-    pub created_at: u64,
+    /// The unique ID assigned when the event was created.
+    pub event_id: ulid::Ulid,
     /// The transaction id attached to file.
     ///
     /// If this is Some(ID) the file is part of a bulk transaction
@@ -31,10 +31,10 @@ impl FileEvent {
         file_path: String,
         data_range: Range<u64>,
     ) -> Self {
-        let created_at = crate::utils::timestamp_now();
+        let created_at = ulid::Ulid::new();
 
         Self {
-            created_at,
+            event_id: created_at,
             transaction_id,
             data: EventData::Create {
                 file_path,
@@ -45,10 +45,10 @@ impl FileEvent {
 
     /// Creates a new "DELETE" file event.
     pub fn delete(transaction_id: Option<ulid::Ulid>, file_path: String) -> Self {
-        let created_at = crate::utils::timestamp_now();
+        let created_at = ulid::Ulid::new();
 
         Self {
-            created_at,
+            event_id: created_at,
             transaction_id,
             data: EventData::Delete { file_path },
         }
@@ -60,10 +60,10 @@ impl FileEvent {
         from_path: String,
         to_path: String,
     ) -> Self {
-        let created_at = crate::utils::timestamp_now();
+        let created_at = ulid::Ulid::new();
 
         Self {
-            created_at,
+            event_id: created_at,
             transaction_id,
             data: EventData::Rename { from_path, to_path },
         }
@@ -78,6 +78,12 @@ impl FileEvent {
             },
             _ => false,
         }
+    }
+
+    #[inline]
+    /// Returns the timestamp in milliseconds when the event was created.
+    pub fn created_at(&self) -> u64 {
+        self.event_id.timestamp_ms()
     }
 
     /// Serializes the footer into a byte buffer.
@@ -231,16 +237,22 @@ mod tests {
         let footer = FileEvent::from_bytes(&[]);
         assert!(footer.is_none());
     }
-    
+
     #[test]
     fn test_is_commit() {
-        let event = FileEvent::create(None, "__lnx_fs/transactions/foo.commit".into(), 0..0);
+        let event =
+            FileEvent::create(None, "__lnx_fs/transactions/foo.commit".into(), 0..0);
         assert!(event.is_commit());
         let event = FileEvent::create(None, "__lnx_fs/foo.commit".into(), 0..0);
         assert!(!event.is_commit());
-        let event = FileEvent::create(None, "example/transactions/foo.commit".into(), 0..0);
+        let event =
+            FileEvent::create(None, "example/transactions/foo.commit".into(), 0..0);
         assert!(!event.is_commit());
-        let event = FileEvent::rename(None, "example/transactions/foo.commit".into(), "other.txt".into());
+        let event = FileEvent::rename(
+            None,
+            "example/transactions/foo.commit".into(),
+            "other.txt".into(),
+        );
         assert!(!event.is_commit());
         let event = FileEvent::delete(None, "example/transactions/foo.commit".into());
         assert!(!event.is_commit());
