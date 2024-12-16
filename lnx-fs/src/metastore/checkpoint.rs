@@ -6,13 +6,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{cmp, io};
 
+use serde_derive::{Serialize, Deserialize};
 use bon::Builder;
 use tracing::{error, info, instrument, warn};
 
-use crate::io::{ControllerEventHook, FileEvent, WriterResponse};
+use crate::io::{WriterEventHook, FileEvent, WriterResponse};
 use crate::metastore::TabletId;
 
-#[derive(Debug, Builder)]
+#[derive(Debug, Clone, Builder)]
 /// Checkpoint actor configuration.
 pub struct CheckpointOptions {
     #[builder(into)]
@@ -20,6 +21,51 @@ pub struct CheckpointOptions {
     base_path: PathBuf,
 }
 
+/// Creates a new checkpointing actor.
+/// 
+/// This actor listening for new writer events via the [WriterEventHook]
+/// callbacks and takes atomic snapshots of the tablet state and persists them to disk.
+/// 
+/// The actor itself runs in a separate thread and commits a new change upto 1 second
+/// after the change was applied.
+pub async fn spawn_checkpoint_actor(
+    options: CheckpointOptions,
+) -> io::Result<MetadataCheckpointEventHook> {
+    let base_path = options.base_path.clone();
+    let (parent_directory, temp_dir) = tokio::task::spawn_blocking(move || {
+        if let Err(e) = cleanup_old_temp_directories(&base_path) {
+            warn!(
+                    error = ?e,
+                    "Failed to cleanup old temporary directories, this may need manual cleanup of `temp*` files"
+                );
+        }
+
+        let tmp = tempfile::TempDir::with_prefix_in("temp", &base_path)?;
+        let parent_directory = File::open(base_path.parent().unwrap())?;
+
+        Ok::<_, io::Error>((parent_directory, tmp))
+    }).await.expect("Join background thread")?;
+
+    let (tx, rx) = flume::unbounded();
+
+    let slf = MetadataCheckpointActor {
+        live_state: BTreeMap::new(),
+        to_remove: Vec::new(),
+        incoming: rx,
+        options,
+        temp_dir,
+        parent_directory,
+    };
+
+    std::thread::Builder::new()
+        .name("lnx-fs-checkpointer".to_string())
+        .spawn(move || slf.run())
+        .expect("Spawn background thread");
+
+    Ok(MetadataCheckpointEventHook { sender: tx })
+}
+
+/// The event callbacks for submitting new checkpoint events to the actor.
 pub struct MetadataCheckpointEventHook {
     sender: flume::Sender<CheckpointEvent>,
 }
@@ -30,7 +76,7 @@ impl Debug for MetadataCheckpointEventHook {
     }
 }
 
-impl ControllerEventHook for MetadataCheckpointEventHook {
+impl WriterEventHook for MetadataCheckpointEventHook {
     fn on_writer_start(&self, _tablet_id: TabletId) {}
 
     fn on_writer_response(&self, response: WriterResponse) {
@@ -48,6 +94,42 @@ impl ControllerEventHook for MetadataCheckpointEventHook {
     }
 }
 
+/// Read a tablet checkpoint.
+/// 
+/// If the tablet checkpoint does not exist or cannot be read, a default [TabletCheckpoint] is returned.
+pub async fn read_tablet_checkpoint(
+    options: &CheckpointOptions, 
+    tablet_id: TabletId,
+) -> TabletCheckpoint {
+    let path = get_checkpoint_export_path(&options.base_path, tablet_id);
+    
+    tokio::task::spawn_blocking(move || {
+        let file = match File::open(path) {
+            Err(e) => {
+                warn!(
+                    error = ?e, 
+                    tablet_id = %tablet_id, 
+                    "Failed to read tablet checkpoint, system will automatically recover-metadata from tablet",
+                );
+                return TabletCheckpoint::default();
+            },
+            Ok(file) => file,
+        };
+        
+        match rmp_serde::from_read::<_, TabletCheckpoint>(file) {
+            Err(e) => {
+                warn!(
+                    error = ?e, 
+                    tablet_id = %tablet_id, 
+                    "Failed to read tablet checkpoint, system will automatically recover-metadata from tablet",
+                );
+                TabletCheckpoint::default()
+            },
+            Ok(checkpoint) => checkpoint,
+        }
+    }).await.expect("Spawn background thread")  
+}
+
 enum CheckpointEvent {
     WriterClose(TabletId),
     FileEvent(WriterResponse),
@@ -63,43 +145,6 @@ struct MetadataCheckpointActor {
 }
 
 impl MetadataCheckpointActor {
-    async fn spawn(
-        options: CheckpointOptions,
-    ) -> io::Result<MetadataCheckpointEventHook> {
-        let base_path = options.base_path.clone();
-        let (parent_directory, temp_dir) = tokio::task::spawn_blocking(move || {
-            if let Err(e) = cleanup_old_temp_directories(&base_path) {
-                warn!(
-                    error = ?e,
-                    "Failed to cleanup old temporary directories, this may need manual cleanup of `temp*` files"
-                );
-            }
-
-            let tmp = tempfile::TempDir::with_prefix_in("temp", &base_path)?;
-            let parent_directory = File::open(base_path.parent().unwrap())?;
-
-            Ok::<_, io::Error>((parent_directory, tmp))
-        }).await.expect("Join background thread")?;
-
-        let (tx, rx) = flume::unbounded();
-
-        let slf = Self {
-            live_state: BTreeMap::new(),
-            to_remove: Vec::new(),
-            incoming: rx,
-            options,
-            temp_dir,
-            parent_directory,
-        };
-
-        std::thread::Builder::new()
-            .name("lnx-fs-checkpointer".to_string())
-            .spawn(move || slf.run())
-            .expect("Spawn background thread");
-
-        Ok(MetadataCheckpointEventHook { sender: tx })
-    }
-
     #[instrument("checkpointer", skip(self))]
     fn run(mut self) {
         info!("Checkpointing actor is running");
@@ -165,10 +210,9 @@ impl MetadataCheckpointActor {
         let export_path = get_checkpoint_export_path(
             &self.options.base_path,
             tablet_id,
-            checkpoint.observed_writer_position,
         );
 
-        let serialized = rmp_serde::to_vec_named(&checkpoint.events)
+        let serialized = rmp_serde::to_vec_named(checkpoint)
             .map_err(|e| io::Error::new(ErrorKind::Other, e.to_string()))?;
 
         writer.write_all(&serialized)?;
@@ -180,10 +224,12 @@ impl MetadataCheckpointActor {
     }
 }
 
-#[derive(Default)]
-struct TabletCheckpoint {
-    events: Vec<FileEvent>,
-    observed_writer_position: u64,
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct TabletCheckpoint {
+    /// The current file events that occurred for the tablet.
+    pub events: Vec<FileEvent>,
+    /// The current writer position from the last event we observed.
+    pub observed_writer_position: u64,
 }
 
 fn cleanup_old_temp_directories(dir_path: &Path) -> io::Result<()> {
@@ -203,10 +249,9 @@ fn cleanup_old_temp_directories(dir_path: &Path) -> io::Result<()> {
 fn get_checkpoint_export_path(
     base: &Path,
     tablet_id: TabletId,
-    writer_position: u64,
 ) -> PathBuf {
     base.join(tablet_id.to_string())
-        .with_extension(format!("{writer_position}.ckpt"))
+        .with_extension("ckpt")
 }
 
 #[cfg(test)]
@@ -223,8 +268,8 @@ mod tests {
         assert!(!path.exists(), "dir should be removed");
     }
 
-    #[test]
-    fn test_actor_serialize_and_persist_events() {
+    #[tokio::test]
+    async fn test_actor_serialize_and_persist_events() {
         let (_tx, rx) = flume::unbounded();
         let temp_dir = tempfile::tempdir().unwrap();
         let inner_temp_dir = tempfile::tempdir_in(temp_dir.path()).unwrap();
@@ -239,7 +284,7 @@ mod tests {
             live_state: BTreeMap::new(),
             to_remove: Vec::new(),
             incoming: rx,
-            options,
+            options: options.clone(),
             temp_dir: inner_temp_dir,
             parent_directory,
         };
@@ -253,12 +298,9 @@ mod tests {
 
         actor.snapshot_checkpoints();
 
-        let expected_path = get_checkpoint_export_path(temp_dir.path(), tablet_id, 128);
-        let expected_file =
-            std::fs::read(expected_path).expect("Read new file snapshot");
-        let events: Vec<FileEvent> = rmp_serde::from_slice(&expected_file)
-            .expect("Data should be able to deserialized");
-        assert_eq!(events.len(), 1);
+        let checkpoint = read_tablet_checkpoint(&options, tablet_id).await;
+        assert_eq!(checkpoint.events.len(), 1);
+        assert_eq!(checkpoint.observed_writer_position, 128);
     }
 
     #[test]
@@ -297,12 +339,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_actor_flow() {
+        let _ = tracing_subscriber::fmt::try_init();
+        
         let temp_dir = tempfile::tempdir().unwrap();
         let options = CheckpointOptions::builder()
             .base_path(temp_dir.path())
             .build();
 
-        let tx = MetadataCheckpointActor::spawn(options)
+        let tx = spawn_checkpoint_actor(options.clone())
             .await
             .expect("Create checkpoint actor");
         dbg!(&tx);
@@ -324,11 +368,38 @@ mod tests {
         drop(tx);
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let expected_path = get_checkpoint_export_path(temp_dir.path(), tablet_id, 300);
-        let expected_file =
-            std::fs::read(expected_path).expect("Read new file snapshot");
-        let events: Vec<FileEvent> = rmp_serde::from_slice(&expected_file)
-            .expect("Data should be able to deserialized");
-        assert_eq!(events.len(), 2);
+        let checkpoint = read_tablet_checkpoint(&options, tablet_id).await;
+        assert_eq!(checkpoint.events.len(), 2);
+        assert_eq!(checkpoint.observed_writer_position, 300);
+    }
+    
+    #[tokio::test]
+    async fn test_read_checkpoint_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let options = CheckpointOptions::builder()
+            .base_path(dir.path())
+            .build();
+        
+        let ckpt = read_tablet_checkpoint(&options, TabletId::new()).await;
+        assert_eq!(ckpt.observed_writer_position, 0);
+        assert!(ckpt.events.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_read_checkpoint_invalid_data() {
+        let dir = tempfile::tempdir().unwrap();
+        
+        let options = CheckpointOptions::builder()
+            .base_path(dir.path())
+            .build();
+        let tablet_id = TabletId::new();
+        
+        let path = get_checkpoint_export_path(&options.base_path, tablet_id);
+        std::fs::write(path, b"hello, world").unwrap();
+        
+        let ckpt = read_tablet_checkpoint(&options, tablet_id).await;
+        assert_eq!(ckpt.observed_writer_position, 0);
+        assert!(ckpt.events.is_empty());
     }
 }

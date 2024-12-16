@@ -5,7 +5,7 @@ mod footer;
 mod runtime;
 mod utils;
 
-pub(crate) use self::actors::{ControllerEventHook, WriterResponse};
+pub(crate) use self::actors::{WriterEventHook, WriterResponse};
 pub use self::actors::{
     Metadata,
     TabletReader,

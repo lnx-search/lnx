@@ -17,7 +17,7 @@ use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
 
-type EventHooks = Arc<Vec<Box<dyn ControllerEventHook>>>;
+type EventHooks = Arc<Vec<Box<dyn WriterEventHook>>>;
 
 #[derive(Debug, Builder)]
 pub struct TabletWriterOptions {
@@ -465,7 +465,7 @@ pub struct WriterResponse {
 
 #[cfg_attr(test, mockall::automock)]
 /// A set of event hooks triggered by the writer during various life cycle triggers.
-pub trait ControllerEventHook: Debug + Send + Sync {
+pub trait WriterEventHook: Debug + Send + Sync {
     /// Triggered when the writer first starts.
     fn on_writer_start(&self, tablet_id: TabletId);
 
@@ -714,7 +714,7 @@ mod tests {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();
         let dispatch = runtime::create_io_runtime(rt_options).unwrap();
 
-        let mut mock_hook = MockControllerEventHook::new();
+        let mut mock_hook = MockWriterEventHook::new();
         mock_hook
             .expect_on_writer_start()
             .return_once(|_tablet_id| ());
@@ -728,7 +728,7 @@ mod tests {
         let options = TabletWriterOptions::builder()
             .max_active_writers(1)
             .max_tablet_size(2 << 10)
-            .event_hooks(vec![Box::new(mock_hook) as Box<dyn ControllerEventHook>])
+            .event_hooks(vec![Box::new(mock_hook) as Box<dyn WriterEventHook>])
             .base_path(temp_dir())
             .build();
 
