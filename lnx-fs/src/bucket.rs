@@ -7,21 +7,8 @@ use bon::Builder;
 use moka::policy::EvictionPolicy;
 use tracing::{debug, info, instrument, trace};
 
-use crate::io::{
-    Body,
-    RuntimeDispatcher,
-    TabletReader,
-    TabletReaderOptions,
-    TabletWriter,
-    TabletWriterOptions,
-};
-use crate::metastore::{
-    BulkMetastoreModifyOperation,
-    Metastore,
-    MetastoreEntry,
-    MetastoreError,
-    TabletId,
-};
+use crate::io::{Body, RuntimeDispatcher, TabletReader, TabletReaderOptions, TabletWriter, TabletWriterOptions, WriterEventHook};
+use crate::metastore::{checkpoint, BulkMetastoreModifyOperation, Metastore, MetastoreEntry, MetastoreError, TabletId};
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
@@ -172,10 +159,20 @@ impl Bucket {
     ) -> Result<Self, FileSystemError> {
         // TODO: Add tablet validator and recovery stage...
 
+        let checkpoint_options = checkpoint::CheckpointOptions::builder()
+            .base_path(paths.tablet_metadata_path.as_path())
+            .build();
+        
+        info!("Spawning checkpointing actor");
+        let checkpoint_hook = checkpoint::spawn_checkpoint_actor(checkpoint_options.clone()).await?;
+        
         let writer_options = TabletWriterOptions::builder()
             .base_path(paths.tablets_path.clone())
             .maybe_max_active_writers(config.max_active_writers())
             .maybe_max_tablet_size(config.max_tablet_size_bytes())
+            .event_hooks(vec![
+                Box::new(checkpoint_hook) as Box<dyn WriterEventHook>,
+            ])
             .build();
         let writer = TabletWriter::new(writer_options, runtime.clone());
 
@@ -457,6 +454,44 @@ impl<'bucket> BulkBucketTx<'bucket> {
         Ok(())
     }
 
+    #[instrument("bulk_rename", skip(self, body))]
+    /// Renames a file from the provided path to a new provided path.
+    ///
+    /// Returns a [FileSystemError::FileNotFound] error if the file being
+    /// targeted does not exist.
+    pub async fn rename(
+        &mut self,
+        from_path: &str,
+        to_path: &str,
+    ) -> Result<(), FileSystemError> {
+        validate_path(from_path)?;
+        validate_path(to_path)?;
+
+        trace!("Begin writing blob");
+
+        if !self.exists(from_path) {
+            return Err(FileSystemError::FileNotFound(from_path.to_string()));
+        }
+
+        trace!("Begin delete blob");
+        let metadata = crate::io::Metadata {
+            path: from_path.to_string(),
+            transaction_id: Some(self.transaction_id),
+        };
+        let response = self
+            .bucket
+            .writer
+            .rename(metadata, to_path.to_string()).await?;
+        trace!("Blob delete write complete");
+
+        self.metastore.add_event(response.tablet_id, response.event);
+
+        self.num_ops_pending += 1;
+
+        Ok(())
+    }
+
+    
     #[instrument("bulk_delete", skip(self))]
     /// Deletes a file from the system.
     ///

@@ -3,7 +3,7 @@
 //!
 //! Internally it is backed by an SQLite database for each bucket.
 
-mod checkpoint;
+pub(crate) mod checkpoint;
 mod db;
 mod mutate;
 
@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use tracing::instrument;
 
 use crate::metastore::db::MetastoreDB;
-pub(crate) use crate::metastore::mutate::BulkMetastoreModifyOperation;
+pub(crate) use self::mutate::BulkMetastoreModifyOperation;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts

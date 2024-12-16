@@ -26,17 +26,15 @@ ahash = { workspace = true }
 parking_lot = { workspace = true }
 rmp-serde = { workspace = true }
 evmap = { workspace = true }
-
-tempfile = { workspace = true, optional = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
-tempfile = { workspace = true }
 fastrand = { workspace = true }
 mockall = { workspace = true }
 crc32fast = { workspace = true }
 
 [features]
 # Enables testing utilities like `VirtualFileSystem::create_for_test()`.
-test-utils = ["tempfile"]
+test-utils = []
