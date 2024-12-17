@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use humansize::DECIMAL;
-use lnx_fs::{Body, Bytes, RuntimeOptions, VirtualFileSystem};
+use lnx_fs::{Body, BucketConfig, Bytes, RuntimeOptions, VirtualFileSystem};
 use tracing::info;
 
 const SIZES: &[usize] = &[
@@ -73,6 +73,11 @@ async fn benchmark_vfs_io() -> Result<()> {
     let vfs = VirtualFileSystem::mount(tmp_dir.path().to_path_buf(), rt_options).await?;
     let bucket = vfs.create_bucket("benches").await?;
 
+    let config_update = BucketConfig::builder().flush_delay_millis(50).build();
+    bucket.update_config(config_update).await?;
+    drop(bucket);
+    let bucket = vfs.reload_bucket("benches").await?;
+
     for &size in SIZES {
         let mut buffer = vec![0; size];
         fastrand::fill(&mut buffer);
@@ -95,6 +100,7 @@ async fn benchmark_vfs_io() -> Result<()> {
         info!("VFS IO run: {formatted_size} {elapsed:?} {formatted_rate}/s");
     }
 
+    drop(vfs);
     tokio::time::sleep(Duration::from_secs(30)).await;
 
     Ok(())

@@ -106,7 +106,7 @@ impl VirtualFileSystem {
     ///
     /// This does _NO_ checking if the bucket is no longer in use or not
     /// and great care should be taken using this method.
-    pub async fn delete_bucket(&self, bucket: &str) -> io::Result<()> {
+    pub async fn delete_bucket(&self, bucket: &str) -> Result<(), FileSystemError> {
         let maybe_bucket = {
             let mut lock = self.buckets.write();
             lock.remove(bucket)
@@ -117,6 +117,31 @@ impl VirtualFileSystem {
         }
 
         Ok(())
+    }
+
+    /// Closes and re-opens a bucket.
+    ///
+    /// This is a heavy operation but allows the system to reload config values.
+    pub async fn reload_bucket(&self, bucket: &str) -> Result<Bucket, FileSystemError> {
+        let maybe_bucket = {
+            let mut lock = self.buckets.write();
+            lock.remove(bucket)
+        };
+
+        let Some(bucket) = maybe_bucket else {
+            return Err(FileSystemError::BucketNotFound(bucket.to_string()));
+        };
+        let base_path = bucket.path().to_path_buf();
+        drop(bucket);
+
+        info!(path = %base_path.display(), "Attempting to open bucket");
+        let bucket = Bucket::open(base_path, self.runtime.clone()).await?;
+
+        self.buckets
+            .write()
+            .insert(bucket.name().to_string(), bucket.clone());
+
+        Ok(bucket)
     }
 }
 
