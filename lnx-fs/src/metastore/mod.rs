@@ -120,6 +120,7 @@ impl Metastore {
             .collect()
     }
 
+    #[allow(unused)]
     /// Returns a list of all tablets forming the bucket.
     pub fn list_tablets(&self) -> BTreeSet<TabletId> {
         let guard = match self.reader_state.enter() {
