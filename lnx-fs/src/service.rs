@@ -5,7 +5,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tracing::{info, instrument};
 
-use crate::bucket::{BucketCreateOptions, Bucket};
+use crate::bucket::{Bucket, BucketCreateOptions};
 use crate::io::{RuntimeDispatcher, RuntimeOptions};
 use crate::metastore::MetastoreError;
 
@@ -86,10 +86,7 @@ impl VirtualFileSystem {
     /// Creates a new bucket with the given [BucketCreateOptions].
     ///
     /// Returns an error if the bucket already exists (on disk.)
-    pub async fn create_bucket(
-        &self,
-        name: &str,
-    ) -> Result<Bucket, FileSystemError> {
+    pub async fn create_bucket(&self, name: &str) -> Result<Bucket, FileSystemError> {
         let options = BucketCreateOptions::builder()
             .name(name)
             .bucket_path(self.mount_point.join(name))

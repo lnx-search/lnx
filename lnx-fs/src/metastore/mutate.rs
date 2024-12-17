@@ -27,7 +27,7 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
     /// Commits the currently pending bulk operations.
     pub(crate) fn commit(self) {
         let mut lock = self.metastore.state.write();
-        
+
         for (tablet_id, event) in self.mutations {
             let created_at = event.created_at();
             match event.data {

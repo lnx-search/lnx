@@ -1,6 +1,7 @@
 mod actors;
 mod body;
 mod event;
+mod flush_waker;
 pub(crate) mod metadata;
 mod runtime;
 mod utils;
@@ -17,6 +18,7 @@ pub use self::actors::{
 pub(crate) use self::actors::{WriterEventHook, WriterResponse};
 pub use self::body::{Body, BodySender};
 pub use self::event::{EventData, FileEvent};
+pub use self::flush_waker::{BulkFlushWaker, FlushWaker};
 pub use self::runtime::{create_io_runtime, RuntimeDispatcher, RuntimeOptions};
 use crate::metastore::TabletId;
 

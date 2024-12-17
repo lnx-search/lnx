@@ -1,18 +1,22 @@
 use std::fmt::Debug;
+use std::future::Future;
 use std::io::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bon::Builder;
-use futures_util::AsyncWriteExt;
+use futures_util::{AsyncWriteExt, FutureExt};
 use glommio::io::{DmaStreamWriter, DmaStreamWriterBuilder};
+use glommio::GlommioError;
 use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::io::actors::ActorFactory;
 use crate::io::body::Body;
 use crate::io::event::FileEvent;
+use crate::io::flush_waker::{FlushWaker, FlushWakerController};
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::Metadata;
 use crate::metastore::TabletId;
@@ -32,6 +36,9 @@ pub struct TabletWriterOptions {
     #[builder(default, into)]
     /// A set of event hooks to trigger during writer life cycle events.
     event_hooks: EventHooks,
+    #[builder(default, into)]
+    /// The duration between flushes that can occur after a write op.
+    flush_delay_window: Duration,
 }
 
 #[derive(Clone)]
@@ -182,6 +189,7 @@ impl TabletWriterController {
             active_writer_semaphore: self.active_writer_semaphore.clone(),
             max_tablet_size: self.options.max_tablet_size,
             event_hooks: self.options.event_hooks.clone(),
+            flush_delay_window: self.options.flush_delay_window,
         };
 
         self.runtime.spawn(factory).await?;
@@ -212,6 +220,7 @@ struct TabletWriterActorFactory {
     active_writer_semaphore: Arc<Semaphore>,
     max_tablet_size: u64,
     event_hooks: EventHooks,
+    flush_delay_window: Duration,
 }
 
 #[async_trait(?Send)]
@@ -227,15 +236,16 @@ impl ActorFactory for TabletWriterActorFactory {
             .with_buffer_size(256 << 10)
             .build();
 
-        let actor = TabletWriterActor {
-            tablet_id: self.tablet_id,
-            _alive_guard: self.alive_guard,
-            active_writer_semaphore: self.active_writer_semaphore.clone(),
-            events: self.events.clone(),
+        let actor = TabletWriterActor::new(
+            self.tablet_id,
             writer,
-            max_size: self.max_tablet_size,
-            event_hooks: self.event_hooks.clone(),
-        };
+            self.alive_guard,
+            self.active_writer_semaphore.clone(),
+            self.events.clone(),
+            self.max_tablet_size,
+            self.event_hooks.clone(),
+            self.flush_delay_window,
+        );
 
         glommio::spawn_local(actor.run()).detach();
 
@@ -276,9 +286,45 @@ pub struct TabletWriterActor {
     max_size: u64,
     /// Callback triggers to invoke on certain writer life cycle events.
     event_hooks: EventHooks,
+    /// The flush waker controller used for informing
+    /// clients about flushes.
+    waker_controller: FlushWakerController,
+    /// The position of the writer where data is persisted to disk.
+    persisted_pos: u64,
+    /// The point in time when first write occurred after the last flush.
+    ///
+    /// If this is `None` then no write has occurred since the last flush.
+    first_write_after_flush: Option<Instant>,
+    /// The deadline a flush to disk must have occurred by.
+    flush_delay_window: Duration,
 }
 
 impl TabletWriterActor {
+    fn new(
+        tablet_id: TabletId,
+        writer: DmaStreamWriter,
+        alive_guard: OwnedSemaphorePermit,
+        active_writer_semaphore: Arc<Semaphore>,
+        events: flume::Receiver<WriterEvent>,
+        max_size: u64,
+        event_hooks: EventHooks,
+        flush_delay_window: Duration,
+    ) -> Self {
+        Self {
+            tablet_id,
+            _alive_guard: alive_guard,
+            active_writer_semaphore,
+            events,
+            writer,
+            max_size,
+            event_hooks,
+            waker_controller: FlushWakerController::new(tablet_id),
+            persisted_pos: 0,
+            first_write_after_flush: None,
+            flush_delay_window,
+        }
+    }
+
     #[instrument("tablet-writer", skip(self), fields(tablet_id = %self.tablet_id))]
     async fn run(mut self) {
         for hook in self.event_hooks.iter() {
@@ -286,7 +332,21 @@ impl TabletWriterActor {
         }
 
         info!("Writer is ready to process events");
-        while let Ok(event) = self.events.recv_async().await {
+        loop {
+            let wrapped = self
+                .wrap_with_flush_timeout(self.events.recv_async())
+                .await
+                .transpose();
+
+            let event = match wrapped {
+                Err(_) => break,
+                Ok(Some(event)) => event,
+                Ok(None) => {
+                    self.flush_if_required().await;
+                    continue;
+                },
+            };
+
             debug!("Handling IO event");
 
             // Used to track if the writer is in use or not.
@@ -295,15 +355,22 @@ impl TabletWriterActor {
             self.handle_event(event).await;
             drop(permit);
 
+            if self.first_write_after_flush.is_none() {
+                self.first_write_after_flush = Some(Instant::now());
+            }
+            self.flush_if_required().await;
+
             if self.is_full() {
                 break;
             }
         }
 
         info!("Writer is flushing and closing file");
+        let last_pos = self.writer.current_pos();
         if let Err(e) = self.flush_and_close().await {
             error!(error = ?e, "Failed to flush and sync file data");
         }
+        self.waker_controller.wake(last_pos);
 
         trace!("Running event hooks for shutdown");
         for hook in self.event_hooks.iter() {
@@ -339,13 +406,9 @@ impl TabletWriterActor {
             },
         };
 
-        // During testing, the system's timers are adjusted and therefore don't
-        // trigger flushes correctly currently, so we always flush during tests
-        // so we don't have flakey tests. TODO: FIX
-        #[cfg(test)]
-        {
-            let _ = self.writer.sync().await;
-        }
+        let waker = self
+            .waker_controller
+            .create_waker(self.writer.current_pos());
 
         match result {
             Ok(event) => {
@@ -353,6 +416,7 @@ impl TabletWriterActor {
                     tablet_id: self.tablet_id,
                     writer_position: self.writer.current_pos(),
                     event,
+                    flush_waker: waker,
                 };
 
                 for hook in self.event_hooks.iter() {
@@ -376,10 +440,22 @@ impl TabletWriterActor {
         let start_pos = self.writer.current_pos();
 
         loop {
-            let Some(chunk) = body.next().await? else {
-                break;
-            };
-            self.writer.write_all(&chunk).await?;
+            let result = self
+                .wrap_with_flush_timeout(body.next())
+                .await
+                .transpose()?;
+
+            match result {
+                None => {
+                    // Timeout for flush.
+                    self.flush_if_required().await;
+                },
+                Some(None) => break, // No more data
+                Some(Some(chunk)) => {
+                    // Chunk received
+                    self.writer.write_all(&chunk).await?;
+                },
+            }
         }
 
         let end_pos = self.writer.current_pos();
@@ -422,6 +498,52 @@ impl TabletWriterActor {
         self.writer.write_all(&buffer).await?;
         Ok(())
     }
+
+    /// Wraps the provided future with a timeout that
+    /// is aware of when the system next needs to flush.
+    async fn wrap_with_flush_timeout<F, T>(&self, fut: F) -> Option<T>
+    where
+        F: Future<Output = T>,
+    {
+        if let Some(then) = self.first_write_after_flush {
+            let remaining = self.flush_delay_window - then.elapsed();
+            let wrapped = fut.map(Ok);
+
+            match glommio::timer::timeout(remaining, wrapped).await {
+                Err(GlommioError::TimedOut(_)) => None,
+                Err(error) => {
+                    warn!(error = ?error, "Runtime encountered an error while waiting for a timeout");
+                    None // Should never happen.
+                },
+                Ok(res) => Some(res),
+            }
+        } else {
+            let result = fut.await;
+            Some(result)
+        }
+    }
+
+    async fn flush_if_required(&mut self) {
+        let Some(then) = self.first_write_after_flush else {
+            return;
+        };
+
+        // Deadline has not elapsed yet. We can skip the flush step.
+        if then.elapsed() < self.flush_delay_window {
+            return;
+        }
+
+        let position = match self.writer.sync().await {
+            Err(e) => {
+                error!(error = ?e, "Failed to flush buffers due to error");
+                return;
+            },
+            Ok(pos) => pos,
+        };
+
+        self.waker_controller.wake(position);
+        self.first_write_after_flush = None;
+    }
 }
 
 struct WriterEvent {
@@ -461,6 +583,9 @@ pub struct WriterResponse {
     pub writer_position: u64,
     /// The completed file event and associated metadata.
     pub event: FileEvent,
+    /// The [FlushWaker] allows operations to wait until the
+    /// operation is guarenteed to be persisted to disk.
+    pub flush_waker: FlushWaker,
 }
 
 #[cfg_attr(test, mockall::automock)]

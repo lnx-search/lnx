@@ -111,6 +111,11 @@ pub struct BucketConfig {
     /// The time it takes in seconds, for a reader to be marked as IDLE following
     /// no usage activity.
     pub readers_time_to_idle_secs: MaybeUnset<u64>,
+    #[builder(default, into)]
+    /// The flush/sync delay used for writers.
+    ///
+    /// If this is `0` a flush will occur immediately after each write.
+    pub flush_delay_millis: MaybeUnset<u64>,
 }
 
 impl BucketConfig {
@@ -127,6 +132,7 @@ impl BucketConfig {
         set_config!(self, metastore, max_active_writers)?;
         set_config!(self, metastore, max_open_readers)?;
         set_config!(self, metastore, readers_time_to_idle_secs)?;
+        set_config!(self, metastore, flush_delay_millis)?;
 
         Ok(())
     }
@@ -144,6 +150,7 @@ impl BucketConfig {
         get_config!(self, metastore, max_active_writers);
         get_config!(self, metastore, max_open_readers);
         get_config!(self, metastore, readers_time_to_idle_secs);
+        get_config!(self, metastore, flush_delay_millis);
 
         Ok(())
     }
@@ -154,6 +161,7 @@ impl BucketConfig {
     getters_with_option!(max_active_writers, ty = usize);
     getters_with_option!(max_open_readers, ty = usize);
     getters_with_option!(readers_time_to_idle_secs, ty = u64);
+    getters_with_option!(flush_delay_millis, ty = u64);
 }
 
 #[cfg(test)]
@@ -171,6 +179,7 @@ mod tests {
             .max_active_writers(10)
             .max_concurrent_tablet_reads(10)
             .max_open_readers(10)
+            .flush_delay_millis(123)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 

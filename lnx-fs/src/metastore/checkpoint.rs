@@ -283,6 +283,7 @@ fn get_checkpoint_export_path(base: &Path, tablet_id: TabletId) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::FlushWaker;
 
     #[test]
     fn test_cleanup_old_temp_directories() {
@@ -320,6 +321,7 @@ mod tests {
             tablet_id,
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
+            flush_waker: FlushWaker::create_for_test(),
         }));
 
         actor.snapshot_checkpoints();
@@ -355,6 +357,7 @@ mod tests {
             tablet_id,
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
+            flush_waker: FlushWaker::create_for_test(),
         }));
         actor.handle_event(CheckpointEvent::WriterClose(tablet_id));
         assert_eq!(actor.live_state.len(), 1);
@@ -383,11 +386,13 @@ mod tests {
             tablet_id,
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
+            flush_waker: FlushWaker::create_for_test(),
         });
         tx.on_writer_response(WriterResponse {
             tablet_id,
             writer_position: 300,
             event: FileEvent::create(None, "example.txt".to_string(), 128..256),
+            flush_waker: FlushWaker::create_for_test(),
         });
         tx.on_writer_close(tablet_id);
 

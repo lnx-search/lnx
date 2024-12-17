@@ -18,6 +18,8 @@ use crate::config::{
 };
 use crate::io::{
     Body,
+    BulkFlushWaker,
+    FlushWaker,
     RuntimeDispatcher,
     TabletReader,
     TabletReaderOptions,
@@ -250,6 +252,7 @@ impl Bucket {
             bucket: self,
             num_ops_pending: 0,
             transaction_id: ulid::Ulid::new(),
+            flush_wakers: BulkFlushWaker::default(),
         }
     }
 
@@ -257,7 +260,11 @@ impl Bucket {
     /// Write a blob body stream to the store with the given path.
     ///
     /// Once this call completes, the blob is safely persisted to disk.
-    pub async fn write(&self, path: &str, body: Body) -> Result<(), FileSystemError> {
+    pub async fn write(
+        &self,
+        path: &str,
+        body: Body,
+    ) -> Result<FlushWaker, FileSystemError> {
         validate_path(path)?;
 
         trace!("Begin writing blob");
@@ -275,7 +282,7 @@ impl Bucket {
         bulk.commit();
         trace!("Metadata updated");
 
-        Ok(())
+        Ok(response.flush_waker)
     }
 
     #[instrument(skip(self))]
@@ -328,7 +335,7 @@ impl Bucket {
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
-    pub async fn delete(&self, path: &str) -> Result<(), FileSystemError> {
+    pub async fn delete(&self, path: &str) -> Result<FlushWaker, FileSystemError> {
         validate_path(path)?;
 
         trace!("Begin delete blob");
@@ -343,7 +350,7 @@ impl Bucket {
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
 
-        Ok(())
+        Ok(response.flush_waker)
     }
 
     #[instrument(skip(self))]
@@ -355,7 +362,7 @@ impl Bucket {
         &self,
         from_path: &str,
         to_path: &str,
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<FlushWaker, FileSystemError> {
         validate_path(from_path)?;
         validate_path(to_path)?;
 
@@ -375,7 +382,7 @@ impl Bucket {
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
 
-        Ok(())
+        Ok(response.flush_waker)
     }
 
     /// Returns the file metadata associated with the given file.
@@ -433,6 +440,7 @@ pub struct BulkBucketTx<'bucket> {
     bucket: &'bucket Bucket,
     num_ops_pending: usize,
     transaction_id: ulid::Ulid,
+    flush_wakers: BulkFlushWaker,
 }
 
 impl<'bucket> BulkBucketTx<'bucket> {
@@ -457,6 +465,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self.bucket.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
+        self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
         trace!("Metadata updated");
 
@@ -496,6 +505,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
             .await?;
         trace!("Blob delete write complete");
 
+        self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
 
         self.num_ops_pending += 1;
@@ -519,6 +529,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self.bucket.writer.delete(write_metadata).await?;
         trace!("Blob delete write complete");
 
+        self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
 
         self.num_ops_pending += 1;
@@ -527,24 +538,28 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
     #[instrument(skip(self))]
     /// Commits all currently pending bucket operations.
-    pub async fn commit(self) -> Result<(), FileSystemError> {
+    pub async fn commit(mut self) -> Result<BulkFlushWaker, FileSystemError> {
         if self.num_ops_pending == 0 {
-            return Ok(());
+            return Ok(self.flush_wakers);
         }
 
         let write_metadata = crate::io::Metadata {
             path: format!("{COMMIT_MARKER_PREFIX}/{}.commit", self.transaction_id),
             transaction_id: Some(self.transaction_id),
         };
-        self.bucket
+        let response = self
+            .bucket
             .writer
             .write(write_metadata, Body::empty())
             .await?;
         trace!("Blob delete write complete");
 
+        self.flush_wakers.push(response.flush_waker);
+        trace!("Writer flushes acknowledged");
+
         self.metastore.commit();
 
-        Ok(())
+        Ok(self.flush_wakers)
     }
 
     #[instrument(skip(self))]
@@ -669,6 +684,7 @@ async fn setup_tablet_writer(
         .maybe_max_active_writers(config.max_active_writers())
         .maybe_max_tablet_size(config.max_tablet_size_bytes())
         .event_hooks(vec![Box::new(checkpoint_hook) as Box<dyn WriterEventHook>])
+        .maybe_flush_delay_window(config.flush_delay_millis().map(Duration::from_millis))
         .build();
 
     let writer = TabletWriter::new(writer_options, runtime);

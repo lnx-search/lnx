@@ -14,6 +14,7 @@ use std::io;
 use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
+
 use parking_lot::RwLock;
 use tracing::instrument;
 
@@ -94,9 +95,7 @@ impl Metastore {
     /// Returns a list of all files currently within the metastore.
     pub fn list_all_files(&self) -> Vec<MetastoreEntry> {
         let lock = self.state.read();
-        lock.values()
-            .cloned()
-            .collect()
+        lock.values().cloned().collect()
     }
 
     #[allow(unused)]
