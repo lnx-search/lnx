@@ -1,3 +1,4 @@
+use std::cmp;
 use std::fmt::Debug;
 use std::future::Future;
 use std::io::Result;
@@ -23,7 +24,7 @@ use crate::metastore::TabletId;
 
 type EventHooks = Arc<Vec<Box<dyn WriterEventHook>>>;
 
-#[derive(Debug, Builder)]
+#[derive(Debug, Clone, Builder)]
 pub struct TabletWriterOptions {
     /// The base path to store tablet files.
     base_path: PathBuf,
@@ -187,9 +188,7 @@ impl TabletWriterController {
             events: self.events_rx.clone(),
             alive_guard,
             active_writer_semaphore: self.active_writer_semaphore.clone(),
-            max_tablet_size: self.options.max_tablet_size,
-            event_hooks: self.options.event_hooks.clone(),
-            flush_delay_window: self.options.flush_delay_window,
+            options: self.options.clone(),
         };
 
         self.runtime.spawn(factory).await?;
@@ -218,9 +217,7 @@ struct TabletWriterActorFactory {
     events: flume::Receiver<WriterEvent>,
     alive_guard: OwnedSemaphorePermit,
     active_writer_semaphore: Arc<Semaphore>,
-    max_tablet_size: u64,
-    event_hooks: EventHooks,
-    flush_delay_window: Duration,
+    options: TabletWriterOptions,
 }
 
 #[async_trait(?Send)]
@@ -242,9 +239,7 @@ impl ActorFactory for TabletWriterActorFactory {
             self.alive_guard,
             self.active_writer_semaphore.clone(),
             self.events.clone(),
-            self.max_tablet_size,
-            self.event_hooks.clone(),
-            self.flush_delay_window,
+            self.options,
         );
 
         glommio::spawn_local(actor.run()).detach();
@@ -289,8 +284,6 @@ pub struct TabletWriterActor {
     /// The flush waker controller used for informing
     /// clients about flushes.
     waker_controller: FlushWakerController,
-    /// The position of the writer where data is persisted to disk.
-    persisted_pos: u64,
     /// The point in time when first write occurred after the last flush.
     ///
     /// If this is `None` then no write has occurred since the last flush.
@@ -306,9 +299,7 @@ impl TabletWriterActor {
         alive_guard: OwnedSemaphorePermit,
         active_writer_semaphore: Arc<Semaphore>,
         events: flume::Receiver<WriterEvent>,
-        max_size: u64,
-        event_hooks: EventHooks,
-        flush_delay_window: Duration,
+        options: TabletWriterOptions,
     ) -> Self {
         Self {
             tablet_id,
@@ -316,12 +307,11 @@ impl TabletWriterActor {
             active_writer_semaphore,
             events,
             writer,
-            max_size,
-            event_hooks,
+            max_size: options.max_tablet_size,
+            event_hooks: options.event_hooks,
             waker_controller: FlushWakerController::new(tablet_id),
-            persisted_pos: 0,
             first_write_after_flush: None,
-            flush_delay_window,
+            flush_delay_window: options.flush_delay_window,
         }
     }
 
@@ -354,11 +344,6 @@ impl TabletWriterActor {
 
             self.handle_event(event).await;
             drop(permit);
-
-            if self.first_write_after_flush.is_none() {
-                self.first_write_after_flush = Some(Instant::now());
-            }
-            self.flush_if_required().await;
 
             if self.is_full() {
                 break;
@@ -405,6 +390,11 @@ impl TabletWriterActor {
                 self.write_rename_blob(metadata, new_path).await
             },
         };
+
+        if self.first_write_after_flush.is_none() {
+            self.first_write_after_flush = Some(Instant::now());
+        }
+        self.flush_if_required().await;
 
         let waker = self
             .waker_controller
@@ -506,7 +496,8 @@ impl TabletWriterActor {
         F: Future<Output = T>,
     {
         if let Some(then) = self.first_write_after_flush {
-            let remaining = self.flush_delay_window - then.elapsed();
+            let clamped = cmp::min(then.elapsed(), self.flush_delay_window);
+            let remaining = self.flush_delay_window - clamped;
             let wrapped = fut.map(Ok);
 
             match glommio::timer::timeout(remaining, wrapped).await {
@@ -871,5 +862,181 @@ mod tests {
 
         drop(writer);
         tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    #[tokio::test]
+    async fn test_actor_flush_0_delay() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
+
+        let options = TabletWriterOptions::builder()
+            .max_active_writers(1)
+            .max_tablet_size(2 << 10)
+            .flush_delay_window(Duration::from_secs(0))
+            .base_path(temp_dir())
+            .build();
+
+        let writer = TabletWriter::new(options, dispatch);
+
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
+            transaction_id: None,
+        };
+        let response = writer
+            .write(metadata, Body::empty())
+            .await
+            .expect("Write & flush body");
+
+        let res =
+            tokio::time::timeout(Duration::from_secs(0), response.flush_waker.wait())
+                .await;
+        assert!(res.is_ok(), "Write should flush immediately");
+    }
+
+    #[tokio::test]
+    async fn test_actor_flush_timeout_recv_events() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
+
+        let options = TabletWriterOptions::builder()
+            .max_active_writers(1)
+            .max_tablet_size(2 << 10)
+            .flush_delay_window(Duration::from_millis(100))
+            .base_path(temp_dir())
+            .build();
+
+        let writer = TabletWriter::new(options, dispatch);
+
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
+            transaction_id: None,
+        };
+        let response = writer
+            .write(metadata, Body::empty())
+            .await
+            .expect("Write & flush body");
+
+        let res = tokio::time::timeout(
+            Duration::from_millis(150),
+            response.flush_waker.wait(),
+        )
+        .await;
+        assert!(res.is_ok(), "Write should flush correctly after delay");
+    }
+
+    #[tokio::test]
+    async fn test_actor_flush_zero_delay_existing_body_stream() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
+
+        let options = TabletWriterOptions::builder()
+            .max_active_writers(1)
+            .max_tablet_size(2 << 10)
+            .flush_delay_window(Duration::from_secs(0))
+            .base_path(temp_dir())
+            .build();
+
+        let writer = TabletWriter::new(options, dispatch);
+
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
+            transaction_id: None,
+        };
+        let response = writer
+            .write(metadata, Body::empty())
+            .await
+            .expect("Write & flush body");
+
+        let handle = tokio::spawn(async move {
+            let (tx, body) = Body::channel();
+
+            tokio::spawn(async move {
+                for _ in 0..4 {
+                    tx.send(Bytes::from_static(b"Hello, world")).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                tx.finish().await;
+            });
+
+            let metadata = Metadata {
+                path: "example2.txt".to_string(),
+                transaction_id: None,
+            };
+
+            writer.write(metadata, body).await
+        });
+
+        let res =
+            tokio::time::timeout(Duration::from_secs(0), response.flush_waker.wait())
+                .await;
+        assert!(res.is_ok(), "Write should flush correctly after delay");
+
+        let res = handle
+            .await
+            .unwrap()
+            .expect("Concurrent write should succeed");
+        assert_eq!(
+            res.tablet_id, response.tablet_id,
+            "Same writers should be used"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_actor_flush_timeout_existing_body_stream() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
+
+        let options = TabletWriterOptions::builder()
+            .max_active_writers(1)
+            .max_tablet_size(2 << 10)
+            .flush_delay_window(Duration::from_millis(100))
+            .base_path(temp_dir())
+            .build();
+
+        let writer = TabletWriter::new(options, dispatch);
+
+        let metadata = Metadata {
+            path: "example.txt".to_string(),
+            transaction_id: None,
+        };
+        let response = writer
+            .write(metadata, Body::empty())
+            .await
+            .expect("Write & flush body");
+
+        let handle = tokio::spawn(async move {
+            let (tx, body) = Body::channel();
+
+            tokio::spawn(async move {
+                for _ in 0..4 {
+                    tx.send(Bytes::from_static(b"Hello, world")).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                tx.finish().await;
+            });
+
+            let metadata = Metadata {
+                path: "example2.txt".to_string(),
+                transaction_id: None,
+            };
+
+            writer.write(metadata, body).await
+        });
+
+        let res = tokio::time::timeout(
+            Duration::from_millis(150),
+            response.flush_waker.wait(),
+        )
+        .await;
+        assert!(res.is_ok(), "Write should flush correctly after delay");
+
+        let res = handle
+            .await
+            .unwrap()
+            .expect("Concurrent write should succeed");
+        assert_eq!(
+            res.tablet_id, response.tablet_id,
+            "Same writers should be used"
+        );
     }
 }
