@@ -1,0 +1,21 @@
+[package]
+name = "lnx-tantivy-benches"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true }
+flume = { workspace = true }
+tantivy = { workspace = true, features = ["mmap"] }
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tempfile = { workspace = true }
+clap = { workspace = true }
+mimalloc = { workspace = true }
+
+lnx-tantivy = { path = ".." }
+lnx-fs = { path = "../../lnx-fs" }

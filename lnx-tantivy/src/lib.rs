@@ -1,2 +1,2 @@
 mod directory;
-mod indexer;
+pub mod indexer;

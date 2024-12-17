@@ -10,11 +10,8 @@ members = [
     "lnx-shell",
     "lnx-doc",
     "lnx-tantivy",
+    "lnx-tantivy/lnx-tantivy-benches",
 ]
-
-[profile.release]
-lto = "fat"
-codegen-units = 1
 
 [workspace.dependencies]
 anyhow = "1"

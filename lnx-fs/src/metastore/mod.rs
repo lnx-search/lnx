@@ -14,17 +14,11 @@ use std::io;
 use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
-
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use tracing::instrument;
 
 pub(crate) use self::mutate::BulkMetastoreModifyOperation;
 use crate::metastore::db::MetastoreDB;
-
-pub(super) type ReaderState =
-    evmap::handles::ReadHandle<String, MetastoreEntry, (), ahash::RandomState>;
-pub(super) type WriterState =
-    evmap::handles::WriteHandle<String, MetastoreEntry, (), ahash::RandomState>;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts
@@ -56,10 +50,7 @@ pub enum MetastoreError {
 #[derive(Clone)]
 /// A metastore instance for a given bucket.
 pub struct Metastore {
-    /// The reader view of the metadata store.
-    reader_state: ReaderState,
-    /// The metastore state writer.
-    write_state: Arc<Mutex<WriterState>>,
+    state: Arc<RwLock<ahash::HashMap<String, MetastoreEntry>>>,
     /// THe SQLite DB wrapper for persisting file information.
     db: MetastoreDB,
 }
@@ -69,14 +60,8 @@ impl Metastore {
     pub async fn connect(path: &str) -> Result<Self, MetastoreError> {
         let db = MetastoreDB::connect(path).await?;
 
-        // # Safety
-        // The types meet the safety requirement and trait constraints for the map
-        // and ahash mimics the same behaviour as the stdlib hasher in regard to consistency.
-        let (wx, rx) = unsafe { evmap::with_hasher((), ahash::RandomState::new()) };
-
         Ok(Self {
-            reader_state: rx,
-            write_state: Arc::new(Mutex::new(wx)),
+            state: Arc::default(),
             db,
         })
     }
@@ -85,12 +70,12 @@ impl Metastore {
     ///
     /// Returns the full [FileUrl] and [FileMetadata].
     pub(crate) fn get_file(&self, path: &str) -> Option<MetastoreEntry> {
-        self.reader_state.get_one(path).map(|e| e.clone())
+        self.state.read().get(path).map(|e| e.clone())
     }
 
     /// Returns if the file currently exists with the given path.
     pub(crate) fn exists(&self, path: &str) -> bool {
-        self.reader_state.contains_key(path)
+        self.state.read().contains_key(path)
     }
 
     #[instrument(skip_all)]
@@ -108,14 +93,8 @@ impl Metastore {
 
     /// Returns a list of all files currently within the metastore.
     pub fn list_all_files(&self) -> Vec<MetastoreEntry> {
-        let guard = match self.reader_state.enter() {
-            None => return Vec::new(),
-            Some(guard) => guard,
-        };
-
-        guard
-            .values()
-            .filter_map(|values| values.get_one())
+        let lock = self.state.read();
+        lock.values()
             .cloned()
             .collect()
     }
@@ -123,14 +102,9 @@ impl Metastore {
     #[allow(unused)]
     /// Returns a list of all tablets forming the bucket.
     pub fn list_tablets(&self) -> BTreeSet<TabletId> {
-        let guard = match self.reader_state.enter() {
-            None => return BTreeSet::new(),
-            Some(guard) => guard,
-        };
+        let lock = self.state.read();
 
-        guard
-            .values()
-            .filter_map(|values| values.get_one())
+        lock.values()
             .map(|entry| entry.metadata.tablet_id)
             .collect()
     }
@@ -146,14 +120,9 @@ impl Metastore {
     where
         F: FnMut(&MetastoreEntry) -> bool,
     {
-        let guard = match self.reader_state.enter() {
-            None => return Vec::new(),
-            Some(guard) => guard,
-        };
+        let lock = self.state.read();
 
-        guard
-            .values()
-            .filter_map(|values| values.get_one())
+        lock.values()
             .filter(|entry| pred(&*entry))
             .cloned()
             .collect()

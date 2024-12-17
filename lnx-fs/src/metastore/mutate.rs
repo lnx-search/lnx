@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use tracing::{instrument, trace};
 
 use super::{Metastore, MetastoreEntry, TabletId};
@@ -28,9 +26,8 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
     #[instrument(skip_all)]
     /// Commits the currently pending bulk operations.
     pub(crate) fn commit(self) {
-        let mut local_inserts = BTreeMap::new();
-
-        let mut lock = self.metastore.write_state.lock();
+        let mut lock = self.metastore.state.write();
+        
         for (tablet_id, event) in self.mutations {
             let created_at = event.created_at();
             match event.data {
@@ -47,29 +44,19 @@ impl<'a> BulkMetastoreModifyOperation<'a> {
                         },
                     };
 
-                    // A local copy for performing intra-transaction ops.
-                    local_inserts.insert(file_path.clone(), entry.clone());
-                    lock.update(file_path, entry);
+                    lock.insert(file_path, entry);
                 },
                 EventData::Delete { file_path } => {
-                    local_inserts.remove(&file_path);
-                    lock.remove_entry(file_path);
+                    lock.remove(&file_path);
                 },
                 EventData::Rename { from_path, to_path } => {
-                    let maybe_existing = local_inserts
-                        .remove(&from_path)
-                        .or_else(|| lock.get_one(&from_path).map(|e| e.clone()));
-
-                    lock.remove_entry(from_path);
-
-                    if let Some(mut entry) = maybe_existing {
+                    if let Some(mut entry) = lock.remove(&from_path) {
                         entry.path = to_path.clone();
                         lock.insert(to_path, entry);
                     }
                 },
             }
         }
-        lock.publish();
         trace!("Metastore memory commit OK");
     }
 

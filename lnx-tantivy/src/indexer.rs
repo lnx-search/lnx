@@ -23,7 +23,7 @@ const PSEUDO_MEMORY_BUDGET: usize = 50 << 20;
 /// TODO: This currently doesn't support delete ops because we need to have a working
 ///     searcher first...
 pub struct SingleSegmentIndexer {
-    index: Index,
+    _index: Index,
     segment: Segment,
     segment_writer: SegmentWriter,
     directory: MemoryDirectory,
@@ -51,7 +51,7 @@ impl SingleSegmentIndexer {
                 .expect("Segment created with memory directory shouldn't error");
 
         Self {
-            index,
+            _index: index,
             directory,
             segment,
             segment_writer,
@@ -146,32 +146,32 @@ impl SegmentMemory {
     ) -> Result<(), lnx_fs::FileSystemError> {
         let mut bulk = bucket.begin_tx();
         bulk.write(
-            &format!("{}.seg-store", self.segment_id),
+            &format!("{}.store.seg", self.segment_id),
             Body::complete(self.store),
         )
         .await?;
         bulk.write(
-            &format!("{}.seg-terms", self.segment_id),
+            &format!("{}.terms.seg", self.segment_id),
             Body::complete(self.terms),
         )
         .await?;
         bulk.write(
-            &format!("{}.seg-postings", self.segment_id),
+            &format!("{}.postings.seg", self.segment_id),
             Body::complete(self.postings),
         )
         .await?;
         bulk.write(
-            &format!("{}.seg-positions", self.segment_id),
+            &format!("{}.positions.seg", self.segment_id),
             Body::complete(self.positions),
         )
         .await?;
         bulk.write(
-            &format!("{}.seg-field-norms", self.segment_id),
+            &format!("{}.norms.seg", self.segment_id),
             Body::complete(self.field_norms),
         )
         .await?;
         bulk.write(
-            &format!("{}.seg-fast-fields", self.segment_id),
+            &format!("{}.columnar.seg", self.segment_id),
             Body::complete(self.fast_fields),
         )
         .await?;

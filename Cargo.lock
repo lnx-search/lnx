@@ -837,6 +837,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
+name = "fs4"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7e180ac76c23b45e767bd7ae9579bc0bb458618c4bc71835926e098e61d15f8"
+dependencies = [
+ "rustix",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1727,6 +1737,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-tantivy-benches"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flume 0.11.1",
+ "lnx-fs",
+ "lnx-tantivy",
+ "mimalloc",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1797,6 +1827,15 @@ name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+
+[[package]]
+name = "memmap2"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memoffset"
@@ -3077,6 +3116,7 @@ dependencies = [
  "downcast-rs",
  "fastdivide",
  "fnv",
+ "fs4",
  "htmlescape",
  "hyperloglogplus",
  "itertools",
@@ -3084,6 +3124,7 @@ dependencies = [
  "log",
  "lru",
  "measure_time",
+ "memmap2",
  "once_cell",
  "oneshot",
  "rayon",
@@ -3101,6 +3142,7 @@ dependencies = [
  "tantivy-query-grammar",
  "tantivy-stacker",
  "tantivy-tokenizer-api",
+ "tempfile",
  "thiserror 2.0.3",
  "time",
  "uuid",

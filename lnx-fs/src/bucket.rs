@@ -36,10 +36,6 @@ use crate::metastore::{
 use crate::service::FileSystemError;
 use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
-/// A bucket that can be cheaply cloned and shared
-/// by being wrapped in an [Arc].
-pub type SharedBucket = Arc<Bucket>;
-
 #[derive(Debug, Builder)]
 /// Options that can be configured when creating a bucket.
 pub struct BucketCreateOptions {
@@ -50,6 +46,7 @@ pub struct BucketCreateOptions {
     bucket_path: PathBuf,
 }
 
+#[derive(Clone)]
 /// Virtual File System Bucket
 ///
 /// This is a way of organising a set of files into completely isolated partitions, similar
@@ -100,9 +97,9 @@ pub struct BucketCreateOptions {
 ///
 pub struct Bucket {
     /// The currently active bucket config.
-    config: BucketConfig,
+    config: Arc<BucketConfig>,
     /// The paths within the bucket containing various parts of the bucket data.
-    paths: BucketPaths,
+    paths: Arc<BucketPaths>,
     /// The metastore for the bucket.
     metastore: Metastore,
     /// The tablet writer for completing new write requests.
@@ -205,8 +202,8 @@ impl Bucket {
             .build_with_hasher(ahash::RandomState::new());
 
         Ok(Self {
-            config,
-            paths,
+            config: Arc::new(config),
+            paths: Arc::new(paths),
             metastore,
             writer,
             readers,

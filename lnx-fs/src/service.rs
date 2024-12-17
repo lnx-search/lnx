@@ -5,10 +5,9 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use tracing::{info, instrument};
 
-use crate::bucket::{BucketCreateOptions, SharedBucket};
+use crate::bucket::{BucketCreateOptions, Bucket};
 use crate::io::{RuntimeDispatcher, RuntimeOptions};
 use crate::metastore::MetastoreError;
-use crate::Bucket;
 
 /// A [VirtualFileSystem] provides an IO abstraction layer in an LSM-like fashion
 /// for efficiently writing blobs to disk.
@@ -35,7 +34,7 @@ use crate::Bucket;
 ///
 pub struct VirtualFileSystem {
     mount_point: Arc<PathBuf>,
-    buckets: Arc<RwLock<ahash::HashMap<String, SharedBucket>>>,
+    buckets: Arc<RwLock<ahash::HashMap<String, Bucket>>>,
     runtime: RuntimeDispatcher,
 }
 
@@ -60,7 +59,7 @@ impl VirtualFileSystem {
 
             info!(path = %entry.path().display(), "Attempting to open bucket");
             let bucket = Bucket::open(entry.path(), runtime.clone()).await?;
-            buckets.insert(bucket.name().to_string(), SharedBucket::new(bucket));
+            buckets.insert(bucket.name().to_string(), bucket);
         }
 
         Ok(Self {
@@ -79,8 +78,8 @@ impl VirtualFileSystem {
         Ok((fs, dir))
     }
 
-    /// Returns a clone of the [SharedBucket] if it exists.
-    pub fn bucket(&self, bucket: &str) -> Option<SharedBucket> {
+    /// Returns a clone of the [Bucket] if it exists.
+    pub fn bucket(&self, bucket: &str) -> Option<Bucket> {
         self.buckets.read().get(bucket).cloned()
     }
 
@@ -90,19 +89,18 @@ impl VirtualFileSystem {
     pub async fn create_bucket(
         &self,
         name: &str,
-    ) -> Result<SharedBucket, FileSystemError> {
+    ) -> Result<Bucket, FileSystemError> {
         let options = BucketCreateOptions::builder()
             .name(name)
             .bucket_path(self.mount_point.join(name))
             .build();
 
         let bucket = Bucket::create(options, self.runtime.clone()).await?;
-        let shared_bucket = SharedBucket::new(bucket);
 
         let mut lock = self.buckets.write();
-        lock.insert(shared_bucket.name().to_string(), shared_bucket.clone());
+        lock.insert(bucket.name().to_string(), bucket.clone());
 
-        Ok(shared_bucket)
+        Ok(bucket)
     }
 
     /// Attempts to delete the bucket with the given name.
