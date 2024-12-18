@@ -1,4 +1,7 @@
+use std::collections::Bound;
+use std::fmt::Debug;
 use std::io;
+use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -286,7 +289,7 @@ impl Bucket {
     }
 
     #[instrument(skip(self))]
-    /// Creates creates a new read stream for the given file if it exists.
+    /// Creates a new read stream for the given file if it exists.
     ///
     /// NOTE:
     /// This operation can be quite expensive if the file is not in the cache,
@@ -295,6 +298,27 @@ impl Bucket {
     /// To minimise this impact, it is important to have a suitably sized
     /// reader cache allowance.
     pub async fn read(&self, path: &str) -> Result<Body, FileSystemError> {
+        self.read_range(path, ..).await
+    }
+
+    #[instrument(skip(self))]
+    /// Creates a new read stream for the given file if it exists and selects
+    /// only the data within the provided range.
+    ///
+    /// NOTE:
+    /// This operation can be quite expensive if the file is not in the cache,
+    /// this is because it will have to open and map the file with various buffers.
+    ///
+    /// To minimise this impact, it is important to have a suitably sized
+    /// reader cache allowance.
+    pub async fn read_range<R>(
+        &self,
+        path: &str,
+        range: R,
+    ) -> Result<Body, FileSystemError>
+    where
+        R: RangeBounds<u64> + Debug,
+    {
         validate_path(path)?;
 
         trace!("Begin reading blob");
@@ -303,32 +327,38 @@ impl Bucket {
             .metastore
             .get_file(path)
             .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))?;
-        let tablet_id = entry.metadata.tablet_id;
 
-        if let Some(reader) = self.readers.get(&tablet_id) {
-            return reader
-                .read(entry.metadata.position)
-                .await
-                .map_err(FileSystemError::from);
+        let relative_start = match range.start_bound() {
+            Bound::Included(start) => *start,
+            Bound::Excluded(start) => start.saturating_add(1),
+            Bound::Unbounded => 0,
+        };
+
+        let relative_end = match range.end_bound() {
+            Bound::Included(end) => end.saturating_add(1),
+            Bound::Excluded(end) => *end,
+            Bound::Unbounded => entry.metadata.size(),
+        };
+
+        let valid_range = relative_start > entry.metadata.size()
+            || relative_end > entry.metadata.size()
+            || relative_start > relative_end;
+        if valid_range {
+            return Err(FileSystemError::ReadOutOfRange(
+                path.to_string(),
+                relative_start..relative_end,
+            ));
         }
 
-        debug!("Reader is not cached, creating new");
-        let options = TabletReaderOptions::builder()
-            .base_path(self.paths.tablets_path.clone())
-            .tablet_id(tablet_id)
-            .maybe_sequential_read_threshold(
-                self.config.sequential_read_threshold_bytes(),
-            )
-            .maybe_max_concurrent_reads(self.config.max_concurrent_tablet_reads())
-            .build();
+        let true_start = entry.metadata.position.start + relative_start;
+        let true_end = entry.metadata.position.start + relative_end;
 
-        let reader = TabletReader::open(options, self.runtime.clone()).await?;
-        self.readers.insert(tablet_id, reader.clone());
+        let reader = self.get_or_create_reader(entry.metadata.tablet_id).await?;
 
         reader
-            .read(entry.metadata.position)
+            .read(true_start..true_end)
             .await
-            .map_err(FileSystemError::from)
+            .map_err(FileSystemError::IoError)
     }
 
     #[instrument(skip(self))]
@@ -423,6 +453,27 @@ impl Bucket {
         config: BucketConfig,
     ) -> Result<(), MetastoreError> {
         config.store_in_metastore(&self.metastore).await
+    }
+
+    async fn get_or_create_reader(
+        &self,
+        tablet_id: TabletId,
+    ) -> Result<TabletReader, FileSystemError> {
+        if let Some(reader) = self.readers.get(&tablet_id) {
+            return Ok(reader);
+        }
+
+        debug!("Reader is not cached, creating new");
+        let options = TabletReaderOptions::builder()
+            .base_path(self.paths.tablets_path.clone())
+            .tablet_id(tablet_id)
+            .maybe_max_concurrent_reads(self.config.max_concurrent_tablet_reads())
+            .build();
+
+        let reader = TabletReader::open(options, self.runtime.clone()).await?;
+        self.readers.insert(tablet_id, reader.clone());
+
+        Ok(reader)
     }
 }
 
@@ -832,6 +883,63 @@ mod tests {
 
         let data = body.collect().await.expect("Read all content");
         assert_eq!(data.as_ref(), b"Hello, World!");
+    }
+
+    #[tokio::test]
+    async fn test_bucket_read_range_file() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let body = Body::complete(Bytes::from_static(b"Hello, World!"));
+        bucket.write("example.txt", body).await.expect("Write file");
+
+        let body = bucket
+            .read_range("example.txt", ..)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read all content");
+        assert_eq!(data.as_ref(), b"Hello, World!");
+
+        let body = bucket
+            .read_range("example.txt", ..5)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read all content");
+        assert_eq!(data.as_ref(), b"Hello");
+
+        let body = bucket
+            .read_range("example.txt", 5..)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read all content");
+        assert_eq!(data.as_ref(), b", World!");
+
+        let body = bucket
+            .read_range("example.txt", 5..12)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read all content");
+        assert_eq!(data.as_ref(), b", World");
+
+        let err = bucket
+            .read_range("example.txt", 5..9000)
+            .await
+            .expect_err("Read should error due to range");
+        assert!(
+            matches!(err, FileSystemError::ReadOutOfRange(_, _)),
+            "Expected read out of range, got {err:?}"
+        );
     }
 
     #[tokio::test]

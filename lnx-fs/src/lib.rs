@@ -4,6 +4,7 @@ mod io;
 mod metastore;
 mod service;
 mod utils;
+// mod fscache;
 
 pub use bytes::Bytes;
 

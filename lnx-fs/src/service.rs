@@ -1,4 +1,5 @@
 use std::io;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -161,6 +162,10 @@ pub enum FileSystemError {
     #[error("File not found: {0:?}")]
     /// No file exists within the bucket with the given name.
     FileNotFound(String),
+    #[error("Read out of range: {1:?} is outside of the range of file {0:?}")]
+    /// A read was attempted on a file with positions that lie outside
+    /// the file boundaries.
+    ReadOutOfRange(String, Range<u64>),
     #[error("Path for file is too long: {0:?}")]
     /// The provided file path is too long.
     PathTooLong(String),
@@ -180,6 +185,7 @@ mod tests {
     use std::env::temp_dir;
 
     use super::*;
+    use crate::BucketConfig;
 
     #[tokio::test]
     async fn test_delete_bucket_non_existant() {
@@ -255,5 +261,35 @@ mod tests {
         assert!(service.bucket("testing1").is_some());
         assert!(service.bucket("testing2").is_some());
         assert!(service.bucket("testing3").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_reload_bucket() {
+        let mount_point = temp_dir().join(ulid::Ulid::new().to_string());
+        std::fs::create_dir(&mount_point).unwrap();
+
+        let options = RuntimeOptions::builder().num_threads(1).build();
+
+        let service = VirtualFileSystem::mount(mount_point.clone(), options)
+            .await
+            .expect("Create file system");
+
+        let bucket = service
+            .create_bucket("testing1")
+            .await
+            .expect("Create new bucket");
+        assert_eq!(bucket.config().flush_delay_millis(), None);
+
+        let config_change = BucketConfig::builder().flush_delay_millis(100).build();
+        bucket
+            .update_config(config_change)
+            .await
+            .expect("Update config");
+
+        let bucket = service
+            .reload_bucket("testing1")
+            .await
+            .expect("Reload bucket");
+        assert_eq!(bucket.config().flush_delay_millis(), Some(100));
     }
 }

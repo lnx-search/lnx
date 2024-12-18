@@ -84,11 +84,6 @@ pub struct BucketConfig {
     /// _on the same tablet_.
     pub max_concurrent_tablet_reads: MaybeUnset<usize>,
     #[builder(default, into)]
-    /// The threshold from where a read will be changed from
-    /// a single random read to a scan which will stream
-    /// the data read.
-    pub sequential_read_threshold_bytes: MaybeUnset<usize>,
-    #[builder(default, into)]
     /// The maximum target size of a tablet.
     ///
     /// The system will always go slightly _over_ this limit, but it should
@@ -127,7 +122,6 @@ impl BucketConfig {
 
         set_config!(self, metastore, name)?;
         set_config!(self, metastore, max_concurrent_tablet_reads)?;
-        set_config!(self, metastore, sequential_read_threshold_bytes)?;
         set_config!(self, metastore, max_tablet_size_bytes)?;
         set_config!(self, metastore, max_active_writers)?;
         set_config!(self, metastore, max_open_readers)?;
@@ -145,7 +139,6 @@ impl BucketConfig {
 
         get_config!(self, metastore, name);
         get_config!(self, metastore, max_concurrent_tablet_reads);
-        get_config!(self, metastore, sequential_read_threshold_bytes);
         get_config!(self, metastore, max_tablet_size_bytes);
         get_config!(self, metastore, max_active_writers);
         get_config!(self, metastore, max_open_readers);
@@ -156,7 +149,6 @@ impl BucketConfig {
     }
 
     getters_with_option!(max_concurrent_tablet_reads, ty = usize);
-    getters_with_option!(sequential_read_threshold_bytes, ty = usize);
     getters_with_option!(max_tablet_size_bytes, ty = u64);
     getters_with_option!(max_active_writers, ty = usize);
     getters_with_option!(max_open_readers, ty = usize);
@@ -174,7 +166,6 @@ mod tests {
 
         let cfg = BucketConfig::builder()
             .name("demo".to_string())
-            .sequential_read_threshold_bytes(100)
             .max_tablet_size_bytes(100)
             .max_active_writers(10)
             .max_concurrent_tablet_reads(10)
@@ -194,7 +185,7 @@ mod tests {
 
         let cfg = BucketConfig::builder()
             .name("demo".to_string())
-            .sequential_read_threshold_bytes(100)
+            .readers_time_to_idle_secs(100)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 
@@ -203,13 +194,13 @@ mod tests {
         assert_eq!(cfg, loaded, "Configs should match");
 
         let cfg = BucketConfig::builder()
-            .sequential_read_threshold_bytes(20)
+            .readers_time_to_idle_secs(20)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 
         let mut loaded = BucketConfig::default();
         loaded.load_from_metastore(&metastore).await.unwrap();
-        assert_eq!(cfg.sequential_read_threshold_bytes, MaybeUnset::Some(20));
+        assert_eq!(cfg.readers_time_to_idle_secs, MaybeUnset::Some(20));
     }
 
     #[tokio::test]
@@ -218,7 +209,7 @@ mod tests {
 
         let cfg = BucketConfig::builder()
             .name("demo".to_string())
-            .sequential_read_threshold_bytes(100)
+            .readers_time_to_idle_secs(100)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 
@@ -227,12 +218,12 @@ mod tests {
         assert_eq!(cfg, loaded, "Configs should match");
 
         let cfg = BucketConfig::builder()
-            .sequential_read_threshold_bytes(MaybeUnset::None)
+            .readers_time_to_idle_secs(MaybeUnset::None)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 
         let mut loaded = BucketConfig::default();
         loaded.load_from_metastore(&metastore).await.unwrap();
-        assert_eq!(loaded.sequential_read_threshold_bytes, MaybeUnset::Unset);
+        assert_eq!(loaded.readers_time_to_idle_secs, MaybeUnset::Unset);
     }
 }

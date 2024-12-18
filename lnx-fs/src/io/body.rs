@@ -5,6 +5,7 @@ use bytes::{Bytes, BytesMut};
 use flume::{RecvError, TrySendError};
 use tracing::warn;
 
+#[derive(Debug)]
 /// A body is a stream of incoming bytes.
 pub struct Body {
     incoming: flume::Receiver<io::Result<Option<Bytes>>>,
