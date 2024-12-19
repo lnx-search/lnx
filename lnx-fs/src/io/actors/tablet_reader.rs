@@ -1,4 +1,5 @@
-use std::io;
+use std::{cmp, io};
+use std::fmt::Debug;
 use std::io::{ErrorKind, Result};
 use std::ops::Range;
 use std::path::PathBuf;
@@ -10,6 +11,7 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use glommio::io::{DmaFile, MergedBufferLimit, OpenOptions, ReadAmplificationLimit};
 use glommio::sync::Semaphore;
+use smallvec::SmallVec;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::io::actors::ActorFactory;
@@ -19,6 +21,8 @@ use crate::metastore::TabletId;
 
 const BUFFER_MERGE_SIZE: usize = 32 << 10;
 const READ_MEMORY_LIMIT_BYTES: usize = 5 << 20;
+const READ_SPLIT_SIZE: u64 = 32 << 10;
+type Positions = SmallVec<[Range<u64>; 4]>;
 
 #[derive(Debug, Builder)]
 pub struct TabletReaderOptions {
@@ -78,6 +82,12 @@ impl TabletReader {
     /// so large reads need to be broken up into smaller reads. This can be
     /// done with the `read_many` handler instead.
     pub async fn read(&self, position: Range<u64>) -> Result<Body> {
+        let len = position.end - position.start;
+        if len > READ_SPLIT_SIZE {
+            let positions = split_read_position(position);
+            return self.read_many(positions).await;
+        }
+        
         let (ack, body) = Body::channel();
 
         let event = ReadEvent::ReadAt(ReadAtEvent { position, ack });
@@ -95,7 +105,11 @@ impl TabletReader {
     ///
     /// The system may execute this read a random read or sequential read
     /// depending on the size of the blob.
-    pub async fn read_many(&self, positions: Vec<Range<u64>>) -> Result<Body> {
+    pub async fn read_many<P>(&self, positions: P) -> Result<Body>
+    where
+        P: Into<Positions> + Debug,
+    {
+        let positions = positions.into();
         let (ack, body) = Body::channel();
 
         let event = ReadEvent::BulkReadAt(BulkReadAtEvent { positions, ack });
@@ -232,7 +246,7 @@ async fn random_read(file: Rc<DmaFile>, event: ReadAtEvent) {
 
 async fn random_bulk_read(
     file: Rc<DmaFile>,
-    positions: Vec<Range<u64>>,
+    positions: Positions,
     ack: BodySender,
 ) {
     use futures_util::stream;
@@ -285,8 +299,26 @@ struct ReadAtEvent {
 }
 
 struct BulkReadAtEvent {
-    positions: Vec<Range<u64>>,
+    positions: Positions,
     ack: BodySender,
+}
+
+fn split_read_position(position: Range<u64>) -> Positions {
+    let read_len = position.end - position.start;
+    let mut num_positions = read_len / READ_SPLIT_SIZE;
+    if read_len % READ_SPLIT_SIZE != 0 {
+        num_positions += 1;
+    }
+
+    let mut positions = Positions::with_capacity(num_positions as usize);
+    let mut offset = 0;
+    for _ in 0..num_positions {
+        let end = cmp::min(offset + READ_SPLIT_SIZE, read_len);
+        positions.push(offset..end);
+        offset += READ_SPLIT_SIZE;
+    }
+
+    positions
 }
 
 #[cfg(test)]
@@ -301,6 +333,35 @@ mod tests {
     use super::*;
     use crate::io::runtime;
     use crate::io::runtime::RuntimeOptions;
+
+    #[allow(clippy::single_range_in_vec_init)]
+    #[allow(clippy::identity_op)]
+    #[test]
+    fn test_split_read_position() {
+        let positions = split_read_position(0..READ_SPLIT_SIZE);
+        assert_eq!(positions.as_slice(), &[0..READ_SPLIT_SIZE]);
+        
+        let positions = split_read_position(0..READ_SPLIT_SIZE * 4);
+        assert_eq!(
+            positions.as_slice(), 
+            &[
+                0..READ_SPLIT_SIZE,
+                READ_SPLIT_SIZE*1..READ_SPLIT_SIZE*2,
+                READ_SPLIT_SIZE*2..READ_SPLIT_SIZE*3,
+                READ_SPLIT_SIZE*3..READ_SPLIT_SIZE*4,
+            ],
+        );
+
+        let positions = split_read_position(0..(READ_SPLIT_SIZE * 2) + 14);
+        assert_eq!(
+            positions.as_slice(), 
+            &[
+                0..READ_SPLIT_SIZE,
+                READ_SPLIT_SIZE*1..READ_SPLIT_SIZE*2,
+                READ_SPLIT_SIZE*2..READ_SPLIT_SIZE*2 + 14
+            ],
+        );
+    }
 
     fn create_test_tablet(tablet_id: TabletId, size: usize) -> tempfile::NamedTempFile {
         let path = crate::io::get_tablet_file_path(&temp_dir(), tablet_id);

@@ -25,8 +25,8 @@ fnv = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true }
 rmp-serde = { workspace = true }
-evmap = { workspace = true }
 tempfile = { workspace = true }
+smallvec = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
