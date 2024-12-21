@@ -39,7 +39,7 @@ use crate::metastore::{
     TabletId,
 };
 use crate::service::FileSystemError;
-use crate::{BucketConfig, FileMetadata, MaybeUnset};
+use crate::{fscache, BucketConfig, FileMetadata, MaybeUnset};
 
 #[derive(Debug, Builder)]
 /// Options that can be configured when creating a bucket.
@@ -116,6 +116,8 @@ pub struct Bucket {
     readers: moka::sync::Cache<TabletId, TabletReader, ahash::RandomState>,
     /// The IO runtime for the bucket.
     runtime: RuntimeDispatcher,
+    /// An in-memory cache of file chunks for accelerating reads.
+    fscache: fscache::FileSystemCache,
 }
 
 impl Bucket {
@@ -206,6 +208,11 @@ impl Bucket {
             .time_to_idle(time_to_idle)
             .build_with_hasher(ahash::RandomState::new());
 
+        let cache_options = fscache::FileSystemCacheOptions::builder()
+            .maybe_cache_capacity_bytes(config.read_cache_capacity_bytes())
+            .build();
+        let fscache = fscache::FileSystemCache::new(cache_options);
+        
         Ok(Self {
             config: Arc::new(config),
             paths: Arc::new(paths),
@@ -213,6 +220,7 @@ impl Bucket {
             writer,
             readers,
             runtime,
+            fscache,
         })
     }
 

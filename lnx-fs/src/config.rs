@@ -119,6 +119,12 @@ pub struct BucketConfig {
     ///
     /// If this is `0` a flush will occur immediately after each write.
     pub flush_delay_millis: MaybeUnset<u64>,
+    #[builder(default, into)]
+    /// The cache of the read cache in bytes.
+    /// 
+    /// This is the in-memory cache with alleviated the read IO on disks.
+    /// Typically higher is always better.
+    pub read_cache_capacity_bytes: MaybeUnset<u64>,
 }
 
 impl BucketConfig {
@@ -135,6 +141,7 @@ impl BucketConfig {
         set_config!(self, metastore, max_open_readers)?;
         set_config!(self, metastore, readers_time_to_idle_secs)?;
         set_config!(self, metastore, flush_delay_millis)?;
+        set_config!(self, metastore, read_cache_capacity_bytes)?;        
 
         Ok(())
     }
@@ -152,6 +159,7 @@ impl BucketConfig {
         get_config!(self, metastore, max_open_readers);
         get_config!(self, metastore, readers_time_to_idle_secs);
         get_config!(self, metastore, flush_delay_millis);
+        get_config!(self, metastore, read_cache_capacity_bytes);
 
         Ok(())
     }
@@ -162,6 +170,7 @@ impl BucketConfig {
     getters_with_option!(max_open_readers, ty = usize);
     getters_with_option!(readers_time_to_idle_secs, ty = u64);
     getters_with_option!(flush_delay_millis, ty = u64);
+    getters_with_option!(read_cache_capacity_bytes, ty = u64);
 }
 
 #[cfg(test)]
@@ -179,6 +188,7 @@ mod tests {
             .max_concurrent_tablet_reads(10)
             .max_open_readers(10)
             .flush_delay_millis(123)
+            .read_cache_capacity_bytes(1 << 10)
             .build();
         cfg.store_in_metastore(&metastore).await.unwrap();
 

@@ -22,6 +22,7 @@ pub struct FileSystemCacheOptions {
     cache_capacity_bytes: u64,
 }
 
+#[derive(Clone)]
 /// The memory caching layer for disk reads.
 ///
 /// Because the main IO readers use DirectIO, they bypass the OS' file system cache,
