@@ -1,9 +1,9 @@
-use std::{cmp, io};
 use std::fmt::Debug;
 use std::io::{ErrorKind, Result};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::{cmp, io};
 
 use async_trait::async_trait;
 use bon::Builder;
@@ -14,6 +14,7 @@ use glommio::sync::Semaphore;
 use smallvec::SmallVec;
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::config::READ_SPLIT_SIZE;
 use crate::io::actors::ActorFactory;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::{Body, BodySender};
@@ -21,7 +22,6 @@ use crate::metastore::TabletId;
 
 const BUFFER_MERGE_SIZE: usize = 32 << 10;
 const READ_MEMORY_LIMIT_BYTES: usize = 5 << 20;
-const READ_SPLIT_SIZE: u64 = 32 << 10;
 type Positions = SmallVec<[Range<u64>; 4]>;
 
 #[derive(Debug, Builder)]
@@ -87,7 +87,7 @@ impl TabletReader {
             let positions = split_read_position(position);
             return self.read_many(positions).await;
         }
-        
+
         let (ack, body) = Body::channel();
 
         let event = ReadEvent::ReadAt(ReadAtEvent { position, ack });
@@ -244,11 +244,7 @@ async fn random_read(file: Rc<DmaFile>, event: ReadAtEvent) {
     }
 }
 
-async fn random_bulk_read(
-    file: Rc<DmaFile>,
-    positions: Positions,
-    ack: BodySender,
-) {
+async fn random_bulk_read(file: Rc<DmaFile>, positions: Positions, ack: BodySender) {
     use futures_util::stream;
 
     debug!(positions = ?positions, "Bulk random read");
@@ -340,25 +336,25 @@ mod tests {
     fn test_split_read_position() {
         let positions = split_read_position(0..READ_SPLIT_SIZE);
         assert_eq!(positions.as_slice(), &[0..READ_SPLIT_SIZE]);
-        
+
         let positions = split_read_position(0..READ_SPLIT_SIZE * 4);
         assert_eq!(
-            positions.as_slice(), 
+            positions.as_slice(),
             &[
                 0..READ_SPLIT_SIZE,
-                READ_SPLIT_SIZE*1..READ_SPLIT_SIZE*2,
-                READ_SPLIT_SIZE*2..READ_SPLIT_SIZE*3,
-                READ_SPLIT_SIZE*3..READ_SPLIT_SIZE*4,
+                READ_SPLIT_SIZE * 1..READ_SPLIT_SIZE * 2,
+                READ_SPLIT_SIZE * 2..READ_SPLIT_SIZE * 3,
+                READ_SPLIT_SIZE * 3..READ_SPLIT_SIZE * 4,
             ],
         );
 
         let positions = split_read_position(0..(READ_SPLIT_SIZE * 2) + 14);
         assert_eq!(
-            positions.as_slice(), 
+            positions.as_slice(),
             &[
                 0..READ_SPLIT_SIZE,
-                READ_SPLIT_SIZE*1..READ_SPLIT_SIZE*2,
-                READ_SPLIT_SIZE*2..READ_SPLIT_SIZE*2 + 14
+                READ_SPLIT_SIZE * 1..READ_SPLIT_SIZE * 2,
+                READ_SPLIT_SIZE * 2..READ_SPLIT_SIZE * 2 + 14
             ],
         );
     }

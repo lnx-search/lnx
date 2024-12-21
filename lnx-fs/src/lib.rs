@@ -1,10 +1,10 @@
 mod bucket;
 mod config;
+mod fscache;
 mod io;
 mod metastore;
 mod service;
 mod utils;
-// mod fscache;
 
 pub use bytes::Bytes;
 

@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
 
     info!("Benchmarking READ glommio IO");
     benchmark_reader_full_scan_glommio_io().await?;
-    
+
     info!("Benchmarking READ VFS IO");
     benchmark_reader_full_scan_vfs_io().await?;
 
@@ -115,7 +115,8 @@ async fn benchmark_reader_full_scan_blocking_io() -> Result<()> {
         info!("Blocking IO run: {formatted_size} {elapsed:?} {formatted_rate}/s");
 
         Ok::<_, anyhow::Error>(())
-    }).await??;
+    })
+    .await??;
 
     Ok(())
 }
@@ -168,28 +169,28 @@ async fn benchmark_reader_full_scan_vfs_io() -> Result<()> {
 
     const READ_SIZE: usize = 40 << 30;
     const RUNS: u32 = 5;
-    
-    let(tx, body) = Body::channel();
+
+    let (tx, body) = Body::channel();
     tokio::spawn(async move {
-        let mut buffer = vec![0; 1<<20];
+        let mut buffer = vec![0; 1 << 20];
         fastrand::fill(&mut buffer);
         let buffer = Bytes::from(buffer);
-        
+
         let mut bytes_written = 0;
         while bytes_written < READ_SIZE {
             tx.send(buffer.clone()).await;
             bytes_written += buffer.len();
         }
-        
+
         tx.finish().await;
     });
-    
+
     bucket.write("size_scan_test", body).await?;
-    
+
     let now = Instant::now();
     for _ in 0..RUNS {
         let body = bucket.read("size_scan_test").await?;
-        
+
         let mut bytes_read = 0;
         while let Some(chunk) = body.next().await? {
             bytes_read += chunk.len();
@@ -210,18 +211,18 @@ async fn benchmark_reader_full_scan_vfs_io() -> Result<()> {
 
 async fn benchmark_reader_full_scan_glommio_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/vfs/")?;
-    
+
     const READ_SIZE: usize = 40 << 30;
     const RUNS: u32 = 5;
-    
+
     let path = tmp_dir.path().join("size_scan_test");
     fille_file(&path, READ_SIZE)?;
-    
+
     tokio::task::spawn_blocking(move || {
         let executor = glommio::LocalExecutor::default();
         executor.run(async move {
             let file = Rc::new(glommio::io::DmaFile::open(path).await?);
-            
+
             let now = Instant::now();
             for _ in 0..RUNS {
                 let mut reader = DmaStreamReaderBuilder::from_rc(file.clone())
@@ -233,7 +234,7 @@ async fn benchmark_reader_full_scan_glommio_io() -> Result<()> {
                 let mut bytes_read = 0;
                 while bytes_read < READ_SIZE {
                     let n = reader.read(&mut temp_buf[..]).await?;
-                    bytes_read += n;                    
+                    bytes_read += n;
                 }
                 black_box(bytes_read);
             }
@@ -245,16 +246,17 @@ async fn benchmark_reader_full_scan_glommio_io() -> Result<()> {
             let formatted_rate = humansize::format_size(rate as u64, DECIMAL);
 
             info!("Glommio IO run: {formatted_size} {elapsed:?} {formatted_rate}/s");
-            
+
             Ok::<_, io::Error>(())
         })
-    }).await??;
+    })
+    .await??;
 
     Ok(())
 }
 
 fn fille_file(path: &Path, size: usize) -> Result<()> {
-    let mut buffer = vec![0; 1<<20];
+    let mut buffer = vec![0; 1 << 20];
     fastrand::fill(&mut buffer);
     let mut file = File::options()
         .create(true)
@@ -269,6 +271,6 @@ fn fille_file(path: &Path, size: usize) -> Result<()> {
         bytes_written += buffer.len();
     }
     file.sync_all()?;
-    
+
     Ok(())
 }

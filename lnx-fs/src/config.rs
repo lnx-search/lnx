@@ -11,6 +11,14 @@ pub const DEFAULT_TTI_SECS: u64 = 60 * 60; // 1 hour.
 pub const DEFAULT_MAX_OPEN_READERS: usize = 512; // 1 hour.
 pub const MAX_PATH_LENGTH: usize = 1 << 10;
 
+/// The size single read ops are executed as.
+///
+/// Reads larger than this size will be split up into multiple smaller
+/// reads no bigger than this size.
+///
+/// This is also the size reads within the cache are split into. (For now)
+pub const READ_SPLIT_SIZE: u64 = 8 << 10;
+
 macro_rules! set_config {
     ($slf:ident, $metastore:expr, $key:ident) => {{
         match &$slf.$key {
