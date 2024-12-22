@@ -16,15 +16,29 @@ use crate::{Body, FileSystemError};
 /// not committed in the metastore and the now written data will eventually be cleaned
 /// up by the bucket's GC system.
 pub struct BulkBucketTx<'bucket> {
-    pub(super) metastore: BulkMetastoreModifyOperation<'bucket>,
-    pub(super) bucket: &'bucket Bucket,
-    pub(super) num_ops_pending: usize,
-    pub(super) transaction_id: ulid::Ulid,
-    pub(super) flush_wakers: BulkFlushWaker,
-    pub(super) pending_cache_evictions: Vec<String>,
+    metastore: BulkMetastoreModifyOperation<'bucket>,
+    bucket: &'bucket Bucket,
+    num_ops_pending: usize,
+    transaction_id: ulid::Ulid,
+    flush_wakers: BulkFlushWaker,
+    pending_cache_evictions: Vec<String>,
 }
 
 impl<'bucket> BulkBucketTx<'bucket> {
+    pub(super) fn new(
+        metastore: BulkMetastoreModifyOperation<'bucket>,
+        bucket: &'bucket Bucket,
+    ) -> Self {
+        Self {
+            metastore,
+            bucket,
+            num_ops_pending: 0,
+            transaction_id: ulid::Ulid::new(),
+            flush_wakers: BulkFlushWaker::default(),
+            pending_cache_evictions: Vec::new(),
+        }
+    }
+
     #[instrument("bulk_write", skip(self, body))]
     /// Write a blob body stream to the store with the given path.
     ///
@@ -118,6 +132,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         self.metastore.add_event(response.tablet_id, response.event);
 
         self.num_ops_pending += 1;
+
         Ok(())
     }
 

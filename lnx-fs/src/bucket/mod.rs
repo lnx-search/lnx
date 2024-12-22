@@ -257,14 +257,7 @@ impl Bucket {
     /// after a rollback will be cleaned up eventually by the bucket GC.
     pub fn begin_tx(&self) -> BulkBucketTx<'_> {
         let metastore = self.metastore.begin_mutate();
-        BulkBucketTx {
-            metastore,
-            bucket: self,
-            num_ops_pending: 0,
-            transaction_id: ulid::Ulid::new(),
-            flush_wakers: BulkFlushWaker::default(),
-            pending_cache_evictions: Vec::new(),
-        }
+        BulkBucketTx::new(metastore, self)
     }
 
     #[instrument(skip(self))]
