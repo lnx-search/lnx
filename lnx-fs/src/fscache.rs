@@ -12,6 +12,8 @@ use crate::config::READ_SPLIT_SIZE;
 const DEFAULT_CACHE_SIZE_BYTES: u64 = 1 << 30;
 const CACHE_BLOCK_SIZE: u64 = READ_SPLIT_SIZE;
 
+pub type CacheParts = SmallVec<[MaybeCached; 4]>;
+
 #[derive(Debug, Builder)]
 /// Cache configuration options.
 pub struct FileSystemCacheOptions {
@@ -61,12 +63,9 @@ impl FileSystemCache {
     /// Positions in which there is a cache miss are aligned to [CACHE_BLOCK_SIZE]
     /// which may read more data than strictly necessary but is required
     /// for storing the retrieved data in the cache afterward.
-    pub fn lookup(&self, path: &str, range: Range<u64>) -> CacheLookupResult {
+    pub fn lookup(&self, path: &str, range: Range<u64>) -> CacheParts {
         if range.end == 0 {
-            return CacheLookupResult {
-                missed: SmallVec::new(),
-                cached: SmallVec::new(),
-            };
+            return CacheParts::new();
         }
 
         let file_id = file_id(path);
@@ -79,32 +78,49 @@ impl FileSystemCache {
         let cache_block_id_start = (aligned_start / CACHE_BLOCK_SIZE) as u32;
         let cache_block_id_end = (aligned_end / CACHE_BLOCK_SIZE) as u32;
 
-        let mut cached = SmallVec::new();
-        let mut missed = SmallVec::new();
+        let mut parts = CacheParts::new();
         for cache_block_id in cache_block_id_start..cache_block_id_end {
             let key = FileCacheKey {
                 file_id,
                 cache_block_id,
             };
 
+            // The range of bytes we want to read from the file.
+            // This is aligned to the CACHE_BLOCK_SIZE boundary so we
+            // can cache the result if we want, but this does mean it might
+            // contain more data than we want to return to the user.
+            let read_start = cache_block_id as u64 * CACHE_BLOCK_SIZE;
+            let read_end = read_start + CACHE_BLOCK_SIZE;
+
+            // The `true_x` positions are the actual slices of the data we
+            // want to return to the user.
+            let mut true_start = 0;
+            if cache_block_id == cache_block_id_start {
+                true_start = start_offset_by;
+            }
+
+            let mut true_end = CACHE_BLOCK_SIZE as usize;
+            if cache_block_id == cache_block_id_end - 1 {
+                true_end = end_offset_by;
+            }
+
+            let aligned_pos = read_start..read_end;
+            let true_pos = true_start..true_end;
+
             match self.cache.get(&key) {
                 None => {
-                    let offset = cache_block_id as u64 * CACHE_BLOCK_SIZE;
-                    missed.push(offset..offset + CACHE_BLOCK_SIZE);
-                },
-                Some(chunk) if cache_block_id == cache_block_id_start => {
-                    cached.push(chunk.slice(start_offset_by..));
-                },
-                Some(chunk) if cache_block_id == (cache_block_id_end - 1) => {
-                    cached.push(chunk.slice(..end_offset_by));
+                    parts.push(MaybeCached::Missed {
+                        aligned_pos,
+                        true_pos,
+                    });
                 },
                 Some(chunk) => {
-                    cached.push(chunk);
+                    parts.push(MaybeCached::Hit(chunk.slice(true_pos)));
                 },
             }
         }
 
-        CacheLookupResult { cached, missed }
+        parts
     }
 
     /// Inserts a new chunk of a file into the cache.
@@ -161,14 +177,14 @@ struct FileCacheKey {
     cache_block_id: u32,
 }
 
-#[derive(Clone)]
-/// The result from the cache lookup.
-///
-/// This contains the cached slices of the file
-/// and the positions that need to be read from disk.
-pub struct CacheLookupResult {
-    pub cached: SmallVec<[Bytes; 4]>,
-    pub missed: SmallVec<[Range<u64>; 4]>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+/// A partial chunk of a file that may or may not be cached.
+pub enum MaybeCached {
+    Hit(Bytes),
+    Missed {
+        aligned_pos: Range<u64>,
+        true_pos: Range<usize>,
+    },
 }
 
 /// Aligns the value _down_ to the nearest [CACHE_BLOCK_SIZE]
@@ -217,11 +233,10 @@ mod tests {
         let cache = FileSystemCache::default();
 
         let data = Bytes::from(vec![0; CACHE_BLOCK_SIZE as usize]);
-        cache.insert("example.txt", 0..CACHE_BLOCK_SIZE, data, true);
+        cache.insert("example.txt", 0..CACHE_BLOCK_SIZE, data.clone(), true);
 
         let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE);
-        assert_eq!(result.cached.len(), 1);
-        assert!(result.missed.is_empty());
+        assert_eq!(result.as_slice(), &[MaybeCached::Hit(data)]);
     }
 
     #[test]
@@ -229,11 +244,10 @@ mod tests {
         let cache = FileSystemCache::default();
 
         let data = Bytes::from(vec![0; 13]);
-        cache.insert("example.txt", 0..13, data, true);
+        cache.insert("example.txt", 0..13, data.clone(), true);
 
         let result = cache.lookup("example.txt", 0..13);
-        assert_eq!(result.cached.len(), 1);
-        assert!(result.missed.is_empty());
+        assert_eq!(result.as_slice(), &[MaybeCached::Hit(data)]);
     }
 
     #[test]
@@ -241,12 +255,17 @@ mod tests {
         let cache = FileSystemCache::default();
 
         let data = Bytes::from(vec![0; 13]);
-        let valid = cache.insert("example.txt", 0..13, data, false);
+        let valid = cache.insert("example.txt", 0..13, data.clone(), false);
         assert!(!valid);
 
         let result = cache.lookup("example.txt", 0..13);
-        assert!(result.cached.is_empty());
-        assert_eq!(result.missed.len(), 1);
+        assert_eq!(
+            result.as_slice(),
+            &[MaybeCached::Missed {
+                aligned_pos: 0..CACHE_BLOCK_SIZE,
+                true_pos: 0..13
+            }]
+        );
     }
 
     #[test]
@@ -265,35 +284,34 @@ mod tests {
         cache.insert(
             "example.txt",
             CACHE_BLOCK_SIZE * 2..CACHE_BLOCK_SIZE * 2 + 13,
-            data_small,
+            data_small.clone(),
             true,
         );
 
         let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE * 2 + 13);
-        assert_eq!(result.cached.len(), 3);
-        assert!(result.missed.is_empty());
+        assert_eq!(
+            result.as_slice(),
+            &[
+                MaybeCached::Hit(data.clone()),
+                MaybeCached::Hit(data.clone()),
+                MaybeCached::Hit(data_small),
+            ]
+        );
     }
 
     #[test]
     fn test_multiple_files() {
         let cache = FileSystemCache::default();
 
-        let data = Bytes::from(vec![0; CACHE_BLOCK_SIZE as usize]);
-        cache.insert("example1.txt", 0..CACHE_BLOCK_SIZE, data.clone(), true);
-        cache.insert("example2.txt", 0..CACHE_BLOCK_SIZE, data.clone(), false);
-        cache.insert(
-            "example2.txt",
-            CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2,
-            data,
-            true,
-        );
+        let data1 = Bytes::from(vec![1; CACHE_BLOCK_SIZE as usize]);
+        let data2 = Bytes::from(vec![2; CACHE_BLOCK_SIZE as usize]);
+        cache.insert("example1.txt", 0..CACHE_BLOCK_SIZE, data1.clone(), true);
+        cache.insert("example2.txt", 0..CACHE_BLOCK_SIZE, data2.clone(), true);
 
         let result = cache.lookup("example1.txt", 0..CACHE_BLOCK_SIZE);
-        assert_eq!(result.cached.len(), 1);
-        assert!(result.missed.is_empty());
-        let result = cache.lookup("example2.txt", 0..CACHE_BLOCK_SIZE * 2);
-        assert_eq!(result.cached.len(), 2);
-        assert!(result.missed.is_empty());
+        assert_eq!(result.as_slice(), &[MaybeCached::Hit(data1)]);
+        let result = cache.lookup("example2.txt", 0..CACHE_BLOCK_SIZE);
+        assert_eq!(result.as_slice(), &[MaybeCached::Hit(data2)]);
     }
 
     #[test]
@@ -305,17 +323,23 @@ mod tests {
 
         let result = cache.lookup("example.txt", 4..13);
         assert_eq!(
-            result.cached.as_slice(),
-            &[Bytes::from_static(b"o, world!")]
+            result.as_slice(),
+            &[MaybeCached::Hit(Bytes::from_static(b"o, world!"))]
         );
-        assert!(result.missed.is_empty());
 
         let result = cache.lookup("example.txt", 13..13);
-        assert_eq!(result.cached.as_slice(), &[Bytes::new()]);
-        assert!(result.missed.is_empty());
+        assert_eq!(result.as_slice(), &[MaybeCached::Hit(Bytes::new())]);
 
         let result = cache.lookup("example.txt", 12..13);
-        assert_eq!(result.cached.as_slice(), &[Bytes::from_static(b"!")]);
-        assert!(result.missed.is_empty());
+        assert_eq!(
+            result.as_slice(),
+            &[MaybeCached::Hit(Bytes::from_static(b"!"))]
+        );
+
+        let result = cache.lookup("example.txt", 4..10);
+        assert_eq!(
+            result.as_slice(),
+            &[MaybeCached::Hit(Bytes::from_static(b"o, wor"))]
+        );
     }
 }

@@ -14,7 +14,15 @@ pub struct Body {
 impl Body {
     /// Creates a new [Body] which can stream chunks via a channel.
     pub fn channel() -> (BodySender, Self) {
-        let (tx, rx) = flume::bounded(2);
+        Self::channel_with_capacity(2)
+    }
+
+    /// Creates a new [Body] which can stream chunks via a channel.
+    ///
+    /// The capacity is the number of chunks the channel can hold before
+    /// backpressure is applied to the sender.
+    pub(crate) fn channel_with_capacity(capacity: usize) -> (BodySender, Self) {
+        let (tx, rx) = flume::bounded(capacity);
         (BodySender { tx }, Self { incoming: rx })
     }
 

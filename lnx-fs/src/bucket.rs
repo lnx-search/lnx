@@ -1,6 +1,7 @@
 use std::collections::Bound;
 use std::fmt::Debug;
 use std::io;
+use std::io::ErrorKind;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -19,10 +20,12 @@ use crate::config::{
     TABLET_METADATA_PATH,
     TABLET_PATH,
 };
+use crate::fscache::{CacheParts, MaybeCached};
 use crate::io::{
     Body,
     BulkFlushWaker,
     FlushWaker,
+    Positions,
     RuntimeDispatcher,
     TabletReader,
     TabletReaderOptions,
@@ -39,7 +42,7 @@ use crate::metastore::{
     TabletId,
 };
 use crate::service::FileSystemError;
-use crate::{fscache, BucketConfig, FileMetadata, MaybeUnset};
+use crate::{fscache, BodySender, BucketConfig, FileMetadata, MaybeUnset};
 
 #[derive(Debug, Builder)]
 /// Options that can be configured when creating a bucket.
@@ -212,7 +215,7 @@ impl Bucket {
             .maybe_cache_capacity_bytes(config.read_cache_capacity_bytes())
             .build();
         let fscache = fscache::FileSystemCache::new(cache_options);
-        
+
         Ok(Self {
             config: Arc::new(config),
             paths: Arc::new(paths),
@@ -293,6 +296,8 @@ impl Bucket {
         bulk.commit();
         trace!("Metadata updated");
 
+        // TODO: Evict fscache entries on write
+
         Ok(response.flush_waker)
     }
 
@@ -336,37 +341,50 @@ impl Bucket {
             .get_file(path)
             .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))?;
 
-        let relative_start = match range.start_bound() {
-            Bound::Included(start) => *start,
-            Bound::Excluded(start) => start.saturating_add(1),
-            Bound::Unbounded => 0,
-        };
+        let relative_pos = entry
+            .resolve_range_bounds(range)
+            .map_err(|range| FileSystemError::ReadOutOfRange(path.to_string(), range))?;
 
-        let relative_end = match range.end_bound() {
-            Bound::Included(end) => end.saturating_add(1),
-            Bound::Excluded(end) => *end,
-            Bound::Unbounded => entry.metadata.size(),
-        };
+        let parts = self.fscache.lookup(path, relative_pos);
 
-        let valid_range = relative_start > entry.metadata.size()
-            || relative_end > entry.metadata.size()
-            || relative_start > relative_end;
-        if valid_range {
-            return Err(FileSystemError::ReadOutOfRange(
-                path.to_string(),
-                relative_start..relative_end,
-            ));
+        let num_missed = parts
+            .iter()
+            .filter(|entry| matches!(entry, MaybeCached::Missed { .. }))
+            .count();
+
+        if num_missed == 0 {
+            let (tx, body) = Body::channel_with_capacity(parts.len() + 1);
+
+            let chunks = parts.into_iter().flat_map(|entry| match entry {
+                MaybeCached::Hit(chunk) => Some(chunk),
+                _ => None,
+            });
+
+            // Cannot await here because it'll cause a deadlock as the only reader is currently
+            // `body`. This should never panic because the capacity is at least the length of chunks + 1.
+            for chunk in chunks {
+                tx.try_send(chunk).unwrap();
+            }
+            tx.try_finish().unwrap();
+            return Ok(body);
         }
 
-        let true_start = entry.metadata.position.start + relative_start;
-        let true_end = entry.metadata.position.start + relative_end;
+        let positions = parts
+            .iter()
+            .filter_map(|entry| match entry {
+                MaybeCached::Hit(_) => None,
+                MaybeCached::Missed { aligned_pos, .. } => Some(aligned_pos),
+            })
+            .cloned()
+            .collect::<Positions>();
 
         let reader = self.get_or_create_reader(entry.metadata.tablet_id).await?;
+        let incoming = reader.read_many(positions).await?;
 
-        reader
-            .read(true_start..true_end)
-            .await
-            .map_err(FileSystemError::IoError)
+        let (tx, body) = Body::channel();
+        tokio::spawn(interleave_cached_and_uncached_results(parts, incoming, tx));
+
+        Ok(body)
     }
 
     #[instrument(skip(self))]
@@ -387,6 +405,8 @@ impl Bucket {
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
+
+        // TODO: Evict fscache entries on write
 
         Ok(response.flush_waker)
     }
@@ -419,6 +439,8 @@ impl Bucket {
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
+
+        // TODO: Evict fscache entries on write
 
         Ok(response.flush_waker)
     }
@@ -618,6 +640,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         self.metastore.commit();
 
+        // TODO: Evict fscache entries on write
+
         Ok(self.flush_wakers)
     }
 
@@ -749,6 +773,44 @@ async fn setup_tablet_writer(
     let writer = TabletWriter::new(writer_options, runtime);
 
     Ok(writer)
+}
+
+/// Interleaves the cached chunks of the file with the read results from the incoming
+/// IO stream while maintaining the order of results.
+async fn interleave_cached_and_uncached_results(
+    parts: CacheParts,
+    io_stream: Body,
+    sender: BodySender,
+) {
+    for maybe_cached in parts {
+        let did_send = match maybe_cached {
+            MaybeCached::Hit(chunk) => sender.send(chunk).await,
+            MaybeCached::Missed { true_pos, .. } => {
+                let chunk = io_stream.next().await.and_then(|maybe_chunk| {
+                    maybe_chunk.ok_or_else(|| {
+                        io::Error::new(
+                            ErrorKind::Interrupted,
+                            "File reader finished before returning all expected chunks",
+                        )
+                    })
+                });
+
+                match chunk {
+                    Err(e) => {
+                        sender.error(e).await;
+                        return;
+                    },
+                    Ok(chunk) => sender.send(chunk.slice(true_pos)).await,
+                }
+            },
+        };
+
+        if !did_send {
+            return;
+        }
+    }
+
+    sender.finish().await;
 }
 
 #[cfg(test)]

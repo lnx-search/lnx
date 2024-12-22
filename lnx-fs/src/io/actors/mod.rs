@@ -8,7 +8,7 @@ use tracing::error;
 mod tablet_reader;
 mod tablet_writer;
 
-pub use self::tablet_reader::{TabletReader, TabletReaderOptions};
+pub use self::tablet_reader::{Positions, TabletReader, TabletReaderOptions};
 pub use self::tablet_writer::{
     TabletWriter,
     TabletWriterOptions,

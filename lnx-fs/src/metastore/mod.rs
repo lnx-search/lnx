@@ -8,10 +8,10 @@ mod db;
 mod mutate;
 pub(crate) mod recovery;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, Bound};
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::ops::Range;
+use std::ops::{Range, RangeBounds};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -20,6 +20,7 @@ use tracing::instrument;
 
 pub(crate) use self::mutate::BulkMetastoreModifyOperation;
 use crate::metastore::db::MetastoreDB;
+use crate::FileSystemError;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts
@@ -162,6 +163,42 @@ impl Metastore {
 pub struct MetastoreEntry {
     pub path: String,
     pub metadata: FileMetadata,
+}
+
+impl MetastoreEntry {
+    /// Resolves the relative positions of the provided bounds while being
+    /// aware of the file metadata and length.
+    ///
+    /// `Err(range)` is returned in the event the bound lie outside the actual
+    /// file contents.
+    pub(crate) fn resolve_range_bounds<B>(
+        &self,
+        range: B,
+    ) -> Result<Range<u64>, Range<u64>>
+    where
+        B: RangeBounds<u64>,
+    {
+        let relative_start = match range.start_bound() {
+            Bound::Included(start) => *start,
+            Bound::Excluded(start) => start.saturating_add(1),
+            Bound::Unbounded => 0,
+        };
+
+        let relative_end = match range.end_bound() {
+            Bound::Included(end) => end.saturating_add(1),
+            Bound::Excluded(end) => *end,
+            Bound::Unbounded => self.metadata.size(),
+        };
+
+        let invalid_range = relative_start > self.metadata.size()
+            || relative_end > self.metadata.size()
+            || relative_start > relative_end;
+        if invalid_range {
+            Err(relative_start..relative_end)
+        } else {
+            Ok(relative_start..relative_end)
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]

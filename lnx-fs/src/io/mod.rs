@@ -15,7 +15,7 @@ pub use self::actors::{
     TabletWriter,
     TabletWriterOptions,
 };
-pub(crate) use self::actors::{WriterEventHook, WriterResponse};
+pub(crate) use self::actors::{Positions, WriterEventHook, WriterResponse};
 pub use self::body::{Body, BodySender};
 pub use self::event::{EventData, FileEvent};
 pub use self::flush_waker::{BulkFlushWaker, FlushWaker};

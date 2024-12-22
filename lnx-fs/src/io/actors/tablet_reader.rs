@@ -22,7 +22,7 @@ use crate::metastore::TabletId;
 
 const BUFFER_MERGE_SIZE: usize = 32 << 10;
 const READ_MEMORY_LIMIT_BYTES: usize = 5 << 20;
-type Positions = SmallVec<[Range<u64>; 4]>;
+pub type Positions = SmallVec<[Range<u64>; 4]>;
 
 #[derive(Debug, Builder)]
 pub struct TabletReaderOptions {
@@ -268,7 +268,6 @@ async fn random_bulk_read(file: Rc<DmaFile>, positions: Positions, ack: BodySend
                 let error: io::Error = e.into();
                 ack.error(io::Error::new(error.kind(), error.to_string()))
                     .await;
-                ack.finish().await;
                 return;
             },
             Ok((_, buf)) => {

@@ -121,7 +121,7 @@ pub struct BucketConfig {
     pub flush_delay_millis: MaybeUnset<u64>,
     #[builder(default, into)]
     /// The cache of the read cache in bytes.
-    /// 
+    ///
     /// This is the in-memory cache with alleviated the read IO on disks.
     /// Typically higher is always better.
     pub read_cache_capacity_bytes: MaybeUnset<u64>,
@@ -141,7 +141,7 @@ impl BucketConfig {
         set_config!(self, metastore, max_open_readers)?;
         set_config!(self, metastore, readers_time_to_idle_secs)?;
         set_config!(self, metastore, flush_delay_millis)?;
-        set_config!(self, metastore, read_cache_capacity_bytes)?;        
+        set_config!(self, metastore, read_cache_capacity_bytes)?;
 
         Ok(())
     }
