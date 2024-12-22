@@ -80,8 +80,6 @@ impl FileSystemCache {
 
         let mut parts = CacheParts::new();
         for cache_block_id in cache_block_id_start..cache_block_id_end {
-            dbg!(cache_block_id);
-
             let key = FileCacheKey {
                 file_id,
                 cache_block_id,
