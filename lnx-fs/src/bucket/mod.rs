@@ -1,3 +1,7 @@
+mod setup;
+pub mod statistics;
+mod transaction;
+
 use std::fmt::Debug;
 use std::io;
 use std::io::ErrorKind;
@@ -10,15 +14,9 @@ use bon::Builder;
 use moka::policy::EvictionPolicy;
 use tracing::{debug, info, instrument, trace};
 
-use crate::config::{
-    COMMIT_MARKER_PREFIX,
-    DEFAULT_MAX_OPEN_READERS,
-    DEFAULT_TTI_SECS,
-    MAX_PATH_LENGTH,
-    METASTORE_FILE,
-    TABLET_METADATA_PATH,
-    TABLET_PATH,
-};
+pub use self::transaction::BulkBucketTx;
+use crate::bucket::setup::BucketPaths;
+use crate::config::{DEFAULT_MAX_OPEN_READERS, DEFAULT_TTI_SECS, MAX_PATH_LENGTH};
 use crate::fscache::{CacheParts, FileSystemCache, MaybeCached};
 use crate::io::{
     Body,
@@ -34,7 +32,6 @@ use crate::io::{
 };
 use crate::metastore::{
     checkpoint,
-    BulkMetastoreModifyOperation,
     Metastore,
     MetastoreEntry,
     MetastoreError,
@@ -522,257 +519,6 @@ impl Bucket {
     }
 }
 
-/// A bucket operation that allows applying multiple mutations
-/// as part of a single operation.
-///
-/// This means multiple files can be written, deleted, etc... as part of a single
-/// atomic operation.
-///
-/// That being said, it is important to note _data is still written to disk_, it is just
-/// not committed in the metastore and the now written data will eventually be cleaned
-/// up by the bucket's GC system.
-pub struct BulkBucketTx<'bucket> {
-    metastore: BulkMetastoreModifyOperation<'bucket>,
-    bucket: &'bucket Bucket,
-    num_ops_pending: usize,
-    transaction_id: ulid::Ulid,
-    flush_wakers: BulkFlushWaker,
-    pending_cache_evictions: Vec<String>,
-}
-
-impl<'bucket> BulkBucketTx<'bucket> {
-    #[instrument("bulk_write", skip(self, body))]
-    /// Write a blob body stream to the store with the given path.
-    ///
-    /// Once this call completes, the blob is safely persisted to disk.
-    pub async fn write(
-        &mut self,
-        path: &str,
-        body: Body,
-    ) -> Result<(), FileSystemError> {
-        validate_path(path)?;
-
-        trace!("Begin writing blob");
-
-        let write_metadata = crate::io::Metadata {
-            path: path.to_string(),
-            transaction_id: Some(self.transaction_id),
-        };
-
-        let response = self.bucket.writer.write(write_metadata, body).await?;
-        trace!("Blob write complete");
-
-        self.pending_cache_evictions.push(path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-        trace!("Metadata updated");
-
-        self.num_ops_pending += 1;
-
-        Ok(())
-    }
-
-    #[instrument("bulk_rename", skip(self))]
-    /// Renames a file from the provided path to a new provided path.
-    ///
-    /// Returns a [FileSystemError::FileNotFound] error if the file being
-    /// targeted does not exist.
-    pub async fn rename(
-        &mut self,
-        from_path: &str,
-        to_path: &str,
-    ) -> Result<(), FileSystemError> {
-        validate_path(from_path)?;
-        validate_path(to_path)?;
-
-        trace!("Begin writing blob");
-
-        if !self.bucket.exists(from_path) {
-            return Err(FileSystemError::FileNotFound(from_path.to_string()));
-        }
-
-        trace!("Begin delete blob");
-        let metadata = crate::io::Metadata {
-            path: from_path.to_string(),
-            transaction_id: Some(self.transaction_id),
-        };
-        let response = self
-            .bucket
-            .writer
-            .rename(metadata, to_path.to_string())
-            .await?;
-        trace!("Blob delete write complete");
-
-        self.pending_cache_evictions.push(from_path.to_string());
-        self.pending_cache_evictions.push(to_path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-
-        self.num_ops_pending += 1;
-
-        Ok(())
-    }
-
-    #[instrument("bulk_delete", skip(self))]
-    /// Deletes a file from the system.
-    ///
-    /// Does nothing if the file doesn't exist.
-    pub async fn delete(&mut self, path: &str) -> Result<(), FileSystemError> {
-        validate_path(path)?;
-
-        trace!("Begin delete blob");
-        let write_metadata = crate::io::Metadata {
-            path: path.to_string(),
-            transaction_id: Some(self.transaction_id),
-        };
-
-        let response = self.bucket.writer.delete(write_metadata).await?;
-        trace!("Blob delete write complete");
-
-        self.pending_cache_evictions.push(path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-
-        self.num_ops_pending += 1;
-        Ok(())
-    }
-
-    #[instrument(skip(self))]
-    /// Commits all currently pending bucket operations.
-    pub async fn commit(mut self) -> Result<BulkFlushWaker, FileSystemError> {
-        if self.num_ops_pending == 0 {
-            return Ok(self.flush_wakers);
-        }
-
-        let write_metadata = crate::io::Metadata {
-            path: format!("{COMMIT_MARKER_PREFIX}/{}.commit", self.transaction_id),
-            transaction_id: Some(self.transaction_id),
-        };
-        let response = self
-            .bucket
-            .writer
-            .write(write_metadata, Body::empty())
-            .await?;
-        trace!("Blob delete write complete");
-
-        self.flush_wakers.push(response.flush_waker);
-        trace!("Writer flushes acknowledged");
-
-        for path in self.pending_cache_evictions {
-            self.bucket.evict_path_from_cache(&path);
-        }
-
-        self.metastore.commit();
-
-        // TODO: Evict fscache entries on write
-
-        Ok(self.flush_wakers)
-    }
-
-    #[instrument(skip(self))]
-    /// Explicitly rollback all currently pending operations.
-    ///
-    /// This is implicitly ran if the operation is dropped before
-    /// either `rollback` or `commit` is explicitly called.
-    pub fn rollback(self) {
-        self.metastore.rollback();
-    }
-}
-
-struct BucketPaths {
-    metastore_path: PathBuf,
-    tablets_path: PathBuf,
-    tablet_metadata_path: PathBuf,
-    base_path: PathBuf,
-}
-
-impl BucketPaths {
-    fn from_base(base_path: PathBuf) -> Self {
-        Self {
-            metastore_path: base_path.join(METASTORE_FILE),
-            tablets_path: base_path.join(TABLET_PATH),
-            tablet_metadata_path: base_path.join(TABLET_METADATA_PATH),
-            base_path,
-        }
-    }
-
-    fn metastore_exists(&self) -> io::Result<bool> {
-        self.metastore_path.try_exists()
-    }
-
-    fn metastore_sqlite_path(&self) -> String {
-        format!("sqlite:{}", self.metastore_path.display())
-    }
-
-    fn guess_bucket_name(&self) -> String {
-        if let Some(dir) = self.base_path.file_name() {
-            dir.to_string_lossy().to_string()
-        } else {
-            self.base_path.display().to_string()
-        }
-    }
-
-    fn ensure_tablets_path_exists(&self) -> io::Result<()> {
-        if self.tablets_path.try_exists()? {
-            return Ok(());
-        }
-
-        info!(path = %self.tablets_path.display(), "Create tablet path");
-        std::fs::create_dir(self.tablets_path.as_path())?;
-
-        Ok(())
-    }
-
-    fn ensure_tablets_metadata_path_exists(&self) -> io::Result<()> {
-        if self.tablet_metadata_path.try_exists()? {
-            return Ok(());
-        }
-
-        info!(path = %self.tablet_metadata_path.display(), "Create tablet metadata path");
-        std::fs::create_dir(self.tablet_metadata_path.as_path())?;
-
-        Ok(())
-    }
-
-    fn ensure_metastore_file_exists(&self) -> io::Result<()> {
-        if self.metastore_path.try_exists()? {
-            return Ok(());
-        }
-
-        info!(path = %self.metastore_path.display(), "Create metastore");
-        std::fs::File::create(self.metastore_path.as_path())?;
-
-        Ok(())
-    }
-
-    fn ensure_bucket_path_exists(&self) -> io::Result<()> {
-        if self.base_path.try_exists()? {
-            return Ok(());
-        }
-
-        info!(path = %self.base_path.display(), "Create bucket path");
-        std::fs::create_dir(self.base_path.as_path())?;
-
-        Ok(())
-    }
-}
-
-fn validate_path(path: &str) -> Result<(), FileSystemError> {
-    if path.starts_with("__lnx_fs/") {
-        Err(FileSystemError::PathInvalid(format!(
-            "path {path:?} uses reserved file prefix"
-        )))
-    } else if path.ends_with('/') {
-        Err(FileSystemError::PathInvalid(format!(
-            "path {path:?} ends with `/` which is not allowed"
-        )))
-    } else if path.len() > MAX_PATH_LENGTH {
-        Err(FileSystemError::PathTooLong(path.to_string()))
-    } else {
-        Ok(())
-    }
-}
-
 async fn setup_tablet_writer(
     paths: &BucketPaths,
     config: &BucketConfig,
@@ -849,6 +595,22 @@ async fn interleave_cached_and_uncached_results(
     sender.finish().await;
 }
 
+pub(super) fn validate_path(path: &str) -> Result<(), FileSystemError> {
+    if path.starts_with("__lnx_fs/") {
+        Err(FileSystemError::PathInvalid(format!(
+            "path {path:?} uses reserved file prefix"
+        )))
+    } else if path.ends_with('/') {
+        Err(FileSystemError::PathInvalid(format!(
+            "path {path:?} ends with `/` which is not allowed"
+        )))
+    } else if path.len() > MAX_PATH_LENGTH {
+        Err(FileSystemError::PathTooLong(path.to_string()))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::temp_dir;
@@ -856,6 +618,7 @@ mod tests {
     use bytes::Bytes;
 
     use super::*;
+    use crate::config::{METASTORE_FILE, TABLET_PATH};
     use crate::io::RuntimeOptions;
 
     #[test]

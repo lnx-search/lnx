@@ -30,6 +30,10 @@ async fn main() -> Result<()> {
 
     tracing_subscriber::fmt::init();
 
+    std::fs::create_dir_all("./scratch_space/blocking")?;
+    std::fs::create_dir_all("./scratch_space/vfs")?;
+    std::fs::create_dir_all("./scratch_space/glommio")?;
+
     info!("Benchmarking READ blocking IO");
     benchmark_reader_full_scan_blocking_io().await?;
 
@@ -85,8 +89,8 @@ async fn benchmark_writer_blocking_io() -> Result<()> {
 async fn benchmark_reader_full_scan_blocking_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/blocking/")?;
 
-    const READ_SIZE: usize = 40 << 30;
-    const RUNS: u32 = 5;
+    const READ_SIZE: usize = 1 << 30;
+    const RUNS: u32 = 50;
 
     let path = tmp_dir.path().join("size_scan_test");
     fille_file(&path, READ_SIZE)?;
@@ -167,8 +171,8 @@ async fn benchmark_reader_full_scan_vfs_io() -> Result<()> {
     let vfs = VirtualFileSystem::mount(tmp_dir.path().to_path_buf(), rt_options).await?;
     let bucket = vfs.create_bucket("benches").await?;
 
-    const READ_SIZE: usize = 40 << 30;
-    const RUNS: u32 = 5;
+    const READ_SIZE: usize = 1 << 30;
+    const RUNS: u32 = 50;
 
     let (tx, body) = Body::channel();
     tokio::spawn(async move {
@@ -212,8 +216,8 @@ async fn benchmark_reader_full_scan_vfs_io() -> Result<()> {
 async fn benchmark_reader_full_scan_glommio_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/vfs/")?;
 
-    const READ_SIZE: usize = 40 << 30;
-    const RUNS: u32 = 5;
+    const READ_SIZE: usize = 1 << 30;
+    const RUNS: u32 = 50;
 
     let path = tmp_dir.path().join("size_scan_test");
     fille_file(&path, READ_SIZE)?;
