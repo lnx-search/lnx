@@ -1,10 +1,12 @@
+use std::future::Future;
 use tracing::{instrument, trace};
 
-use crate::bucket::Bucket;
+use crate::bucket::{statistics, Bucket};
 use crate::config::COMMIT_MARKER_PREFIX;
 use crate::io::BulkFlushWaker;
 use crate::metastore::BulkMetastoreModifyOperation;
 use crate::{Body, FileSystemError};
+use crate::bucket::statistics::{StatisticsEnabled, WithStats, WriteStatistics};
 
 /// A bucket operation that allows applying multiple mutations
 /// as part of a single operation.
@@ -22,6 +24,7 @@ pub struct BulkBucketTx<'bucket> {
     transaction_id: ulid::Ulid,
     flush_wakers: BulkFlushWaker,
     pending_cache_evictions: Vec<String>,
+    statistics: WriteStatistics,
 }
 
 impl<'bucket> BulkBucketTx<'bucket> {
@@ -36,7 +39,13 @@ impl<'bucket> BulkBucketTx<'bucket> {
             transaction_id: ulid::Ulid::new(),
             flush_wakers: BulkFlushWaker::default(),
             pending_cache_evictions: Vec::new(),
+            statistics: WriteStatistics::default(),
         }
+    }
+    
+    /// The current [WriteStatistics] for the transaction so far.
+    pub fn current_statistics(&self) -> &WriteStatistics {
+        &self.statistics
     }
 
     #[instrument("bulk_write", skip(self, body))]
@@ -135,12 +144,27 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         Ok(())
     }
-
-    #[instrument(skip(self))]
+    
+    #[inline]
     /// Commits all currently pending bucket operations.
-    pub async fn commit(mut self) -> Result<BulkFlushWaker, FileSystemError> {
+    pub fn commit(self) -> impl Future<Output = Result<BulkFlushWaker, FileSystemError>> + Send + 'bucket {
+        self.commit_inner::<statistics::Off>()
+    }
+
+    #[inline]
+    /// Commits all currently pending bucket operations and returns the
+    /// [WriteStatistics] of the entire transaction.
+    pub fn commit_with_stats(self) -> impl Future<Output = Result<WithStats<BulkFlushWaker, WriteStatistics>, FileSystemError>> + Send + 'bucket {
+        self.commit_inner::<statistics::On>()
+    }
+    
+    #[instrument(skip(self))]
+    async fn commit_inner<S>(mut self) -> Result<S::Wrapped<BulkFlushWaker, WriteStatistics>, FileSystemError>
+    where 
+        S: StatisticsEnabled
+    {
         if self.num_ops_pending == 0 {
-            return Ok(self.flush_wakers);
+            return Ok(S::wrap(self.flush_wakers, self.statistics));
         }
 
         let write_metadata = crate::io::Metadata {
@@ -163,9 +187,9 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         self.metastore.commit();
 
-        Ok(self.flush_wakers)
+        Ok(S::wrap(self.flush_wakers, self.statistics))
     }
-
+    
     #[instrument(skip(self))]
     /// Explicitly rollback all currently pending operations.
     ///
