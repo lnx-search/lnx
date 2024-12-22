@@ -20,7 +20,6 @@ use tracing::instrument;
 
 pub(crate) use self::mutate::BulkMetastoreModifyOperation;
 use crate::metastore::db::MetastoreDB;
-use crate::FileSystemError;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that can occur when the metastore attempts
@@ -72,7 +71,7 @@ impl Metastore {
     ///
     /// Returns the full [FileUrl] and [FileMetadata].
     pub(crate) fn get_file(&self, path: &str) -> Option<MetastoreEntry> {
-        self.state.read().get(path).map(|e| e.clone())
+        self.state.read().get(path).cloned()
     }
 
     /// Returns if the file currently exists with the given path.
@@ -252,6 +251,35 @@ impl FileMetadata {
 mod tests {
     use super::*;
     use crate::io::FileEvent;
+
+    #[test]
+    fn test_entry_resolve_range() {
+        let entry = MetastoreEntry {
+            path: "example.txt".to_string(),
+            metadata: FileMetadata {
+                tablet_id: TabletId::new(),
+                position: 200..400,
+                created_at: 0,
+            },
+        };
+
+        let res = entry.resolve_range_bounds(..);
+        assert_eq!(res, Ok(0..200));
+        let res = entry.resolve_range_bounds(..400);
+        assert_eq!(res, Err(0..400));
+        let res = entry.resolve_range_bounds(200..);
+        assert_eq!(res, Ok(200..200));
+        let res = entry.resolve_range_bounds(199..);
+        assert_eq!(res, Ok(199..200));
+        let res = entry.resolve_range_bounds(10..90);
+        assert_eq!(res, Ok(10..90));
+        let res = entry.resolve_range_bounds(..90);
+        assert_eq!(res, Ok(0..90));
+        let res = entry.resolve_range_bounds(20..);
+        assert_eq!(res, Ok(20..200));
+        let res = entry.resolve_range_bounds(20..=200);
+        assert_eq!(res, Err(20..201));
+    }
 
     #[tokio::test]
     async fn test_add_and_get_files() {

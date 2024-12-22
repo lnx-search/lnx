@@ -1,4 +1,3 @@
-use std::collections::Bound;
 use std::fmt::Debug;
 use std::io;
 use std::io::ErrorKind;
@@ -20,7 +19,7 @@ use crate::config::{
     TABLET_METADATA_PATH,
     TABLET_PATH,
 };
-use crate::fscache::{CacheParts, MaybeCached};
+use crate::fscache::{CacheParts, FileSystemCache, MaybeCached};
 use crate::io::{
     Body,
     BulkFlushWaker,
@@ -120,7 +119,7 @@ pub struct Bucket {
     /// The IO runtime for the bucket.
     runtime: RuntimeDispatcher,
     /// An in-memory cache of file chunks for accelerating reads.
-    fscache: fscache::FileSystemCache,
+    read_cache: FileSystemCache,
 }
 
 impl Bucket {
@@ -214,7 +213,7 @@ impl Bucket {
         let cache_options = fscache::FileSystemCacheOptions::builder()
             .maybe_cache_capacity_bytes(config.read_cache_capacity_bytes())
             .build();
-        let fscache = fscache::FileSystemCache::new(cache_options);
+        let read_cache = FileSystemCache::new(cache_options);
 
         Ok(Self {
             config: Arc::new(config),
@@ -223,7 +222,7 @@ impl Bucket {
             writer,
             readers,
             runtime,
-            fscache,
+            read_cache,
         })
     }
 
@@ -267,38 +266,8 @@ impl Bucket {
             num_ops_pending: 0,
             transaction_id: ulid::Ulid::new(),
             flush_wakers: BulkFlushWaker::default(),
+            pending_cache_evictions: Vec::new(),
         }
-    }
-
-    #[instrument(skip(self, body))]
-    /// Write a blob body stream to the store with the given path.
-    ///
-    /// Once this call completes, the blob is safely persisted to disk.
-    pub async fn write(
-        &self,
-        path: &str,
-        body: Body,
-    ) -> Result<FlushWaker, FileSystemError> {
-        validate_path(path)?;
-
-        trace!("Begin writing blob");
-
-        let metadata = crate::io::Metadata {
-            path: path.to_string(),
-            transaction_id: None,
-        };
-
-        let response = self.writer.write(metadata, body).await?;
-        trace!("Blob write complete");
-
-        let mut bulk = self.metastore.begin_mutate();
-        bulk.add_event(response.tablet_id, response.event);
-        bulk.commit();
-        trace!("Metadata updated");
-
-        // TODO: Evict fscache entries on write
-
-        Ok(response.flush_waker)
     }
 
     #[instrument(skip(self))]
@@ -345,7 +314,7 @@ impl Bucket {
             .resolve_range_bounds(range)
             .map_err(|range| FileSystemError::ReadOutOfRange(path.to_string(), range))?;
 
-        let parts = self.fscache.lookup(path, relative_pos);
+        let parts = self.read_cache.lookup(path, relative_pos);
 
         let num_missed = parts
             .iter()
@@ -380,11 +349,49 @@ impl Bucket {
 
         let reader = self.get_or_create_reader(entry.metadata.tablet_id).await?;
         let incoming = reader.read_many(positions).await?;
+        let cache = self.read_cache.clone();
 
         let (tx, body) = Body::channel();
-        tokio::spawn(interleave_cached_and_uncached_results(parts, incoming, tx));
+        tokio::spawn(interleave_cached_and_uncached_results(
+            path.to_string(),
+            cache,
+            parts,
+            incoming,
+            tx,
+        ));
 
         Ok(body)
+    }
+
+    #[instrument(skip(self, body))]
+    /// Write a blob body stream to the store with the given path.
+    ///
+    /// Once this call completes, the blob is safely persisted to disk.
+    pub async fn write(
+        &self,
+        path: &str,
+        body: Body,
+    ) -> Result<FlushWaker, FileSystemError> {
+        validate_path(path)?;
+
+        trace!("Begin writing blob");
+
+        let metadata = crate::io::Metadata {
+            path: path.to_string(),
+            transaction_id: None,
+        };
+
+        let response = self.writer.write(metadata, body).await?;
+        trace!("Blob write complete");
+
+        self.evict_path_from_cache(path);
+
+        let mut bulk = self.metastore.begin_mutate();
+        bulk.add_event(response.tablet_id, response.event);
+        bulk.commit();
+        trace!("Metadata updated");
+
+        Ok(response.flush_waker)
     }
 
     #[instrument(skip(self))]
@@ -402,11 +409,11 @@ impl Bucket {
         let response = self.writer.delete(metadata).await?;
         trace!("Blob delete write complete");
 
+        self.evict_path_from_cache(path);
+
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
-
-        // TODO: Evict fscache entries on write
 
         Ok(response.flush_waker)
     }
@@ -436,11 +443,13 @@ impl Bucket {
         let response = self.writer.rename(metadata, to_path.to_string()).await?;
         trace!("Blob delete write complete");
 
+        // TODO: Maybe we can be smarter about renames?
+        self.evict_path_from_cache(from_path);
+        self.evict_path_from_cache(to_path);
+
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
-
-        // TODO: Evict fscache entries on write
 
         Ok(response.flush_waker)
     }
@@ -505,6 +514,12 @@ impl Bucket {
 
         Ok(reader)
     }
+
+    fn evict_path_from_cache(&self, path: &str) {
+        if let Some(old) = self.metastore.get_file(path) {
+            self.read_cache.evict(&old.path, 0..old.metadata.size());
+        }
+    }
 }
 
 /// A bucket operation that allows applying multiple mutations
@@ -522,6 +537,7 @@ pub struct BulkBucketTx<'bucket> {
     num_ops_pending: usize,
     transaction_id: ulid::Ulid,
     flush_wakers: BulkFlushWaker,
+    pending_cache_evictions: Vec<String>,
 }
 
 impl<'bucket> BulkBucketTx<'bucket> {
@@ -546,6 +562,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self.bucket.writer.write(write_metadata, body).await?;
         trace!("Blob write complete");
 
+        self.pending_cache_evictions.push(path.to_string());
         self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
         trace!("Metadata updated");
@@ -586,6 +603,8 @@ impl<'bucket> BulkBucketTx<'bucket> {
             .await?;
         trace!("Blob delete write complete");
 
+        self.pending_cache_evictions.push(from_path.to_string());
+        self.pending_cache_evictions.push(to_path.to_string());
         self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
 
@@ -610,6 +629,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
         let response = self.bucket.writer.delete(write_metadata).await?;
         trace!("Blob delete write complete");
 
+        self.pending_cache_evictions.push(path.to_string());
         self.flush_wakers.push(response.flush_waker);
         self.metastore.add_event(response.tablet_id, response.event);
 
@@ -637,6 +657,10 @@ impl<'bucket> BulkBucketTx<'bucket> {
 
         self.flush_wakers.push(response.flush_waker);
         trace!("Writer flushes acknowledged");
+
+        for path in self.pending_cache_evictions {
+            self.bucket.evict_path_from_cache(&path);
+        }
 
         self.metastore.commit();
 
@@ -778,14 +802,23 @@ async fn setup_tablet_writer(
 /// Interleaves the cached chunks of the file with the read results from the incoming
 /// IO stream while maintaining the order of results.
 async fn interleave_cached_and_uncached_results(
+    path: String,
+    cache: FileSystemCache,
     parts: CacheParts,
     io_stream: Body,
     sender: BodySender,
 ) {
+    let len = parts.len();
+    let mut cursor = 0;
     for maybe_cached in parts {
+        cursor += 1;
+
         let did_send = match maybe_cached {
             MaybeCached::Hit(chunk) => sender.send(chunk).await,
-            MaybeCached::Missed { true_pos, .. } => {
+            MaybeCached::Missed {
+                true_pos,
+                aligned_pos,
+            } => {
                 let chunk = io_stream.next().await.and_then(|maybe_chunk| {
                     maybe_chunk.ok_or_else(|| {
                         io::Error::new(
@@ -800,7 +833,10 @@ async fn interleave_cached_and_uncached_results(
                         sender.error(e).await;
                         return;
                     },
-                    Ok(chunk) => sender.send(chunk.slice(true_pos)).await,
+                    Ok(chunk) => {
+                        cache.insert(&path, aligned_pos, chunk.clone(), cursor == len);
+                        sender.send(chunk.slice(true_pos)).await
+                    },
                 }
             },
         };

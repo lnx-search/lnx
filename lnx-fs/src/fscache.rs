@@ -166,6 +166,31 @@ impl FileSystemCache {
 
         true
     }
+
+    /// Evict a file and its content from the cache.
+    ///
+    /// This requires a range of bytes to evict so it can calculate
+    /// the cache keys the file falls under.
+    pub fn evict(&self, path: &str, range: Range<u64>) {
+        if range.end == 0 {
+            return;
+        }
+
+        let file_id = file_id(path);
+        let aligned_start = align_down(range.start);
+        let aligned_end = align_up(range.end);
+
+        let cache_block_id_start = (aligned_start / CACHE_BLOCK_SIZE) as u32;
+        let cache_block_id_end = (aligned_end / CACHE_BLOCK_SIZE) as u32;
+
+        for cache_block_id in cache_block_id_start..cache_block_id_end {
+            let key = FileCacheKey {
+                file_id,
+                cache_block_id,
+            };
+            self.cache.remove(&key);
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]

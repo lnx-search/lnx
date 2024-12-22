@@ -1,9 +1,9 @@
 use std::fmt::Debug;
+use std::io;
 use std::io::{ErrorKind, Result};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::{cmp, io};
 
 use async_trait::async_trait;
 use bon::Builder;
@@ -14,7 +14,6 @@ use glommio::sync::Semaphore;
 use smallvec::SmallVec;
 use tracing::{debug, error, info, instrument, warn};
 
-use crate::config::READ_SPLIT_SIZE;
 use crate::io::actors::ActorFactory;
 use crate::io::runtime::RuntimeDispatcher;
 use crate::io::{Body, BodySender};
@@ -73,31 +72,6 @@ impl TabletReader {
             _runtime: runtime,
             events_tx,
         })
-    }
-
-    #[instrument(skip(self))]
-    /// Performs a read for a blob at the given position.
-    ///
-    /// The system performs this operation as a single read request to the kernel
-    /// so large reads need to be broken up into smaller reads. This can be
-    /// done with the `read_many` handler instead.
-    pub async fn read(&self, position: Range<u64>) -> Result<Body> {
-        let len = position.end - position.start;
-        if len > READ_SPLIT_SIZE {
-            let positions = split_read_position(position);
-            return self.read_many(positions).await;
-        }
-
-        let (ack, body) = Body::channel();
-
-        let event = ReadEvent::ReadAt(ReadAtEvent { position, ack });
-
-        self.events_tx.send_async(event).await.map_err(|_| {
-            warn!("Tablet reader actor aborted unexpectedly");
-            io::Error::new(ErrorKind::Other, "Reader closed")
-        })?;
-
-        Ok(body)
     }
 
     #[instrument(skip(self))]
@@ -190,25 +164,8 @@ impl TabletReaderActor {
 
     async fn handle_event(&mut self, event: ReadEvent) {
         match event {
-            ReadEvent::ReadAt(event) => self.spawn_random_read_op(event).await,
             ReadEvent::BulkReadAt(event) => self.spawn_random_bulk_read_op(event).await,
         }
-    }
-
-    async fn spawn_random_read_op(&self, event: ReadAtEvent) {
-        let permit = self
-            .read_limiter
-            .acquire_static_permit(1)
-            .await
-            .expect("Semaphore should never be closed");
-
-        let file = self.file.clone();
-
-        glommio::spawn_local(async move {
-            let _permit = permit;
-            random_read(file, event).await;
-        })
-        .detach();
     }
 
     async fn spawn_random_bulk_read_op(&self, event: BulkReadAtEvent) {
@@ -225,22 +182,6 @@ impl TabletReaderActor {
             random_bulk_read(file, event.positions, event.ack).await;
         })
         .detach();
-    }
-}
-
-async fn random_read(file: Rc<DmaFile>, event: ReadAtEvent) {
-    debug!(position = ?event.position, "Random read");
-
-    let len = (event.position.end - event.position.start) as usize;
-    match file.read_at(event.position.start, len).await {
-        Ok(buffer) => {
-            let chunk = Bytes::copy_from_slice(&buffer);
-            event.ack.send(chunk).await;
-            event.ack.finish().await;
-        },
-        Err(e) => {
-            event.ack.error(e.into()).await;
-        },
     }
 }
 
@@ -284,36 +225,12 @@ async fn random_bulk_read(file: Rc<DmaFile>, positions: Positions, ack: BodySend
 }
 
 enum ReadEvent {
-    ReadAt(ReadAtEvent),
     BulkReadAt(BulkReadAtEvent),
-}
-
-struct ReadAtEvent {
-    position: Range<u64>,
-    ack: BodySender,
 }
 
 struct BulkReadAtEvent {
     positions: Positions,
     ack: BodySender,
-}
-
-fn split_read_position(position: Range<u64>) -> Positions {
-    let read_len = position.end - position.start;
-    let mut num_positions = read_len / READ_SPLIT_SIZE;
-    if read_len % READ_SPLIT_SIZE != 0 {
-        num_positions += 1;
-    }
-
-    let mut positions = Positions::with_capacity(num_positions as usize);
-    let mut offset = 0;
-    for _ in 0..num_positions {
-        let end = cmp::min(offset + READ_SPLIT_SIZE, read_len);
-        positions.push(offset..end);
-        offset += READ_SPLIT_SIZE;
-    }
-
-    positions
 }
 
 #[cfg(test)]
@@ -328,78 +245,6 @@ mod tests {
     use super::*;
     use crate::io::runtime;
     use crate::io::runtime::RuntimeOptions;
-
-    #[allow(clippy::single_range_in_vec_init)]
-    #[allow(clippy::identity_op)]
-    #[test]
-    fn test_split_read_position() {
-        let positions = split_read_position(0..READ_SPLIT_SIZE);
-        assert_eq!(positions.as_slice(), &[0..READ_SPLIT_SIZE]);
-
-        let positions = split_read_position(0..READ_SPLIT_SIZE * 4);
-        assert_eq!(
-            positions.as_slice(),
-            &[
-                0..READ_SPLIT_SIZE,
-                READ_SPLIT_SIZE * 1..READ_SPLIT_SIZE * 2,
-                READ_SPLIT_SIZE * 2..READ_SPLIT_SIZE * 3,
-                READ_SPLIT_SIZE * 3..READ_SPLIT_SIZE * 4,
-            ],
-        );
-
-        let positions = split_read_position(0..(READ_SPLIT_SIZE * 2) + 14);
-        assert_eq!(
-            positions.as_slice(),
-            &[
-                0..READ_SPLIT_SIZE,
-                READ_SPLIT_SIZE * 1..READ_SPLIT_SIZE * 2,
-                READ_SPLIT_SIZE * 2..READ_SPLIT_SIZE * 2 + 14
-            ],
-        );
-    }
-
-    fn create_test_tablet(tablet_id: TabletId, size: usize) -> tempfile::NamedTempFile {
-        let path = crate::io::get_tablet_file_path(&temp_dir(), tablet_id);
-        let tmp_path = TempPath::from_path(&path);
-
-        let file = File::create(&path).unwrap();
-        let mut temp_file = tempfile::NamedTempFile::from_parts(file, tmp_path);
-
-        let mut written = 0;
-        while written < size {
-            temp_file.write_all(b"Hello, World!").unwrap();
-            written += 13;
-        }
-
-        temp_file
-    }
-
-    #[tokio::test]
-    async fn test_single_small_read() {
-        let _ = tracing_subscriber::fmt::try_init();
-
-        let tablet_id = TabletId::new();
-        let _file_guard = create_test_tablet(tablet_id, 13);
-
-        let rt_options = RuntimeOptions::builder().num_threads(1).build();
-        let dispatch = runtime::create_io_runtime(rt_options).unwrap();
-        let read_options = TabletReaderOptions::builder()
-            .base_path(temp_dir())
-            .tablet_id(tablet_id)
-            .max_concurrent_reads(3)
-            .build();
-
-        let reader = TabletReader::open(read_options, dispatch)
-            .await
-            .expect("Open reader");
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let incoming = reader.read(0..13).await.expect("submit read ok");
-
-        let body = incoming.collect().await.expect("Read body");
-        assert_eq!(body.as_ref(), b"Hello, World!");
-    }
 
     #[tokio::test]
     async fn test_bulk_small_read() {
