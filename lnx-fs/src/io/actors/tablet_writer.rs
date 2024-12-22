@@ -379,6 +379,8 @@ impl TabletWriterActor {
     async fn handle_event(&mut self, event: WriterEvent) {
         let WriterEvent { ack, kind } = event;
 
+        let start = self.writer.current_pos();
+
         let result = match kind {
             EventKind::Write(WriteEvent { metadata, body }) => {
                 self.write_create_blob(metadata, body).await
@@ -390,6 +392,8 @@ impl TabletWriterActor {
                 self.write_rename_blob(metadata, new_path).await
             },
         };
+
+        let bytes_written = self.writer.current_pos() - start;
 
         if self.first_write_after_flush.is_none() {
             self.first_write_after_flush = Some(Instant::now());
@@ -407,6 +411,7 @@ impl TabletWriterActor {
                     writer_position: self.writer.current_pos(),
                     event,
                     flush_waker: waker,
+                    bytes_written,
                 };
 
                 for hook in self.event_hooks.iter() {
@@ -577,6 +582,8 @@ pub struct WriterResponse {
     /// The [FlushWaker] allows operations to wait until the
     /// operation is guarenteed to be persisted to disk.
     pub flush_waker: FlushWaker,
+    /// The total number of bytes written including the footer.
+    pub bytes_written: u64,
 }
 
 #[cfg_attr(test, mockall::automock)]

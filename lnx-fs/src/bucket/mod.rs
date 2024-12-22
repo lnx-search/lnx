@@ -5,10 +5,11 @@ mod transaction;
 use std::fmt::Debug;
 use std::io;
 use std::io::ErrorKind;
+use std::marker::PhantomData;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bon::Builder;
 use moka::policy::EvictionPolicy;
@@ -16,11 +17,11 @@ use tracing::{debug, info, instrument, trace};
 
 pub use self::transaction::BulkBucketTx;
 use crate::bucket::setup::BucketPaths;
+use crate::bucket::statistics::{ReadStatistics, StatisticsEnabled, WriteStatistics};
 use crate::config::{DEFAULT_MAX_OPEN_READERS, DEFAULT_TTI_SECS, MAX_PATH_LENGTH};
 use crate::fscache::{CacheParts, FileSystemCache, MaybeCached};
 use crate::io::{
     Body,
-    BulkFlushWaker,
     FlushWaker,
     Positions,
     RuntimeDispatcher,
@@ -40,6 +41,9 @@ use crate::metastore::{
 use crate::service::FileSystemError;
 use crate::{fscache, BodySender, BucketConfig, FileMetadata, MaybeUnset};
 
+/// A bucket with statistics return enabled.
+pub type BucketWithStatistics = Bucket<statistics::On>;
+
 #[derive(Debug, Builder)]
 /// Options that can be configured when creating a bucket.
 pub struct BucketCreateOptions {
@@ -50,7 +54,6 @@ pub struct BucketCreateOptions {
     bucket_path: PathBuf,
 }
 
-#[derive(Clone)]
 /// Virtual File System Bucket
 ///
 /// This is a way of organising a set of files into completely isolated partitions, similar
@@ -99,7 +102,7 @@ pub struct BucketCreateOptions {
 /// _IT IS OK FOR THESE FILES TO BE MISSING OR CORRUPTED_, the system will re-build the state
 /// from the main `.tablet` files in this event.
 ///
-pub struct Bucket {
+pub struct Bucket<S = statistics::Off> {
     /// The currently active bucket config.
     config: Arc<BucketConfig>,
     /// The paths within the bucket containing various parts of the bucket data.
@@ -117,14 +120,33 @@ pub struct Bucket {
     runtime: RuntimeDispatcher,
     /// An in-memory cache of file chunks for accelerating reads.
     read_cache: FileSystemCache,
+    /// used to signal when stats are returned from operations or not.
+    _stats_enabled: PhantomData<S>,
 }
 
-impl Bucket {
+impl<S> Clone for Bucket<S> {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            paths: self.paths.clone(),
+            metastore: self.metastore.clone(),
+            writer: self.writer.clone(),
+            readers: self.readers.clone(),
+            runtime: self.runtime.clone(),
+            read_cache: self.read_cache.clone(),
+            _stats_enabled: PhantomData,
+        }
+    }
+}
+
+impl Bucket<statistics::Off> {
     #[instrument(skip(runtime))]
     /// Creates a new bucket with the given runtime.
     ///
     /// If a bucket already exist at the target path a [FileSystemError::BucketAlreadyExists]
     /// is returned.
+    ///
+    /// NOTE: The created bucket will have statistics disabled.
     pub(crate) async fn create(
         options: BucketCreateOptions,
         runtime: RuntimeDispatcher,
@@ -153,6 +175,8 @@ impl Bucket {
     ///
     /// If no bucket exists in the given folder a [FileSystemError::BucketNotFound]
     /// error is returned.
+    ///
+    /// NOTE: The created bucket will have statistics disabled.
     pub(crate) async fn open(
         base_path: PathBuf,
         runtime: RuntimeDispatcher,
@@ -212,7 +236,7 @@ impl Bucket {
             .build();
         let read_cache = FileSystemCache::new(cache_options);
 
-        Ok(Self {
+        Ok(Bucket {
             config: Arc::new(config),
             paths: Arc::new(paths),
             metastore,
@@ -220,7 +244,27 @@ impl Bucket {
             readers,
             runtime,
             read_cache,
+            _stats_enabled: PhantomData,
         })
+    }
+}
+
+impl<S> Bucket<S>
+where
+    S: StatisticsEnabled,
+{
+    /// Enables statistics return on the current bucket object.
+    pub fn enable_statistics_return(self) -> Bucket<statistics::On> {
+        Bucket {
+            config: self.config,
+            paths: self.paths,
+            metastore: self.metastore,
+            writer: self.writer,
+            readers: self.readers,
+            runtime: self.runtime,
+            read_cache: self.read_cache,
+            _stats_enabled: PhantomData::default(),
+        }
     }
 
     /// Returns the name of the bucket.
@@ -255,7 +299,7 @@ impl Bucket {
     /// Be aware that data is still written to disk and the atomic handling
     /// of operations is done via the metastore. Data which then gets left behind
     /// after a rollback will be cleaned up eventually by the bucket GC.
-    pub fn begin_tx(&self) -> BulkBucketTx<'_> {
+    pub fn begin_tx(&self) -> BulkBucketTx<'_, S> {
         let metastore = self.metastore.begin_mutate();
         BulkBucketTx::new(metastore, self)
     }
@@ -269,7 +313,10 @@ impl Bucket {
     ///
     /// To minimise this impact, it is important to have a suitably sized
     /// reader cache allowance.
-    pub async fn read(&self, path: &str) -> Result<Body, FileSystemError> {
+    pub async fn read(
+        &self,
+        path: &str,
+    ) -> Result<S::Wrapped<Body, ReadStatistics>, FileSystemError> {
         self.read_range(path, ..).await
     }
 
@@ -287,11 +334,13 @@ impl Bucket {
         &self,
         path: &str,
         range: R,
-    ) -> Result<Body, FileSystemError>
+    ) -> Result<S::Wrapped<Body, ReadStatistics>, FileSystemError>
     where
         R: RangeBounds<u64> + Debug,
     {
         validate_path(path)?;
+
+        let mut statistics = ReadStatistics::default();
 
         trace!("Begin reading blob");
 
@@ -306,12 +355,20 @@ impl Bucket {
 
         let parts = self.read_cache.lookup(path, relative_pos);
 
-        let num_missed = parts
-            .iter()
-            .filter(|entry| matches!(entry, MaybeCached::Missed { .. }))
-            .count();
+        for entry in parts.iter() {
+            match entry {
+                MaybeCached::Hit(chunk) => {
+                    statistics.cached_bytes += chunk.len() as u64;
+                    statistics.cache_hits += 1;
+                },
+                MaybeCached::Missed { aligned_pos, .. } => {
+                    statistics.io_bytes += aligned_pos.end - aligned_pos.end;
+                    statistics.cache_misses += 1;
+                },
+            }
+        }
 
-        if num_missed == 0 {
+        if statistics.cache_misses == 0 {
             let (tx, body) = Body::channel_with_capacity(parts.len() + 1);
 
             let chunks = parts.into_iter().flat_map(|entry| match entry {
@@ -325,8 +382,10 @@ impl Bucket {
                 tx.try_send(chunk).unwrap();
             }
             tx.try_finish().unwrap();
-            return Ok(body);
+            return Ok(S::wrap(body, statistics));
         }
+
+        let schedule_start = Instant::now();
 
         let positions = parts
             .iter()
@@ -350,7 +409,9 @@ impl Bucket {
             tx,
         ));
 
-        Ok(body)
+        statistics.schedule_time = schedule_start.elapsed();
+
+        Ok(S::wrap(body, statistics))
     }
 
     #[instrument(skip(self, body))]
@@ -361,11 +422,12 @@ impl Bucket {
         &self,
         path: &str,
         body: Body,
-    ) -> Result<FlushWaker, FileSystemError> {
+    ) -> Result<S::Wrapped<FlushWaker, WriteStatistics>, FileSystemError> {
         validate_path(path)?;
 
-        trace!("Begin writing blob");
+        let mut statistics = WriteStatistics::default();
 
+        trace!("Begin writing blob");
         let metadata = crate::io::Metadata {
             path: path.to_string(),
             transaction_id: None,
@@ -374,22 +436,29 @@ impl Bucket {
         let response = self.writer.write(metadata, body).await?;
         trace!("Blob write complete");
 
-        self.evict_path_from_cache(path);
+        statistics.io_bytes += response.bytes_written;
+
+        self.evict_path_from_cache(path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
         trace!("Metadata updated");
 
-        Ok(response.flush_waker)
+        Ok(S::wrap(response.flush_waker, statistics))
     }
 
     #[instrument(skip(self))]
     /// Deletes a file from the system.
     ///
     /// Does nothing if the file doesn't exist.
-    pub async fn delete(&self, path: &str) -> Result<FlushWaker, FileSystemError> {
+    pub async fn delete(
+        &self,
+        path: &str,
+    ) -> Result<S::Wrapped<FlushWaker, WriteStatistics>, FileSystemError> {
         validate_path(path)?;
+
+        let mut statistics = WriteStatistics::default();
 
         trace!("Begin delete blob");
         let metadata = crate::io::Metadata {
@@ -399,13 +468,15 @@ impl Bucket {
         let response = self.writer.delete(metadata).await?;
         trace!("Blob delete write complete");
 
-        self.evict_path_from_cache(path);
+        statistics.io_bytes += response.bytes_written;
+
+        self.evict_path_from_cache(path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
 
-        Ok(response.flush_waker)
+        Ok(S::wrap(response.flush_waker, statistics))
     }
 
     #[instrument(skip(self))]
@@ -417,13 +488,15 @@ impl Bucket {
         &self,
         from_path: &str,
         to_path: &str,
-    ) -> Result<FlushWaker, FileSystemError> {
+    ) -> Result<S::Wrapped<FlushWaker, WriteStatistics>, FileSystemError> {
         validate_path(from_path)?;
         validate_path(to_path)?;
 
         if !self.exists(from_path) {
             return Err(FileSystemError::FileNotFound(from_path.to_string()));
         }
+
+        let mut statistics = WriteStatistics::default();
 
         trace!("Begin delete blob");
         let metadata = crate::io::Metadata {
@@ -433,15 +506,17 @@ impl Bucket {
         let response = self.writer.rename(metadata, to_path.to_string()).await?;
         trace!("Blob delete write complete");
 
+        statistics.io_bytes += response.bytes_written;
+
         // TODO: Maybe we can be smarter about renames?
-        self.evict_path_from_cache(from_path);
-        self.evict_path_from_cache(to_path);
+        self.evict_path_from_cache(from_path, &mut statistics);
+        self.evict_path_from_cache(to_path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
         bulk.commit();
 
-        Ok(response.flush_waker)
+        Ok(S::wrap(response.flush_waker, statistics))
     }
 
     /// Returns the file metadata associated with the given file.
@@ -505,9 +580,12 @@ impl Bucket {
         Ok(reader)
     }
 
-    fn evict_path_from_cache(&self, path: &str) {
+    fn evict_path_from_cache(&self, path: &str, statistics: &mut WriteStatistics) {
         if let Some(old) = self.metastore.get_file(path) {
-            self.read_cache.evict(&old.path, 0..old.metadata.size());
+            let (num_entries, num_bytes) =
+                self.read_cache.evict(&old.path, 0..old.metadata.size());
+            statistics.cache_evictions += num_entries;
+            statistics.evicted_bytes += num_bytes;
         }
     }
 }

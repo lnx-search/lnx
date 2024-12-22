@@ -11,10 +11,10 @@ pub struct ReadStatistics {
     pub cache_misses: usize,
     /// The amount of bytes that had been cached and did
     /// not need to incur IO on the disk.
-    pub cached_bytes: usize,
+    pub cached_bytes: u64,
     /// The amount of bytes that had to be read from the disk
     /// incurring an IO cost.
-    pub io_bytes: usize,
+    pub io_bytes: u64,
     /// The time the system spent scheduling the read.
     pub schedule_time: Duration,
 }
@@ -23,9 +23,11 @@ pub struct ReadStatistics {
 /// Statistics relating to the writing of a file blob.
 pub struct WriteStatistics {
     /// The total amount of bytes written.
-    pub io_bytes: usize,
+    pub io_bytes: u64,
     /// How many entries from the file cache were removed.
     pub cache_evictions: usize,
+    /// The total amount of bytes evicted from the cache.
+    pub evicted_bytes: u64,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -41,7 +43,7 @@ pub struct Off;
 /// or just the result.
 pub trait StatisticsEnabled {
     type Wrapped<T, S>;
-    
+
     /// Wrap the inner `T` with the stats `S` depending on the impl rules.
     fn wrap<T, S>(inner: T, stats: S) -> Self::Wrapped<T, S>;
 }
@@ -51,10 +53,7 @@ impl StatisticsEnabled for On {
 
     #[inline]
     fn wrap<T, S>(inner: T, stats: S) -> Self::Wrapped<T, S> {
-        WithStats {
-            inner,
-            stats,
-        }
+        WithStats { inner, stats }
     }
 }
 
@@ -67,9 +66,11 @@ impl StatisticsEnabled for Off {
     }
 }
 
+/// A wrapper type around an inner `T` and some statistics `S` associated with the
+/// creation of `T`.
 pub struct WithStats<T, S> {
-    inner: T, 
-    stats: S,
+    pub inner: T,
+    pub stats: S,
 }
 
 impl<T, S> Deref for WithStats<T, S> {
@@ -86,8 +87,8 @@ impl<T, S> DerefMut for WithStats<T, S> {
     }
 }
 
-impl<T, S> Debug for WithStats<T, S> 
-where 
+impl<T, S> Debug for WithStats<T, S>
+where
     T: Debug,
     S: Debug,
 {
@@ -98,4 +99,3 @@ where
             .finish()
     }
 }
-    

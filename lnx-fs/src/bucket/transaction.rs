@@ -1,12 +1,11 @@
-use std::future::Future;
 use tracing::{instrument, trace};
 
-use crate::bucket::{statistics, Bucket};
+use crate::bucket::statistics::{StatisticsEnabled, WriteStatistics};
+use crate::bucket::Bucket;
 use crate::config::COMMIT_MARKER_PREFIX;
-use crate::io::BulkFlushWaker;
+use crate::io::{BulkFlushWaker, WriterResponse};
 use crate::metastore::BulkMetastoreModifyOperation;
-use crate::{Body, FileSystemError};
-use crate::bucket::statistics::{StatisticsEnabled, WithStats, WriteStatistics};
+use crate::{statistics, Body, FileSystemError};
 
 /// A bucket operation that allows applying multiple mutations
 /// as part of a single operation.
@@ -17,9 +16,12 @@ use crate::bucket::statistics::{StatisticsEnabled, WithStats, WriteStatistics};
 /// That being said, it is important to note _data is still written to disk_, it is just
 /// not committed in the metastore and the now written data will eventually be cleaned
 /// up by the bucket's GC system.
-pub struct BulkBucketTx<'bucket> {
+pub struct BulkBucketTx<'bucket, S = statistics::Off>
+where
+    S: StatisticsEnabled,
+{
     metastore: BulkMetastoreModifyOperation<'bucket>,
-    bucket: &'bucket Bucket,
+    bucket: &'bucket Bucket<S>,
     num_ops_pending: usize,
     transaction_id: ulid::Ulid,
     flush_wakers: BulkFlushWaker,
@@ -27,10 +29,13 @@ pub struct BulkBucketTx<'bucket> {
     statistics: WriteStatistics,
 }
 
-impl<'bucket> BulkBucketTx<'bucket> {
+impl<'bucket, S> BulkBucketTx<'bucket, S>
+where
+    S: StatisticsEnabled,
+{
     pub(super) fn new(
         metastore: BulkMetastoreModifyOperation<'bucket>,
-        bucket: &'bucket Bucket,
+        bucket: &'bucket Bucket<S>,
     ) -> Self {
         Self {
             metastore,
@@ -42,7 +47,7 @@ impl<'bucket> BulkBucketTx<'bucket> {
             statistics: WriteStatistics::default(),
         }
     }
-    
+
     /// The current [WriteStatistics] for the transaction so far.
     pub fn current_statistics(&self) -> &WriteStatistics {
         &self.statistics
@@ -67,14 +72,13 @@ impl<'bucket> BulkBucketTx<'bucket> {
         };
 
         let response = self.bucket.writer.write(write_metadata, body).await?;
-        trace!("Blob write complete");
+        trace!(
+            bytes_written = response.bytes_written,
+            "Blob write complete"
+        );
 
         self.pending_cache_evictions.push(path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-        trace!("Metadata updated");
-
-        self.num_ops_pending += 1;
+        self.add_response(response);
 
         Ok(())
     }
@@ -108,14 +112,14 @@ impl<'bucket> BulkBucketTx<'bucket> {
             .writer
             .rename(metadata, to_path.to_string())
             .await?;
-        trace!("Blob delete write complete");
+        trace!(
+            bytes_written = response.bytes_written,
+            "Blob rename complete"
+        );
 
         self.pending_cache_evictions.push(from_path.to_string());
         self.pending_cache_evictions.push(to_path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-
-        self.num_ops_pending += 1;
+        self.add_response(response);
 
         Ok(())
     }
@@ -134,35 +138,25 @@ impl<'bucket> BulkBucketTx<'bucket> {
         };
 
         let response = self.bucket.writer.delete(write_metadata).await?;
-        trace!("Blob delete write complete");
+        trace!(
+            bytes_written = response.bytes_written,
+            "Blob Delete complete"
+        );
 
         self.pending_cache_evictions.push(path.to_string());
-        self.flush_wakers.push(response.flush_waker);
-        self.metastore.add_event(response.tablet_id, response.event);
-
-        self.num_ops_pending += 1;
+        self.add_response(response);
 
         Ok(())
     }
-    
-    #[inline]
-    /// Commits all currently pending bucket operations.
-    pub fn commit(self) -> impl Future<Output = Result<BulkFlushWaker, FileSystemError>> + Send + 'bucket {
-        self.commit_inner::<statistics::Off>()
-    }
 
     #[inline]
-    /// Commits all currently pending bucket operations and returns the
-    /// [WriteStatistics] of the entire transaction.
-    pub fn commit_with_stats(self) -> impl Future<Output = Result<WithStats<BulkFlushWaker, WriteStatistics>, FileSystemError>> + Send + 'bucket {
-        self.commit_inner::<statistics::On>()
-    }
-    
-    #[instrument(skip(self))]
-    async fn commit_inner<S>(mut self) -> Result<S::Wrapped<BulkFlushWaker, WriteStatistics>, FileSystemError>
-    where 
-        S: StatisticsEnabled
-    {
+    /// Commits all currently pending bucket operations.
+    ///
+    /// This operation may return statistics if it was created using a bucket
+    /// with [statistics::On] set.
+    pub async fn commit(
+        mut self,
+    ) -> Result<S::Wrapped<BulkFlushWaker, WriteStatistics>, FileSystemError> {
         if self.num_ops_pending == 0 {
             return Ok(S::wrap(self.flush_wakers, self.statistics));
         }
@@ -176,20 +170,21 @@ impl<'bucket> BulkBucketTx<'bucket> {
             .writer
             .write(write_metadata, Body::empty())
             .await?;
-        trace!("Blob delete write complete");
+        trace!("Blob commit marker write complete");
 
+        self.statistics.io_bytes += response.bytes_written;
         self.flush_wakers.push(response.flush_waker);
-        trace!("Writer flushes acknowledged");
 
         for path in self.pending_cache_evictions {
-            self.bucket.evict_path_from_cache(&path);
+            self.bucket
+                .evict_path_from_cache(&path, &mut self.statistics);
         }
 
         self.metastore.commit();
 
         Ok(S::wrap(self.flush_wakers, self.statistics))
     }
-    
+
     #[instrument(skip(self))]
     /// Explicitly rollback all currently pending operations.
     ///
@@ -197,5 +192,14 @@ impl<'bucket> BulkBucketTx<'bucket> {
     /// either `rollback` or `commit` is explicitly called.
     pub fn rollback(self) {
         self.metastore.rollback();
+    }
+
+    fn add_response(&mut self, response: WriterResponse) {
+        self.statistics.io_bytes += response.bytes_written;
+
+        self.flush_wakers.push(response.flush_waker);
+        self.metastore.add_event(response.tablet_id, response.event);
+
+        self.num_ops_pending += 1;
     }
 }

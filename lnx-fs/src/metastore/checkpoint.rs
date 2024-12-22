@@ -322,6 +322,7 @@ mod tests {
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
             flush_waker: FlushWaker::create_for_test(),
+            bytes_written: 0,
         }));
 
         actor.snapshot_checkpoints();
@@ -358,6 +359,7 @@ mod tests {
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
             flush_waker: FlushWaker::create_for_test(),
+            bytes_written: 0,
         }));
         actor.handle_event(CheckpointEvent::WriterClose(tablet_id));
         assert_eq!(actor.live_state.len(), 1);
@@ -387,12 +389,14 @@ mod tests {
             writer_position: 128,
             event: FileEvent::create(None, "example.txt".to_string(), 0..128),
             flush_waker: FlushWaker::create_for_test(),
+            bytes_written: 0,
         });
         tx.on_writer_response(WriterResponse {
             tablet_id,
             writer_position: 300,
             event: FileEvent::create(None, "example.txt".to_string(), 128..256),
             flush_waker: FlushWaker::create_for_test(),
+            bytes_written: 0,
         });
         tx.on_writer_close(tablet_id);
 
