@@ -102,7 +102,7 @@ impl BucketReader {
             .resolve_range_bounds(range)
             .map_err(|range| FileSystemError::ReadOutOfRange(path.to_string(), range))?;
 
-        let parts = self.cache.lookup(path, relative_pos);
+        let parts = self.cache.lookup(path, relative_pos, entry.metadata.size());
         for entry in parts.iter() {
             match entry {
                 MaybeCached::Hit(chunk) => {
@@ -115,9 +115,6 @@ impl BucketReader {
                 },
             }
         }
-
-        // TODO: This does _not_ adjust the positions from the _relative_ positions
-        //  to the absolute positions required by the readers.
 
         if statistics.cache_misses == 0 {
             let (tx, body) = Body::channel_with_capacity(parts.len() + 1);
@@ -235,7 +232,6 @@ async fn interleave_cached_and_uncached_results(
                         return;
                     },
                     Ok(chunk) => {
-                        dbg!(&path, &aligned_pos);
                         cache.insert(&path, aligned_pos, chunk.clone(), cursor == len);
                         sender.send(chunk.slice(true_pos)).await
                     },

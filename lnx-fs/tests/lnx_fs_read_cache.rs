@@ -32,7 +32,7 @@ async fn test_read_cache_used() {
     assert_eq!(first_read.stats.cached_bytes, 0);
     assert_eq!(first_read.stats.cache_hits, 0);
     assert_eq!(first_read.stats.cache_misses, 1);
-    assert_eq!(first_read.stats.io_bytes, 8192);
+    assert_eq!(first_read.stats.io_bytes, 13);
 
     let second_read = bucket.read("example.txt").await.expect("Read file");
     let data = second_read.inner.collect().await.unwrap();

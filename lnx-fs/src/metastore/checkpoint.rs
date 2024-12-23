@@ -380,7 +380,6 @@ mod tests {
         let tx = spawn_checkpoint_actor(options.clone())
             .await
             .expect("Create checkpoint actor");
-        dbg!(&tx);
 
         let tablet_id = TabletId::new();
         tx.on_writer_start(tablet_id);

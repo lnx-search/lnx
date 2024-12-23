@@ -63,8 +63,14 @@ impl FileSystemCache {
     /// Positions in which there is a cache miss are aligned to [CACHE_BLOCK_SIZE]
     /// which may read more data than strictly necessary but is required
     /// for storing the retrieved data in the cache afterward.
-    pub fn lookup(&self, path: &str, range: Range<u64>) -> CacheParts {
-        if range.end == 0 {
+    pub fn lookup(
+        &self,
+        path: &str,
+        range: Range<u64>,
+        total_file_size: u64,
+    ) -> CacheParts {
+        if range.end == 0 || range.end > total_file_size || range.start > total_file_size
+        {
             return CacheParts::new();
         }
 
@@ -90,7 +96,7 @@ impl FileSystemCache {
             // can cache the result if we want, but this does mean it might
             // contain more data than we want to return to the user.
             let read_start = cache_block_id as u64 * CACHE_BLOCK_SIZE;
-            let read_end = read_start + CACHE_BLOCK_SIZE;
+            let read_end = cmp::min(read_start + CACHE_BLOCK_SIZE, total_file_size);
 
             // The `true_x` positions are the actual slices of the data we
             // want to return to the user.
@@ -119,8 +125,6 @@ impl FileSystemCache {
                 },
             }
         }
-
-        dbg!(&parts);
 
         parts
     }
@@ -165,8 +169,6 @@ impl FileSystemCache {
             start += CACHE_BLOCK_SIZE as usize;
             relative_block_id += 1;
         }
-
-        dbg!(&self.cache);
 
         true
     }
@@ -275,7 +277,7 @@ mod tests {
         let data = Bytes::from(vec![0; CACHE_BLOCK_SIZE as usize]);
         cache.insert("example.txt", 0..CACHE_BLOCK_SIZE, data.clone(), true);
 
-        let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE);
+        let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE, CACHE_BLOCK_SIZE);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data)]);
     }
 
@@ -286,7 +288,7 @@ mod tests {
         let data = Bytes::from(vec![0; 13]);
         cache.insert("example.txt", 0..13, data.clone(), true);
 
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data)]);
     }
 
@@ -298,7 +300,7 @@ mod tests {
         let valid = cache.insert("example.txt", 0..13, data.clone(), false);
         assert!(!valid);
 
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, CACHE_BLOCK_SIZE * 4);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Missed {
@@ -328,7 +330,11 @@ mod tests {
             true,
         );
 
-        let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE * 2 + 13);
+        let result = cache.lookup(
+            "example.txt",
+            0..CACHE_BLOCK_SIZE * 2 + 13,
+            CACHE_BLOCK_SIZE * 2 + 13,
+        );
         assert_eq!(
             result.as_slice(),
             &[
@@ -348,9 +354,9 @@ mod tests {
         cache.insert("example1.txt", 0..CACHE_BLOCK_SIZE, data1.clone(), true);
         cache.insert("example2.txt", 0..CACHE_BLOCK_SIZE, data2.clone(), true);
 
-        let result = cache.lookup("example1.txt", 0..CACHE_BLOCK_SIZE);
+        let result = cache.lookup("example1.txt", 0..CACHE_BLOCK_SIZE, CACHE_BLOCK_SIZE);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data1)]);
-        let result = cache.lookup("example2.txt", 0..CACHE_BLOCK_SIZE);
+        let result = cache.lookup("example2.txt", 0..CACHE_BLOCK_SIZE, CACHE_BLOCK_SIZE);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data2)]);
     }
 
@@ -361,22 +367,22 @@ mod tests {
         let data_small = Bytes::from_static(b"Hello, world!");
         cache.insert("example.txt", 0..13, data_small.clone(), true);
 
-        let result = cache.lookup("example.txt", 4..13);
+        let result = cache.lookup("example.txt", 4..13, 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Hit(Bytes::from_static(b"o, world!"))]
         );
 
-        let result = cache.lookup("example.txt", 13..13);
+        let result = cache.lookup("example.txt", 13..13, 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(Bytes::new())]);
 
-        let result = cache.lookup("example.txt", 12..13);
+        let result = cache.lookup("example.txt", 12..13, 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Hit(Bytes::from_static(b"!"))]
         );
 
-        let result = cache.lookup("example.txt", 4..10);
+        let result = cache.lookup("example.txt", 4..10, 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Hit(Bytes::from_static(b"o, wor"))]
@@ -387,16 +393,17 @@ mod tests {
     fn test_cache_lookup_positions_sitting_on_boundaries() {
         let cache = FileSystemCache::default();
 
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Missed {
-                aligned_pos: 0..CACHE_BLOCK_SIZE,
+                aligned_pos: 0..13,
                 true_pos: 0..13,
             }]
         );
 
-        let result = cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE * 2);
+        let result =
+            cache.lookup("example.txt", 0..CACHE_BLOCK_SIZE * 2, CACHE_BLOCK_SIZE * 4);
         assert_eq!(
             result.as_slice(),
             &[
@@ -411,14 +418,9 @@ mod tests {
             ]
         );
 
-        let result = cache.lookup("example.txt", CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2);
-        assert_eq!(
-            result.as_slice(),
-            &[MaybeCached::Missed {
-                aligned_pos: CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2,
-                true_pos: 0..CACHE_BLOCK_SIZE as usize
-            }]
-        );
+        let result =
+            cache.lookup("example.txt", CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2, 13);
+        assert_eq!(result.as_slice(), &[]);
     }
 
     #[test]
@@ -428,19 +430,19 @@ mod tests {
         let data_small = Bytes::from_static(b"Hello, world!");
         cache.insert("example.txt", 0..13, data_small.clone(), true);
 
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data_small.clone())]);
 
         cache.evict("doesnt-exist.txt", 0..13);
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data_small.clone())]);
 
         cache.evict("example.txt", 0..13);
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Missed {
-                aligned_pos: 0..CACHE_BLOCK_SIZE,
+                aligned_pos: 0..13,
                 true_pos: 0..13
             }]
         );
@@ -472,15 +474,15 @@ mod tests {
             true,
         );
 
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, CACHE_BLOCK_SIZE * 3 + 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data.slice(0..13))]);
 
         cache.evict("doesnt-exist.txt", 0..13);
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, CACHE_BLOCK_SIZE * 3 + 13);
         assert_eq!(result.as_slice(), &[MaybeCached::Hit(data.slice(0..13))]);
 
         cache.evict("example.txt", 0..CACHE_BLOCK_SIZE * 3 + 13);
-        let result = cache.lookup("example.txt", 0..13);
+        let result = cache.lookup("example.txt", 0..13, CACHE_BLOCK_SIZE * 3 + 13);
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Missed {
@@ -489,7 +491,11 @@ mod tests {
             }]
         );
 
-        let result = cache.lookup("example.txt", CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2);
+        let result = cache.lookup(
+            "example.txt",
+            CACHE_BLOCK_SIZE..CACHE_BLOCK_SIZE * 2,
+            CACHE_BLOCK_SIZE * 3 + 13,
+        );
         assert_eq!(
             result.as_slice(),
             &[MaybeCached::Missed {
