@@ -47,8 +47,11 @@ impl FileSystemCache {
         let cache = moka::sync::CacheBuilder::new(options.cache_capacity_bytes)
             .eviction_policy(EvictionPolicy::tiny_lfu())
             .weigher(|_k: &FileCacheKey, v: &Bytes| {
-                let size = size_of::<FileSystemCache>() + v.len();
-                size as u32
+                // We don't count the key as it made some confusion, instead
+                // we just opt to assume the key is small enough to not make
+                // much of a difference in the grand scheme of things.
+                // let size = size_of::<FileSystemCache>() + v.len();
+                v.len() as u32
             })
             .build_with_hasher(ahash::RandomState::new());
 
