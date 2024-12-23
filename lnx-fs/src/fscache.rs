@@ -119,7 +119,9 @@ impl FileSystemCache {
                 },
             }
         }
-
+    
+        dbg!(&parts);
+        
         parts
     }
 
@@ -164,6 +166,8 @@ impl FileSystemCache {
             relative_block_id += 1;
         }
 
+        dbg!(&self.cache);
+        
         true
     }
 

@@ -354,7 +354,6 @@ where
             .map_err(|range| FileSystemError::ReadOutOfRange(path.to_string(), range))?;
 
         let parts = self.read_cache.lookup(path, relative_pos);
-
         for entry in parts.iter() {
             match entry {
                 MaybeCached::Hit(chunk) => {
@@ -362,12 +361,15 @@ where
                     statistics.cache_hits += 1;
                 },
                 MaybeCached::Missed { aligned_pos, .. } => {
-                    statistics.io_bytes += aligned_pos.end - aligned_pos.end;
+                    statistics.io_bytes += aligned_pos.end - aligned_pos.start;
                     statistics.cache_misses += 1;
                 },
             }
         }
 
+        // TODO: This does _not_ adjust the positions from the _relative_ positions
+        //  to the absolute positions required by the readers.
+        
         if statistics.cache_misses == 0 {
             let (tx, body) = Body::channel_with_capacity(parts.len() + 1);
 
@@ -651,6 +653,7 @@ async fn interleave_cached_and_uncached_results(
                         return;
                     },
                     Ok(chunk) => {
+                        dbg!(&path, &aligned_pos);
                         cache.insert(&path, aligned_pos, chunk.clone(), cursor == len);
                         sender.send(chunk.slice(true_pos)).await
                     },
