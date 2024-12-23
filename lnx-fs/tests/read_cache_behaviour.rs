@@ -61,20 +61,18 @@ async fn test_read_cache_split_blocks() {
         .read_cache_capacity_bytes(32 << 10)
         .build();
     bucket.update_config(config_update).await.unwrap();
-    let bucket = vfs.reload_bucket("test")
+    let bucket = vfs
+        .reload_bucket("test")
         .await
         .unwrap()
-        .enable_statistics_return();    
-    
+        .enable_statistics_return();
+
     let mut buffer = vec![0; 512_000];
     fastrand::fill(&mut buffer);
     let buffer = Bytes::from(buffer);
-    
+
     let result = bucket
-        .write(
-            "example.txt",
-            Body::complete(buffer.clone()),
-        )
+        .write("example.txt", Body::complete(buffer.clone()))
         .await
         .expect("Write file");
     assert_eq!(result.stats.cache_evictions, 0);
