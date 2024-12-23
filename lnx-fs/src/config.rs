@@ -57,7 +57,7 @@ macro_rules! getters_with_option {
     };
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 /// Represents a config option which can be:
 ///
@@ -77,7 +77,7 @@ impl<T> From<T> for MaybeUnset<T> {
     }
 }
 
-#[derive(Debug, Default, Builder)]
+#[derive(Debug, Clone, Default, Builder)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 /// Configuration options that can be adjusted at runtime on the bucket.
 ///

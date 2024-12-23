@@ -41,7 +41,7 @@ pub struct Off;
 /// disabled via the type system and provides a type wrapper
 /// for transparently returning statistics and the result
 /// or just the result.
-pub trait StatisticsEnabled {
+pub trait StatisticsEnabled: Send + Sync + 'static {
     type Wrapped<T, S>;
 
     /// Wrap the inner `T` with the stats `S` depending on the impl rules.

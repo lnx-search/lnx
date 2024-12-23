@@ -1,45 +1,34 @@
+mod reader;
 mod setup;
 pub mod statistics;
 mod transaction;
 
 use std::fmt::Debug;
-use std::io;
-use std::io::ErrorKind;
 use std::marker::PhantomData;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bon::Builder;
-use moka::policy::EvictionPolicy;
-use tracing::{debug, info, instrument, trace};
+use tracing::{info, instrument, trace};
 
 pub use self::transaction::BulkBucketTx;
+use crate::bucket::reader::BucketReader;
 use crate::bucket::setup::BucketPaths;
 use crate::bucket::statistics::{ReadStatistics, StatisticsEnabled, WriteStatistics};
-use crate::config::{DEFAULT_MAX_OPEN_READERS, DEFAULT_TTI_SECS, MAX_PATH_LENGTH};
-use crate::fscache::{CacheParts, FileSystemCache, MaybeCached};
+use crate::config::MAX_PATH_LENGTH;
 use crate::io::{
     Body,
     FlushWaker,
-    Positions,
     RuntimeDispatcher,
-    TabletReader,
-    TabletReaderOptions,
     TabletWriter,
     TabletWriterOptions,
     WriterEventHook,
 };
-use crate::metastore::{
-    checkpoint,
-    Metastore,
-    MetastoreEntry,
-    MetastoreError,
-    TabletId,
-};
+use crate::metastore::{checkpoint, Metastore, MetastoreEntry, MetastoreError};
 use crate::service::FileSystemError;
-use crate::{fscache, BodySender, BucketConfig, FileMetadata, MaybeUnset};
+use crate::{BucketConfig, FileMetadata, MaybeUnset};
 
 /// A bucket with statistics return enabled.
 pub type BucketWithStatistics = Bucket<statistics::On>;
@@ -111,15 +100,10 @@ pub struct Bucket<S = statistics::Off> {
     metastore: Metastore,
     /// The tablet writer for completing new write requests.
     writer: TabletWriter,
-    /// An LFU cache of open tablet readers.
-    ///
-    /// The size of the cache can be configured to hold a variable number
-    /// of open files to help minimize file descriptor errors.
-    readers: moka::sync::Cache<TabletId, TabletReader, ahash::RandomState>,
     /// The IO runtime for the bucket.
     runtime: RuntimeDispatcher,
-    /// An in-memory cache of file chunks for accelerating reads.
-    read_cache: FileSystemCache,
+    /// The bucket reader.
+    reader: Arc<BucketReader>,
     /// used to signal when stats are returned from operations or not.
     _stats_enabled: PhantomData<S>,
 }
@@ -131,9 +115,8 @@ impl<S> Clone for Bucket<S> {
             paths: self.paths.clone(),
             metastore: self.metastore.clone(),
             writer: self.writer.clone(),
-            readers: self.readers.clone(),
             runtime: self.runtime.clone(),
-            read_cache: self.read_cache.clone(),
+            reader: self.reader.clone(),
             _stats_enabled: PhantomData,
         }
     }
@@ -212,38 +195,20 @@ impl Bucket<statistics::Off> {
         info!("Setting up tablet writer");
         let writer = setup_tablet_writer(&paths, &config, runtime.clone()).await?;
 
-        let max_open_readers = config
-            .max_open_readers()
-            .unwrap_or(DEFAULT_MAX_OPEN_READERS);
-        let time_to_idle = Duration::from_secs(
-            config
-                .readers_time_to_idle_secs()
-                .unwrap_or(DEFAULT_TTI_SECS),
+        let reader = BucketReader::new(
+            config.clone(),
+            paths.tablets_path.clone(),
+            runtime.clone(),
+            metastore.clone(),
         );
-
-        info!(
-            max_open_readers = max_open_readers,
-            time_to_idle = ?time_to_idle,
-            "Creating reader cache",
-        );
-        let readers = moka::sync::CacheBuilder::new(max_open_readers as u64)
-            .eviction_policy(EvictionPolicy::tiny_lfu())
-            .time_to_idle(time_to_idle)
-            .build_with_hasher(ahash::RandomState::new());
-
-        let cache_options = fscache::FileSystemCacheOptions::builder()
-            .maybe_cache_capacity_bytes(config.read_cache_capacity_bytes())
-            .build();
-        let read_cache = FileSystemCache::new(cache_options);
 
         Ok(Bucket {
             config: Arc::new(config),
             paths: Arc::new(paths),
             metastore,
             writer,
-            readers,
             runtime,
-            read_cache,
+            reader: Arc::new(reader),
             _stats_enabled: PhantomData,
         })
     }
@@ -260,10 +225,9 @@ where
             paths: self.paths,
             metastore: self.metastore,
             writer: self.writer,
-            readers: self.readers,
             runtime: self.runtime,
-            read_cache: self.read_cache,
-            _stats_enabled: PhantomData::default(),
+            reader: self.reader,
+            _stats_enabled: PhantomData,
         }
     }
 
@@ -339,81 +303,7 @@ where
         R: RangeBounds<u64> + Debug,
     {
         validate_path(path)?;
-
-        let mut statistics = ReadStatistics::default();
-
-        trace!("Begin reading blob");
-
-        let entry = self
-            .metastore
-            .get_file(path)
-            .ok_or_else(|| FileSystemError::FileNotFound(path.to_string()))?;
-
-        let relative_pos = entry
-            .resolve_range_bounds(range)
-            .map_err(|range| FileSystemError::ReadOutOfRange(path.to_string(), range))?;
-
-        let parts = self.read_cache.lookup(path, relative_pos);
-        for entry in parts.iter() {
-            match entry {
-                MaybeCached::Hit(chunk) => {
-                    statistics.cached_bytes += chunk.len() as u64;
-                    statistics.cache_hits += 1;
-                },
-                MaybeCached::Missed { aligned_pos, .. } => {
-                    statistics.io_bytes += aligned_pos.end - aligned_pos.start;
-                    statistics.cache_misses += 1;
-                },
-            }
-        }
-
-        // TODO: This does _not_ adjust the positions from the _relative_ positions
-        //  to the absolute positions required by the readers.
-        
-        if statistics.cache_misses == 0 {
-            let (tx, body) = Body::channel_with_capacity(parts.len() + 1);
-
-            let chunks = parts.into_iter().flat_map(|entry| match entry {
-                MaybeCached::Hit(chunk) => Some(chunk),
-                _ => None,
-            });
-
-            // Cannot await here because it'll cause a deadlock as the only reader is currently
-            // `body`. This should never panic because the capacity is at least the length of chunks + 1.
-            for chunk in chunks {
-                tx.try_send(chunk).unwrap();
-            }
-            tx.try_finish().unwrap();
-            return Ok(S::wrap(body, statistics));
-        }
-
-        let schedule_start = Instant::now();
-
-        let positions = parts
-            .iter()
-            .filter_map(|entry| match entry {
-                MaybeCached::Hit(_) => None,
-                MaybeCached::Missed { aligned_pos, .. } => Some(aligned_pos),
-            })
-            .cloned()
-            .collect::<Positions>();
-
-        let reader = self.get_or_create_reader(entry.metadata.tablet_id).await?;
-        let incoming = reader.read_many(positions).await?;
-        let cache = self.read_cache.clone();
-
-        let (tx, body) = Body::channel();
-        tokio::spawn(interleave_cached_and_uncached_results(
-            path.to_string(),
-            cache,
-            parts,
-            incoming,
-            tx,
-        ));
-
-        statistics.schedule_time = schedule_start.elapsed();
-
-        Ok(S::wrap(body, statistics))
+        self.reader.read_range::<S, _>(path, range).await
     }
 
     #[instrument(skip(self, body))]
@@ -440,7 +330,7 @@ where
 
         statistics.io_bytes += response.bytes_written;
 
-        self.evict_path_from_cache(path, &mut statistics);
+        self.reader.evict_path_from_cache(path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
@@ -472,7 +362,7 @@ where
 
         statistics.io_bytes += response.bytes_written;
 
-        self.evict_path_from_cache(path, &mut statistics);
+        self.reader.evict_path_from_cache(path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
@@ -511,8 +401,9 @@ where
         statistics.io_bytes += response.bytes_written;
 
         // TODO: Maybe we can be smarter about renames?
-        self.evict_path_from_cache(from_path, &mut statistics);
-        self.evict_path_from_cache(to_path, &mut statistics);
+        self.reader
+            .evict_path_from_cache(from_path, &mut statistics);
+        self.reader.evict_path_from_cache(to_path, &mut statistics);
 
         let mut bulk = self.metastore.begin_mutate();
         bulk.add_event(response.tablet_id, response.event);
@@ -560,36 +451,6 @@ where
     ) -> Result<(), MetastoreError> {
         config.store_in_metastore(&self.metastore).await
     }
-
-    async fn get_or_create_reader(
-        &self,
-        tablet_id: TabletId,
-    ) -> Result<TabletReader, FileSystemError> {
-        if let Some(reader) = self.readers.get(&tablet_id) {
-            return Ok(reader);
-        }
-
-        debug!("Reader is not cached, creating new");
-        let options = TabletReaderOptions::builder()
-            .base_path(self.paths.tablets_path.clone())
-            .tablet_id(tablet_id)
-            .maybe_max_concurrent_reads(self.config.max_concurrent_tablet_reads())
-            .build();
-
-        let reader = TabletReader::open(options, self.runtime.clone()).await?;
-        self.readers.insert(tablet_id, reader.clone());
-
-        Ok(reader)
-    }
-
-    fn evict_path_from_cache(&self, path: &str, statistics: &mut WriteStatistics) {
-        if let Some(old) = self.metastore.get_file(path) {
-            let (num_entries, num_bytes) =
-                self.read_cache.evict(&old.path, 0..old.metadata.size());
-            statistics.cache_evictions += num_entries;
-            statistics.evicted_bytes += num_bytes;
-        }
-    }
 }
 
 async fn setup_tablet_writer(
@@ -616,57 +477,6 @@ async fn setup_tablet_writer(
     let writer = TabletWriter::new(writer_options, runtime);
 
     Ok(writer)
-}
-
-/// Interleaves the cached chunks of the file with the read results from the incoming
-/// IO stream while maintaining the order of results.
-async fn interleave_cached_and_uncached_results(
-    path: String,
-    cache: FileSystemCache,
-    parts: CacheParts,
-    io_stream: Body,
-    sender: BodySender,
-) {
-    let len = parts.len();
-    let mut cursor = 0;
-    for maybe_cached in parts {
-        cursor += 1;
-
-        let did_send = match maybe_cached {
-            MaybeCached::Hit(chunk) => sender.send(chunk).await,
-            MaybeCached::Missed {
-                true_pos,
-                aligned_pos,
-            } => {
-                let chunk = io_stream.next().await.and_then(|maybe_chunk| {
-                    maybe_chunk.ok_or_else(|| {
-                        io::Error::new(
-                            ErrorKind::Interrupted,
-                            "File reader finished before returning all expected chunks",
-                        )
-                    })
-                });
-
-                match chunk {
-                    Err(e) => {
-                        sender.error(e).await;
-                        return;
-                    },
-                    Ok(chunk) => {
-                        dbg!(&path, &aligned_pos);
-                        cache.insert(&path, aligned_pos, chunk.clone(), cursor == len);
-                        sender.send(chunk.slice(true_pos)).await
-                    },
-                }
-            },
-        };
-
-        if !did_send {
-            return;
-        }
-    }
-
-    sender.finish().await;
 }
 
 pub(super) fn validate_path(path: &str) -> Result<(), FileSystemError> {

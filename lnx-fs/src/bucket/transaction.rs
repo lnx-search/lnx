@@ -177,6 +177,7 @@ where
 
         for path in self.pending_cache_evictions {
             self.bucket
+                .reader
                 .evict_path_from_cache(&path, &mut self.statistics);
         }
 

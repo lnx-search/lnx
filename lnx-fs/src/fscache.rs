@@ -119,9 +119,9 @@ impl FileSystemCache {
                 },
             }
         }
-    
+
         dbg!(&parts);
-        
+
         parts
     }
 
@@ -167,7 +167,7 @@ impl FileSystemCache {
         }
 
         dbg!(&self.cache);
-        
+
         true
     }
 
