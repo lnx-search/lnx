@@ -30,6 +30,7 @@ impl BucketPaths {
         format!("sqlite:{}", self.metastore_path.display())
     }
 
+    // TODO: This sucks, we should change it
     pub(super) fn guess_bucket_name(&self) -> String {
         if let Some(dir) = self.base_path.file_name() {
             dir.to_string_lossy().to_string()
@@ -80,5 +81,54 @@ impl BucketPaths {
         std::fs::create_dir(self.base_path.as_path())?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paths_ensure_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("inner");
+
+        let paths = BucketPaths::from_base(target);
+
+        assert!(!paths.base_path.exists());
+        paths.ensure_bucket_path_exists().unwrap();
+        assert!(paths.base_path.exists());
+        paths.ensure_bucket_path_exists().unwrap();
+
+        assert!(!paths.tablets_path.exists());
+        paths.ensure_tablets_path_exists().unwrap();
+        assert!(paths.tablets_path.exists());
+        paths.ensure_tablets_path_exists().unwrap();
+
+        assert!(!paths.metastore_path.exists());
+        paths.ensure_metastore_file_exists().unwrap();
+        assert!(paths.metastore_path.exists());
+        paths.ensure_metastore_file_exists().unwrap();
+
+        assert!(!paths.tablet_metadata_path.exists());
+        paths.ensure_tablets_metadata_path_exists().unwrap();
+        assert!(paths.tablet_metadata_path.exists());
+        paths.ensure_tablets_metadata_path_exists().unwrap();
+    }
+
+    #[test]
+    fn test_paths_guess() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("demo-bucket");
+
+        let paths = BucketPaths::from_base(target);
+        assert_eq!(paths.guess_bucket_name(), "demo-bucket");
+
+        let target = dir.path().join("foo.txt/..");
+        let paths = BucketPaths::from_base(target);
+        assert_eq!(
+            paths.guess_bucket_name(),
+            format!("{}/foo.txt/..", dir.path().display())
+        );
     }
 }

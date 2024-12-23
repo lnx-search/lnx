@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 /// Statistics relating to the read of a file blob.
 pub struct ReadStatistics {
     /// The number of hits on the file cache.
@@ -19,7 +19,7 @@ pub struct ReadStatistics {
     pub schedule_time: Duration,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 /// Statistics relating to the writing of a file blob.
 pub struct WriteStatistics {
     /// The total amount of bytes written.
@@ -97,5 +97,32 @@ where
             .field("inner", &self.inner)
             .field("stats", &self.stats)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write;
+
+    use super::*;
+
+    #[test]
+    fn test_stats_formats() {
+        let stats = WithStats {
+            inner: (),
+            stats: WriteStatistics::default(),
+        };
+        let foo = format!("{stats:?}");
+        assert_eq!(foo, "WithStats { inner: (), stats: WriteStatistics { io_bytes: 0, cache_evictions: 0, evicted_bytes: 0 } }");
+    }
+
+    #[test]
+    fn test_can_deref() {
+        let mut stats = WithStats {
+            inner: String::new(),
+            stats: WriteStatistics::default(),
+        };
+        stats.write_str("Example").unwrap();
+        assert_eq!(*stats, "Example");
     }
 }

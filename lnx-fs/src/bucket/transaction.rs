@@ -204,3 +204,39 @@ where
         self.num_ops_pending += 1;
     }
 }
+
+// Some tests exist in the main bucket mod.rs file and haven't been moved over.
+#[cfg(test)]
+mod tests {
+    use std::env::temp_dir;
+
+    use crate::bucket::BucketCreateOptions;
+    use crate::statistics::WriteStatistics;
+    use crate::{Bucket, RuntimeOptions};
+
+    #[tokio::test]
+    async fn test_zero_ops_commit() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket")
+            .enable_statistics_return();
+
+        let bulk = bucket.begin_tx();
+        assert_eq!(bulk.current_statistics(), &WriteStatistics::default());
+        let stats = bulk
+            .commit()
+            .await
+            .expect("Commit should complete immediately");
+        assert_eq!(stats.stats, WriteStatistics::default());
+    }
+}
