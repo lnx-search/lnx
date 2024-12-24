@@ -188,7 +188,7 @@ impl Bucket<statistics::Off> {
         crate::metastore::recovery::load_metastore_state_from_disk(
             metastore.clone(),
             &paths.tablets_path,
-            &paths.metastore_path,
+            &paths.tablet_metadata_path,
         )
         .await?;
 
