@@ -1,9 +1,9 @@
-use lnx_fs::{Body, Bytes};
-use tantivy::index::{SegmentComponent, SegmentId};
+use lnx_fs::{Body, BulkBucketTx, Bytes};
+use tantivy::index::SegmentComponent;
 use tantivy::indexer::operation::AddOperation;
 use tantivy::indexer::SegmentWriter;
 use tantivy::store::Compressor;
-use tantivy::{Index, IndexSettings, Opstamp, Segment};
+use tantivy::{Index, IndexSettings, Opstamp, Segment, SegmentMeta};
 use tracing::{info, instrument};
 
 use crate::directory::MemoryDirectory;
@@ -32,7 +32,7 @@ pub struct SingleSegmentIndexer {
 
 impl SingleSegmentIndexer {
     /// Creates a new [SingleSegmentIndexer] with the given tantivy schema.
-    pub fn new(schema: tantivy::schema::Schema) -> Self {
+    pub(crate) fn new(schema: tantivy::schema::Schema) -> Self {
         let settings = IndexSettings {
             docstore_compression: Compressor::None, // Compression is handled externally.
             docstore_compress_dedicated_thread: false,
@@ -112,10 +112,11 @@ impl SingleSegmentIndexer {
         let fast_fields = self
             .directory
             .get(&self.segment.relative_path(SegmentComponent::FastFields))?;
-        let segment_id = self.segment.id();
+        let segment_meta = self.segment.meta().clone();
 
         Ok(SegmentMemory {
-            segment_id,
+            segment_meta,
+            num_docs: self.opstamp,
             store,
             terms,
             postings,
@@ -129,7 +130,8 @@ impl SingleSegmentIndexer {
 #[derive(Debug)]
 /// The core data forming a single indexing segment.
 pub struct SegmentMemory {
-    segment_id: SegmentId,
+    pub(crate) segment_meta: SegmentMeta,
+    pub(crate) num_docs: u64,
     store: Bytes,
     terms: Bytes,
     postings: Bytes,
@@ -141,41 +143,40 @@ pub struct SegmentMemory {
 impl SegmentMemory {
     /// Writes the segment memory to the given [lnx_fs::Bucket].
     pub async fn write_to(
-        self,
-        bucket: &lnx_fs::Bucket,
+        &self,
+        path_prefix: &str,
+        tx: &mut BulkBucketTx<'_>,
     ) -> Result<(), lnx_fs::FileSystemError> {
-        let mut bulk = bucket.begin_tx();
-        bulk.write(
-            &format!("{}.store.seg", self.segment_id),
-            Body::complete(self.store),
+        tx.write(
+            &format!("{path_prefix}/{}.store", self.segment_meta.id()),
+            Body::complete(self.store.clone()),
         )
         .await?;
-        bulk.write(
-            &format!("{}.terms.seg", self.segment_id),
-            Body::complete(self.terms),
+        tx.write(
+            &format!("{path_prefix}/{}.term", self.segment_meta.id()),
+            Body::complete(self.terms.clone()),
         )
         .await?;
-        bulk.write(
-            &format!("{}.postings.seg", self.segment_id),
-            Body::complete(self.postings),
+        tx.write(
+            &format!("{path_prefix}/{}.idx", self.segment_meta.id()),
+            Body::complete(self.postings.clone()),
         )
         .await?;
-        bulk.write(
-            &format!("{}.positions.seg", self.segment_id),
-            Body::complete(self.positions),
+        tx.write(
+            &format!("{path_prefix}/{}.pos", self.segment_meta.id()),
+            Body::complete(self.positions.clone()),
         )
         .await?;
-        bulk.write(
-            &format!("{}.norms.seg", self.segment_id),
-            Body::complete(self.field_norms),
+        tx.write(
+            &format!("{path_prefix}/{}.fieldnorm", self.segment_meta.id()),
+            Body::complete(self.field_norms.clone()),
         )
         .await?;
-        bulk.write(
-            &format!("{}.columnar.seg", self.segment_id),
-            Body::complete(self.fast_fields),
+        tx.write(
+            &format!("{path_prefix}/{}.fast", self.segment_meta.id()),
+            Body::complete(self.fast_fields.clone()),
         )
         .await?;
-        bulk.commit().await?;
         Ok(())
     }
 }
@@ -296,9 +297,11 @@ mod tests {
         let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let memory = indexer.finish().expect("Indexing finish");
+        let mut tx = bucket.begin_tx();
         memory
-            .write_to(&bucket)
+            .write_to("test", &mut tx)
             .await
             .expect("Write segment to bucket");
+        tx.commit().await.unwrap();
     }
 }

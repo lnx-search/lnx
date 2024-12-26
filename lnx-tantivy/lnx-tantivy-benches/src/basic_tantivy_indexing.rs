@@ -38,17 +38,22 @@ pub async fn main() -> Result<()> {
     for &commit_every_n in COMMIT_EVERY_N_DOCS {
         info!(commit_every_n = commit_every_n, "starting run");
 
-        let temp_dir = tempfile::TempDir::new_in("./scratch_space/blocking")?;
+        let path = format!("./scratch_space/blocking/run_commit_every_{commit_every_n}");
+        let _ = tokio::fs::remove_dir_all(&path).await;
+        tokio::fs::create_dir_all(&path)
+            .await
+            .context("Create dir")?;
+
         let schema = schema.clone();
         let docs = docs.clone();
 
-        let directory = MmapDirectory::open(temp_dir.path())?;
+        let directory = MmapDirectory::open(&path)?;
         let index = Index::create(directory, schema, IndexSettings::default())
             .context("Create index")?;
 
         let mut writer: tantivy::IndexWriter =
             index.writer_with_num_threads(NUM_THREADS, INDEXER_MEMORY_ALLOWANCE)?;
-        writer.set_merge_policy(Box::new(NoMergePolicy));
+        //writer.set_merge_policy(Box::new(NoMergePolicy));
 
         let start = Instant::now();
         tokio::task::spawn_blocking(move || {
@@ -64,6 +69,7 @@ pub async fn main() -> Result<()> {
                 }
             }
             writer.commit()?;
+            writer.wait_merging_threads()?;
 
             Ok::<_, anyhow::Error>(())
         })

@@ -108,7 +108,7 @@ async fn indexer_task(
         })
         .await??;
 
-        segment.write_to(&bucket).await?;
+        segment.write_to("test", &bucket).await?;
     }
 
     Ok(())

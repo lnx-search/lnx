@@ -4,7 +4,7 @@ use lnx_fs::{Body, RuntimeOptions, VirtualFileSystem};
 #[tokio::test]
 async fn test_storage_is_persisted() {
     let dir = tempfile::TempDir::new().unwrap();
-    
+
     let rt_options = RuntimeOptions::builder().num_threads(1).build();
     let vfs = VirtualFileSystem::mount(dir.path().to_path_buf(), rt_options)
         .await
@@ -26,7 +26,7 @@ async fn test_storage_is_persisted() {
     assert_eq!(result.stats.cache_evictions, 0);
     assert_eq!(result.stats.io_bytes, 72);
     assert_eq!(result.stats.evicted_bytes, 0);
-    
+
     drop(bucket);
     drop(vfs);
 
@@ -39,7 +39,7 @@ async fn test_storage_is_persisted() {
         .bucket("test")
         .expect("Get existing bucket")
         .enable_statistics_return();
-    
+
     let body = bucket
         .read("example.txt")
         .await

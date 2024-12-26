@@ -29,7 +29,7 @@ async fn test_storage_metadata_recovered() {
 
     drop(bucket);
     drop(vfs);
-    
+
     // Removes the existing metadata checkpoints to make sure the system can recover
     // without the files existing.
     std::fs::remove_dir_all(dir.path().join("test").join("tablet_metadata"))

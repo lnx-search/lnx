@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 use std::mem;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -18,6 +17,8 @@ use tantivy::directory::{
     WatchHandle,
     WritePtr,
 };
+
+use crate::directory::BytesWrapper;
 
 type State = Arc<Mutex<BTreeMap<PathBuf, Bytes>>>;
 
@@ -123,16 +124,3 @@ impl TerminatingWrite for MemoryWriter {
         Ok(())
     }
 }
-
-struct BytesWrapper(Bytes);
-
-impl Deref for BytesWrapper {
-    type Target = [u8];
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref()
-    }
-}
-
-unsafe impl stable_deref_trait::StableDeref for BytesWrapper {}

@@ -10,6 +10,10 @@ tracing = { workspace = true }
 parking_lot = { workspace = true }
 bytes = { workspace = true }
 stable_deref_trait = { workspace = true }
+futures-lite = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
 
 lnx-doc = { path = "../lnx-doc" }
 lnx-fs = { path = "../lnx-fs" }
@@ -17,4 +21,6 @@ lnx-fs = { path = "../lnx-fs" }
 [dev-dependencies]
 tokio = { workspace = true }
 ulid = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 lnx-fs = { path = "../lnx-fs", features = ["test-utils"] }
