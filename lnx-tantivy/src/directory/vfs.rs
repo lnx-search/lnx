@@ -1,9 +1,9 @@
 use std::fmt::{Debug, Formatter};
+use std::io;
 use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
-use std::io;
 
 use bytes::Bytes;
 use lnx_fs::{Body, Bucket, FileMetadata, FileSystemError};
@@ -330,7 +330,7 @@ mod tests {
             .expect("Get file handle");
         let contents = handle.read_bytes_async(1..12).await.unwrap();
         assert_eq!(contents.as_slice(), b"ello, world");
-        
+
         tokio::task::spawn_blocking(move || {
             let slice = dir
                 .open_read(Path::new("sample.txt"))
@@ -347,6 +347,8 @@ mod tests {
                 .expect("Get file handle");
             let contents = handle.read_bytes(1..12).unwrap();
             assert_eq!(contents.as_slice(), b"ello, world");
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 }

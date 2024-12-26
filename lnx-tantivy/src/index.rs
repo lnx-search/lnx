@@ -103,7 +103,7 @@ impl LnxIndex {
             if tantivy::Index::exists(&dir).unwrap_or(false) {
                 return Err(IndexError::Tantivy(TantivyError::IndexAlreadyExists));
             }
-            
+
             let index = tantivy::Index::create(dir, schema, settings)?;
             let reader = index
                 .reader_builder()
@@ -146,7 +146,6 @@ impl LnxIndex {
         state_copy.opstamp += segment.num_docs;
         state_copy.segments.push(segment.segment_meta.clone());
 
-        
         let serialized = serde_json::to_vec(&state_copy)?;
         let meta_path = self.prefix_with_name("meta.json");
         bulk.write(&meta_path, Body::complete(Bytes::from(serialized)))
@@ -156,7 +155,7 @@ impl LnxIndex {
         // Now all the fallible IO has completed we can update the memory state.
         *state = state_copy;
         drop(state);
-        
+
         Ok(())
     }
 
@@ -177,12 +176,12 @@ impl LnxIndex {
     pub fn reader(&self) -> &tantivy::IndexReader {
         &self.reader
     }
-    
+
     pub async fn meta(&self) -> IndexMeta {
         let index = self.index.clone();
-        tokio::task::spawn_blocking(move || {
-            index.load_metas().unwrap()
-        }).await.expect("Reader reload task panicked")
+        tokio::task::spawn_blocking(move || index.load_metas().unwrap())
+            .await
+            .expect("Reader reload task panicked")
     }
 
     /// Reload the index readers to see new segments.
@@ -192,7 +191,9 @@ impl LnxIndex {
             if let Err(e) = reader.reload() {
                 warn!(error = ?e, "Failed to reload reader due to error");
             }
-        }).await.expect("Reader reload task panicked")
+        })
+        .await
+        .expect("Reader reload task panicked")
     }
 
     #[inline]
@@ -233,7 +234,7 @@ mod tests {
             .await
             .expect("Create new index");
     }
-    
+
     #[tokio::test]
     async fn test_index_create_already_exists() {
         let _ = tracing_subscriber::fmt::try_init();
@@ -254,9 +255,12 @@ mod tests {
         let error = LnxIndex::create("test", bucket.clone(), schema.clone())
             .await
             .expect_err("index already exists and should error");
-        assert!(matches!(error, IndexError::Tantivy(TantivyError::IndexAlreadyExists)));
+        assert!(matches!(
+            error,
+            IndexError::Tantivy(TantivyError::IndexAlreadyExists)
+        ));
     }
-    
+
     #[tokio::test]
     async fn test_open_existing_index() {
         let _ = tracing_subscriber::fmt::try_init();
@@ -277,6 +281,10 @@ mod tests {
         let index = LnxIndex::open("test", bucket)
             .await
             .expect("Open existing index");
-        assert_eq!(index.index.schema(), original_schema, "Schemas do not match");
+        assert_eq!(
+            index.index.schema(),
+            original_schema,
+            "Schemas do not match"
+        );
     }
 }

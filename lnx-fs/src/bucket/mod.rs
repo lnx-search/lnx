@@ -878,7 +878,7 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "example1.txt");
     }
-    
+
     #[tokio::test]
     async fn test_bucket_read_range_adjust_relative_pos_to_absolute() {
         let rt_options = RuntimeOptions::builder().num_threads(1).build();

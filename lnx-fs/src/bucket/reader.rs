@@ -139,9 +139,11 @@ impl BucketReader {
             .iter()
             .filter_map(|maybe_cached| match maybe_cached {
                 MaybeCached::Hit(_) => None,
-                MaybeCached::Missed { aligned_pos, .. } => { 
-                    let absolute_aligned_start = entry.metadata.position.start + aligned_pos.start;
-                    let absolute_aligned_end = entry.metadata.position.start + aligned_pos.end;
+                MaybeCached::Missed { aligned_pos, .. } => {
+                    let absolute_aligned_start =
+                        entry.metadata.position.start + aligned_pos.start;
+                    let absolute_aligned_end =
+                        entry.metadata.position.start + aligned_pos.end;
                     Some(absolute_aligned_start..absolute_aligned_end)
                 },
             })

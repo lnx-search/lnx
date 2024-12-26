@@ -113,10 +113,8 @@ impl SingleSegmentIndexer {
         let fast_fields = self
             .directory
             .get(&self.segment.relative_path(SegmentComponent::FastFields))?;
-        let segment_meta = self.segment.meta()
-            .clone()
-            .with_max_doc(max_doc);
-        
+        let segment_meta = self.segment.meta().clone().with_max_doc(max_doc);
+
         Ok(SegmentMemory {
             segment_meta,
             num_docs: self.opstamp,
