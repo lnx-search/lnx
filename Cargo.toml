@@ -10,7 +10,6 @@ members = [
     "lnx-shell",
     "lnx-doc",
     "lnx-tantivy",
-    "lnx-tantivy/lnx-tantivy-benches",
 ]
 
 [workspace.dependencies]

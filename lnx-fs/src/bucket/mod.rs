@@ -878,4 +878,40 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "example1.txt");
     }
+    
+    #[tokio::test]
+    async fn test_bucket_read_range_adjust_relative_pos_to_absolute() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dispatch = crate::io::create_io_runtime(rt_options).unwrap();
+
+        let bucket_name = ulid::Ulid::new().to_string();
+
+        let options = BucketCreateOptions::builder()
+            .bucket_path(temp_dir().join(&bucket_name))
+            .name(bucket_name.clone())
+            .build();
+
+        let bucket = Bucket::create(options, dispatch.clone())
+            .await
+            .expect("Create bucket");
+
+        let body = Body::complete(Bytes::from_static(b"Hello, World!"));
+        bucket.write("example.txt", body).await.expect("Write file");
+        let body = Body::complete(Bytes::from_static(b"Hello, World other test!"));
+        bucket.write("example.txt", body).await.expect("Write file");
+
+        let body = bucket
+            .read_range("example.txt", ..)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read all content");
+        assert_eq!(data.as_ref(), b"Hello, World other test!");
+
+        let body = bucket
+            .read_range("example.txt", ..12)
+            .await
+            .expect("Read file");
+        let data = body.collect().await.expect("Read content");
+        assert_eq!(data.as_ref(), b"Hello, World");
+    }
 }

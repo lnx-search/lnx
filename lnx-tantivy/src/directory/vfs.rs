@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
-use std::{io, mem};
+use std::io;
 
 use bytes::Bytes;
 use lnx_fs::{Body, Bucket, FileMetadata, FileSystemError};
@@ -325,22 +325,28 @@ mod tests {
         let contents = slice.read_bytes_async().await.expect("Read all bytes");
         assert_eq!(contents.as_slice(), b"Hello, world");
 
-        let slice = dir
-            .open_read(Path::new("sample.txt"))
-            .expect("Open read correctly");
-        let contents = slice.read_bytes().expect("Read all bytes");
-        assert_eq!(contents.as_slice(), b"Hello, world!");
-
-        let slice = slice.slice(..12);
-        let contents = slice.read_bytes().expect("Read all bytes");
-        assert_eq!(contents.as_slice(), b"Hello, world");
-
         let handle = dir
             .get_file_handle(Path::new("sample.txt"))
             .expect("Get file handle");
-        let contents = handle.read_bytes(1..12).unwrap();
-        assert_eq!(contents.as_slice(), b"ello, world");
         let contents = handle.read_bytes_async(1..12).await.unwrap();
         assert_eq!(contents.as_slice(), b"ello, world");
+        
+        tokio::task::spawn_blocking(move || {
+            let slice = dir
+                .open_read(Path::new("sample.txt"))
+                .expect("Open read correctly");
+            let contents = slice.read_bytes().expect("Read all bytes");
+            assert_eq!(contents.as_slice(), b"Hello, world!");
+
+            let slice = slice.slice(..12);
+            let contents = slice.read_bytes().expect("Read all bytes");
+            assert_eq!(contents.as_slice(), b"Hello, world");
+
+            let handle = dir
+                .get_file_handle(Path::new("sample.txt"))
+                .expect("Get file handle");
+            let contents = handle.read_bytes(1..12).unwrap();
+            assert_eq!(contents.as_slice(), b"ello, world");
+        }).await.unwrap();
     }
 }

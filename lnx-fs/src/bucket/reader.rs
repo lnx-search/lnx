@@ -137,11 +137,14 @@ impl BucketReader {
 
         let positions = parts
             .iter()
-            .filter_map(|entry| match entry {
+            .filter_map(|maybe_cached| match maybe_cached {
                 MaybeCached::Hit(_) => None,
-                MaybeCached::Missed { aligned_pos, .. } => Some(aligned_pos),
+                MaybeCached::Missed { aligned_pos, .. } => { 
+                    let absolute_aligned_start = entry.metadata.position.start + aligned_pos.start;
+                    let absolute_aligned_end = entry.metadata.position.start + aligned_pos.end;
+                    Some(absolute_aligned_start..absolute_aligned_end)
+                },
             })
-            .cloned()
             .collect::<Positions>();
 
         let reader = self.get_or_create_reader(entry.metadata.tablet_id).await?;

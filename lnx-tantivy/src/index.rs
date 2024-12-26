@@ -1,10 +1,11 @@
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use bytes::Bytes;
 use lnx_fs::{Body, Bucket};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
-use tantivy::{IndexSettings, ReloadPolicy};
+use tantivy::{IndexMeta, IndexSettings, ReloadPolicy, TantivyError};
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -35,6 +36,15 @@ pub struct LnxIndex {
     index: tantivy::Index,
     reader: tantivy::IndexReader,
     inner_state: Arc<Mutex<tantivy::IndexMeta>>,
+}
+
+impl Debug for LnxIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LnxIndex")
+            .field("index_name", &self.index_name)
+            .field("schema", &self.index.schema())
+            .finish()
+    }
 }
 
 impl LnxIndex {
@@ -90,6 +100,10 @@ impl LnxIndex {
         };
 
         let (index, reader, meta) = tokio::task::spawn_blocking(move || {
+            if tantivy::Index::exists(&dir).unwrap_or(false) {
+                return Err(IndexError::Tantivy(TantivyError::IndexAlreadyExists));
+            }
+            
             let index = tantivy::Index::create(dir, schema, settings)?;
             let reader = index
                 .reader_builder()
@@ -132,6 +146,7 @@ impl LnxIndex {
         state_copy.opstamp += segment.num_docs;
         state_copy.segments.push(segment.segment_meta.clone());
 
+        
         let serialized = serde_json::to_vec(&state_copy)?;
         let meta_path = self.prefix_with_name("meta.json");
         bulk.write(&meta_path, Body::complete(Bytes::from(serialized)))
@@ -141,22 +156,46 @@ impl LnxIndex {
         // Now all the fallible IO has completed we can update the memory state.
         *state = state_copy;
         drop(state);
-
+        
         Ok(())
     }
 
+    #[inline]
+    /// The name of the index.
+    pub fn name(&self) -> &str {
+        &self.index_name
+    }
+
+    #[inline]
+    /// The [Schema] of the index.
+    pub fn schema(&self) -> Schema {
+        self.index.schema()
+    }
+
+    #[inline]
     /// Returns a reference to the live index reader.
     pub fn reader(&self) -> &tantivy::IndexReader {
         &self.reader
     }
-
-    /// Reload the index readers to see new segments.
-    pub fn reload_readers(&self) {
-        if let Err(e) = self.reader.reload() {
-            warn!(error = ?e, "Failed to reload reader due to error");
-        }
+    
+    pub async fn meta(&self) -> IndexMeta {
+        let index = self.index.clone();
+        tokio::task::spawn_blocking(move || {
+            index.load_metas().unwrap()
+        }).await.expect("Reader reload task panicked")
     }
 
+    /// Reload the index readers to see new segments.
+    pub async fn reload_readers(&self) {
+        let reader = self.reader.clone();
+        tokio::task::spawn_blocking(move || {
+            if let Err(e) = reader.reload() {
+                warn!(error = ?e, "Failed to reload reader due to error");
+            }
+        }).await.expect("Reader reload task panicked")
+    }
+
+    #[inline]
     /// Creates a new single segment indexer.
     pub fn new_indexer(&self) -> crate::indexer::SingleSegmentIndexer {
         crate::indexer::SingleSegmentIndexer::new(self.index.schema())
@@ -193,5 +232,51 @@ mod tests {
         let _index = LnxIndex::create("test", bucket, schema)
             .await
             .expect("Create new index");
+    }
+    
+    #[tokio::test]
+    async fn test_index_create_already_exists() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let mut schema_builder = SchemaBuilder::new();
+        schema_builder.add_text_field("name", TEXT | STORED);
+        schema_builder.add_u64_field("id", STORED | FAST);
+        let schema = schema_builder.build();
+
+        let (vfs, _guard) = VirtualFileSystem::create_for_test().await.unwrap();
+        let bucket = vfs.create_bucket("test").await.unwrap();
+
+        let index = LnxIndex::create("test", bucket.clone(), schema.clone())
+            .await
+            .expect("Create new index");
+        drop(index);
+
+        let error = LnxIndex::create("test", bucket.clone(), schema.clone())
+            .await
+            .expect_err("index already exists and should error");
+        assert!(matches!(error, IndexError::Tantivy(TantivyError::IndexAlreadyExists)));
+    }
+    
+    #[tokio::test]
+    async fn test_open_existing_index() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let mut schema_builder = SchemaBuilder::new();
+        schema_builder.add_text_field("name", TEXT | STORED);
+        schema_builder.add_u64_field("id", STORED | FAST);
+        let original_schema = schema_builder.build();
+
+        let (vfs, _guard) = VirtualFileSystem::create_for_test().await.unwrap();
+        let bucket = vfs.create_bucket("test").await.unwrap();
+
+        let index = LnxIndex::create("test", bucket.clone(), original_schema.clone())
+            .await
+            .expect("Create new index");
+        drop(index);
+
+        let index = LnxIndex::open("test", bucket)
+            .await
+            .expect("Open existing index");
+        assert_eq!(index.index.schema(), original_schema, "Schemas do not match");
     }
 }

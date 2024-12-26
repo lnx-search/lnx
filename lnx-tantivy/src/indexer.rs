@@ -91,6 +91,7 @@ impl SingleSegmentIndexer {
             "indexing segment finalising",
         );
 
+        let max_doc = self.segment_writer.max_doc();
         self.segment_writer.finalize()?;
 
         // Segment data should now be available to read.
@@ -112,8 +113,10 @@ impl SingleSegmentIndexer {
         let fast_fields = self
             .directory
             .get(&self.segment.relative_path(SegmentComponent::FastFields))?;
-        let segment_meta = self.segment.meta().clone();
-
+        let segment_meta = self.segment.meta()
+            .clone()
+            .with_max_doc(max_doc);
+        
         Ok(SegmentMemory {
             segment_meta,
             num_docs: self.opstamp,
@@ -147,33 +150,34 @@ impl SegmentMemory {
         path_prefix: &str,
         tx: &mut BulkBucketTx<'_>,
     ) -> Result<(), lnx_fs::FileSystemError> {
+        let segment_id = self.segment_meta.id().uuid_string();
         tx.write(
-            &format!("{path_prefix}/{}.store", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.store"),
             Body::complete(self.store.clone()),
         )
         .await?;
         tx.write(
-            &format!("{path_prefix}/{}.term", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.term"),
             Body::complete(self.terms.clone()),
         )
         .await?;
         tx.write(
-            &format!("{path_prefix}/{}.idx", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.idx"),
             Body::complete(self.postings.clone()),
         )
         .await?;
         tx.write(
-            &format!("{path_prefix}/{}.pos", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.pos"),
             Body::complete(self.positions.clone()),
         )
         .await?;
         tx.write(
-            &format!("{path_prefix}/{}.fieldnorm", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.fieldnorm"),
             Body::complete(self.field_norms.clone()),
         )
         .await?;
         tx.write(
-            &format!("{path_prefix}/{}.fast", self.segment_meta.id()),
+            &format!("{path_prefix}/{segment_id}.fast"),
             Body::complete(self.fast_fields.clone()),
         )
         .await?;
