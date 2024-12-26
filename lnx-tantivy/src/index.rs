@@ -1,13 +1,14 @@
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-
+use std::time::Instant;
 use bytes::Bytes;
 use lnx_fs::{Body, Bucket};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
-use tantivy::{IndexMeta, IndexSettings, ReloadPolicy, TantivyError};
+use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy, Segment, TantivyError};
+use tantivy::indexer::{DefaultMergePolicy, LogMergePolicy, SegmentEntry, Stamper};
 use tokio::sync::Mutex;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::directory::VFSDirectory;
 use crate::indexer::SegmentMemory;
@@ -35,7 +36,8 @@ pub struct LnxIndex {
     bucket: Bucket,
     index: tantivy::Index,
     reader: tantivy::IndexReader,
-    inner_state: Arc<Mutex<tantivy::IndexMeta>>,
+    stamper: Stamper,
+    writer: Arc<Mutex<IndexWriter>>,
 }
 
 impl Debug for LnxIndex {
@@ -57,16 +59,18 @@ impl LnxIndex {
         let base_path = format!("indexes/{index_name}");
         let dir = VFSDirectory::new(&base_path, bucket.clone());
 
-        let (index, reader, meta) = tokio::task::spawn_blocking(move || {
+        let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
             let index = tantivy::Index::open(dir)?;
             let reader = index
                 .reader_builder()
                 .reload_policy(ReloadPolicy::Manual)
                 .doc_store_cache_num_blocks(0)
                 .try_into()?;
-            let meta = index.load_metas()?;
 
-            Ok::<_, IndexError>((index, reader, meta))
+            let meta = index.load_metas()?;
+            let writer = index.writer_with_num_threads(1, 15 << 20)?;
+
+            Ok::<_, IndexError>((index, reader, meta, writer))
         })
         .await
         .expect("Join background thread")?;
@@ -76,7 +80,8 @@ impl LnxIndex {
             bucket,
             index,
             reader,
-            inner_state: Arc::new(Mutex::new(meta)),
+            stamper: Stamper::new(meta.opstamp),
+            writer: Arc::new(Mutex::new(writer)),
         })
     }
 
@@ -96,10 +101,10 @@ impl LnxIndex {
         let settings = IndexSettings {
             docstore_compression: Compressor::None,
             docstore_compress_dedicated_thread: false,
-            docstore_blocksize: 31 << 10,
+            docstore_blocksize: 128,
         };
 
-        let (index, reader, meta) = tokio::task::spawn_blocking(move || {
+        let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
             if tantivy::Index::exists(&dir).unwrap_or(false) {
                 return Err(IndexError::Tantivy(TantivyError::IndexAlreadyExists));
             }
@@ -110,9 +115,11 @@ impl LnxIndex {
                 .reload_policy(ReloadPolicy::Manual)
                 .doc_store_cache_num_blocks(0)
                 .try_into()?;
-            let meta = index.load_metas()?;
 
-            Ok::<_, IndexError>((index, reader, meta))
+            let meta = index.load_metas()?;
+            let writer = index.writer_with_num_threads(1, 15 << 20)?;
+
+            Ok::<_, IndexError>((index, reader, meta, writer))
         })
         .await
         .expect("Join background thread")?;
@@ -122,7 +129,8 @@ impl LnxIndex {
             bucket,
             index,
             reader,
-            inner_state: Arc::new(Mutex::new(meta)),
+            stamper: Stamper::new(meta.opstamp),
+            writer: Arc::new(Mutex::new(writer)),
         })
     }
 
@@ -135,26 +143,12 @@ impl LnxIndex {
 
         let mut bulk = self.bucket.begin_tx();
         segment.write_to(&prefix, &mut bulk).await?;
-
-        // Important: This must be acquired before the commit stages to prevent
-        //            multiple things trying to commit and update the state file at the
-        //            same time.
-        let mut state = self.inner_state.lock().await;
-
-        // We create a copy so if we run into an error we don't have any partial state.
-        let mut state_copy = state.clone();
-        state_copy.opstamp += segment.num_docs;
-        state_copy.segments.push(segment.segment_meta.clone());
-
-        let serialized = serde_json::to_vec(&state_copy)?;
-        let meta_path = self.prefix_with_name("meta.json");
-        bulk.write(&meta_path, Body::complete(Bytes::from(serialized)))
-            .await?;
         bulk.commit().await?;
 
-        // Now all the fallible IO has completed we can update the memory state.
-        *state = state_copy;
-        drop(state);
+        let mut lock = self.writer.lock().await;
+        lock.add_segment(segment.segment_meta).await?;
+        let prepared = lock.prepare_commit()?;
+        prepared.commit_future().await?;
 
         Ok(())
     }
@@ -198,18 +192,17 @@ impl LnxIndex {
 
     #[inline]
     /// Creates a new single segment indexer.
-    pub fn new_indexer(&self) -> crate::indexer::SingleSegmentIndexer {
-        crate::indexer::SingleSegmentIndexer::new(self.index.schema())
+    pub fn new_indexer(&self, num_docs: u64) -> crate::indexer::SingleSegmentIndexer {
+        let range = self.stamper.stamps(num_docs);
+        crate::indexer::SingleSegmentIndexer::new(self.index.schema(), range)
     }
 
     fn prefix(&self) -> String {
         format!("indexes/{}", self.index_name)
     }
-
-    fn prefix_with_name(&self, name: &str) -> String {
-        format!("indexes/{}/{name}", self.index_name)
-    }
 }
+
+
 
 #[cfg(test)]
 mod tests {

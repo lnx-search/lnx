@@ -33,7 +33,7 @@ async fn test_full_indexing_flow() {
     let result = searcher.search(&query, &Count).expect("Search index");
     assert_eq!(result, 0);
 
-    let mut indexer = index.new_indexer();
+    let mut indexer = index.new_indexer(1);
     indexer
         .add_document(doc!(
            id => 123u64,

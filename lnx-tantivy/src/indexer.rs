@@ -1,3 +1,4 @@
+use std::ops::Range;
 use lnx_fs::{Body, BulkBucketTx, Bytes};
 use tantivy::index::SegmentComponent;
 use tantivy::indexer::operation::AddOperation;
@@ -27,12 +28,13 @@ pub struct SingleSegmentIndexer {
     segment: Segment,
     segment_writer: SegmentWriter,
     directory: MemoryDirectory,
-    opstamp: Opstamp,
+    stamps: Range<Opstamp>,
+    stamp_offset: Opstamp,
 }
 
 impl SingleSegmentIndexer {
     /// Creates a new [SingleSegmentIndexer] with the given tantivy schema.
-    pub(crate) fn new(schema: tantivy::schema::Schema) -> Self {
+    pub(crate) fn new(schema: tantivy::schema::Schema, stamps: Range<Opstamp>) -> Self {
         let settings = IndexSettings {
             docstore_compression: Compressor::None, // Compression is handled externally.
             docstore_compress_dedicated_thread: false,
@@ -55,7 +57,8 @@ impl SingleSegmentIndexer {
             directory,
             segment,
             segment_writer,
-            opstamp: 0,
+            stamp_offset: stamps.start,
+            stamps,
         }
     }
 
@@ -64,11 +67,12 @@ impl SingleSegmentIndexer {
         &mut self,
         doc: tantivy::TantivyDocument,
     ) -> tantivy::Result<()> {
-        self.opstamp += 1;
+        assert!(self.stamp_offset < self.stamps.end);
         let op = AddOperation {
-            opstamp: self.opstamp,
+            opstamp: self.stamp_offset,
             document: doc,
         };
+        self.stamp_offset += 1;
         self.segment_writer.add_document(op)
     }
 
@@ -117,7 +121,6 @@ impl SingleSegmentIndexer {
 
         Ok(SegmentMemory {
             segment_meta,
-            num_docs: self.opstamp,
             store,
             terms,
             postings,
@@ -132,7 +135,6 @@ impl SingleSegmentIndexer {
 /// The core data forming a single indexing segment.
 pub struct SegmentMemory {
     pub(crate) segment_meta: SegmentMeta,
-    pub(crate) num_docs: u64,
     store: Bytes,
     terms: Bytes,
     postings: Bytes,
@@ -187,6 +189,7 @@ impl SegmentMemory {
 mod tests {
     use lnx_fs::VirtualFileSystem;
     use tantivy::doc;
+    use tantivy::indexer::Stamper;
     use tantivy::schema::{
         IndexRecordOption,
         Schema,
@@ -213,7 +216,8 @@ mod tests {
             text_field => "Example text with the document here"
         );
 
-        let mut indexer = SingleSegmentIndexer::new(schema);
+        let stamper = Stamper::new(0);
+        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -233,7 +237,8 @@ mod tests {
             text_field => "Example text with the document here",
         );
 
-        let mut indexer = SingleSegmentIndexer::new(schema);
+        let stamper = Stamper::new(0);
+        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -248,7 +253,8 @@ mod tests {
             fast_field => 123u64,
         );
 
-        let mut indexer = SingleSegmentIndexer::new(schema);
+        let stamper = Stamper::new(0);
+        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -270,7 +276,8 @@ mod tests {
             text_field => "Example text with the document here",
         );
 
-        let mut indexer = SingleSegmentIndexer::new(schema);
+        let stamper = Stamper::new(0);
+        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -296,7 +303,8 @@ mod tests {
             text_field => "Example text with the document here"
         );
 
-        let mut indexer = SingleSegmentIndexer::new(schema);
+        let stamper = Stamper::new(0);
+        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
         indexer.add_document(doc).expect("Index document");
         let memory = indexer.finish().expect("Indexing finish");
         let mut tx = bucket.begin_tx();
