@@ -34,13 +34,17 @@ impl SingleSegmentIndexer {
     /// Creates a new [SingleSegmentIndexer] with the given tantivy schema.
     pub(crate) fn new(schema: tantivy::schema::Schema) -> Self {
         let settings = IndexSettings {
-            docstore_compression: Compressor::None, // Compression is handled externally.
+            docstore_compression: Compressor::None,
             docstore_compress_dedicated_thread: false,
-            // Smaller blocks because we bypass tantivy's internal cache and the lower
-            // block size increases our external cache granularity and efficiency.
             docstore_blocksize: 128,
         };
+        Self::with_settings(schema, settings)
+    }
 
+    pub(crate) fn with_settings(
+        schema: tantivy::schema::Schema,
+        settings: IndexSettings,
+    ) -> Self {
         let directory = MemoryDirectory::default();
         let index = Index::create(directory.clone(), schema, settings)
             .expect("Index created with memory directory shouldn't error");

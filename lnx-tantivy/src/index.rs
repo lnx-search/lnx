@@ -212,6 +212,18 @@ impl LnxIndex {
         crate::indexer::SingleSegmentIndexer::new(self.index.schema())
     }
 
+    #[inline]
+    /// Creates a new single segment indexer.
+    pub fn new_indexer_with_settings(
+        &self,
+        settings: IndexSettings,
+    ) -> crate::indexer::SingleSegmentIndexer {
+        crate::indexer::SingleSegmentIndexer::with_settings(
+            self.index.schema(),
+            settings,
+        )
+    }
+
     fn prefix(&self) -> String {
         format!("indexes/{}", self.index_name)
     }
