@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use lnx_fs::{Body, Bucket, FileMetadata, FileSystemError};
+use lnx_fs::{Body, BodySender, Bucket, FileMetadata, FileSystemError};
 use tantivy::directory::error::{DeleteError, OpenReadError, OpenWriteError};
 use tantivy::directory::{
     AntiCallToken,
@@ -18,7 +18,7 @@ use tantivy::directory::{
     WritePtr,
 };
 use tantivy::{Directory, HasLen};
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::directory::BytesWrapper;
 
@@ -100,16 +100,22 @@ impl Directory for VFSDirectory {
         if SILENTLY_IGNORE_FILES.contains(&name.as_ref()) {
             return Ok(());
         }
-
-        warn!(path = %path.display(), "Got delete when not allowed");
-        let io_error = io::Error::new(
-            ErrorKind::Other,
-            "Writes are not supported by the VFS directory",
-        );
-        Err(DeleteError::IoError {
-            io_error: Arc::new(io_error),
-            filepath: path.to_path_buf(),
-        })
+        
+        let resolved_path = self.true_path(path);
+        self.handle
+            .block_on(self.bucket.delete(&resolved_path))
+            .map_err(|e| match e {
+                FileSystemError::IoError(e) => DeleteError::IoError { 
+                    io_error: Arc::new(e),
+                    filepath: path.to_path_buf(),
+                },
+                other => DeleteError::IoError {
+                    io_error: Arc::new(io::Error::new(ErrorKind::Other, other)),
+                    filepath: path.to_path_buf(),
+                },
+            })?;
+        
+        Ok(())
     }
 
     #[inline]
@@ -125,15 +131,22 @@ impl Directory for VFSDirectory {
             return Ok(WritePtr::new(Box::new(NoOpWriter)));
         }
 
-        warn!(path = %path.display(), "Got write when not allowed");
-        let io_error = io::Error::new(
-            ErrorKind::Other,
-            "Writes are not supported by the VFS directory",
-        );
-        Err(OpenWriteError::IoError {
-            io_error: Arc::new(io_error),
-            filepath: path.to_path_buf(),
-        })
+        let resolved_path = self.true_path(path);
+        let (tx, body) = Body::channel();
+        
+        let bucket = self.bucket.clone();
+        self.handle.spawn(async move {
+            if let Err(e) = bucket.write(&resolved_path, body).await {
+                error!(error = ?e, "Failed to write data");
+            }
+        });
+        
+        let writer = VFSWriter {
+            sender: tx,
+            handle: self.handle.clone(),
+        };
+        
+        Ok(WritePtr::new(Box::new(writer)))
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
@@ -247,6 +260,30 @@ impl io::Write for NoOpWriter {
 
 impl TerminatingWrite for NoOpWriter {
     fn terminate_ref(&mut self, _: AntiCallToken) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct VFSWriter {
+    sender: BodySender,
+    handle: tokio::runtime::Handle,
+}
+
+impl io::Write for VFSWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let chunk = Bytes::copy_from_slice(buf);
+        self.handle.block_on(self.sender.send(chunk));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl TerminatingWrite for VFSWriter {
+    fn terminate_ref(&mut self, _: AntiCallToken) -> io::Result<()> {
+        self.handle.block_on(self.sender.finish());
         Ok(())
     }
 }
