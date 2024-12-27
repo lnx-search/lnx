@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use lnx_fs::Bucket;
-use tantivy::indexer::Stamper;
+use tantivy::indexer::{IndexWriterOptions, Stamper};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
@@ -57,8 +57,8 @@ impl LnxIndex {
         let index_name = index_name.into();
         let base_path = format!("indexes/{index_name}");
         let dir = VFSDirectory::new(&base_path, bucket.clone());
-
-        let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
+        
+        let (index, reader, meta) = tokio::task::spawn_blocking(move || {
             let index = tantivy::Index::open(dir)?;
             let reader = index
                 .reader_builder()
@@ -67,13 +67,26 @@ impl LnxIndex {
                 .try_into()?;
 
             let meta = index.load_metas()?;
-            let writer = index.writer_with_num_threads(1, 15 << 20)?;
 
-            Ok::<_, IndexError>((index, reader, meta, writer))
+            Ok::<_, IndexError>((index, reader, meta))
         })
         .await
         .expect("Join background thread")?;
 
+        let stamper = Stamper::new(meta.opstamp);
+        let stamper_clone = stamper.clone();
+        let index_clone = index.clone();
+        let writer = tokio::task::spawn_blocking(move || {
+                let options = IndexWriterOptions::builder()
+                    .stamper(stamper_clone)
+                    .defer_indexing_threads(true)
+                    .num_worker_threads(1)
+                    .build();
+                index_clone.writer_with_options(options)
+            })
+            .await
+            .expect("Join background thread")?;
+        
         Ok(Self {
             index_name,
             bucket,
