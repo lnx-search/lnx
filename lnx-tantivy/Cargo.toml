@@ -25,3 +25,6 @@ ulid = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
 lnx-fs = { path = "../lnx-fs", features = ["test-utils"] }
+
+[features]
+tantivy-full = ["tantivy/mmap", "tantivy/lz4-compression", "tantivy/zstd-compression"]
