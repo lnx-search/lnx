@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use lnx_fs::{Body, BulkBucketTx, Bytes};
 use tantivy::index::SegmentComponent;
 use tantivy::indexer::operation::AddOperation;
@@ -29,13 +27,12 @@ pub struct SingleSegmentIndexer {
     segment: Segment,
     segment_writer: SegmentWriter,
     directory: MemoryDirectory,
-    stamps: Range<Opstamp>,
-    stamp_offset: Opstamp,
+    local_stamp: Opstamp,
 }
 
 impl SingleSegmentIndexer {
     /// Creates a new [SingleSegmentIndexer] with the given tantivy schema.
-    pub(crate) fn new(schema: tantivy::schema::Schema, stamps: Range<Opstamp>) -> Self {
+    pub(crate) fn new(schema: tantivy::schema::Schema) -> Self {
         let settings = IndexSettings {
             docstore_compression: Compressor::None, // Compression is handled externally.
             docstore_compress_dedicated_thread: false,
@@ -58,8 +55,7 @@ impl SingleSegmentIndexer {
             directory,
             segment,
             segment_writer,
-            stamp_offset: stamps.start,
-            stamps,
+            local_stamp: 0,
         }
     }
 
@@ -68,12 +64,11 @@ impl SingleSegmentIndexer {
         &mut self,
         doc: tantivy::TantivyDocument,
     ) -> tantivy::Result<()> {
-        assert!(self.stamp_offset < self.stamps.end);
         let op = AddOperation {
-            opstamp: self.stamp_offset,
+            opstamp: self.local_stamp,
             document: doc,
         };
-        self.stamp_offset += 1;
+        self.local_stamp += 1;
         self.segment_writer.add_document(op)
     }
 
@@ -149,7 +144,7 @@ impl SegmentMemory {
     pub fn num_docs(&self) -> usize {
         self.segment_meta.num_docs() as usize
     }
-    
+
     /// Writes the segment memory to the given [lnx_fs::Bucket].
     pub async fn write_to(
         &self,
@@ -195,7 +190,6 @@ impl SegmentMemory {
 mod tests {
     use lnx_fs::VirtualFileSystem;
     use tantivy::doc;
-    use tantivy::indexer::Stamper;
     use tantivy::schema::{
         IndexRecordOption,
         Schema,
@@ -222,8 +216,7 @@ mod tests {
             text_field => "Example text with the document here"
         );
 
-        let stamper = Stamper::new(0);
-        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
+        let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -243,8 +236,7 @@ mod tests {
             text_field => "Example text with the document here",
         );
 
-        let stamper = Stamper::new(0);
-        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
+        let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -259,8 +251,7 @@ mod tests {
             fast_field => 123u64,
         );
 
-        let stamper = Stamper::new(0);
-        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
+        let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -282,8 +273,7 @@ mod tests {
             text_field => "Example text with the document here",
         );
 
-        let stamper = Stamper::new(0);
-        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
+        let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let _memory = indexer.finish().expect("Indexing finish");
     }
@@ -309,8 +299,7 @@ mod tests {
             text_field => "Example text with the document here"
         );
 
-        let stamper = Stamper::new(0);
-        let mut indexer = SingleSegmentIndexer::new(schema, stamper.stamps(1));
+        let mut indexer = SingleSegmentIndexer::new(schema);
         indexer.add_document(doc).expect("Index document");
         let memory = indexer.finish().expect("Indexing finish");
         let mut tx = bucket.begin_tx();

@@ -57,7 +57,7 @@ impl LnxIndex {
         let index_name = index_name.into();
         let base_path = format!("indexes/{index_name}");
         let dir = VFSDirectory::new(&base_path, bucket.clone());
-        
+
         let (index, reader, meta) = tokio::task::spawn_blocking(move || {
             let index = tantivy::Index::open(dir)?;
             let reader = index
@@ -77,16 +77,16 @@ impl LnxIndex {
         let stamper_clone = stamper.clone();
         let index_clone = index.clone();
         let writer = tokio::task::spawn_blocking(move || {
-                let options = IndexWriterOptions::builder()
-                    .stamper(stamper_clone)
-                    .defer_indexing_threads(true)
-                    .num_worker_threads(1)
-                    .build();
-                index_clone.writer_with_options(options)
-            })
-            .await
-            .expect("Join background thread")?;
-        
+            let options = IndexWriterOptions::builder()
+                .stamper(stamper_clone)
+                .defer_indexing_threads(true)
+                .num_worker_threads(1)
+                .build();
+            index_clone.writer_with_options(options)
+        })
+        .await
+        .expect("Join background thread")?;
+
         Ok(Self {
             index_name,
             bucket,
@@ -160,6 +160,8 @@ impl LnxIndex {
         bulk.commit().await?;
 
         let mut lock = self.writer.lock().await;
+        // Advance stamper at time of commit.
+        self.stamper.stamps(segment.num_docs() as u64);
         lock.add_segment(segment.segment_meta).await?;
         let prepared = lock.prepare_commit()?;
         prepared.commit_future().await?;
@@ -206,9 +208,8 @@ impl LnxIndex {
 
     #[inline]
     /// Creates a new single segment indexer.
-    pub fn new_indexer(&self, num_docs: u64) -> crate::indexer::SingleSegmentIndexer {
-        let range = self.stamper.stamps(num_docs);
-        crate::indexer::SingleSegmentIndexer::new(self.index.schema(), range)
+    pub fn new_indexer(&self) -> crate::indexer::SingleSegmentIndexer {
+        crate::indexer::SingleSegmentIndexer::new(self.index.schema())
     }
 
     fn prefix(&self) -> String {

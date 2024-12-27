@@ -23,7 +23,7 @@ async fn test_full_indexing_flow() {
         .await
         .unwrap();
 
-    let mut indexer = index.new_indexer(1);
+    let mut indexer = index.new_indexer();
     indexer
         .add_document(doc!(
            id => 123u64,
