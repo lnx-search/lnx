@@ -1,14 +1,12 @@
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-use std::time::Instant;
-use bytes::Bytes;
-use lnx_fs::{Body, Bucket};
+use lnx_fs::Bucket;
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
-use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy, Segment, TantivyError};
-use tantivy::indexer::{DefaultMergePolicy, LogMergePolicy, SegmentEntry, Stamper};
+use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
+use tantivy::indexer::Stamper;
 use tokio::sync::Mutex;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::directory::VFSDirectory;
 use crate::indexer::SegmentMemory;
@@ -106,7 +104,7 @@ impl LnxIndex {
 
         let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
             if tantivy::Index::exists(&dir).unwrap_or(false) {
-                return Err(IndexError::Tantivy(TantivyError::IndexAlreadyExists));
+                return Err(IndexError::Tantivy(tantivy::TantivyError::IndexAlreadyExists));
             }
 
             let index = tantivy::Index::create(dir, schema, settings)?;
@@ -250,7 +248,7 @@ mod tests {
             .expect_err("index already exists and should error");
         assert!(matches!(
             error,
-            IndexError::Tantivy(TantivyError::IndexAlreadyExists)
+            IndexError::Tantivy(tantivy::TantivyError::IndexAlreadyExists)
         ));
     }
 
