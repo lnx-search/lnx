@@ -1,10 +1,11 @@
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
+
 use lnx_fs::Bucket;
+use tantivy::indexer::Stamper;
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
-use tantivy::indexer::Stamper;
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -104,7 +105,9 @@ impl LnxIndex {
 
         let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
             if tantivy::Index::exists(&dir).unwrap_or(false) {
-                return Err(IndexError::Tantivy(tantivy::TantivyError::IndexAlreadyExists));
+                return Err(IndexError::Tantivy(
+                    tantivy::TantivyError::IndexAlreadyExists,
+                ));
             }
 
             let index = tantivy::Index::create(dir, schema, settings)?;
@@ -199,8 +202,6 @@ impl LnxIndex {
         format!("indexes/{}", self.index_name)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

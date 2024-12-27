@@ -22,7 +22,11 @@ use tracing::warn;
 
 use crate::directory::BytesWrapper;
 
-static SILENTLY_IGNORE_FILES: &[&str] = &[".managed.json", ".tantivy-meta.lock", ".tantivy-writer.lock"];
+static SILENTLY_IGNORE_FILES: &[&str] = &[
+    ".managed.json",
+    ".tantivy-meta.lock",
+    ".tantivy-writer.lock",
+];
 
 #[derive(Clone)]
 /// A directory backed by a [Bucket].

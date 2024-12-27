@@ -41,7 +41,7 @@ async fn test_full_indexing_flow() {
     // Drop and re-open the index.
     drop(index);
     let index = LnxIndex::open("full", bucket).await.unwrap();
-    
+
     let reader = index.reader();
     let searcher = reader.searcher();
     let results = tokio::task::spawn_blocking(move || {
@@ -53,8 +53,8 @@ async fn test_full_indexing_flow() {
             .search(&query, &TopDocs::with_limit(10))
             .expect("Search index")
     })
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     assert_eq!(results.len(), 1);
     let searcher = reader.searcher();
