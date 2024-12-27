@@ -14,6 +14,7 @@ futures-lite = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
+rayon = { workspace = true }
 
 lnx-doc = { path = "../lnx-doc" }
 lnx-fs = { path = "../lnx-fs" }

@@ -1693,6 +1693,7 @@ dependencies = [
  "lnx-doc",
  "lnx-fs",
  "parking_lot",
+ "rayon",
  "serde_json",
  "stable_deref_trait",
  "tantivy",
