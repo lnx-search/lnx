@@ -145,6 +145,11 @@ pub struct SegmentMemory {
 }
 
 impl SegmentMemory {
+    /// Returns the number of docs in the segment.
+    pub fn num_docs(&self) -> usize {
+        self.segment_meta.num_docs() as usize
+    }
+    
     /// Writes the segment memory to the given [lnx_fs::Bucket].
     pub async fn write_to(
         &self,
