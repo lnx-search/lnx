@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use lnx_fs::Bucket;
 use tantivy::indexer::{IndexWriterOptions, Stamper};
-use tantivy::merge_policy::NoMergePolicy;
+use tantivy::merge_policy::{MergePolicy, NoMergePolicy};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
@@ -50,7 +50,6 @@ impl Debug for LnxIndex {
 }
 
 impl LnxIndex {
-    // TODO: Make these methods share the same code... Kinda insane that it is duplicated atm.
     /// Opens an existing [LnxIndex].
     pub async fn open(
         index_name: impl Into<String>,
@@ -60,43 +59,11 @@ impl LnxIndex {
         let base_path = format!("indexes/{index_name}");
         let dir = VFSDirectory::new(&base_path, bucket.clone());
 
-        let (index, reader, meta) = tokio::task::spawn_blocking(move || {
-            let index = tantivy::Index::open(dir)?;
-            let reader = index
-                .reader_builder()
-                .reload_policy(ReloadPolicy::Manual)
-                .doc_store_cache_num_blocks(0)
-                .try_into()?;
+        let index = tokio::task::spawn_blocking(move || tantivy::Index::open(dir))
+            .await
+            .expect("Spawn background task")?;
 
-            let meta = index.load_metas()?;
-
-            Ok::<_, IndexError>((index, reader, meta))
-        })
-        .await
-        .expect("Join background thread")?;
-
-        let stamper = Stamper::new(meta.opstamp);
-        let stamper_clone = stamper.clone();
-        let index_clone = index.clone();
-        let writer = tokio::task::spawn_blocking(move || {
-            let options = IndexWriterOptions::builder()
-                .stamper(stamper_clone)
-                .defer_indexing_threads(true)
-                .num_worker_threads(1)
-                .build();
-            index_clone.writer_with_options(options)
-        })
-        .await
-        .expect("Join background thread")?;
-
-        Ok(Self {
-            index_name,
-            bucket,
-            index,
-            reader,
-            stamper: Stamper::new(meta.opstamp),
-            writer: Arc::new(Mutex::new(writer)),
-        })
+        Self::using_index(index_name, bucket, index).await
     }
 
     /// Creates a new [LnxIndex] using the given tantivy schema.
@@ -118,24 +85,41 @@ impl LnxIndex {
             docstore_blocksize: 128,
         };
 
-        let (index, reader, meta, writer) = tokio::task::spawn_blocking(move || {
+        let index = tokio::task::spawn_blocking(move || {
             if tantivy::Index::exists(&dir).unwrap_or(false) {
-                return Err(IndexError::Tantivy(
-                    tantivy::TantivyError::IndexAlreadyExists,
-                ));
+                return Err(tantivy::TantivyError::IndexAlreadyExists);
             }
+            tantivy::Index::create(dir, schema, settings)
+        })
+        .await
+        .expect("Spawn background task")?;
 
-            let index = tantivy::Index::create(dir, schema, settings)?;
-            let reader = index
+        Self::using_index(index_name, bucket, index).await
+    }
+
+    async fn using_index(
+        index_name: String,
+        bucket: Bucket,
+        index: tantivy::Index,
+    ) -> Result<Self, IndexError> {
+        let index_clone = index.clone();
+        let (reader, meta, writer) = tokio::task::spawn_blocking(move || {
+            let reader = index_clone
                 .reader_builder()
                 .reload_policy(ReloadPolicy::Manual)
                 .doc_store_cache_num_blocks(0)
                 .try_into()?;
 
-            let meta = index.load_metas()?;
-            let writer = index.writer_with_num_threads(1, 15 << 20)?;
+            let meta = index_clone.load_metas()?;
 
-            Ok::<_, IndexError>((index, reader, meta, writer))
+            let options = IndexWriterOptions::builder()
+                .defer_indexing_threads(true)
+                .num_worker_threads(1)
+                .build();
+
+            let writer = index_clone.writer_with_options(options)?;
+
+            Ok::<_, IndexError>((reader, meta, writer))
         })
         .await
         .expect("Join background thread")?;
@@ -150,6 +134,11 @@ impl LnxIndex {
             stamper: Stamper::new(meta.opstamp),
             writer: Arc::new(Mutex::new(writer)),
         })
+    }
+
+    /// Set the merge policy of the index.
+    pub async fn set_merge_policy(&self, policy: impl MergePolicy + 'static) {
+        self.writer.lock().await.set_merge_policy(Box::new(policy));
     }
 
     /// Adds a new segment to the index.
