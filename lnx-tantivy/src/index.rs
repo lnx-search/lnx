@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use lnx_fs::Bucket;
 use tantivy::indexer::{IndexWriterOptions, Stamper};
+use tantivy::merge_policy::NoMergePolicy;
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
-use tantivy::merge_policy::NoMergePolicy;
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -50,6 +50,7 @@ impl Debug for LnxIndex {
 }
 
 impl LnxIndex {
+    // TODO: Make these methods share the same code... Kinda insane that it is duplicated atm.
     /// Opens an existing [LnxIndex].
     pub async fn open(
         index_name: impl Into<String>,
@@ -140,7 +141,7 @@ impl LnxIndex {
         .expect("Join background thread")?;
 
         writer.set_merge_policy(Box::new(NoMergePolicy));
-        
+
         Ok(Self {
             index_name,
             bucket,

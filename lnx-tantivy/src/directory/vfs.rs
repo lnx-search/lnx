@@ -156,13 +156,16 @@ impl Directory for VFSDirectory {
         let resolved = self.true_path(path);
 
         let fut = async {
-            self.bucket
+            let waiter = self
+                .bucket
                 .write(&resolved, Body::complete(Bytes::copy_from_slice(data)))
                 .await
                 .map_err(|e| match e {
                     FileSystemError::IoError(e) => e,
                     other => io::Error::new(ErrorKind::Other, other),
-                })
+                })?;
+            waiter.wait().await;
+            Ok::<_, io::Error>(())
         };
 
         self.handle.block_on(fut)?;
