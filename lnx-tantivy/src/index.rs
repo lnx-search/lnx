@@ -103,7 +103,7 @@ impl LnxIndex {
         index: tantivy::Index,
     ) -> Result<Self, IndexError> {
         let index_clone = index.clone();
-        let (reader, meta, writer) = tokio::task::spawn_blocking(move || {
+        let (reader, meta) = tokio::task::spawn_blocking(move || {
             let reader = index_clone
                 .reader_builder()
                 .reload_policy(ReloadPolicy::Manual)
@@ -112,18 +112,26 @@ impl LnxIndex {
 
             let meta = index_clone.load_metas()?;
 
-            let options = IndexWriterOptions::builder()
-                .defer_indexing_threads(true)
-                .num_worker_threads(1)
-                .build();
-
-            let writer = index_clone.writer_with_options(options)?;
-
-            Ok::<_, IndexError>((reader, meta, writer))
+            Ok::<_, IndexError>((reader, meta))
         })
         .await
         .expect("Join background thread")?;
 
+        let stamper = Stamper::new(meta.opstamp);
+
+        let index_clone = index.clone();
+        let stamper_clone = stamper.clone();
+        let writer = tokio::task::spawn_blocking(move || {
+            let options = IndexWriterOptions::builder()
+                .defer_indexing_threads(true)
+                .num_worker_threads(1)
+                .stamper(stamper_clone)
+                .build();
+            let writer = index_clone.writer_with_options(options)?;
+            Ok::<_, IndexError>(writer)
+        })
+        .await
+        .expect("Join background thread")?;
         writer.set_merge_policy(Box::new(NoMergePolicy));
 
         Ok(Self {
@@ -131,7 +139,7 @@ impl LnxIndex {
             bucket,
             index,
             reader,
-            stamper: Stamper::new(meta.opstamp),
+            stamper,
             writer: Arc::new(Mutex::new(writer)),
         })
     }
