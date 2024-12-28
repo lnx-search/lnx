@@ -76,6 +76,11 @@ impl SingleSegmentIndexer {
         self.segment_writer.add_document(op)
     }
 
+    /// Returns the amount of memory used in bytes.
+    pub fn memory_usage(&self) -> usize {
+        self.segment_writer.mem_usage()
+    }
+    
     #[instrument(skip(self), fields(segment_id = %self.segment.id()))]
     /// Completes the indexing operation and returns the memory
     /// forming the segment data.
