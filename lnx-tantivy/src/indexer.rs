@@ -80,7 +80,7 @@ impl SingleSegmentIndexer {
     pub fn memory_usage(&self) -> usize {
         self.segment_writer.mem_usage()
     }
-    
+
     #[instrument(skip(self), fields(segment_id = %self.segment.id()))]
     /// Completes the indexing operation and returns the memory
     /// forming the segment data.

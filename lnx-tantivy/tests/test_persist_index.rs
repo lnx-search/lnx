@@ -1,6 +1,7 @@
 use lnx_fs::VirtualFileSystem;
 use lnx_tantivy::LnxIndex;
 use tantivy::collector::TopDocs;
+use tantivy::indexer::NoMergePolicy;
 use tantivy::query::TermQuery;
 use tantivy::schema::{IndexRecordOption, SchemaBuilder, Value, FAST, STORED, TEXT};
 use tantivy::{doc, Term};
@@ -22,6 +23,7 @@ async fn test_full_indexing_flow() {
     let index = LnxIndex::create("full", bucket.clone(), schema)
         .await
         .unwrap();
+    index.set_merge_policy(NoMergePolicy).await;
 
     let mut indexer = index.new_indexer();
     indexer

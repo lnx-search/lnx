@@ -2,11 +2,12 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use lnx_fs::Bucket;
+use tantivy::index::SegmentId;
 use tantivy::indexer::{IndexWriterOptions, Stamper};
 use tantivy::merge_policy::{MergePolicy, NoMergePolicy};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
-use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy};
+use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy, SegmentMeta};
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -132,7 +133,6 @@ impl LnxIndex {
         })
         .await
         .expect("Join background thread")?;
-        writer.set_merge_policy(Box::new(NoMergePolicy));
 
         Ok(Self {
             index_name,
@@ -205,6 +205,26 @@ impl LnxIndex {
         })
         .await
         .expect("Reader reload task panicked")
+    }
+
+    /// Returns the currently searchable segment IDs.
+    pub async fn searchable_segment_ids(&self) -> Vec<SegmentId> {
+        let meta = self.meta().await;
+        let mut segment_ids = Vec::with_capacity(meta.segments.len());
+        for seg in meta.segments {
+            segment_ids.push(seg.id());
+        }
+        segment_ids
+    }
+
+    /// Performs a merge operation on the set of segments forming one single segment.
+    pub async fn merge(
+        &self,
+        segment_ids: &[SegmentId],
+    ) -> Result<Option<SegmentMeta>, IndexError> {
+        let writer = self.writer.clone();
+        let mut lock = writer.lock().await;
+        lock.merge(segment_ids).await.map_err(IndexError::from)
     }
 
     #[inline]

@@ -1,13 +1,11 @@
 use lnx_fs::VirtualFileSystem;
 use lnx_tantivy::LnxIndex;
-use tantivy::collector::{Count, TopDocs};
+use tantivy::doc;
 use tantivy::indexer::NoMergePolicy;
-use tantivy::query::TermQuery;
-use tantivy::schema::{IndexRecordOption, SchemaBuilder, Value, FAST, STORED, TEXT};
-use tantivy::{doc, Term};
+use tantivy::schema::{SchemaBuilder, FAST, STORED, TEXT};
 
 #[tokio::test]
-async fn test_full_indexing_flow() {
+async fn test_full_indexing_merges() {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (vfs, _guard) = VirtualFileSystem::create_for_test().await.unwrap();
@@ -25,16 +23,6 @@ async fn test_full_indexing_flow() {
         .unwrap();
     index.set_merge_policy(NoMergePolicy).await;
 
-    let reader = index.reader();
-
-    let searcher = reader.searcher();
-    let query = TermQuery::new(
-        Term::from_field_text(title, "man"),
-        IndexRecordOption::WithFreqs,
-    );
-    let result = searcher.search(&query, &Count).expect("Search index");
-    assert_eq!(result, 0);
-
     let mut indexer = index.new_indexer();
     indexer
         .add_document(doc!(
@@ -46,29 +34,33 @@ async fn test_full_indexing_flow() {
         ))
         .unwrap();
     let memory = indexer.finish().unwrap();
-
     index.add_segment(memory).await.expect("Add segment");
+
+    let mut indexer = index.new_indexer();
+    indexer
+        .add_document(doc!(
+           id => 1234u64,
+           title => "The Old Man and the Sea",
+           body => "He was an old man who fished alone in a skiff in \
+                   the Gulf Stream and he had gone eighty-four days \
+                   now without taking a fish."
+        ))
+        .unwrap();
+    let memory = indexer.finish().unwrap();
+    index.add_segment(memory).await.expect("Add segment");
+
     index.reload_readers().await;
 
-    let searcher = reader.searcher();
-    let results = tokio::task::spawn_blocking(move || {
-        let query = TermQuery::new(
-            Term::from_field_text(title, "man"),
-            IndexRecordOption::WithFreqs,
-        );
-        searcher
-            .search(&query, &TopDocs::with_limit(10))
-            .expect("Search index")
-    })
-    .await
-    .unwrap();
+    let segment_ids = index.searchable_segment_ids().await;
+    assert_eq!(segment_ids.len(), 2);
 
-    assert_eq!(results.len(), 1);
-    let searcher = reader.searcher();
-    let doc: tantivy::TantivyDocument = searcher
-        .doc_async(results[0].1)
+    let seg_meta = index
+        .merge(&segment_ids)
         .await
-        .expect("Fetch async doc");
-    let id_field = doc.get_first(id).expect("Field should exist");
-    assert_eq!(id_field.as_u64(), Some(123));
+        .expect("Merge segments")
+        .expect("New segment should be created");
+    assert_eq!(seg_meta.num_docs(), 2);
+
+    let segment_ids = index.searchable_segment_ids().await;
+    assert_eq!(segment_ids.len(), 1);
 }
