@@ -4,7 +4,7 @@ use std::sync::Arc;
 use lnx_fs::Bucket;
 use tantivy::index::SegmentId;
 use tantivy::indexer::{IndexWriterOptions, Stamper};
-use tantivy::merge_policy::{MergePolicy, NoMergePolicy};
+use tantivy::merge_policy::{LogMergePolicy, MergePolicy, NoMergePolicy};
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy, SegmentMeta};
@@ -134,6 +134,10 @@ impl LnxIndex {
         .await
         .expect("Join background thread")?;
 
+        // We disable the merge policy by default because it slows down the whole indexing
+        // flow and does a lot of unnecessary compactions when indexing at a high rate.
+        writer.set_merge_policy(Box::new(NoMergePolicy));
+
         Ok(Self {
             index_name,
             bucket,
@@ -142,11 +146,6 @@ impl LnxIndex {
             stamper,
             writer: Arc::new(Mutex::new(writer)),
         })
-    }
-
-    /// Set the merge policy of the index.
-    pub async fn set_merge_policy(&self, policy: impl MergePolicy + 'static) {
-        self.writer.lock().await.set_merge_policy(Box::new(policy));
     }
 
     /// Adds a new segment to the index.
