@@ -18,7 +18,7 @@ use tantivy::directory::{
     WritePtr,
 };
 use tantivy::{Directory, HasLen};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::directory::BytesWrapper;
 
@@ -300,6 +300,8 @@ impl TerminatingWrite for MemoryWriter {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use bytes::Bytes;
     use lnx_fs::{Body, RuntimeOptions, VirtualFileSystem};
 
@@ -333,17 +335,6 @@ mod tests {
 
         dir.sync_directory().expect("no op");
         let _handle = dir.watch(WatchCallback::new(|| {})).expect("no op");
-
-        let err = dir
-            .delete(Path::new("example.txt"))
-            .expect_err("System should not allow writes");
-        assert!(matches!(err, DeleteError::IoError { .. }));
-
-        let err = dir.open_write(Path::new("example.txt"));
-        assert!(matches!(err, Err(OpenWriteError::IoError { .. })));
-
-        let err = dir.open_write(Path::new("example.txt"));
-        assert!(matches!(err, Err(OpenWriteError::IoError { .. })));
     }
 
     #[tokio::test]
@@ -401,5 +392,61 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_directory_write_ops() {
+        let rt_options = RuntimeOptions::builder().num_threads(1).build();
+        let dir = tempfile::TempDir::new().unwrap();
+        let vfs = VirtualFileSystem::mount(dir.path().to_path_buf(), rt_options)
+            .await
+            .unwrap();
+
+        let bucket = vfs.create_bucket("test").await.expect("Create bucket");
+
+        bucket
+            .write(
+                "test/sample.txt",
+                Body::complete(Bytes::from_static(b"Hello, world!")),
+            )
+            .await
+            .unwrap();
+
+        let dir = VFSDirectory::new("test", bucket.clone());
+
+        tokio::task::spawn_blocking(move || {
+            let mut writer = dir
+                .open_write(Path::new("written.txt"))
+                .expect("Open write");
+            writer.write_all(b"Hello, world!").expect("Write buffer");
+            writer.flush().unwrap();
+            writer.terminate().expect("Terminate write");
+
+            // Should be no op writer and ignored.
+            let mut writer = dir
+                .open_write(Path::new(".managed.json"))
+                .expect("Open write");
+            writer.write_all(b"Hello, world!").expect("Write buffer");
+            writer.flush().unwrap();
+            writer.terminate().expect("Terminate write");
+
+            dir.delete(Path::new("sample.txt"))
+                .expect("Delete existing file");
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            !bucket.exists("test/sample.txt"),
+            "Existing file should be deleted"
+        );
+        assert!(
+            !bucket.exists("test/.managed.json"),
+            "Ignored file should not be written"
+        );
+
+        let body = bucket.read("test/written.txt").await.unwrap();
+        let content = body.collect().await.unwrap();
+        assert_eq!(content, Bytes::from_static(b"Hello, world!"));
     }
 }

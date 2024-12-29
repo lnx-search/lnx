@@ -124,3 +124,54 @@ impl TerminatingWrite for MemoryWriter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+
+    use tantivy::Directory;
+
+    use super::*;
+
+    #[test]
+    fn test_directory_write_ops() {
+        let dir = MemoryDirectory::default();
+
+        let mut writer = dir
+            .open_write(Path::new("written.txt"))
+            .expect("Open write");
+        writer.write_all(b"Hello, world!").expect("Write buffer");
+        writer.flush().unwrap();
+        writer.terminate().expect("Terminate write");
+
+        let mut writer = dir
+            .open_write(Path::new("written2bedeleted.txt"))
+            .expect("Open write");
+        writer.write_all(b"Hello, world!").expect("Write buffer");
+        writer.flush().unwrap();
+        writer.terminate().expect("Terminate write");
+
+        dir.atomic_write(Path::new("example.json"), b"Hello JSON!")
+            .expect("Write atomic");
+
+        dir.delete(Path::new("written2bedeleted.txt"))
+            .expect("Delete existing file");
+
+        assert!(!dir.exists(Path::new("written2bedeleted.txt")).unwrap());
+        assert!(dir.exists(Path::new("example.json")).unwrap());
+        assert!(dir.exists(Path::new("written.txt")).unwrap());
+
+        dir.delete(Path::new("doesnt-exist.json"))
+            .expect("Delete no existent content");
+
+        let content = dir
+            .atomic_read(Path::new("example.json"))
+            .expect("Read content");
+        assert_eq!(Bytes::from(content), Bytes::from_static(b"Hello JSON!"));
+
+        let content = dir
+            .atomic_read(Path::new("written.txt"))
+            .expect("Read content");
+        assert_eq!(Bytes::from(content), Bytes::from_static(b"Hello, world!"));
+    }
+}

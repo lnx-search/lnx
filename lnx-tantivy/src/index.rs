@@ -4,7 +4,8 @@ use std::sync::Arc;
 use lnx_fs::Bucket;
 use tantivy::index::SegmentId;
 use tantivy::indexer::{IndexWriterOptions, Stamper};
-use tantivy::merge_policy::{LogMergePolicy, MergePolicy, NoMergePolicy};
+use tantivy::merge_policy::NoMergePolicy;
+use tantivy::query::Query;
 use tantivy::schema::Schema;
 use tantivy::store::Compressor;
 use tantivy::{IndexMeta, IndexSettings, IndexWriter, ReloadPolicy, SegmentMeta};
@@ -163,6 +164,22 @@ impl LnxIndex {
         // Advance stamper at time of commit.
         self.stamper.stamps(segment.num_docs() as u64);
         lock.add_segment(segment.segment_meta).await?;
+        let prepared = lock.prepare_commit()?;
+        prepared.commit_future().await?;
+
+        Ok(())
+    }
+
+    /// Deletes all documents matching the given query.
+    ///
+    /// This will persist the change to disk and update the metadata as part of
+    /// the same transaction.
+    pub async fn delete_by_query(
+        &self,
+        query: impl Query + 'static,
+    ) -> Result<(), IndexError> {
+        let mut lock = self.writer.lock().await;
+        lock.delete_query(Box::new(query))?;
         let prepared = lock.prepare_commit()?;
         prepared.commit_future().await?;
 
