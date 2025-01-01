@@ -2,6 +2,7 @@ mod directory;
 pub mod executor;
 mod index;
 pub mod indexer;
+mod extensions;
 
 pub use tantivy;
 
