@@ -55,6 +55,8 @@ async fn main() -> Result<()> {
 async fn benchmark_writer_blocking_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/blocking/")?;
 
+    const RUNS: u32 = 50;
+
     for &size in SIZES {
         let mut buffer = vec![0; size];
         fastrand::fill(&mut buffer);
@@ -62,7 +64,7 @@ async fn benchmark_writer_blocking_io() -> Result<()> {
         let path = tmp_dir.path().to_path_buf();
         tokio::task::spawn_blocking(move || {
             let now = Instant::now();
-            for _ in 0..25 {
+            for _ in 0..RUNS {
                 let file = tempfile::NamedTempFile::new_in(&path)?;
                 let mut writer = BufWriter::new(file);
                 writer.write_all(&buffer)?;
@@ -70,7 +72,7 @@ async fn benchmark_writer_blocking_io() -> Result<()> {
                 writer.get_mut().as_file_mut().sync_data()?;
             }
 
-            let elapsed = now.elapsed() / 25;
+            let elapsed = now.elapsed() / RUNS;
             let secs = elapsed.as_secs_f32();
             let rate = size as f32 / secs;
             let formatted_size = humansize::format_size(size, DECIMAL);
@@ -129,13 +131,15 @@ async fn benchmark_writer_vfs_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/vfs/")?;
     let rt_options = RuntimeOptions::builder().num_threads(1).build();
 
+    const RUNS: u32 = 50;
+
     let vfs = VirtualFileSystem::mount(tmp_dir.path().to_path_buf(), rt_options).await?;
     let bucket = vfs.create_bucket("benches").await?;
 
-    let config_update = BucketConfig::builder().flush_delay_millis(50).build();
-    bucket.update_config(config_update).await?;
-    drop(bucket);
-    let bucket = vfs.reload_bucket("benches").await?;
+    // let config_update = BucketConfig::builder().flush_delay_millis(50).build();
+    // bucket.update_config(config_update).await?;
+    // drop(bucket);
+    // let bucket = vfs.reload_bucket("benches").await?;
 
     for &size in SIZES {
         let mut buffer = vec![0; size];
@@ -144,13 +148,13 @@ async fn benchmark_writer_vfs_io() -> Result<()> {
         let body = Bytes::copy_from_slice(&buffer);
 
         let now = Instant::now();
-        for _ in 0..25 {
+        for _ in 0..RUNS {
             bucket
                 .write("example.txt", Body::complete(body.clone()))
                 .await?;
         }
 
-        let elapsed = now.elapsed() / 25;
+        let elapsed = now.elapsed() / RUNS;
         let secs = elapsed.as_secs_f32();
         let rate = size as f32 / secs;
         let formatted_size = humansize::format_size(size, DECIMAL);
