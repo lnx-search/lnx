@@ -13,6 +13,7 @@ use humansize::DECIMAL;
 use lnx_fs::{Body, BucketConfig, Bytes, RuntimeOptions, VirtualFileSystem};
 use tracing::info;
 
+const WRITE_RUNS: u32 = 250;
 const SIZES: &[usize] = &[
     1 << 10,   // 1KB
     10 << 10,  // 10KB
@@ -55,8 +56,6 @@ async fn main() -> Result<()> {
 async fn benchmark_writer_blocking_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/blocking/")?;
 
-    const RUNS: u32 = 50;
-
     for &size in SIZES {
         let mut buffer = vec![0; size];
         fastrand::fill(&mut buffer);
@@ -64,7 +63,7 @@ async fn benchmark_writer_blocking_io() -> Result<()> {
         let path = tmp_dir.path().to_path_buf();
         tokio::task::spawn_blocking(move || {
             let now = Instant::now();
-            for _ in 0..RUNS {
+            for _ in 0..WRITE_RUNS {
                 let file = tempfile::NamedTempFile::new_in(&path)?;
                 let mut writer = BufWriter::new(file);
                 writer.write_all(&buffer)?;
@@ -72,7 +71,7 @@ async fn benchmark_writer_blocking_io() -> Result<()> {
                 writer.get_mut().as_file_mut().sync_data()?;
             }
 
-            let elapsed = now.elapsed() / RUNS;
+            let elapsed = now.elapsed() / WRITE_RUNS;
             let secs = elapsed.as_secs_f32();
             let rate = size as f32 / secs;
             let formatted_size = humansize::format_size(size, DECIMAL);
@@ -131,8 +130,6 @@ async fn benchmark_writer_vfs_io() -> Result<()> {
     let tmp_dir = tempfile::TempDir::new_in("./scratch_space/vfs/")?;
     let rt_options = RuntimeOptions::builder().num_threads(1).build();
 
-    const RUNS: u32 = 50;
-
     let vfs = VirtualFileSystem::mount(tmp_dir.path().to_path_buf(), rt_options).await?;
     let bucket = vfs.create_bucket("benches").await?;
 
@@ -148,13 +145,13 @@ async fn benchmark_writer_vfs_io() -> Result<()> {
         let body = Bytes::copy_from_slice(&buffer);
 
         let now = Instant::now();
-        for _ in 0..RUNS {
+        for _ in 0..WRITE_RUNS {
             bucket
                 .write("example.txt", Body::complete(body.clone()))
                 .await?;
         }
 
-        let elapsed = now.elapsed() / RUNS;
+        let elapsed = now.elapsed() / WRITE_RUNS;
         let secs = elapsed.as_secs_f32();
         let rate = size as f32 / secs;
         let formatted_size = humansize::format_size(size, DECIMAL);
