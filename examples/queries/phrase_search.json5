@@ -1,0 +1,8 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $phrase: "The old man and the sea",  // Matches "The old man and the sea" but "The man old and the sea" does not match.
+    $fields: ["title"],
+  },
+}

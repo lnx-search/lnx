@@ -1,0 +1,13 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $range: {
+      // $lte: 5432,
+      $lt: 5432,
+      // $gt: 1234,
+      $gte: 1234,
+    },
+    $fields: ["created_at"],
+  },
+}

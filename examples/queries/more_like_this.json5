@@ -1,0 +1,34 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $morelikethis: {
+      // $from specifies where to get the data to use for matching similar documents.
+      $from: {
+        // $where allows you to execute a sub-query and use the documents returned and use them as the
+        //        targets to find similar documents.
+        $query: {
+          $select: ["title", "description"],
+          $from: "books",
+          $where: {
+            $fuzzy: "some inner query"
+          },
+        },
+        // Alternatively, you can use $docs to pass document data directly.
+        $docs: [
+          {
+            "title": "man sea air water",
+            "categories": "sci-fi",
+          },
+        ]
+      },
+      // Additional stopwords to ignore, this is inherited from the table(s) stopwords.
+      $stopwords: ["at", "then"],
+      // Filter terms that do not meet the specified criteria.
+      $docfrequency: {
+        $min: 10,
+        $max: 100,
+      },
+    },
+  },
+}

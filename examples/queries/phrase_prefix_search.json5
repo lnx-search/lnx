@@ -1,0 +1,8 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $prefix: "part t",  // matches "Alan just got a part time job." but not "This is my favorite part of the job."
+    $fields: ["title"],
+  },
+}

@@ -1,0 +1,8 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $fulltext: "old man and the sea",
+    $fields: ["title", "description"],
+  },
+}

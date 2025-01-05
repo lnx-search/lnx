@@ -1,0 +1,8 @@
+{
+  $select: [{ $highlight: "title" }, "description", "categories"],
+  $from: "books",
+  $where: {
+    $fuzzy: "bagillion",
+    $fields: ["title", "description"],
+  },
+}

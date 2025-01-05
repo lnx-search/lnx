@@ -1,3 +1,4 @@
+mod collectors;
 mod directory;
 pub mod executor;
 mod index;

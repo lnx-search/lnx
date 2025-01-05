@@ -1,0 +1,8 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $prefix: "he",  // matches "hello"
+    $fields: ["title"],
+  },
+}

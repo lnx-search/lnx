@@ -1,0 +1,23 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $parser: {
+      $input: "this can ~be parsed* with rules",
+      $operators: {
+        $boolean: true,
+        $negative: true,
+        $must: true,
+        $phrase: true,
+        $slop: false,
+        $range: true,
+        $in: true,
+        $parsedate: true,
+        $parsewildcard: true,
+        $boost: false,
+        $fuzzyterms: false,
+      }
+    },
+    $fields: ["created_at"],
+  },
+}

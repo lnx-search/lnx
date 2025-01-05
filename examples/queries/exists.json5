@@ -1,0 +1,7 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $exists: ["description"],   // Matches any documents that contain a non-null value within the description field.
+  },
+}

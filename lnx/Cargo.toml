@@ -4,6 +4,7 @@ version = "0.10.0"
 edition = "2021"
 authors = ["Harrison Burt"]
 homepage = "https://lnxsearch.com"
+default-run = "lnx"
 
 [dependencies]
 anyhow = { workspace = true }
