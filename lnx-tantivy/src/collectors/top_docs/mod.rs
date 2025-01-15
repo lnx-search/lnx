@@ -19,6 +19,23 @@ pub struct TopDocs {
     offset: usize,
 }
 
+impl TopDocs {
+    /// Creates a new [TopDocs] using the given limit.
+    pub fn with_limit(limit: usize) -> Self {
+        Self {
+            limit,
+            offset: 0,
+        }
+    }
+    
+    /// Adds an offset to skip `offset` number of documents
+    /// before collecting results.
+    pub fn and_offset(mut self, offset: usize) -> Self {
+        self.offset = offset;
+        self
+    }
+}
+
 impl Collector for TopDocs {
     type Fruit = Vec<(Score, DocAddress)>;
     type Child = TopDocsSegmentCollector;
@@ -314,14 +331,157 @@ where
         self.buffer.sort_unstable();
         self.buffer
     }
+}
 
-    /// Returns the top n elements in stored order.
-    /// Useful if you do not need the elements in sorted order,
-    /// for example when merging the results of multiple segments.
-    pub fn into_vec(mut self) -> Vec<ComparableDoc<Score, D, R>> {
-        if self.buffer.len() > self.top_n {
-            self.truncate_top_n();
+
+#[cfg(test)]
+mod tests {
+    use tantivy::{doc, Index, Term};
+    use tantivy::collector::{Collector, SegmentCollector};
+    use tantivy::indexer::IndexWriterOptions;
+    use tantivy::query::{AllQuery, QueryParser};
+    use tantivy::schema::{Schema, Value, FAST, INDEXED, STORED, TEXT};
+    use crate::collectors::top_docs::TopDocs;
+
+    fn create_test_index() -> Index {
+        let mut schema_builder = Schema::builder();
+        let id = schema_builder.add_u64_field("id", INDEXED | STORED | FAST);
+        let title = schema_builder.add_text_field("title", TEXT | STORED | FAST);
+        let description = schema_builder.add_text_field("description", STORED | FAST);
+        let schema = schema_builder.build();
+        
+        let index = Index::create_in_ram(schema);
+        let options = IndexWriterOptions::builder()
+            .num_worker_threads(1)
+            .num_merge_threads(0)
+            .build();
+        let mut writer = index.writer_with_options(options).unwrap();
+        writer.add_document(doc!(
+            id => 1u64,
+            title => "The old man and the sea",
+            description => "example text here today",
+        )).unwrap();
+        writer.add_document(doc!(
+            id => 2u64,
+            title => "Iron man 4",
+            description => "example text here today",
+        )).unwrap();
+        writer.add_document(doc!(
+            id => 3u64,
+            title => "X men",
+            description => "Something something rivals",
+        )).unwrap();
+        writer.commit().unwrap();        
+        index        
+    }
+    
+    #[test]
+    fn test_top_k_without_offset() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        
+        let collector = TopDocs::with_limit(10);
+        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");        
+        assert_eq!(all_docs.len(), 3);
+    }
+
+    #[test]
+    fn test_top_k_zero_limit() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        let collector = TopDocs::with_limit(0);
+        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        assert_eq!(all_docs.len(), 0);
+    }
+    
+    #[test]
+    fn test_top_k_with_offset() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        let collector = TopDocs::with_limit(10)
+            .and_offset(2);
+        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        assert_eq!(all_docs.len(), 1);
+    }
+
+    #[test]
+    fn test_top_k_for_segment() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let segments = searcher.segment_readers();
+        
+        
+        let collector = TopDocs::with_limit(10)
+            .and_offset(2);
+        let mut collector = collector
+            .for_segment(0, &segments[0])
+            .expect("Collect for segment");
+        collector.collect(1, 1.0);
+        let results = collector.harvest();
+        assert_eq!(results.len(), 1);
+    }
+    
+    #[test]
+    fn test_top_k_sorting_correct() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let title_field = schema.get_field("title").unwrap();
+        
+        let parser = QueryParser::for_index(&index, vec![title_field]);
+        let query = parser.parse_query("old man").unwrap();
+        let docs = searcher.search(&query, &TopDocs::with_limit(10)).expect("Complete search");
+        let expected_docs = searcher.search(&query, &tantivy::collector::TopDocs::with_limit(10)).expect("Complete search");
+        
+        let mut docs_titles = Vec::new();
+        for (_score, doc) in docs {
+            let doc = searcher.doc::<tantivy::TantivyDocument>(doc).unwrap();
+            let title = doc.get_first(title_field).unwrap();
+            docs_titles.push(title.as_str().unwrap().to_string());
         }
-        self.buffer
+
+        let mut expected_docs_titles = Vec::new();
+        for (score, doc) in expected_docs {
+            let doc = searcher.doc::<tantivy::TantivyDocument>(doc).unwrap();
+            let title = doc.get_first(title_field).unwrap();
+            expected_docs_titles.push(title.as_str().unwrap().to_string());
+        }
+        
+        assert_eq!(docs_titles, expected_docs_titles);
+    }
+    
+    #[test]
+    fn test_top_k_with_deletes() {
+        let index = create_test_index();
+        let reader = index.reader().unwrap();
+        let schema = index.schema();
+        let id_field = schema.get_field("id").unwrap();
+        let title_field = schema.get_field("title").unwrap();
+        
+        let options = IndexWriterOptions::builder()
+            .num_worker_threads(1)
+            .num_merge_threads(1)
+            .build();
+        let mut writer: tantivy::IndexWriter = index.writer_with_options(options).unwrap();
+        writer.delete_term(Term::from_field_u64(id_field, 2));
+        writer.commit().unwrap();
+        writer.wait_merging_threads().unwrap();
+        reader.reload().unwrap();
+        
+        let searcher = reader.searcher();
+        let collector = tantivy::collector::TopDocs::with_limit(10);
+        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        assert_eq!(all_docs.len(), 2);
+        
+        let collector = TopDocs::with_limit(10);
+        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        assert_eq!(all_docs.len(), 2);
     }
 }

@@ -25,6 +25,7 @@ tokio = { workspace = true }
 ulid = { workspace = true }
 tempfile = { workspace = true }
 tracing-subscriber = { workspace = true }
+tantivy = { workspace = true, features = ["tempfile", "mmap"] }
 lnx-fs = { path = "../lnx-fs", features = ["test-utils"] }
 
 [features]
