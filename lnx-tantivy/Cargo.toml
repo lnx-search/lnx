@@ -16,8 +16,8 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 rayon = { workspace = true }
 ahash = { workspace = true }
+bon = { workspace = true }
 
-lnx-doc = { path = "../lnx-doc" }
 lnx-fs = { path = "../lnx-fs" }
 
 [dev-dependencies]
