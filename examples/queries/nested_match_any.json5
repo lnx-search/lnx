@@ -1,0 +1,16 @@
+{
+  $select: [{ $highlight: "title" }, "description", "categories"],
+  $from: "books",
+  $where: {
+    $any: [
+      {
+        $fuzzy: "bagillion",
+        $fields: ["title", "description"]
+      },
+      {
+        $gte: 123456,
+        $fields: ["create_at"]
+      }
+    ],
+  },
+}

@@ -31,6 +31,10 @@ async fn run_rest_api(listen_address: SocketAddr) -> Result<()> {
         .nest("/api/v0", api_service)
         .nest("/api/docs", ui);
 
+    info!(
+        "You can access local OpenAPI documentation is available @ http://localhost:{}/api/docs", 
+        listen_address.port(),
+    );
     info!(listen_addr = %listen_address, "Service API is running");
     poem::Server::new(TcpListener::bind(listen_address))
         .run_with_graceful_shutdown(

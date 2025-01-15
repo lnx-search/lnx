@@ -1,0 +1,10 @@
+{
+  $select: ["*"],
+  $from: "books",
+  $where: {
+    $not: {
+      $fulltext: "old man and the sea",
+      $fields: ["title", "description"],
+    },
+  },
+}

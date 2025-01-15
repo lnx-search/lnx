@@ -1661,6 +1661,7 @@ dependencies = [
 name = "lnx-models"
 version = "0.1.0"
 dependencies = [
+ "lnx-tantivy",
  "poem-openapi",
  "rstest",
  "serde",
@@ -1700,9 +1701,9 @@ version = "0.1.0"
 dependencies = [
  "ahash 0.8.11",
  "async-trait",
+ "bon",
  "bytes",
  "futures-lite 2.5.0",
- "lnx-doc",
  "lnx-fs",
  "parking_lot",
  "rayon",

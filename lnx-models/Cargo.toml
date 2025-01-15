@@ -12,5 +12,7 @@ serde_derive = { workspace = true }
 poem-openapi = { workspace = true }
 tracing = { workspace = true }
 
+lnx-tantivy = { path = "../lnx-tantivy" }
+
 [dev-dependencies]
 rstest = { workspace = true }

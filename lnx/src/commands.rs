@@ -46,7 +46,7 @@ impl Commands {
                 listen_address,
                 data_path,
             } => {
-                info!(listen_address = %listen_address, data_path = %data_path.display(), "Starting the lnx SQL server");
+                info!(listen_address = %listen_address, data_path = %data_path.display(), "Starting the lnx API server");
 
                 if listen_address.ip().is_loopback() {
                     let extra = if listen_address.port() == 4202 {
@@ -59,7 +59,7 @@ impl Commands {
                 }
             },
             Commands::Shell { host } => {
-                info!(host = %host, "Connecting to the lnx SQL server");
+                info!(host = %host, "Connecting to the lnx API server");
             },
         }
     }

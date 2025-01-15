@@ -1,0 +1,21 @@
+{
+  $select: ["title", "description", "categories"],
+  $from: "books",
+  $where: {
+    $atleast: [
+      {
+        $fuzzy: "bagillion",
+        $fields: ["title", "description"]
+      },
+      {
+        $fuzzy: "sea",
+        $fields: ["title", "description"]
+      },
+      {
+        $gte: 123456,
+        $fields: ["create_at"]
+      }
+    ],
+    $minimum: 2,
+  },
+}

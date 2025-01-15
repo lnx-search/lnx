@@ -1,9 +1,24 @@
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
+use lnx_tantivy::query::NegateQuery;
 use poem_openapi::types::{Example, MaybeUndefined};
 use poem_openapi::{Enum, Object, Union};
 use serde_derive::{Deserialize, Serialize};
-use tantivy::collector::TopDocs;
+use tantivy::query::{BooleanQuery, ExistsQuery, Occur, Query, RangeQuery};
+use tantivy::schema::{Field, Schema};
+use tantivy::Term;
+
+#[derive(Debug, thiserror::Error)]
+/// An error that can occur when building the query.
+pub enum QueryBuildError {
+    #[error("unknown field: {0:?}")]
+    /// The provided field does not exist.
+    UnknownField(String),
+    #[error("incompatible range bounds")]
+    /// The range bounds provided had both a `lt & lte` field OR both `gt & gte` fields.
+    IncompatibleRangeBounds,
+}
 
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct SelectQuery {
@@ -91,19 +106,24 @@ enum OneOrManyTables {
 ///
 /// - _**$all**_ - Match all inner expressions in order to be considered a match.
 /// - _**$any**_ - Match at least on of the inner expressions in order to be considered a match.
-/// - _**$parser**_ - Parses a query where clause from the provided string with customisable behaviour.
+/// - _**$atleast**_ - Require at least `N` subqueries to match.  TODO: Implement
+/// - _**$any**_ - Match at least on of the inner expressions in order to be considered a match.
+/// - _**$not**_ - Negates the match result of an inner query.
+/// - _**$parse**_ - Parses a query where clause from the provided string with customisable behaviour.
 ///
-/// #### Columnar filtering
+/// #### Filtering expressions
 ///
-/// These are query types that can only be applied to fields which are marked as `columnar: true`.
+/// These are query types that can only be applied to fields which are marked as `columnar: true`
+/// or `indexed: true` (i.e. strings.)
 ///
 /// _💡 TIP: All fields are `columnar: true` by default unless you have explicitly
 /// disabled columnar storage for specific fields._
 ///
 /// - _**$exists**_ - Match any document that has a non-null value present for a set of fields.
 /// - _**$range**_ - Match documents with values that lay within the specified range bounds.
-/// - _**$eq**_ - Match documents that match  the provided value _exactly_ for  a given field.
+/// - _**$eq**_ - Match documents that match the provided value _exactly_ for  a given field.
 /// - _**$neq**_ - Match documents that do _not_ match the _exact_ provided value and  a given field.
+///     _This is an alias for `$not: { $eq: <value> }.`_
 /// - _**$lt**_ - An alias for `$range: { $lt: <value> }`.
 /// - _**$lte**_ - An alias for `$range: { $lte: <value> }`.
 /// - _**$gt**_ - An alias for `$range: { $gt: <value> }`.
@@ -112,6 +132,8 @@ enum OneOrManyTables {
 pub enum WhereClause {
     All(AllExpr),
     Any(AnyExpr),
+    AtLeast(AtLeastExpr),
+    Not(NotExpr),
     Exists(ExistsExpr),
     Fuzzy(FuzzyExpr),
     FullText(FullTextExpr),
@@ -120,42 +142,239 @@ pub enum WhereClause {
     MoreLikeThis(MoreLikeThisExpr),
     Regex(RegexExpr),
     TextParser(TextParserExpr),
-    Range(RangeExpr),
     Eq(EqExpr),
     Neq(NeqExpr),
+    Range(RangeExpr),
     Lt(LtExpr),
     Lte(LteExpr),
     Gt(GtExpr),
     Gte(GteExpr),
 }
 
+impl WhereClause {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        match self {
+            WhereClause::All(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Any(expr) => expr.to_tantivy_query(schema),
+            WhereClause::AtLeast(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Not(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Exists(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::Fuzzy(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::FullText(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::Phrase(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::Prefix(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::MoreLikeThis(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::Regex(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::TextParser(expr) => expr.to_tantivy_query(schema),
+            // WhereClause::Eq(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Neq(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Range(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Lt(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Lte(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Gt(expr) => expr.to_tantivy_query(schema),
+            WhereClause::Gte(expr) => expr.to_tantivy_query(schema),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[derive(Debug, Object, Serialize, Deserialize)]
-/// The document must match against all the inner clauses
-/// in order to be considered a match.
 pub struct AllExpr {
     #[serde(rename = "$all")]
     #[oai(rename = "$all")]
-    /// The inner clauses to match against the document.
+    /// The document must match against all the inner clauses
+    /// in order to be considered a match.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> {
+    /// |>     $all: [
+    /// |>         { $eq: "example",  $fields: ["source"] },
+    /// |>         { $gt: 1736198475, $fields: ["created_at"] },
+    /// |>     ]
+    /// |> }
+    ///
+    /// >>> { "id": 1, "source": "example", "created_at": 1736199475 }
+    /// >>> { "id": 2, "source": "example", "created_at": 1736199575 }
+    /// ```
     pub ctx: Vec<WhereClause>,
 }
 
+impl AllExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let mut subqueries = Vec::with_capacity(self.ctx.len());
+        for clause in self.ctx {
+            let query = clause.to_tantivy_query(schema)?;
+            subqueries.push((Occur::Must, query));
+        }
+        let query = BooleanQuery::new(subqueries);
+        Ok(Box::new(query))
+    }
+}
+
 #[derive(Debug, Object, Serialize, Deserialize)]
-/// The document can match against any of the inner clauses
-/// in order to be considered a match.
 pub struct AnyExpr {
     #[serde(rename = "$any")]
     #[oai(rename = "$any")]
-    /// The inner clauses to match against the document.
+    /// The document can match against any of the inner clauses
+    /// in order to be considered a match.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> {
+    /// |>     $any: [
+    /// |>         { $eq: "example",  $fields: ["source"] },
+    /// |>         { $gt: 1736198475, $fields: ["created_at"] },
+    /// |>     ]
+    /// |> }
+    ///
+    /// >>> { "id": 1, "source": "example", "created_at": 1736199475 }
+    /// >>> { "id": 2, "source": "example", "created_at": 1736199575 }
+    /// >>> { "id": 3, "source": "webpage", "created_at": 1736199575 }
+    /// >>> { "id": 4, "source": "example", "created_at": 1636199575 }
+    /// ```
     pub ctx: Vec<WhereClause>,
 }
 
+impl AnyExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let mut subqueries = Vec::with_capacity(self.ctx.len());
+        for clause in self.ctx {
+            let query = clause.to_tantivy_query(schema)?;
+            subqueries.push((Occur::Should, query));
+        }
+        let query = BooleanQuery::new(subqueries);
+        Ok(Box::new(query))
+    }
+}
+
 #[derive(Debug, Object, Serialize, Deserialize)]
-/// Matches documents with non-null values in specified fields.
+pub struct AtLeastExpr {
+    #[serde(rename = "$atleast")]
+    #[oai(rename = "$atleast")]
+    /// Require that the document match _at least_ `$threshold` number of
+    /// queries out of the nested sub queries.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> {
+    /// |>     $atleast: [
+    /// |>         { $gt: 1736198475, $fields: ["created_at"] },
+    /// |>         { $eq: "tim", $fields: ["name"] },
+    /// |>         { $eq: "bob", $fields: ["name"] },
+    /// |>     ],
+    /// |>     $threshold: 2,
+    /// |> }
+    ///
+    /// >>> { "id": 1, "name": "tim", "created_at": 1736198476 }
+    /// >>> { "id": 2, "name": "bob", "created_at": 1736198476 }
+    /// ```
+    pub ctx: Vec<WhereClause>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum number of inner queries that should match in order
+    /// for the document to still be included in results.
+    ///
+    /// This value cannot be higher than the number of sub-queries.
+    pub threshold: usize,
+}
+
+impl AtLeastExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let mut subqueries = Vec::with_capacity(self.ctx.len());
+        for clause in self.ctx {
+            let query = clause.to_tantivy_query(schema)?;
+            subqueries.push((Occur::Should, query));
+        }
+        let mut query = BooleanQuery::new(subqueries);
+        query.set_minimum_number_should_match(self.threshold);
+        Ok(Box::new(query))
+    }
+}
+
+#[derive(Debug, Object, Serialize, Deserialize)]
+pub struct NotExpr {
+    #[serde(rename = "$not")]
+    #[oai(rename = "$not")]
+    /// Negates the match result of the inner query.
+    ///
+    /// I.e. Match becomes no-match, and no-match become match.
+    ///
+    /// NOTE: The score of the inner query is ignored and becomes either `1.0` for a match
+    /// or `0.0` for no match.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $not: { $gt: 1736198475, $fields: ["created_at"] } }
+    ///
+    /// >>> { "id": 4, "source": "example", "created_at": 1636199575 }
+    /// ```
+    pub ctx: Box<WhereClause>,
+}
+
+impl NotExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let inner = self.ctx.to_tantivy_query(schema)?;
+        Ok(Box::new(NegateQuery(inner)))
+    }
+}
+
+#[derive(Debug, Object, Serialize, Deserialize)]
 pub struct ExistsExpr {
     #[serde(rename = "$exists")]
     #[oai(rename = "$exists")]
-    /// The fields to check and match documents with non-null field values present.
+    /// Matches documents with non-null values in specified fields.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $exists: ["source"] }
+    ///
+    /// >>> { "id": 1, "source": "example", "created_at": 1736199475 }
+    /// >>> { "id": 2, "source": "example", "created_at": 1736199575 }
+    /// >>> { "id": 3, "source": "webpage", "created_at": 1736199575 }
+    /// >>> { "id": 4, "source": "example", "created_at": 1636199575 }
+    /// ```
     pub fields: Vec<String>,
+}
+
+impl ExistsExpr {
+    fn to_tantivy_query(
+        mut self,
+        _schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        if self.fields.len() == 1 {
+            let query = ExistsQuery::new_exists_query(self.fields.remove(0));
+            return Ok(Box::new(query));
+        }
+
+        let mut subqueries = Vec::with_capacity(self.fields.len());
+        for field in self.fields {
+            let query = ExistsQuery::new_exists_query(field);
+            subqueries.push((Occur::Should, Box::new(query) as Box<dyn Query>));
+        }
+        let query = BooleanQuery::new(subqueries);
+        Ok(Box::new(query))
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -167,29 +386,30 @@ pub struct FuzzyExpr {
     ///
     /// This is especially useful for user-facing search where it is common to miss-type one or two
     /// characters in a word.
-    pub ctx: FuzzySimpleOrAdvancedBounds,
-}
-
-#[derive(Debug, Union, Serialize, Deserialize)]
-pub enum FuzzySimpleOrAdvancedBounds {
-    Simple(String),
-    Advanced(FuzzyAdvancedBounds),
-}
-
-#[derive(Debug, Object, Serialize, Deserialize)]
-/// Fuzzy search with customisable behaviour and tolerances.
-pub struct FuzzyAdvancedBounds {
-    #[serde(rename = "$search")]
-    #[oai(rename = "$search")]
-    /// The search input text.
-    pub search: String,
-    #[oai(flatten)]
-    #[serde(flatten)]
-    pub config: FuzzyConfig,
-}
-
-#[derive(Debug, Object, Serialize, Deserialize)]
-pub struct FuzzyConfig {
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $fuzzy: "John grishame", $fields: ["author"] }
+    ///
+    /// >>> { "id": 1, "author": "John Grisham" }
+    /// >>> { "id": 2, "author": "John Love" }
+    /// ```
+    pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided search text.
+    pub fields: Vec<String>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
     #[serde(default = "default_true", rename = "$prefixlast")]
     #[oai(default = "default_true", rename = "$prefixlast")]
     /// If `true`, the last term of the `$search` text will be treated as a prefix matching term.
@@ -197,29 +417,17 @@ pub struct FuzzyConfig {
     /// This means given the text _"hello wor"_, the term _"wor"_ will
     /// match _"word"_, _"worldly"_, _"world"_, etc...
     pub prefix_last_term: bool,
-    #[serde(
-        default = "FuzzyConfig::default_one_typo_threshold",
-        rename = "$onetypo"
-    )]
-    #[oai(
-        default = "FuzzyConfig::default_one_typo_threshold",
-        rename = "$onetypo"
-    )]
+    #[serde(default = "FuzzyExpr::default_one_typo_threshold", rename = "$onetypo")]
+    #[oai(default = "FuzzyExpr::default_one_typo_threshold", rename = "$onetypo")]
     /// Specifies the _minimum_ length of a term for it to be allowed upto **1** typo.
     pub one_typo_threshold: usize,
-    #[serde(
-        default = "FuzzyConfig::default_two_typo_threshold",
-        rename = "$twotypo"
-    )]
-    #[oai(
-        default = "FuzzyConfig::default_two_typo_threshold",
-        rename = "$twotypo"
-    )]
+    #[serde(default = "FuzzyExpr::default_two_typo_threshold", rename = "$twotypo")]
+    #[oai(default = "FuzzyExpr::default_two_typo_threshold", rename = "$twotypo")]
     /// Specifies the _minimum_ length of a term for it to be allowed upto **2** typos.
     pub two_typo_threshold: usize,
 }
 
-impl FuzzyConfig {
+impl FuzzyExpr {
     fn default_one_typo_threshold() -> usize {
         5
     }
@@ -234,7 +442,31 @@ pub struct FullTextExpr {
     #[serde(rename = "$fulltext")]
     #[oai(rename = "$fulltext")]
     /// Matches and scores documents using the BM26 full-text search.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $fulltext: "old and men", $fields: ["title"] }
+    ///
+    /// >>> { "id": 1, "title": "The Old Man and the Sea" }
+    /// >>> { "id": 2, "title": "Of Mice and Men" }
+    /// >>> { "id": 3, "title": "Frankenstein" }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided search text.
+    pub fields: Vec<String>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -247,29 +479,29 @@ pub struct PhraseExpr {
     ///
     /// _💡 TIP: By using the advanced syntax, you can add "slop" allowance which can
     /// make the matching behaviour more forgiving with positioning of terms._
-    pub ctx: PhraseSimpleOrAdvancedBounds,
-}
-
-#[derive(Debug, Union, Serialize, Deserialize)]
-pub enum PhraseSimpleOrAdvancedBounds {
-    Simple(String),
-    Advanced(PhraseAdvancedBounds),
-}
-
-#[derive(Debug, Object, Serialize, Deserialize)]
-/// Phrase search with customisable slop.
-pub struct PhraseAdvancedBounds {
-    #[serde(rename = "$search")]
-    #[oai(rename = "$search")]
-    /// The search input text.
-    pub search: String,
-    #[oai(flatten)]
-    #[serde(flatten)]
-    pub config: PhraseConfig,
-}
-
-#[derive(Debug, Object, Serialize, Deserialize)]
-pub struct PhraseConfig {
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $phrase: "and men", $fields: ["title"] }
+    ///
+    /// >>> { "id": 2, "title": "Of Mice and Men" }
+    /// ```
+    pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided phrase.
+    pub fields: Vec<String>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
     #[serde(rename = "$slop")]
     #[oai(rename = "$slop")]
     /// Slop allowed for the phrase.
@@ -300,7 +532,29 @@ pub struct PrefixExpr {
     ///
     /// Optionally passing multiple terms i.e. `hello worl` will be counted as a _prefix phrase_
     /// query and match `"hello world"` but not `"hello bob world"` or `"worl hello"`
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $phrase: "frank", $fields: ["title"] }
+    ///
+    /// >>> { "id": 2, "title": "Frankenstein" }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided prefix.
+    pub fields: Vec<String>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -308,7 +562,37 @@ pub struct MoreLikeThisExpr {
     #[serde(rename = "$morelikethis")]
     #[oai(rename = "$morelikethis")]
     /// Match similar documents.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> {
+    /// |>     $morelikethis: {
+    /// |>         $from: {
+    /// |>             $docs: [
+    /// |>                 { "author": "John Grisham", "title": "Ford County" },
+    /// |>                 { "author": "John Grisham", "title": "The Racketeer" },
+    /// |>             ]
+    /// |>         },
+    /// |>         $stopwords: ["and", "or", "then", "the"],
+    /// |>     },
+    /// |> }
+    ///
+    /// >>> { "id": 2, "title": "The Last Juror" ,   "author": "John Grisham" }
+    /// >>> { "id": 1, "title": "The Judge's List",  "author": "John Grisham" }
+    /// >>> { "id": 4, "title": "The Street Lawyer", "author": "John Grisham" }
+    /// ```
     pub ctx: MoreLikeThisBounds,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -377,35 +661,58 @@ pub struct RegexExpr {
     /// Matches terms using the provided regex pattern.
     ///
     /// Regex syntax can be found here: https://docs.rs/regex/latest/regex/#syntax
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $regex: "m[ea]n", $fields: ["title"] }
+    ///
+    /// >>> { "id": 1, "title": "The Old Man and the Sea" }
+    /// >>> { "id": 2, "title": "Of Mice and Men" }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided regex pattern.
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct TextParserExpr {
-    #[serde(rename = "$parser")]
-    #[oai(rename = "$parser")]
+    #[serde(rename = "$parse")]
+    #[oai(rename = "$parse")]
     /// A customisable text parser allowing users to create their own queries
     /// via the text syntax.
     ///
     /// Parsing rules can be enabled/disabled to fit your use case.
-    pub ctx: TextParserSimpleOrAdvancedBounds,
-}
-
-#[derive(Debug, Union, Serialize, Deserialize)]
-pub enum TextParserSimpleOrAdvancedBounds {
-    Simple(String),
-    Advanced(TextParserAdvancedBounds),
-}
-
-#[derive(Debug, Object, Serialize, Deserialize)]
-pub struct TextParserAdvancedBounds {
-    #[serde(rename = "$search")]
-    #[oai(rename = "$search")]
-    /// The search input text to be parsed.
-    pub search: String,
-    #[oai(flatten)]
-    #[serde(flatten)]
-    pub config: TextParserConfig,
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $parse: "\"Jason Borne\" +wallpaper -ai", $fields: ["name"] }
+    ///
+    /// >>> { "id": 5, "name": "Jason Borne printable wallpaper" }
+    /// >>> { "id": 4, "name": "floral wallpaper" }
+    /// ```
+    pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided search query.
+    pub fields: Vec<String>,
+    #[serde(rename = "$threshold")]
+    #[oai(rename = "$threshold")]
+    /// The minimum score threshold required for this to count as a match.
+    pub threshold: f32,
+    #[serde(rename = "$boost")]
+    #[oai(rename = "$boost")]
+    /// The boost factor to multiply the resulting score by.
+    ///
+    /// This is applied **after thresholding**.
+    pub boost: f32,
+    #[serde(rename = "$options")]
+    #[oai(rename = "$options")]
+    /// The options used to change how the parser behaves.
+    pub parse_options: TextParserConfig,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -494,7 +801,41 @@ pub struct RangeExpr {
     #[serde(rename = "$range")]
     #[oai(rename = "$range")]
     /// Selects documents which have values that lay within the specified range bounds.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $range: { $gte: 5, $lt: 500 }, $fields: ["likes"] }
+    ///
+    /// >>> { "id": 1, "name": "Bob", "likes": 16 }
+    /// >>> { "id": 7, "name": "Tim", "likes": 200 }
+    /// ```
     pub ctx: RangeBounds,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided range bounds.
+    pub fields: Vec<String>,
+}
+
+impl RangeExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        self.ctx.ensure_valid()?;
+
+        let mut terms = Vec::with_capacity(self.fields.len());
+        for field in self.fields.iter() {
+            let field = schema
+                .get_field(field)
+                .map_err(|_| QueryBuildError::UnknownField(field.into()))?;
+            let query = self.ctx.make_query(field);
+            let boxed = Box::new(query) as Box<dyn Query>;
+            terms.push((Occur::Should, boxed))
+        }
+        let query = BooleanQuery::new(terms);
+        Ok(Box::new(query))
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -525,12 +866,62 @@ pub struct RangeBounds {
     pub gte: MaybeUndefined<String>,
 }
 
+impl RangeBounds {
+    fn ensure_valid(&self) -> Result<(), QueryBuildError> {
+        if self.lt.is_value() && self.lte.is_value() {
+            return Err(QueryBuildError::IncompatibleRangeBounds);
+        }
+
+        if self.gt.is_value() && self.gte.is_value() {
+            return Err(QueryBuildError::IncompatibleRangeBounds);
+        }
+
+        Ok(())
+    }
+
+    fn make_query(&self, field: Field) -> RangeQuery {
+        let upper_bound = if let MaybeUndefined::Value(lt) = &self.lt {
+            let term = Term::from_field_text(field, lt);
+            Bound::Excluded(term)
+        } else if let MaybeUndefined::Value(lte) = &self.lte {
+            let term = Term::from_field_text(field, lte);
+            Bound::Included(term)
+        } else {
+            Bound::Unbounded
+        };
+
+        let lower_bound = if let MaybeUndefined::Value(gt) = &self.gt {
+            let term = Term::from_field_text(field, gt);
+            Bound::Excluded(term)
+        } else if let MaybeUndefined::Value(gte) = &self.gte {
+            let term = Term::from_field_text(field, gte);
+            Bound::Included(term)
+        } else {
+            Bound::Unbounded
+        };
+
+        RangeQuery::new(lower_bound, upper_bound)
+    }
+}
+
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct EqExpr {
     #[serde(rename = "$eq")]
     #[oai(rename = "$eq")]
     /// Matches values which are _equal to_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $eq: "tim", $fields: ["name"] }
+    ///
+    /// >>> { "id": 7, "name": "Tim" }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -538,7 +929,34 @@ pub struct NeqExpr {
     #[serde(rename = "$neq")]
     #[oai(rename = "$neq")]
     /// Matches values which are _not equal to_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $eq: "tim", $fields: ["name"] }
+    ///
+    /// >>> { "id": 7, "name": "Bob" }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
+}
+
+impl NeqExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let resolved = NotExpr {
+            ctx: Box::new(WhereClause::Eq(EqExpr {
+                ctx: self.ctx,
+                fields: self.fields,
+            })),
+        };
+        resolved.to_tantivy_query(schema)
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -546,7 +964,39 @@ pub struct LtExpr {
     #[serde(rename = "$lt")]
     #[oai(rename = "$lt")]
     /// Matches values which are _less than_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $lt: 100, $fields: ["likes"] }
+    ///
+    /// >>> { "id": 7, "name": "Bob",     "likes": 15 }
+    /// >>> { "id": 3, "name": "Pickles", "likes": 39 }
+    /// >>> { "id": 2, "name": "Timmy",   "likes": 99 }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
+}
+
+impl LtExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let resolved = RangeExpr {
+            ctx: RangeBounds {
+                lt: MaybeUndefined::Value(self.ctx),
+                lte: MaybeUndefined::Undefined,
+                gt: MaybeUndefined::Undefined,
+                gte: MaybeUndefined::Undefined,
+            },
+            fields: self.fields,
+        };
+        resolved.to_tantivy_query(schema)
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -554,7 +1004,40 @@ pub struct LteExpr {
     #[serde(rename = "$lte")]
     #[oai(rename = "$lte")]
     /// Matches values which are _less than or equal to_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $lt: 100, $fields: ["likes"] }
+    ///
+    /// >>> { "id": 7, "name": "Bob",      "likes": 15 }
+    /// >>> { "id": 3, "name": "Pickles",  "likes": 39 }
+    /// >>> { "id": 4, "name": "Veronica", "likes": 100 }
+    /// >>> { "id": 2, "name": "Timmy",    "likes": 99 }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
+}
+
+impl LteExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let resolved = RangeExpr {
+            ctx: RangeBounds {
+                lt: MaybeUndefined::Undefined,
+                lte: MaybeUndefined::Value(self.ctx),
+                gt: MaybeUndefined::Undefined,
+                gte: MaybeUndefined::Undefined,
+            },
+            fields: self.fields,
+        };
+        resolved.to_tantivy_query(schema)
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -562,7 +1045,38 @@ pub struct GtExpr {
     #[serde(rename = "$gt")]
     #[oai(rename = "$gt")]
     /// Matches values which are _greater than_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $gt: 50, $fields: ["likes"] }
+    ///
+    /// >>> { "id": 4, "name": "Veronica", "likes": 100 }
+    /// >>> { "id": 2, "name": "Timmy",    "likes": 99 }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
+}
+
+impl GtExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let resolved = RangeExpr {
+            ctx: RangeBounds {
+                lt: MaybeUndefined::Undefined,
+                lte: MaybeUndefined::Undefined,
+                gt: MaybeUndefined::Value(self.ctx),
+                gte: MaybeUndefined::Undefined,
+            },
+            fields: self.fields,
+        };
+        resolved.to_tantivy_query(schema)
+    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -570,7 +1084,39 @@ pub struct GteExpr {
     #[serde(rename = "$gte")]
     #[oai(rename = "$gte")]
     /// Matches values which are _greater than or equal to_ the provided value.
+    ///
+    /// #### Example:
+    ///
+    /// ```json5
+    /// |> { $gte: 39, $fields: ["likes"] }
+    ///
+    /// >>> { "id": 3, "name": "Pickles",  "likes": 39 }
+    /// >>> { "id": 4, "name": "Veronica", "likes": 100 }
+    /// >>> { "id": 2, "name": "Timmy",    "likes": 99 }
+    /// ```
     pub ctx: String,
+    #[serde(rename = "$fields")]
+    #[oai(rename = "$fields")]
+    /// The fields to attempt to match with the provided value.
+    pub fields: Vec<String>,
+}
+
+impl GteExpr {
+    fn to_tantivy_query(
+        self,
+        schema: &Schema,
+    ) -> Result<Box<dyn Query>, QueryBuildError> {
+        let resolved = RangeExpr {
+            ctx: RangeBounds {
+                lt: MaybeUndefined::Undefined,
+                lte: MaybeUndefined::Undefined,
+                gt: MaybeUndefined::Undefined,
+                gte: MaybeUndefined::Value(self.ctx),
+            },
+            fields: self.fields,
+        };
+        resolved.to_tantivy_query(schema)
+    }
 }
 
 #[derive(Debug, Union, Serialize, Deserialize)]
