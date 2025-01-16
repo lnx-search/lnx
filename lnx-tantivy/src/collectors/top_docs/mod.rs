@@ -463,7 +463,6 @@ mod tests {
         let reader = index.reader().unwrap();
         let schema = index.schema();
         let id_field = schema.get_field("id").unwrap();
-        let title_field = schema.get_field("title").unwrap();
         
         let options = IndexWriterOptions::builder()
             .num_worker_threads(1)
