@@ -8,10 +8,8 @@ use crate::collectors::ext::CollectorExt;
 use crate::collectors::SeenHashIds;
 
 mod custom_sort;
-mod distinct;
 
 pub use self::custom_sort::CustomSortTopDocs;
-pub use self::distinct::Distinct;
 
 /// Select the top K documents from a search query.
 ///
