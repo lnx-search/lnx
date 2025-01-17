@@ -17,6 +17,7 @@ serde_json = { workspace = true }
 rayon = { workspace = true }
 ahash = { workspace = true }
 bon = { workspace = true }
+smallvec = { workspace = true }
 
 lnx-fs = { path = "../lnx-fs" }
 

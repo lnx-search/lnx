@@ -29,8 +29,47 @@ where
         weight: &dyn Weight,
         segment_ord: u32,
         reader: &SegmentReader,
-        predicate: P,
+        mut predicate: P,
     ) -> tantivy::Result<<Self::Child as SegmentCollector>::Fruit>
     where
-        P: FnMut(DocId) -> bool;
+        P: FnMut(DocId) -> bool,
+    {
+        let mut segment_collector = self.for_segment(segment_ord, reader)?;
+        match (reader.alive_bitset(), self.requires_scoring()) {
+            (Some(alive_bitset), true) => {
+                weight.for_each(reader, &mut |doc, score| {
+                    if alive_bitset.is_alive(doc) || predicate(doc) {
+                        segment_collector.collect(doc, score);
+                    }
+                })?;
+            },
+            (Some(alive_bitset), false) => {
+                weight.for_each_no_score(reader, &mut |docs| {
+                    for doc in docs.iter().cloned() {
+                        if alive_bitset.is_alive(doc) || predicate(doc) {
+                            segment_collector.collect(doc, 0.0);
+                        }
+                    }
+                })?;
+            },
+            (None, true) => {
+                weight.for_each(reader, &mut |doc, score| {
+                    if predicate(doc) {
+                        segment_collector.collect(doc, score);
+                    }
+                })?;
+            },
+            (None, false) => {
+                weight.for_each_no_score(reader, &mut |docs| {
+                    for doc in docs.iter().cloned() {
+                        if predicate(doc) {
+                            segment_collector.collect(doc, 0.0);
+                        }
+                    }
+                })?;
+            },
+        }
+
+        Ok(segment_collector.harvest())
+    }
 }
