@@ -1,4 +1,4 @@
-use lnx_models::query::SelectQuery;
+use lnx_query::syntax::SelectQuery;
 use poem_openapi::payload::Json;
 use poem_openapi::{Object, OpenApi};
 

@@ -5,7 +5,7 @@ members = [
     "lnx-common",
     "lnx-fs",
     "lnx-fs/lnx-fs-benches",
-    "lnx-models",
+    "lnx-query",
     "lnx-server",
     "lnx-shell",
     "lnx-doc",
