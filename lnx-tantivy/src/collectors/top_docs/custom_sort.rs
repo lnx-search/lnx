@@ -306,3 +306,351 @@ enum DynamicColumn {
     U64Mapped(Column),
     Ipv6(Column<Ipv6Addr>),
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use tantivy::indexer::IndexWriterOptions;
+    use tantivy::query::{AllQuery, QueryParser};
+    use tantivy::schema::{Value, FAST, INDEXED, STORED, TEXT};
+    use tantivy::{doc, Index, Term};
+
+    use super::*;
+    use crate::collectors::TopDocs;
+
+    fn create_test_index(ip_values: [Option<Ipv6Addr>; 3]) -> Index {
+        let mut schema_builder = Schema::builder();
+        let id = schema_builder.add_u64_field("id", INDEXED | STORED | FAST);
+        let title = schema_builder.add_text_field("title", TEXT | STORED | FAST);
+        let description = schema_builder.add_text_field("description", STORED | FAST);
+        let ip = schema_builder.add_ip_addr_field("ip", STORED | FAST);
+        let schema = schema_builder.build();
+
+        let index = Index::create_in_ram(schema);
+        let options = IndexWriterOptions::builder()
+            .num_worker_threads(1)
+            .num_merge_threads(0)
+            .build();
+        let mut writer = index.writer_with_options(options).unwrap();
+
+        let mut doc = doc!(
+            id => 1u64,
+            title => "The old man and the sea",
+            description => "example text here today",
+        );
+        if let Some(value) = ip_values[0] {
+            doc.add_ip_addr(ip, value);
+        }
+        writer.add_document(doc).unwrap();
+
+        let mut doc = doc!(
+            id => 2u64,
+            title => "Iron man 4",
+            description => "example text here today",
+        );
+        if let Some(value) = ip_values[1] {
+            doc.add_ip_addr(ip, value);
+        }
+        writer.add_document(doc).unwrap();
+
+        let mut doc = doc!(
+            id => 3u64,
+            title => "X men",
+            description => "Something something rivals",
+        );
+        if let Some(value) = ip_values[2] {
+            doc.add_ip_addr(ip, value);
+        }
+        writer.add_document(doc).unwrap();
+        writer.commit().unwrap();
+
+        let segment_ids = index
+            .searchable_segments()
+            .unwrap()
+            .into_iter()
+            .map(|seg| seg.id())
+            .collect::<Vec<_>>();
+        writer.merge(&segment_ids).wait().unwrap();
+
+        index
+    }
+    #[test]
+    fn test_top_k_custom_score_without_offset() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id = schema.get_field("id").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(id), Order::Desc)],
+        );
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
+        assert_eq!(results.len(), 3);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+        let doc3: tantivy::TantivyDocument = searcher.doc(results[2].1).unwrap();
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(3));
+        assert_eq!(doc2.get_first(id).unwrap().as_u64(), Some(2));
+        assert_eq!(doc3.get_first(id).unwrap().as_u64(), Some(1));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_zero_limit() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id_field = schema.get_field("id").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            0,
+            vec![(SortableKey::Column(id_field), Order::Desc)],
+        );
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
+        assert_eq!(all_docs.len(), 0);
+    }
+
+    #[test]
+    fn test_top_k_custom_score_with_offset() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id = schema.get_field("id").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(id), Order::Desc)],
+        )
+        .and_offset(2);
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
+        assert_eq!(results.len(), 1);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(1));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_for_segment() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let title = schema.get_field("title").unwrap();
+        let segments = searcher.segment_readers();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(title), Order::Desc)],
+        )
+        .and_offset(1);
+        let mut collector = collector
+            .for_segment(0, &segments[0])
+            .expect("Collect for segment");
+        collector.collect(1, 1.0);
+        collector.collect(2, 1.0);
+        let results = collector.harvest();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_top_k_custom_score_sort_multi_value() {
+        let mut schema_builder = Schema::builder();
+        let id = schema_builder.add_u64_field("id", INDEXED | STORED | FAST);
+        let title = schema_builder.add_text_field("title", TEXT | STORED | FAST);
+        let description = schema_builder.add_text_field("description", STORED | FAST);
+        let ip = schema_builder.add_ip_addr_field("ip", STORED | FAST);
+        let schema = schema_builder.build();
+
+        let index = Index::create_in_ram(schema);
+        let options = IndexWriterOptions::builder()
+            .num_worker_threads(1)
+            .num_merge_threads(0)
+            .build();
+        let mut writer = index.writer_with_options(options).unwrap();
+
+        let mut doc = tantivy::TantivyDocument::new();
+        doc.add_u64(id, 1);
+        doc.add_text(title, "Iron man 4");
+        doc.add_text(description, "Man made of iron does stuff.");
+        doc.add_ip_addr(ip, Ipv4Addr::new(127, 0, 0, 1).to_ipv6_mapped());
+        doc.add_ip_addr(ip, Ipv4Addr::new(127, 0, 0, 3).to_ipv6_mapped());
+        doc.add_ip_addr(ip, Ipv4Addr::new(127, 0, 0, 2).to_ipv6_mapped());
+        writer.add_document(doc).unwrap();
+
+        let mut doc = tantivy::TantivyDocument::new();
+        doc.add_u64(id, 2);
+        doc.add_text(title, "The old man and the sea");
+        doc.add_text(description, "A very well known book that I do not know.");
+        doc.add_ip_addr(ip, Ipv4Addr::new(192, 0, 0, 1).to_ipv6_mapped());
+        doc.add_ip_addr(ip, Ipv4Addr::new(129, 0, 0, 2).to_ipv6_mapped());
+        writer.add_document(doc).unwrap();
+
+        writer.commit().unwrap();
+
+        let reader = index.reader().unwrap();
+        reader.reload().unwrap();
+        let searcher = reader.searcher();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(ip), Order::Desc)],
+        );
+
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Get sorted results");
+        assert_eq!(results.len(), 2);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(2));
+        assert_eq!(doc2.get_first(id).unwrap().as_u64(), Some(1));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_sort_dense() {
+        let index = create_test_index([
+            Some(Ipv4Addr::new(127, 0, 0, 1).to_ipv6_mapped()),
+            Some(Ipv4Addr::new(82, 1, 4, 68).to_ipv6_mapped()),
+            Some(Ipv4Addr::new(192, 168, 0, 2).to_ipv6_mapped()),
+        ]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id = schema.get_field("id").unwrap();
+        let ip = schema.get_field("ip").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(ip), Order::Desc)],
+        );
+
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Get sorted results");
+        assert_eq!(results.len(), 3);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+        let doc3: tantivy::TantivyDocument = searcher.doc(results[2].1).unwrap();
+
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(3));
+        assert_eq!(doc2.get_first(id).unwrap().as_u64(), Some(1));
+        assert_eq!(doc3.get_first(id).unwrap().as_u64(), Some(2));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_sort_sparse() {
+        let index = create_test_index([
+            Some(Ipv4Addr::new(127, 0, 0, 1).to_ipv6_mapped()),
+            None,
+            Some(Ipv4Addr::new(192, 168, 0, 2).to_ipv6_mapped()),
+        ]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id = schema.get_field("id").unwrap();
+        let ip = schema.get_field("ip").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(ip), Order::Asc)],
+        );
+
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Get sorted results");
+        assert_eq!(results.len(), 3);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+        let doc3: tantivy::TantivyDocument = searcher.doc(results[2].1).unwrap();
+
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(2));
+        assert_eq!(doc2.get_first(id).unwrap().as_u64(), Some(1));
+        assert_eq!(doc3.get_first(id).unwrap().as_u64(), Some(3));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_sort_null_col() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+        let schema = searcher.schema();
+        let id = schema.get_field("id").unwrap();
+        let ip = schema.get_field("ip").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![
+                (SortableKey::Column(ip), Order::Desc),
+                (SortableKey::Column(id), Order::Asc),
+            ],
+        );
+
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Get sorted results");
+        assert_eq!(results.len(), 3);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+        let doc3: tantivy::TantivyDocument = searcher.doc(results[2].1).unwrap();
+
+        assert_eq!(doc1.get_first(id).unwrap().as_u64(), Some(1));
+        assert_eq!(doc2.get_first(id).unwrap().as_u64(), Some(2));
+        assert_eq!(doc3.get_first(id).unwrap().as_u64(), Some(3));
+    }
+
+    #[test]
+    fn test_top_k_custom_score_with_deletes() {
+        let index = create_test_index([None, None, None]);
+        let reader = index.reader().unwrap();
+        let schema = index.schema();
+        let id_field = schema.get_field("id").unwrap();
+
+        let options = IndexWriterOptions::builder()
+            .num_worker_threads(1)
+            .num_merge_threads(1)
+            .build();
+        let mut writer: tantivy::IndexWriter =
+            index.writer_with_options(options).unwrap();
+        writer.delete_term(Term::from_field_u64(id_field, 2));
+        writer.commit().unwrap();
+        writer.wait_merging_threads().unwrap();
+        reader.reload().unwrap();
+        let searcher = reader.searcher();
+        let title = schema.get_field("title").unwrap();
+
+        let collector = CustomSortTopDocs::with_limit_and_sort(
+            10,
+            vec![(SortableKey::Column(title), Order::Asc)],
+        );
+
+        let results = searcher
+            .search(&AllQuery, &collector)
+            .expect("Get sorted results");
+        assert_eq!(results.len(), 2);
+
+        let doc1: tantivy::TantivyDocument = searcher.doc(results[0].1).unwrap();
+        let doc2: tantivy::TantivyDocument = searcher.doc(results[1].1).unwrap();
+
+        assert_eq!(
+            doc1.get_first(title).unwrap().as_str(),
+            Some("The old man and the sea")
+        );
+        assert_eq!(doc2.get_first(title).unwrap().as_str(), Some("X men"));
+    }
+}

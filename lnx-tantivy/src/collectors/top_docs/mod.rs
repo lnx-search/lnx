@@ -9,7 +9,7 @@ use crate::collectors::SeenHashIds;
 
 mod custom_sort;
 
-pub use self::custom_sort::CustomSortTopDocs;
+pub use self::custom_sort::{CustomSortTopDocs, SortableKey};
 
 /// Select the top K documents from a search query.
 ///
