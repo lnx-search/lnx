@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 tokio = { workspace = true }
+
+lnx-tantivy = { path = "../lnx-tantivy" }
