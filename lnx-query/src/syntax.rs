@@ -1,24 +1,9 @@
 use std::collections::BTreeMap;
-use std::ops::Bound;
 
-use lnx_tantivy::query::NegateQuery;
 use poem_openapi::types::{Example, MaybeUndefined};
 use poem_openapi::{Enum, Object, Union};
 use serde_derive::{Deserialize, Serialize};
-use tantivy::query::{BooleanQuery, ExistsQuery, Occur, Query, RangeQuery};
-use tantivy::schema::{Field, Schema};
-use tantivy::Term;
 
-#[derive(Debug, thiserror::Error)]
-/// An error that can occur when building the query.
-pub enum QueryBuildError {
-    #[error("unknown field: {0:?}")]
-    /// The provided field does not exist.
-    UnknownField(String),
-    #[error("incompatible range bounds")]
-    /// The range bounds provided had both a `lt & lte` field OR both `gt & gte` fields.
-    IncompatibleRangeBounds,
-}
 
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct SelectQuery {
@@ -151,36 +136,6 @@ pub enum WhereClause {
     Gte(GteExpr),
 }
 
-impl WhereClause {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        match self {
-            WhereClause::All(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Any(expr) => expr.to_tantivy_query(schema),
-            WhereClause::AtLeast(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Not(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Exists(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::Fuzzy(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::FullText(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::Phrase(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::Prefix(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::MoreLikeThis(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::Regex(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::TextParser(expr) => expr.to_tantivy_query(schema),
-            // WhereClause::Eq(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Neq(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Range(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Lt(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Lte(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Gt(expr) => expr.to_tantivy_query(schema),
-            WhereClause::Gte(expr) => expr.to_tantivy_query(schema),
-            _ => unimplemented!(),
-        }
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct AllExpr {
     #[serde(rename = "$all")]
@@ -202,21 +157,6 @@ pub struct AllExpr {
     /// >>> { "id": 2, "source": "example", "created_at": 1736199575 }
     /// ```
     pub ctx: Vec<WhereClause>,
-}
-
-impl AllExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let mut subqueries = Vec::with_capacity(self.ctx.len());
-        for clause in self.ctx {
-            let query = clause.to_tantivy_query(schema)?;
-            subqueries.push((Occur::Must, query));
-        }
-        let query = BooleanQuery::new(subqueries);
-        Ok(Box::new(query))
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -242,21 +182,6 @@ pub struct AnyExpr {
     /// >>> { "id": 4, "source": "example", "created_at": 1636199575 }
     /// ```
     pub ctx: Vec<WhereClause>,
-}
-
-impl AnyExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let mut subqueries = Vec::with_capacity(self.ctx.len());
-        for clause in self.ctx {
-            let query = clause.to_tantivy_query(schema)?;
-            subqueries.push((Occur::Should, query));
-        }
-        let query = BooleanQuery::new(subqueries);
-        Ok(Box::new(query))
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -291,22 +216,6 @@ pub struct AtLeastExpr {
     pub threshold: usize,
 }
 
-impl AtLeastExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let mut subqueries = Vec::with_capacity(self.ctx.len());
-        for clause in self.ctx {
-            let query = clause.to_tantivy_query(schema)?;
-            subqueries.push((Occur::Should, query));
-        }
-        let mut query = BooleanQuery::new(subqueries);
-        query.set_minimum_number_should_match(self.threshold);
-        Ok(Box::new(query))
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct NotExpr {
     #[serde(rename = "$not")]
@@ -328,16 +237,6 @@ pub struct NotExpr {
     pub ctx: Box<WhereClause>,
 }
 
-impl NotExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let inner = self.ctx.to_tantivy_query(schema)?;
-        Ok(Box::new(NegateQuery(inner)))
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct ExistsExpr {
     #[serde(rename = "$exists")]
@@ -355,26 +254,6 @@ pub struct ExistsExpr {
     /// >>> { "id": 4, "source": "example", "created_at": 1636199575 }
     /// ```
     pub fields: Vec<String>,
-}
-
-impl ExistsExpr {
-    fn to_tantivy_query(
-        mut self,
-        _schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        if self.fields.len() == 1 {
-            let query = ExistsQuery::new_exists_query(self.fields.remove(0));
-            return Ok(Box::new(query));
-        }
-
-        let mut subqueries = Vec::with_capacity(self.fields.len());
-        for field in self.fields {
-            let query = ExistsQuery::new_exists_query(field);
-            subqueries.push((Occur::Should, Box::new(query) as Box<dyn Query>));
-        }
-        let query = BooleanQuery::new(subqueries);
-        Ok(Box::new(query))
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -817,27 +696,6 @@ pub struct RangeExpr {
     pub fields: Vec<String>,
 }
 
-impl RangeExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        self.ctx.ensure_valid()?;
-
-        let mut terms = Vec::with_capacity(self.fields.len());
-        for field in self.fields.iter() {
-            let field = schema
-                .get_field(field)
-                .map_err(|_| QueryBuildError::UnknownField(field.into()))?;
-            let query = self.ctx.make_query(field);
-            let boxed = Box::new(query) as Box<dyn Query>;
-            terms.push((Occur::Should, boxed))
-        }
-        let query = BooleanQuery::new(terms);
-        Ok(Box::new(query))
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct RangeBounds {
     #[serde(rename = "$lt")]
@@ -864,44 +722,6 @@ pub struct RangeBounds {
     ///
     /// This keyword is mutually exclusive to `$gte`.
     pub gte: MaybeUndefined<String>,
-}
-
-impl RangeBounds {
-    fn ensure_valid(&self) -> Result<(), QueryBuildError> {
-        if self.lt.is_value() && self.lte.is_value() {
-            return Err(QueryBuildError::IncompatibleRangeBounds);
-        }
-
-        if self.gt.is_value() && self.gte.is_value() {
-            return Err(QueryBuildError::IncompatibleRangeBounds);
-        }
-
-        Ok(())
-    }
-
-    fn make_query(&self, field: Field) -> RangeQuery {
-        let upper_bound = if let MaybeUndefined::Value(lt) = &self.lt {
-            let term = Term::from_field_text(field, lt);
-            Bound::Excluded(term)
-        } else if let MaybeUndefined::Value(lte) = &self.lte {
-            let term = Term::from_field_text(field, lte);
-            Bound::Included(term)
-        } else {
-            Bound::Unbounded
-        };
-
-        let lower_bound = if let MaybeUndefined::Value(gt) = &self.gt {
-            let term = Term::from_field_text(field, gt);
-            Bound::Excluded(term)
-        } else if let MaybeUndefined::Value(gte) = &self.gte {
-            let term = Term::from_field_text(field, gte);
-            Bound::Included(term)
-        } else {
-            Bound::Unbounded
-        };
-
-        RangeQuery::new(lower_bound, upper_bound)
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -944,21 +764,6 @@ pub struct NeqExpr {
     pub fields: Vec<String>,
 }
 
-impl NeqExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let resolved = NotExpr {
-            ctx: Box::new(WhereClause::Eq(EqExpr {
-                ctx: self.ctx,
-                fields: self.fields,
-            })),
-        };
-        resolved.to_tantivy_query(schema)
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct LtExpr {
     #[serde(rename = "$lt")]
@@ -979,24 +784,6 @@ pub struct LtExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided value.
     pub fields: Vec<String>,
-}
-
-impl LtExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let resolved = RangeExpr {
-            ctx: RangeBounds {
-                lt: MaybeUndefined::Value(self.ctx),
-                lte: MaybeUndefined::Undefined,
-                gt: MaybeUndefined::Undefined,
-                gte: MaybeUndefined::Undefined,
-            },
-            fields: self.fields,
-        };
-        resolved.to_tantivy_query(schema)
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -1022,24 +809,6 @@ pub struct LteExpr {
     pub fields: Vec<String>,
 }
 
-impl LteExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let resolved = RangeExpr {
-            ctx: RangeBounds {
-                lt: MaybeUndefined::Undefined,
-                lte: MaybeUndefined::Value(self.ctx),
-                gt: MaybeUndefined::Undefined,
-                gte: MaybeUndefined::Undefined,
-            },
-            fields: self.fields,
-        };
-        resolved.to_tantivy_query(schema)
-    }
-}
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct GtExpr {
     #[serde(rename = "$gt")]
@@ -1059,24 +828,6 @@ pub struct GtExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided value.
     pub fields: Vec<String>,
-}
-
-impl GtExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let resolved = RangeExpr {
-            ctx: RangeBounds {
-                lt: MaybeUndefined::Undefined,
-                lte: MaybeUndefined::Undefined,
-                gt: MaybeUndefined::Value(self.ctx),
-                gte: MaybeUndefined::Undefined,
-            },
-            fields: self.fields,
-        };
-        resolved.to_tantivy_query(schema)
-    }
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]
@@ -1099,24 +850,6 @@ pub struct GteExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided value.
     pub fields: Vec<String>,
-}
-
-impl GteExpr {
-    fn to_tantivy_query(
-        self,
-        schema: &Schema,
-    ) -> Result<Box<dyn Query>, QueryBuildError> {
-        let resolved = RangeExpr {
-            ctx: RangeBounds {
-                lt: MaybeUndefined::Undefined,
-                lte: MaybeUndefined::Undefined,
-                gt: MaybeUndefined::Undefined,
-                gte: MaybeUndefined::Value(self.ctx),
-            },
-            fields: self.fields,
-        };
-        resolved.to_tantivy_query(schema)
-    }
 }
 
 #[derive(Debug, Union, Serialize, Deserialize)]
@@ -1143,10 +876,6 @@ pub enum OneOrManySortBy {
     /// then any "equal" ratings will be sorted by `age` in _ascending order_.
     /// Finally, any remaining equally sorted documents will be sorted by `score` in _descending order_.
     Many(Vec<SortBy>),
-}
-
-impl OneOrManySortBy {
-    fn to_collector_predicate(&self) {}
 }
 
 #[derive(Debug, Object, Serialize, Deserialize)]

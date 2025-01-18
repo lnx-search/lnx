@@ -13,4 +13,4 @@ tokio = { workspace = true }
 serde_json = { workspace = true }
 
 lnx-common = { path = "../lnx-common" }
-lnx-models = { path = "../lnx-models" }
+lnx-query = { path = "../lnx-query" }

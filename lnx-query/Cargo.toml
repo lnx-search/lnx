@@ -1,5 +1,5 @@
 [package]
-name = "lnx-models"
+name = "lnx-query"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,7 @@ serde_derive = { workspace = true }
 poem-openapi = { workspace = true }
 tracing = { workspace = true }
 
+lnx-common = { path = "../lnx-common" }
 lnx-tantivy = { path = "../lnx-tantivy" }
 
 [dev-dependencies]
