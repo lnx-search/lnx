@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::validate::{ErrorCode, ValidationError, ValidatorContext};
 
 /// Validates the fields that are attempting to be selected by the query.
@@ -27,6 +29,7 @@ pub fn validate_select_fields(
         .map(|(_, entry)| entry.name())
         .collect::<Vec<_>>();
 
+    let mut seen = BTreeSet::new();
     for (idx, field_name) in fields.iter().enumerate() {
         context.push_location(idx);
 
@@ -46,6 +49,11 @@ pub fn validate_select_fields(
         let entry = schema.get_field_entry(field);
         if !entry.is_stored() {
             return Err(make_field_not_stored_error(context, table_name, field_name));
+        }
+
+        let did_insert = seen.insert(field_name);
+        if !did_insert {
+            return Err(make_duplicate_field_error(context, table_name, field_name));
         }
 
         context.pop_location();
@@ -97,6 +105,19 @@ fn make_bad_wildcard_error(context: &ValidatorContext) -> ValidationError {
     single wildcard or many explicitly declared fields"
         .to_string();
     context.build_error(ErrorCode::WildcardNotAllowed, message, Some(help))
+}
+
+fn make_duplicate_field_error(
+    context: &ValidatorContext,
+    table_name: &str,
+    field_name: &str,
+) -> ValidationError {
+    let help = "remove on of the duplicate fields from the select so there is all field names are unique"
+            .to_string();
+    let message = format!(
+        "the field {field_name:?} within table {table_name:?} has already been declared"
+    );
+    context.build_error(ErrorCode::DuplicateField, message, Some(help))
 }
 
 #[cfg(test)]
@@ -242,5 +263,31 @@ mod tests {
             "the field \"example\" within table \"test\" is not stored"
         );
         assert_eq!(error.location, "[0]");
+    }
+
+    #[test]
+    fn test_validate_select_fields_rejects_duplicates() {
+        let mut schema_builder = tantivy::schema::Schema::builder();
+        schema_builder.add_text_field("example", FAST);
+        let schema = schema_builder.build();
+
+        let mut context = ValidatorContext::default();
+        let error = validate_select_fields(
+            &mut context,
+            "test",
+            &schema,
+            &["example".to_string(), "example".to_string()],
+        )
+        .expect_err("Validator should reject duplicate");
+        assert_eq!(error.code, ErrorCode::DuplicateField);
+        assert_eq!(
+            error.help.as_deref(),
+            Some("remove on of the duplicate fields from the select so there is all field names are unique"),
+        );
+        assert_eq!(
+            error.message,
+            "the field \"example\" within table \"test\" has already been declared"
+        );
+        assert_eq!(error.location, "[1]");
     }
 }

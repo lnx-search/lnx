@@ -47,6 +47,13 @@ pub enum ErrorCode {
     /// Use _either_ the wildcard (`*`) _or_ explicitly declare the fields as they are mutually
     /// exclusive because the wildcard will implicitly pull in the fields being explicitly declared.
     WildcardNotAllowed,
+    #[serde(rename = "ERR_DUPLICATE_FIELD")]
+    /// The same field has been provided twice.
+    ///
+    /// **Help:**
+    ///
+    /// Remove on of the duplicate values so there is all field names are unique.
+    DuplicateField,
     #[serde(rename = "ERR_MISSING_SELECT_FIELDS")]
     /// The query provided is missing at least one field to return.
     ///
