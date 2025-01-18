@@ -1,4 +1,4 @@
-mod collectors;
+pub mod collectors;
 mod directory;
 pub mod executor;
 mod index;

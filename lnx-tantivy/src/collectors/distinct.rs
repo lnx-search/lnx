@@ -192,15 +192,15 @@ impl DynamicColumn {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use tantivy::{doc, Index, TantivyError};
     use tantivy::indexer::IndexWriterOptions;
     use tantivy::query::AllQuery;
     use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
-    use crate::collectors::top_docs::TopDocs;
+    use tantivy::{doc, Index, TantivyError};
+
     use super::*;
+    use crate::collectors::top_docs::TopDocs;
 
     fn create_test_index() -> Index {
         let mut schema_builder = Schema::builder();
@@ -216,23 +216,29 @@ mod tests {
             .num_merge_threads(0)
             .build();
         let mut writer = index.writer_with_options(options).unwrap();
-        writer.add_document(doc!(
-            id => 1u64,
-            title => "The old man and the sea",
-            description => "example text here today",
-            ip => Ipv6Addr::LOCALHOST,
-        )).unwrap();
-        writer.add_document(doc!(
-            id => 2u64,
-            title => "The old man and the sea",
-            description => "example text here today",
-            ip => Ipv6Addr::LOCALHOST,
-        )).unwrap();
-        writer.add_document(doc!(
-            id => 3u64,
-            title => "X men",
-            description => "Something something rivals",
-        )).unwrap();
+        writer
+            .add_document(doc!(
+                id => 1u64,
+                title => "The old man and the sea",
+                description => "example text here today",
+                ip => Ipv6Addr::LOCALHOST,
+            ))
+            .unwrap();
+        writer
+            .add_document(doc!(
+                id => 2u64,
+                title => "The old man and the sea",
+                description => "example text here today",
+                ip => Ipv6Addr::LOCALHOST,
+            ))
+            .unwrap();
+        writer
+            .add_document(doc!(
+                id => 3u64,
+                title => "X men",
+                description => "Something something rivals",
+            ))
+            .unwrap();
         writer.commit().unwrap();
         index
     }
@@ -246,7 +252,9 @@ mod tests {
         let title_field = schema.get_field("title").unwrap();
 
         let collector = Distinct::for_fields(vec![title_field], TopDocs::with_limit(10));
-        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
         assert_eq!(all_docs.len(), 2);
     }
 
@@ -259,10 +267,12 @@ mod tests {
         let id_field = schema.get_field("id").unwrap();
 
         let collector = Distinct::for_fields(vec![id_field], TopDocs::with_limit(10));
-        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
         assert_eq!(all_docs.len(), 3);
     }
-    
+
     #[test]
     fn test_distinct_zero_limit() {
         let index = create_test_index();
@@ -272,7 +282,9 @@ mod tests {
         let title_field = schema.get_field("title").unwrap();
 
         let collector = Distinct::for_fields(vec![title_field], TopDocs::with_limit(0));
-        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
         assert_eq!(all_docs.len(), 0);
     }
 
@@ -285,14 +297,15 @@ mod tests {
         let title_field = schema.get_field("title").unwrap();
 
         let collector = Distinct::for_fields(
-            vec![title_field], 
-            TopDocs::with_limit(3)
-                .and_offset(1)
+            vec![title_field],
+            TopDocs::with_limit(3).and_offset(1),
         );
-        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
         assert_eq!(all_docs.len(), 1);
     }
-    
+
     #[test]
     fn test_distinct_non_fast_field() {
         let index = create_test_index();
@@ -301,15 +314,14 @@ mod tests {
         let schema = index.schema();
         let description_field = schema.get_field("description").unwrap();
 
-        let collector = Distinct::for_fields(
-            vec![description_field],
-            TopDocs::with_limit(3)
-        );
-        let error = searcher.search(&AllQuery, &collector)
+        let collector =
+            Distinct::for_fields(vec![description_field], TopDocs::with_limit(3));
+        let error = searcher
+            .search(&AllQuery, &collector)
             .expect_err("Cannot search distinct on non-fast field");
         assert!(matches!(error, TantivyError::InvalidArgument(_)));
     }
-    
+
     #[test]
     fn test_distinct_ip_field() {
         let index = create_test_index();
@@ -318,12 +330,10 @@ mod tests {
         let schema = index.schema();
         let ip_field = schema.get_field("ip").unwrap();
 
-        let collector = Distinct::for_fields(
-            vec![ip_field],
-            TopDocs::with_limit(3)
-        );
-        let all_docs = searcher.search(&AllQuery, &collector).expect("Complete search");
+        let collector = Distinct::for_fields(vec![ip_field], TopDocs::with_limit(3));
+        let all_docs = searcher
+            .search(&AllQuery, &collector)
+            .expect("Complete search");
         assert_eq!(all_docs.len(), 2);
     }
-    
 }
