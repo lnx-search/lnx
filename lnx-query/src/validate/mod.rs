@@ -1,9 +1,10 @@
 use std::borrow::Cow;
-use serde_derive::Serialize;
-use poem_openapi::{Enum, Object};
 
-pub mod table;
+use poem_openapi::{Enum, Object};
+use serde_derive::Serialize;
+
 mod select_fields;
+pub mod table;
 
 #[derive(Debug, Copy, Clone, Enum, Serialize)]
 /// The unique code of the validation error that occurred.
@@ -19,36 +20,36 @@ pub enum ErrorCode {
     UnknownTable,
     #[serde(rename = "ERR_UNKNOWN_FIELD")]
     /// The field provided by user input does not exist for the specified table.
-    /// 
+    ///
     /// **Help:**
-    /// 
+    ///
     /// Double check that the table you're attempted to select data from contains
     /// the field(s) you are specifying.
     UnknownField,
     #[serde(rename = "ERR_FIELD_NOT_STORED")]
     /// The field provided by user input exists, but is not stored.
-    /// 
+    ///
     /// This means that the data is only indexed which is a _lossy_ conversion and therefore
     /// lnx cannot retrieve the original value.
-    /// 
+    ///
     /// **Help:**
-    /// 
+    ///
     /// All fields are `stored: true` by default, this means you have explicitly disabled
     /// storing the original content for this field. You will need to re-enable this option
     /// by creating a new table and re-inserting your data, lnx cannot do this for you automatically.
     FieldIsNotStored,
     #[serde(rename = "ERR_MISSING_SELECT_FIELDS")]
     /// The query provided is missing at least one field to return.
-    /// 
+    ///
     /// ```json5
     /// { $select: [], ... }  // This doesn't work!
     /// ```
-    /// 
+    ///
     /// **Help:**
-    /// 
+    ///
     /// You can pass either individual fields, or pass a `*` as the single value within the array.
     /// For example, either of these patterns work:
-    /// 
+    ///
     /// ```json5
     /// { $select: ["*"], ... }  // Returns all fields
     /// { $select: ["a", "b"], ... }  // Returns only fields "a" and "b".
@@ -103,7 +104,7 @@ impl ValidatorContext {
             code,
             message,
             help,
-            location: self.render_location()
+            location: self.render_location(),
         }
     }
 
@@ -129,7 +130,6 @@ impl ValidatorContext {
         location
     }
 }
-
 
 pub(crate) enum JsonNode {
     Key(Cow<'static, str>),
