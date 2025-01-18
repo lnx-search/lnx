@@ -16,7 +16,7 @@ pub fn validate_can_be_distinct(
         let entry = schema.get_field_entry(*field);
         if !entry.is_fast() {
             let help = "distinct queries require all fields being selected to have a columnar index, \
-            all fields are `columnar: true` by default.".to_string();
+            all fields are `columnar: true` by default".to_string();
             let message = format!("field {:?} has no columnar index", entry.name());
             let error =
                 context.build_error(ErrorCode::FieldIsNotFast, message, Some(help));

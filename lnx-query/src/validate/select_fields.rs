@@ -108,8 +108,7 @@ fn make_field_not_stored_error(
 }
 
 fn make_bad_wildcard_error(context: &ValidatorContext) -> ValidationError {
-    let help =
-        "remove one of either the wildcard or explicitly declared fields".to_string();
+    let help = "remove either the wildcard or explicitly declared fields".to_string();
     let message = "wildcard field was not mutually exclusive, must be either a \
     single wildcard or many explicitly declared fields"
         .to_string();
@@ -121,7 +120,7 @@ fn make_duplicate_field_error(
     table_name: &str,
     field_name: &str,
 ) -> ValidationError {
-    let help = "remove one of the duplicate fields from the select so all field names are unique"
+    let help = "remove one of the duplicate fields from the `$select` so there all field names are unique"
             .to_string();
     let message = format!(
         "the field {field_name:?} within table {table_name:?} has already been declared"
@@ -163,7 +162,7 @@ mod tests {
         assert_eq!(error.code, ErrorCode::WildcardNotAllowed);
         assert_eq!(
             error.help.as_deref(),
-            Some("remove one of either the wildcard or explicitly declared fields"),
+            Some("remove either the wildcard or explicitly declared fields"),
         );
         assert_eq!(
             error.message,
@@ -291,7 +290,7 @@ mod tests {
         assert_eq!(error.code, ErrorCode::DuplicateField);
         assert_eq!(
             error.help.as_deref(),
-            Some("remove on of the duplicate fields from the select so there is all field names are unique"),
+            Some("remove one of the duplicate fields from the `$select` so there all field names are unique"),
         );
         assert_eq!(
             error.message,
