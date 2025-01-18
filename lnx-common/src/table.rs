@@ -17,6 +17,16 @@ impl Deref for LnxTable {
     }
 }
 
+impl LnxTable {
+    /// Creates a new [LnxTable] using the given tantivy schema.
+    pub fn new(schema: tantivy::schema::Schema) -> Self {
+        let inner = LnxTableInner {
+            tantivy_schema: schema,
+        };
+        Self(Arc::new(inner))
+    }
+}
+
 #[derive(Debug)]
 /// A single table backed by a tantivy index.
 pub struct LnxTableInner {

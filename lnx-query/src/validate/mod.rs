@@ -6,7 +6,7 @@ use serde_derive::Serialize;
 mod select_fields;
 pub mod table;
 
-#[derive(Debug, Copy, Clone, Enum, Serialize)]
+#[derive(Debug, Copy, Clone, Enum, Serialize, Eq, PartialEq)]
 /// The unique code of the validation error that occurred.
 pub enum ErrorCode {
     #[serde(rename = "ERR_UNKNOWN_TABLE")]
@@ -38,6 +38,15 @@ pub enum ErrorCode {
     /// storing the original content for this field. You will need to re-enable this option
     /// by creating a new table and re-inserting your data, lnx cannot do this for you automatically.
     FieldIsNotStored,
+    #[serde(rename = "ERR_BAD_WILDCARD")]
+    /// A wildcard was provided by the user input alongside other explicitly declared fields
+    /// which is not allowed.
+    ///
+    /// **Help:**
+    ///
+    /// Use _either_ the wildcard (`*`) _or_ explicitly declare the fields as they are mutually
+    /// exclusive because the wildcard will implicitly pull in the fields being explicitly declared.
+    WildcardNotAllowed,
     #[serde(rename = "ERR_MISSING_SELECT_FIELDS")]
     /// The query provided is missing at least one field to return.
     ///
