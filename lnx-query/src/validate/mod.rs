@@ -3,7 +3,8 @@ use std::borrow::Cow;
 use poem_openapi::{Enum, Object};
 use serde_derive::Serialize;
 
-mod select_fields;
+pub mod distinct;
+pub mod select_fields;
 pub mod table;
 
 #[derive(Debug, Copy, Clone, Enum, Serialize, Eq, PartialEq)]
@@ -38,6 +39,18 @@ pub enum ErrorCode {
     /// storing the original content for this field. You will need to re-enable this option
     /// by creating a new table and re-inserting your data, lnx cannot do this for you automatically.
     FieldIsNotStored,
+    /// The field provided by user input exists, but is not backed by a columnar index.
+    ///
+    /// This means lnx does not have fast random access to the values within this field
+    /// which prevents it from being used in things like sorting, distinct queries, aggregations, etc...
+    ///
+    /// **Help:**
+    ///
+    /// All fields are `columnar: true` by default, this means you have explicitly disabled
+    /// the columnar index on the original content for this field. You will need to re-enable this option
+    /// by editing the table settings, this will cause lnx to re-index the table from scratch
+    /// which has a significant performance impact.
+    FieldIsNotFast,
     #[serde(rename = "ERR_BAD_WILDCARD")]
     /// A wildcard was provided by the user input alongside other explicitly declared fields
     /// which is not allowed.
