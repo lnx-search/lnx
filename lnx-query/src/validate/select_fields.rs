@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
 
+use tantivy::schema::Field;
+
 use crate::validate::{ErrorCode, ValidationError, ValidatorContext};
 
 /// Validates the fields that are attempting to be selected by the query.
@@ -8,7 +10,7 @@ pub fn validate_select_fields(
     table_name: &str,
     schema: &tantivy::schema::Schema,
     fields: &[String],
-) -> Result<(), ValidationError> {
+) -> Result<Vec<Field>, ValidationError> {
     if fields.is_empty() {
         let message =
             "at least one field or wildcard must be provided to the `$select` field"
@@ -21,7 +23,12 @@ pub fn validate_select_fields(
     }
 
     if fields.len() == 1 && fields[0] == "*" {
-        return Ok(());
+        let all_fields = schema
+            .fields()
+            .filter(|(_, entry)| entry.is_stored())
+            .map(|(field_id, _)| field_id)
+            .collect();
+        return Ok(all_fields);
     }
 
     let existing_fields = schema
@@ -30,6 +37,7 @@ pub fn validate_select_fields(
         .collect::<Vec<_>>();
 
     let mut seen = BTreeSet::new();
+    let mut field_ids = Vec::with_capacity(fields.len());
     for (idx, field_name) in fields.iter().enumerate() {
         context.push_location(idx);
 
@@ -56,10 +64,11 @@ pub fn validate_select_fields(
             return Err(make_duplicate_field_error(context, table_name, field_name));
         }
 
+        field_ids.push(field);
         context.pop_location();
     }
 
-    Ok(())
+    Ok(field_ids)
 }
 
 fn make_field_does_not_exist_error(
