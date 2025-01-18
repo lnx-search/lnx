@@ -16,8 +16,7 @@ pub fn validate_can_be_distinct(
         let entry = schema.get_field_entry(*field);
         if !entry.is_fast() {
             let help = "distinct queries require all fields being selected to have a columnar index, \
-            all fields are `columnar: true` by default, please re-enable this \
-            option on your field and allow lnx to re-index the table. WARNING: this is an expensive operation".to_string();
+            all fields are `columnar: true` by default.".to_string();
             let message = format!("field {:?} has no columnar index", entry.name());
             let error =
                 context.build_error(ErrorCode::FieldIsNotFast, message, Some(help));
@@ -49,8 +48,7 @@ mod tests {
         assert_eq!(
             error.help.as_deref(),
             Some("distinct queries require all fields being selected to have a columnar index, \
-            all fields are `columnar: true` by default, please re-enable this \
-            option on your field and allow lnx to re-index the table. WARNING: this is an expensive operation"),
+            all fields are `columnar: true` by default"),
         );
         assert_eq!(error.message, "field \"example\" has no columnar index");
         assert_eq!(error.location, "[0]");

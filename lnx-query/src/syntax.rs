@@ -34,7 +34,7 @@ pub struct SelectQuery {
     #[serde(default, rename = "$sort")]
     #[oai(default, rename = "$sort")]
     /// Rules for customising how results are sorted.
-    pub sort_by: Option<OneOrManySortBy>,
+    pub sort_by: MaybeUndefined<OneOrManySortBy>,
     #[serde(default = "default_limit")]
     #[oai(default = "default_limit")]
     /// Limits the number of results returned.

@@ -5,6 +5,7 @@ use serde_derive::Serialize;
 
 pub mod distinct;
 pub mod select_fields;
+pub mod sort;
 pub mod table;
 
 #[derive(Debug, Copy, Clone, Enum, Serialize, Eq, PartialEq)]
@@ -84,6 +85,34 @@ pub enum ErrorCode {
     /// { $select: ["a", "b"], ... }  // Returns only fields "a" and "b".
     /// ```
     MissingSelectFields,
+    #[serde(rename = "ERR_MISSING_SORT_FIELDS")]
+    /// The query provided has explicitly declared the `$sort` clause but
+    /// has not provided any rules to sort the document by.
+    ///
+    /// ```json5
+    /// { $sort: [], ... }  // This doesn't work!
+    /// ```
+    ///
+    /// **Help:**
+    ///
+    /// You can pass either a single sort rule as an object, or an array of sort rules
+    /// providing there is at least one rule within the array.
+    ///
+    /// The `$score` variable is available to sort by score explicitly, or you can set `$score: null`
+    /// to disable sorting completely.
+    /// Disabling sorting is not recommended if you need repeatable results as there
+    /// is no consistent ordering in this event.
+    ///
+    /// ```json5
+    /// // Sorts by score in ascending order
+    /// { $sort: { $by: "$score", $order: "asc" }, ... }  
+    /// // Sorts documents first by age in ascending order and then splits
+    /// // any ties by sorting by $score in descending order.
+    /// { $sort: [{ $by: "age", $order: "asc" }, { $by: "$score", $order: "desc" }], ... }  
+    /// // Or to disable sorting and simply taking the first available results (non-predictable results.)
+    /// { $sort: null, ... }
+    /// ```
+    MissingSortFields,
 }
 
 #[derive(Debug, Clone, Object, Serialize)]

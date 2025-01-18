@@ -82,7 +82,7 @@ fn make_field_does_not_exist_error(
     } else {
         fields
             .iter()
-            .filter(|name| crate::utils::damerau_levenshtein(field_name, name) < 3)
+            .filter(|name| crate::utils::damerau_levenshtein(field_name, name) <= 3)
             .min_by_key(|name| crate::utils::damerau_levenshtein(field_name, name))
             .map(|closest| format!("did you mean {closest:?}?"))
             .unwrap_or_else(|| "you can use a wildcard `*` to select all fields and see what fields are available".to_string())
@@ -121,7 +121,7 @@ fn make_duplicate_field_error(
     table_name: &str,
     field_name: &str,
 ) -> ValidationError {
-    let help = "remove on of the duplicate fields from the select so there is all field names are unique"
+    let help = "remove one of the duplicate fields from the select so all field names are unique"
             .to_string();
     let message = format!(
         "the field {field_name:?} within table {table_name:?} has already been declared"
