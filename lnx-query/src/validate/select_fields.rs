@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_validate_select_fields_rejects_duplicates() {
         let mut schema_builder = tantivy::schema::Schema::builder();
-        schema_builder.add_text_field("example", FAST);
+        schema_builder.add_text_field("example", STORED);
         let schema = schema_builder.build();
 
         let mut context = ValidatorContext::default();
