@@ -4,7 +4,6 @@ use poem_openapi::types::{Example, MaybeUndefined};
 use poem_openapi::{Enum, Object, Union};
 use serde_derive::{Deserialize, Serialize};
 
-
 #[derive(Debug, Object, Serialize, Deserialize)]
 pub struct SelectQuery {
     #[serde(rename = "$select")]
