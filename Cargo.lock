@@ -1655,6 +1655,7 @@ dependencies = [
  "lnx-common",
  "lnx-tantivy",
  "poem-openapi",
+ "regex",
  "rstest",
  "serde",
  "serde_derive",

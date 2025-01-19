@@ -4,6 +4,7 @@ use poem_openapi::{Enum, Object};
 use serde_derive::Serialize;
 
 pub mod distinct;
+pub mod query_parts;
 pub mod select_fields;
 pub mod sort;
 pub mod table;
@@ -40,6 +41,18 @@ pub enum ErrorCode {
     /// storing the original content for this field. You will need to re-enable this option
     /// by creating a new table and re-inserting your data, lnx cannot do this for you automatically.
     FieldIsNotStored,
+    #[serde(rename = "ERR_FIELD_NOT_INDEXED")]
+    /// The field provided by user input exists, but is not stored.
+    ///
+    /// This means that the data is only indexed which is a _lossy_ conversion and therefore
+    /// lnx cannot retrieve the original value.
+    ///
+    /// **Help:**
+    ///
+    /// All fields are `stored: true` by default, this means you have explicitly disabled
+    /// storing the original content for this field. You will need to re-enable this option
+    /// by creating a new table and re-inserting your data, lnx cannot do this for you automatically.
+    FieldIsNotIndexed,
     #[serde(rename = "ERR_FIELD_NOT_COLUMNAR")]
     /// The field provided by user input exists, but is not backed by a columnar index.
     ///
@@ -69,7 +82,7 @@ pub enum ErrorCode {
     /// Remove on of the duplicate values so there is all field names are unique.
     DuplicateField,
     #[serde(rename = "ERR_MISSING_SELECT_FIELDS")]
-    /// The query provided is missing at least one field to return.
+    /// The select statement provided is missing at least one field to return.
     ///
     /// ```json5
     /// { $select: [], ... }  // This doesn't work!
@@ -85,6 +98,22 @@ pub enum ErrorCode {
     /// { $select: ["a", "b"], ... }  // Returns only fields "a" and "b".
     /// ```
     MissingSelectFields,
+    #[serde(rename = "ERR_MISSING_QUERY_FIELDS")]
+    /// The where clause query provided is missing at least one field to return.
+    ///
+    /// ```json5
+    /// { $fuzzy: "hello world", $fields: [], ... }  // This doesn't work!
+    /// ```
+    ///
+    /// **Help:**
+    ///
+    /// When you add a query, you must tell lnx what fields to search within, some fields
+    /// may not be valid to use depending on what indexes the query requires.
+    ///
+    /// ```json5
+    /// { $fuzzy: "hello world", $fields: ["title"], ... }  // Performs a fuzzy search on field `title`.
+    /// ```
+    MissingQueryFields,
     #[serde(rename = "ERR_MISSING_SORT_FIELDS")]
     /// The query provided has explicitly declared the `$sort` clause but
     /// has not provided any rules to sort the document by.
@@ -113,6 +142,21 @@ pub enum ErrorCode {
     /// { $sort: null, ... }
     /// ```
     MissingSortFields,
+    #[serde(rename = "ERR_BAD_REGEX")]
+    /// The provided regex pattern is not a valid regex.
+    ///
+    /// **Help:**
+    ///
+    /// lnx uses the regex syntax from the regex crate which can be found here:
+    /// https://docs.rs/regex/latest/regex/#syntax
+    InvalidRegexPattern,
+    #[serde(rename = "ERR_BAD_BOOST")]
+    /// The provided boost multiplier is incorrect.
+    ///
+    /// **Help:**
+    ///
+    /// The boost value is a _multiplier_ which is applied to the score which cannot be less than 0.0.
+    InvalidBoostMultiplier,
 }
 
 #[derive(Debug, Clone, Object, Serialize)]

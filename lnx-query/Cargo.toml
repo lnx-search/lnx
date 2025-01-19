@@ -11,6 +11,7 @@ serde = { workspace = true }
 serde_derive = { workspace = true }
 poem-openapi = { workspace = true }
 tracing = { workspace = true }
+regex = { workspace = true }
 
 lnx-common = { path = "../lnx-common" }
 lnx-tantivy = { path = "../lnx-tantivy" }

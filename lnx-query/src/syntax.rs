@@ -223,9 +223,6 @@ pub struct NotExpr {
     ///
     /// I.e. Match becomes no-match, and no-match become match.
     ///
-    /// NOTE: The score of the inner query is ignored and becomes either `1.0` for a match
-    /// or `0.0` for no match.
-    ///
     /// #### Example:
     ///
     /// ```json5
@@ -278,10 +275,6 @@ pub struct FuzzyExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided search text.
     pub fields: Vec<String>,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.
@@ -335,10 +328,6 @@ pub struct FullTextExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided search text.
     pub fields: Vec<String>,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.
@@ -370,10 +359,6 @@ pub struct PhraseExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided phrase.
     pub fields: Vec<String>,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.
@@ -423,10 +408,6 @@ pub struct PrefixExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided prefix.
     pub fields: Vec<String>,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.
@@ -461,10 +442,6 @@ pub struct MoreLikeThisExpr {
     /// >>> { "id": 4, "title": "The Street Lawyer", "author": "John Grisham" }
     /// ```
     pub ctx: MoreLikeThisBounds,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.
@@ -577,10 +554,6 @@ pub struct TextParserExpr {
     #[oai(rename = "$fields")]
     /// The fields to attempt to match with the provided search query.
     pub fields: Vec<String>,
-    #[serde(rename = "$threshold")]
-    #[oai(rename = "$threshold")]
-    /// The minimum score threshold required for this to count as a match.
-    pub threshold: f32,
     #[serde(rename = "$boost")]
     #[oai(rename = "$boost")]
     /// The boost factor to multiply the resulting score by.

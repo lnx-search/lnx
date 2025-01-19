@@ -120,7 +120,7 @@ fn make_duplicate_field_error(
     table_name: &str,
     field_name: &str,
 ) -> ValidationError {
-    let help = "remove one of the duplicate fields from the `$select` so there all field names are unique"
+    let help = "remove one of the duplicate fields from the `$select` so all field names are unique"
             .to_string();
     let message = format!(
         "the field {field_name:?} within table {table_name:?} has already been declared"
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(error.code, ErrorCode::DuplicateField);
         assert_eq!(
             error.help.as_deref(),
-            Some("remove one of the duplicate fields from the `$select` so there all field names are unique"),
+            Some("remove one of the duplicate fields from the `$select` so all field names are unique"),
         );
         assert_eq!(
             error.message,

@@ -81,7 +81,10 @@ fn validate_sort_by(
             "documents can only be sorted by columns that have a columnar index, \
             all fields are `columnar: true` by default"
                 .to_string();
-        let message = format!("field {:?} has no columnar index", entry.name());
+        let message = format!(
+            "field {:?} in table {table_name:?} has no columnar index",
+            entry.name()
+        );
         let error = context.build_error(ErrorCode::FieldIsNotFast, message, Some(help));
         return Err(error);
     }
@@ -300,7 +303,10 @@ mod tests {
             all fields are `columnar: true` by default"
             ),
         );
-        assert_eq!(error.message, "field \"example\" has no columnar index");
+        assert_eq!(
+            error.message,
+            "field \"example\" in table \"test\" has no columnar index"
+        );
         assert_eq!(error.location, "$by");
     }
 
