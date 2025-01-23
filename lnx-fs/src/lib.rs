@@ -5,6 +5,7 @@ mod io;
 mod metastore;
 mod service;
 mod utils;
+mod page_cache;
 
 pub use bytes::Bytes;
 

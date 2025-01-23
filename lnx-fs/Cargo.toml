@@ -7,6 +7,7 @@ description = "A virtualized file system for writing small blobs efficiently."
 
 [dependencies]
 async-trait = { workspace = true }
+arc-swap = { workspace = true }
 thiserror = { workspace = true }
 glommio = { workspace = true }
 sqlx = { workspace = true }
@@ -27,6 +28,8 @@ parking_lot = { workspace = true }
 rmp-serde = { workspace = true }
 tempfile = { workspace = true }
 smallvec = { workspace = true }
+memmap2 = { workspace = true }
+bitvec = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
