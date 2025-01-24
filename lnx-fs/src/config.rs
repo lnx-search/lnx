@@ -19,6 +19,55 @@ pub const MAX_PATH_LENGTH: usize = 1 << 10;
 /// This is also the size reads within the cache are split into. (For now)
 pub const READ_SPLIT_SIZE: u64 = 8 << 10;
 
+#[derive(Debug, Copy, Clone)]
+/// The page size used for disk reads and memory allocations
+/// within lnx-fs.
+/// 
+/// The size is determined by the RAM allowance given to the system,
+/// the more RAM available, the bigger the page size to prevent
+/// too much contention around the cache itself and increase
+/// the change the kernel can merge pages together into
+/// huge pages.
+pub enum PageSize {
+    /// Use 8KB page size.
+    Size8KB = 8 << 10,
+    /// Use 16KB page size.
+    Size16KB = 16 << 10,
+    /// Use 32KB page size.
+    Size32KB = 32 << 10,
+    /// Use 64KB page size.
+    Size64KB = 64 << 10,
+}
+
+impl PageSize {
+    /// Returns the page size based on the available memory.
+    pub fn from_available_memory(size_in_bytes: usize) -> Self {
+        if size_in_bytes <= (256 << 30) {          // 256GB RAM or less
+            Self::Size8KB
+        } else if size_in_bytes <= (512 << 30) {   // 256GB - 512GB RAM
+            Self::Size16KB
+        } else if size_in_bytes <= (1024 << 30) {  // 512 - 1TB RAM
+            Self::Size32KB
+        } else {                                   // 1TB+
+            Self::Size64KB
+        }
+    }
+    
+    #[inline]
+    /// Returns the size of the page in bytes.
+    pub fn num_bytes(&self) -> usize {
+        *self as usize
+    }
+    
+    #[inline]
+    /// Returns if the input position is aligned to the page size.
+    pub fn is_aligned(&self, pos: usize) -> bool {
+        (pos % self.num_bytes()) == 0
+    }
+}
+
+
+
 macro_rules! set_config {
     ($slf:ident, $metastore:expr, $key:ident) => {{
         match &$slf.$key {

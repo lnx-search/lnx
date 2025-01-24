@@ -38,3 +38,16 @@ that are in the cache, then each file has its own allocated "block" of virtual m
 space, overtime if the file is read often, this will build up into a more populated set of pages.
 
 ![new design](/assets/lnx-fs-file-cache.svg)
+
+### Dynamic Page Size Selection
+
+Before we used to hard code reads to 32KB, but in the new design we now assign page size to be used based on
+the amount of available RAM:
+
+- `upto 256GB` -> 8KB
+- `256GB upto 512GB` -> 16KB
+- `512GB upto 1TB` -> 32KB
+- `1TB+` -> 64KB
+
+The goal of this dynamic sizing is to keep the max number of cache entries to around 32 million entries.
+
