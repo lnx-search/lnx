@@ -19,7 +19,7 @@ pub const MAX_PATH_LENGTH: usize = 1 << 10;
 /// This is also the size reads within the cache are split into. (For now)
 pub const READ_SPLIT_SIZE: u64 = 8 << 10;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 /// The page size used for disk reads and memory allocations
 /// within lnx-fs.
 /// 
@@ -226,6 +226,37 @@ impl BucketConfig {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_page_size_selection() {
+        assert_eq!(PageSize::from_available_memory(1 << 30), PageSize::Size8KB);
+        assert_eq!(PageSize::from_available_memory(4 << 30), PageSize::Size8KB);
+        assert_eq!(PageSize::from_available_memory(256 << 30), PageSize::Size8KB);
+        assert_eq!(PageSize::from_available_memory(257 << 30), PageSize::Size16KB);
+        assert_eq!(PageSize::from_available_memory(512 << 30), PageSize::Size16KB);
+        assert_eq!(PageSize::from_available_memory(513 << 30), PageSize::Size32KB);
+        assert_eq!(PageSize::from_available_memory(1024 << 30), PageSize::Size32KB);
+        assert_eq!(PageSize::from_available_memory(1025 << 30), PageSize::Size64KB);
+    }
+    
+    #[test]
+    fn test_page_size_align_check() {
+        assert!(PageSize::Size8KB.is_aligned(0));
+        assert!(!PageSize::Size8KB.is_aligned(4 << 10));
+        assert!(PageSize::Size8KB.is_aligned(8 << 10));
+        
+        assert!(PageSize::Size16KB.is_aligned(0));
+        assert!(!PageSize::Size16KB.is_aligned(8 << 10));
+        assert!(PageSize::Size16KB.is_aligned(16 << 10));
+        
+        assert!(PageSize::Size32KB.is_aligned(0));
+        assert!(!PageSize::Size32KB.is_aligned(8 << 10));
+        assert!(PageSize::Size32KB.is_aligned(32 << 10));
+        
+        assert!(PageSize::Size64KB.is_aligned(0));
+        assert!(!PageSize::Size64KB.is_aligned(32 << 10));
+        assert!(PageSize::Size64KB.is_aligned(64 << 10));
+    }
+    
     #[tokio::test]
     async fn test_bucket_config_metastore_interactions_set_all() {
         let metastore = Metastore::connect(":memory:").await.unwrap();
