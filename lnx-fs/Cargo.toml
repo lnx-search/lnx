@@ -14,6 +14,7 @@ sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
+slab = { workspace = true }
 ulid = { workspace = true }
 tracing = { workspace = true }
 moka = { workspace = true }
@@ -24,12 +25,14 @@ futures-util = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
 ahash = { workspace = true }
-parking_lot = { workspace = true }
+parking_lot = { workspace = true, features = ["arc_lock"] }
 rmp-serde = { workspace = true }
 tempfile = { workspace = true }
 smallvec = { workspace = true }
 memmap2 = { workspace = true }
 bitvec = { workspace = true }
+stable_deref_trait = { workspace = true }
+crossbeam-queue = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }

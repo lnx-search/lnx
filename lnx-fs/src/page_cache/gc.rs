@@ -1,0 +1,281 @@
+use std::any::Any;
+use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
+use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
+
+use parking_lot::Condvar;
+use smallvec::SmallVec;
+
+type TriggerCallback = Box<dyn FnOnce() + Send>;
+
+/// The minimum number of dead generations to accumulate before
+/// the GC considers purging data.
+///
+/// This is set to avoid constant re-allocations within the GC and
+/// needless additional scanning.
+const REMOVED_GENERATIONS_THRESHOLD: usize = 1_000;
+static GC: GCState = GCState::new();
+
+/// Marks a given generation as dead for the given file.
+///
+/// This method _may_ panic if the GC thread has yet to be started and attempting
+/// to create a new GC thread errors.
+pub(crate) fn mark_dead_generation(file_id: u64, generation_id: u64) {
+    let event = GCEvent::GenerationDead {
+        file_id,
+        generation_id,
+    };
+    GC.send(event);
+}
+
+/// Adds a new generation to be tracked by the GC.
+///
+/// This method _may_ panic if the GC thread has yet to be started and attempting
+/// to create a new GC thread errors.
+pub(crate) fn track_generation(file_id: u64, generation_id: u64) {
+    let event = GCEvent::RegisterGeneration {
+        file_id,
+        generation_id,
+    };
+    GC.send(event);
+}
+
+/// Register a new trigger when a generation range is no longer alive.
+///
+/// This method _may_ panic if the GC thread has yet to be started and attempting
+/// to create a new GC thread errors.
+pub(crate) fn register_trigger<CB>(
+    file_id: u64,
+    trigger_once_range_dead: Range<u64>,
+    callback: CB,
+) where
+    CB: FnOnce() + Send + 'static,
+{
+    let callback = Box::new(callback) as TriggerCallback;
+    let event = GCEvent::RegisterTrigger {
+        file_id,
+        trigger_once_range_dead,
+        callback,
+    };
+    GC.send(event);
+}
+
+#[derive(Default)]
+/// A background actor that incrementally cleans up free pages, we do this in a dedicated thread
+/// to minimise the overhead for lnx's application.
+struct CacheGCActor {
+    /// The guard marks the GC as dead when dropped.
+    guard: ThreadLiveGuard,
+    /// Triggers still waiting for generations to be cleaned up before triggering.
+    triggers: BTreeMap<u64, SmallVec<[(Range<u64>, TriggerCallback); 1]>>,
+    /// A global tree of all the currently active generations.
+    active_generations: BTreeSet<(u64, u64)>,
+    /// The number of dead generations accumulated.
+    num_dead_generations: usize,
+}
+
+impl CacheGCActor {
+    fn run(mut self) {
+        tracing::info!("GC actor is running");
+
+        let waiter = parking_lot::Mutex::new(());
+        let mut lock = waiter.lock();
+        loop {
+            // Wait for new event triggers
+            GC.wake.wait(&mut lock);
+
+            self.drain_events();
+
+            self.consider_gc_options();
+        }
+    }
+
+    /// Pulls new events from the GC queue until it is empty.
+    fn drain_events(&mut self) {
+        while let Some(event) = GC.pending_events.pop() {
+            self.handle_event(event);
+        }
+    }
+
+    /// process a new GC event.
+    fn handle_event(&mut self, event: GCEvent) {
+        match event {
+            GCEvent::GenerationDead {
+                file_id,
+                generation_id,
+            } => {
+                let did_remove =
+                    self.active_generations.remove(&(file_id, generation_id));
+                self.num_dead_generations += did_remove as usize;
+            },
+            GCEvent::RegisterGeneration {
+                file_id,
+                generation_id,
+            } => {
+                self.active_generations.insert((file_id, generation_id));
+            },
+            GCEvent::RegisterTrigger {
+                file_id,
+                trigger_once_range_dead,
+                callback,
+            } => {
+                self.triggers
+                    .entry(file_id)
+                    .or_default()
+                    .push((trigger_once_range_dead, callback));
+            },
+        }
+    }
+
+    /// Checks currently waiting triggers to see if triggers can be called or not.
+    ///
+    /// This will not run if the minimum number of dead generations have been met.
+    fn consider_gc_options(&mut self) {
+        if self.num_dead_generations < REMOVED_GENERATIONS_THRESHOLD {
+            return;
+        }
+
+        tracing::trace!("dead generation threshold met, purging pages");
+
+        let num_evicted_triggers = 0;
+        let start = Instant::now();
+
+        self.run_gc_cycle();
+
+        self.num_dead_generations = 0;
+
+        if num_evicted_triggers > 0 {
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                elapsed = ?elapsed,
+                num_evicted_triggers = num_evicted_triggers,
+                "gc completed eviction",
+            )
+        }
+    }
+
+    fn run_gc_cycle(&mut self) {
+        for (file_id, triggers) in mem::take(&mut self.triggers) {
+            for (range, cb) in triggers {
+                let start = (file_id, range.start);
+                let end = (file_id, range.end);
+
+                // TODO: Optimise this step, we can easily just manually iterate over this
+                //       and check all the triggers in a single pass.
+                let alive_generations =
+                    self.active_generations.range(start..end).count();
+                if alive_generations == 0 {
+                    if let Err(e) = std::panic::catch_unwind(cb) {
+                        handle_trigger_panic(file_id, range, e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An event for the GC to process.
+enum GCEvent {
+    /// A generation reference has been dropped because
+    /// it no longer has any strong ref counts, we might be able to free
+    /// some pending pages.
+    GenerationDead {
+        /// The ID of the file.
+        file_id: u64,
+        /// The generation ID.
+        generation_id: u64,
+    },
+    /// Adds a new generation to track.
+    ///
+    /// This is used to keep tabs on what generations currently have readers and are preventing
+    /// pages being freed.
+    RegisterGeneration {
+        /// The ID of the file.
+        file_id: u64,
+        /// The generation ID.
+        generation_id: u64,
+    },
+    /// Adds a new trigger to be called once the generation conditions are met.
+    ///
+    /// This is used to properly free memory pages once the generations where the page
+    /// _could_ be accessed are no longer active.
+    RegisterTrigger {
+        /// The ID of the file.
+        file_id: u64,
+        /// The range of generation IDs that need to not exist in order
+        /// for this trigger to be called.
+        trigger_once_range_dead: Range<u64>,
+        /// The callback to call once the condition is met.
+        callback: TriggerCallback,
+    },
+}
+
+struct GCState {
+    wake: Condvar,
+    is_live: AtomicBool,
+    pending_events: crossbeam_queue::SegQueue<GCEvent>,
+}
+
+impl GCState {
+    const fn new() -> Self {
+        Self {
+            wake: Condvar::new(),
+            is_live: AtomicBool::new(false),
+            pending_events: crossbeam_queue::SegQueue::new(),
+        }
+    }
+
+    fn send(&self, event: GCEvent) {
+        if !self.is_live.load(Ordering::Relaxed) {
+            self.spawn_gc();
+        }
+
+        self.pending_events.push(event);
+        self.wake.notify_one();
+    }
+
+    fn spawn_gc(&self) {
+        let actor = CacheGCActor::default();
+
+        std::thread::Builder::new()
+            .name("fscache-gc".to_string())
+            .spawn(move || actor.run())
+            .expect("Spawn GC thread worker");
+    }
+}
+
+#[derive(Default)]
+struct ThreadLiveGuard;
+
+impl Drop for ThreadLiveGuard {
+    fn drop(&mut self) {
+        GC.is_live.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Log when a trigger panics.
+fn handle_trigger_panic(file_id: u64, range: Range<u64>, error: Box<dyn Any>) {
+    if let Some(msg) = error.downcast_ref::<String>() {
+        tracing::error!(
+            file_id = file_id,
+            generation_target = ?range,
+            error = %msg,
+            "gc callback panicked, memory may leak",
+        );
+    } else if let Some(msg) = error.downcast_ref::<str>() {
+        tracing::error!(
+            file_id = file_id,
+            generation_target = ?range,
+            error = %msg,
+            "gc callback panicked, memory may leak"
+        );
+    } else {
+        tracing::error!(
+            file_id = file_id,
+            generation_target = ?range,
+            "gc callback panicked with unknown error, memory may leak",
+        );
+    }
+}

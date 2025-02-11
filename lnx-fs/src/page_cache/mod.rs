@@ -8,12 +8,9 @@
 //!
 
 mod block;
+mod sync;
 mod gc;
-
-use std::sync::Arc;
-use arc_swap::ArcSwap;
-use ahash::AHashMap;
-
+mod utils;
 
 /// A page cache holds files partially or full in memory using virtual memory
 /// addressing.

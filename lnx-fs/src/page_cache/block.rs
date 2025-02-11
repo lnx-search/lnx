@@ -1,10 +1,12 @@
-use std::{cmp, io};
 use std::io::ErrorKind;
 use std::ops::{Index, Range};
+use std::{cmp, io};
 
 use memmap2::UncheckedAdvice;
 
 use crate::config::PageSize;
+
+pub type PageId = usize;
 
 /// A mutable raw file block backed by virtual address space.
 pub(super) struct VirtualFileBlock {
@@ -27,7 +29,7 @@ impl VirtualFileBlock {
         use bitvec::prelude::*;
 
         let num_pages = get_num_pages(size, page_size as usize);
-        
+
         let mem = memmap2::MmapOptions::new()
             .len(num_pages * page_size.num_bytes())
             .map_anon()?;
@@ -61,68 +63,88 @@ impl VirtualFileBlock {
     pub fn page_size(&self) -> PageSize {
         self.page_size
     }
-    
+
     /// Reads a slice of bytes between the provided range.
-    /// 
+    ///
     /// This method will check that all pages being read are currently allocated,
     /// if the read does not lay within the allocated page ranges an error is returned.
-    pub fn read_page(&self, page_idx: usize) -> io::Result<&[u8]> {
+    pub fn read_page(&self, page_idx: PageId) -> io::Result<&[u8]> {
         self.ensure_valid_page(page_idx)?;
-        
+
         if !self.is_allocated(page_idx) {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                "cannot read unallocated pages"
+                "cannot read unallocated pages",
             ));
         }
-        
+
         let range = self.get_page_range(page_idx);
-        
+
         // # Safety
         // The bounds of the read are already checked by `ensure_valid_range`.
         let slice = unsafe { self.mem.get_unchecked(range) };
-        
+
         Ok(slice)
     }
-    
+
     /// Copies a given slice into memory.
     ///
     /// The start and end of the slice must be aligned to the set [PageSize], otherwise
-    /// this method will return an error. 
-    pub fn write_page(&mut self, page_idx: usize, buffer: &[u8]) -> io::Result<()> {
+    /// this method will return an error.
+    pub fn write_page(&mut self, page_idx: PageId, buffer: &[u8]) -> io::Result<&[u8]> {
         self.ensure_valid_page(page_idx)?;
+
+        if self.is_allocated(page_idx) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "page already allocated",
+            ));
+        }
 
         // The length of the buffer must match the page size
         if buffer.len() != self.page_size.num_bytes() {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                "write buffer is not size of page"
-            ))
+                "write buffer is not size of page",
+            ));
         }
-        
-        let range = self.get_page_range(page_idx);        
+
+        let range = self.get_page_range(page_idx);
 
         // # Safety
         // The bounds of the read are already checked by `ensure_valid_range`.
         unsafe {
-            let slice_mut = self.mem.get_unchecked_mut(range);
+            let slice_mut = self.mem.get_unchecked_mut(range.clone());
             slice_mut.copy_from_slice(buffer);
         }
 
         self.mark_page_allocated(page_idx);
-        
-        Ok(())
+
+        // # Safety
+        // The bounds of the read are already checked by `ensure_valid_range` and
+        // fully allocated after write.
+        unsafe {
+            let slice = self.mem.get_unchecked(range);
+            Ok(slice)
+        }
     }
-    
+
     /// Frees the pages within the provided range.
-    /// 
+    ///
     /// This method expects the bounds are aligned to the configured [PageSize]
     /// otherwise an error is returned.
-    pub fn free_page(&mut self, page_idx: usize) -> io::Result<()> {
+    pub fn free_page(&mut self, page_idx: PageId) -> io::Result<()> {
         self.ensure_valid_page(page_idx)?;
-        
+
+        if !self.is_allocated(page_idx) {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "page not allocated",
+            ));
+        }
+
         let range = self.get_page_range(page_idx);
-        
+
         // # Safety
         // Although this is not an unsafe method, the advice can cause UB.
         // This is safe to use because we track what pages we have allocated
@@ -138,12 +160,12 @@ impl VirtualFileBlock {
         )?;
 
         self.mark_page_free(page_idx);
-        
-        Ok(())   
+
+        Ok(())
     }
-    
-    fn ensure_valid_page(&self, page_idx: usize) -> io::Result<()> {
-        if page_idx >= self.allocated_pages.len()  {
+
+    fn ensure_valid_page(&self, page_idx: PageId) -> io::Result<()> {
+        if page_idx >= self.allocated_pages.len() {
             Err(io::Error::new(
                 ErrorKind::InvalidInput,
                 "page index is out of bounds",
@@ -152,24 +174,24 @@ impl VirtualFileBlock {
             Ok(())
         }
     }
-    
-    fn get_page_range(&self, page_idx: usize) -> Range<usize> {
+
+    fn get_page_range(&self, page_idx: PageId) -> Range<usize> {
         let start = page_idx * self.page_size.num_bytes();
         let end = (page_idx + 1) * self.page_size.num_bytes();
         start..cmp::min(end, self.mem.len())
     }
-    
-    fn mark_page_allocated(&mut self, page_idx: usize) {
+
+    fn mark_page_allocated(&mut self, page_idx: PageId) {
         let old = self.allocated_pages.replace(page_idx, true);
         self.pages_allocated += !old as usize;
     }
-    
-    fn mark_page_free(&mut self, page_idx: usize) {
+
+    fn mark_page_free(&mut self, page_idx: PageId) {
         let old = self.allocated_pages.replace(page_idx, false);
         self.pages_allocated -= old as usize;
     }
-    
-    fn is_allocated(&self, page_idx: usize) -> bool {
+
+    pub fn is_allocated(&self, page_idx: PageId) -> bool {
         *self.allocated_pages.index(page_idx)
     }
 }
@@ -184,11 +206,10 @@ fn get_num_pages(size: usize, page_size: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
     use super::*;
 
     const PAGE_SIZE_8KB: usize = 8 << 10;
-    
+
     #[test]
     fn test_num_pages() {
         assert_eq!(get_num_pages(0, PAGE_SIZE_8KB), 0);
@@ -196,7 +217,7 @@ mod tests {
         assert_eq!(get_num_pages(16 << 10, PAGE_SIZE_8KB), 2);
         assert_eq!(get_num_pages((16 << 10) + 5, PAGE_SIZE_8KB), 3);
     }
-    
+
     #[test]
     fn test_block_allocate_large() {
         let block = VirtualFileBlock::allocate(64 << 30, PageSize::Size8KB)
@@ -204,7 +225,7 @@ mod tests {
         assert_eq!(block.memory_usage(), 0);
         assert_eq!(block.virtual_address_space_usage(), 64 << 30);
     }
-    
+
     #[test]
     fn test_block_write_and_read() {
         let mut block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
@@ -220,20 +241,27 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         assert_eq!(error.to_string(), "cannot read unallocated pages");
 
-        let error = block.write_page(0, b"Hello, world!".as_slice()).unwrap_err();
+        let error = block
+            .write_page(0, b"Hello, world!".as_slice())
+            .unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         assert_eq!(error.to_string(), "write buffer is not size of page");
-        
+
         let data = vec![1; 8 << 10];
         let error = block.write_page(2, &data).unwrap_err();
         assert_eq!(error.kind(), ErrorKind::InvalidInput);
         assert_eq!(error.to_string(), "page index is out of bounds");
-        
-        block.write_page(0, &[1; 8 << 10])
-            .expect("Write memory to page");        
-        
+
+        block
+            .write_page(0, &[1; 8 << 10])
+            .expect("Write memory to page");
+
         let slice = block.read_page(0).unwrap();
-        assert_eq!(slice, &[1; 8 << 10], "Read data should match written buffer");
+        assert_eq!(
+            slice,
+            &[1; 8 << 10],
+            "Read data should match written buffer"
+        );
     }
 
     #[test]
@@ -243,12 +271,17 @@ mod tests {
         assert_eq!(block.memory_usage(), 0);
         assert_eq!(block.virtual_address_space_usage(), 1 << 20);
 
-        block.write_page(0, &[1; 8 << 10])
+        block
+            .write_page(0, &[1; 8 << 10])
             .expect("Write memory to page");
 
         let slice = block.read_page(0).unwrap();
-        assert_eq!(slice, &[1; 8 << 10], "Read data should match written buffer");
-        
+        assert_eq!(
+            slice,
+            &[1; 8 << 10],
+            "Read data should match written buffer"
+        );
+
         block.free_page(0).unwrap();
 
         let error = block.read_page(0).unwrap_err();
