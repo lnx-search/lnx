@@ -35,6 +35,33 @@ impl PageState {
         self.flags.load()
     }
     
+    /// Marks the page as free and reset flags without checks.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold the page lock before calling this method.
+    pub(super) unsafe fn set_free_unchecked(&self) {
+        self.flags.set_free()
+    }
+
+    /// Marks the page as free and reset flags without checks.
+    ///
+    /// # Safety
+    ///
+    /// The caller must hold the page lock before calling this method.
+    pub(super) unsafe fn set_allocated_unchecked(&self) {
+        self.flags.set_free()
+    }
+
+    /// Marks the page as free and reset flags without checks.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must hold the page lock before calling this method.
+    pub(super) unsafe fn set_to_be_freed_unchecked(&self) {
+        self.flags.set_free()
+    }
+    
     /// Attempts to acquire the lock for the given page if it is not already locked.
     ///
     /// Returns `None` if the lock is already acquired by someone else.
@@ -82,6 +109,17 @@ impl PageStateTable {
     pub(super) fn at(&self, idx: PageId) -> &PageState {
         &self.table[idx]
     }
+    
+    /// Calculates the page index based on the pointer.
+    /// 
+    /// This assumes the pointer passed to the table belongs to the table, otherwise
+    /// an invalid index can be returned.
+    pub(super) fn pointer_to_index(&self, page: *const PageState) -> PageId {
+        let start = self.table.as_ptr().addr();
+        let end = page as usize;
+        let diff = end - start;
+        diff / size_of::<PageState>()
+    }
 }
 
 #[derive(Default)]
@@ -93,6 +131,18 @@ impl AtomicPageFlags {
     /// Performs a relaxed load of the page flags.
     pub(super) fn load(&self) -> PageFlags {
         PageFlags(self.0.load(Ordering::Relaxed))
+    }
+    
+    fn set_free(&self) {
+        self.0.store(0, Ordering::Release);
+    }
+    
+    fn set_allocated(&self) {
+        self.0.fetch_or(PageFlags::ALLOCATED, Ordering::Release);
+    }
+    
+    fn set_to_be_freed(&self) {
+        self.0.fetch_or(PageFlags::TO_BE_FREED, Ordering::Release);        
     }
 }
 

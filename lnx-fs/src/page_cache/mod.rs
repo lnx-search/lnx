@@ -209,7 +209,7 @@ impl PreparedRead {
             // Attempt to acquire the write guard so we can ensure we re attempt to write the page.
             if let Some(lock_guard) = unsafe { page.try_acquire_write_guard() } {
                 // Add the guard to the read's owned lock guards.
-                self.write_locks.push(lock_guard);
+                // TODO: self.write_locks.push(lock_guard);
                 // Add the inflight locks back
                 self.inflight_locks.push(page_state);
             }
@@ -338,7 +338,6 @@ impl Drop for TrackedGeneration {
 struct RawFileMemRef {
     mem_ptr: *const u8,
     mem_len: usize,
-    owned_ref: Arc<()>,
 }
 
 impl RawFileMemRef {

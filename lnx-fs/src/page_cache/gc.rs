@@ -2,13 +2,14 @@ use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::ops::Range;
+use std::panic::UnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use parking_lot::Condvar;
 use smallvec::SmallVec;
 
-type TriggerCallback = Box<dyn FnOnce() + Send>;
+type TriggerCallback = Box<dyn FnOnce() + Send + UnwindSafe>;
 
 /// The minimum number of dead generations to accumulate before
 /// the GC considers purging data.
@@ -51,7 +52,7 @@ pub(crate) fn register_trigger<CB>(
     trigger_once_range_dead: Range<u64>,
     callback: CB,
 ) where
-    CB: FnOnce() + Send + 'static,
+    CB: FnOnce() + Send + UnwindSafe + 'static,
 {
     let callback = Box::new(callback) as TriggerCallback;
     let event = GCEvent::RegisterTrigger {
@@ -264,7 +265,7 @@ fn handle_trigger_panic(file_id: u64, range: Range<u64>, error: Box<dyn Any>) {
             error = %msg,
             "gc callback panicked, memory may leak",
         );
-    } else if let Some(msg) = error.downcast_ref::<str>() {
+    } else if let Some(msg) = error.downcast_ref::<&'static str>() {
         tracing::error!(
             file_id = file_id,
             generation_target = ?range,
