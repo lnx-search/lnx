@@ -5,6 +5,7 @@ use std::{cmp, io};
 use memmap2::UncheckedAdvice;
 
 use crate::config::PageSize;
+use crate::page_cache::page::PageStateTable;
 
 pub type PageId = usize;
 
@@ -14,9 +15,8 @@ pub(super) struct VirtualFileBlock {
     ///
     /// Most of this is likely zeroed memory.
     mem: memmap2::MmapMut,
-    /// A bitvec indicating what pages of the memory are currently written to
-    /// and allocated. Pages not allocated will be zeroed.
-    allocated_pages: bitvec::vec::BitVec,
+    /// A set of page states for the memory.
+    page_state_table: PageStateTable,
     /// The size of the pages being allocated, this is used
     /// to calculate the actual memory usage of the block.
     page_size: PageSize,
@@ -26,19 +26,17 @@ pub(super) struct VirtualFileBlock {
 
 impl VirtualFileBlock {
     pub(super) fn allocate(size: usize, page_size: PageSize) -> io::Result<Self> {
-        use bitvec::prelude::*;
-
         let num_pages = get_num_pages(size, page_size as usize);
 
         let mem = memmap2::MmapOptions::new()
             .len(num_pages * page_size.num_bytes())
             .map_anon()?;
 
-        let allocated_pages = bitvec![usize, Lsb0; 0; num_pages];
+        let page_state_table = PageStateTable::new(num_pages);
 
         Ok(Self {
             mem,
-            allocated_pages,
+            page_state_table,
             page_size,
             pages_allocated: 0,
         })
@@ -56,7 +54,7 @@ impl VirtualFileBlock {
     #[inline]
     /// Returns the amount of virtual address space allocated.
     pub fn virtual_address_space_usage(&self) -> usize {
-        self.allocated_pages.len() * self.page_size.num_bytes()
+        self.page_state_table.len() * self.page_size.num_bytes()
     }
 
     #[inline]

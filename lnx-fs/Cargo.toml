@@ -33,6 +33,8 @@ memmap2 = { workspace = true }
 bitvec = { workspace = true }
 stable_deref_trait = { workspace = true }
 crossbeam-queue = { workspace = true }
+dashmap = { workspace = true }
+intrusive-collections = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
