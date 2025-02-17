@@ -3,9 +3,9 @@ mod config;
 mod fscache;
 mod io;
 mod metastore;
+mod page_cache;
 mod service;
 mod utils;
-mod page_cache;
 
 pub use bytes::Bytes;
 

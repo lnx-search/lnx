@@ -1,5 +1,5 @@
-use std::ops::Index;
 use std::io;
+use std::ops::Index;
 
 use memmap2::UncheckedAdvice;
 
@@ -54,20 +54,20 @@ impl VirtualFileBlock {
     pub fn page_at(&self, page_id: PageId) -> &PageState {
         self.page_state_table.at(page_id)
     }
-    
+
     #[inline]
     /// Returns the page ID which the pointer is attached to.
     pub(super) unsafe fn pointer_to_page_id(&self, ptr: *const PageState) -> PageId {
         self.page_state_table.pointer_to_index(ptr)
     }
-    
+
     /// Returns a read-only pointer starting from the given page ID.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the page ID is valid for the given file block,
     /// and must ensure all access to the raw memory are initialised pages.
-    /// 
+    ///
     /// The caller must also ensure that any reads using this pointer do not go out
     /// of bounds of the file block itself.
     pub(super) unsafe fn get_page_ptr(&self, page_id: PageId) -> *const u8 {
@@ -78,15 +78,15 @@ impl VirtualFileBlock {
     /// Returns a mutable page reference for the given page ID.
     ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the page ID is valid for the given file block,
     /// that the caller holds the page write lock exclusively.
     ///
     /// This method is `&self` because mutability is controlled on the page-level,
     /// and no over values are allowed to be modified outside the memory pages themselves.
-    pub(super)  unsafe fn get_mut_page(&self, page_id: PageId) -> MutPageRef {
+    pub(super) unsafe fn get_mut_page(&self, page_id: PageId) -> MutPageRef {
         let state = self.page_at(page_id);
-        
+
         let mem_ptr = self.get_page_ptr(page_id) as *mut u8;
         let mem_len = self.page_size.num_bytes();
 
@@ -100,10 +100,10 @@ impl VirtualFileBlock {
     /// Free the given page.
     ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the page ID is valid for the given file block and that there are
     /// no other active readers or accesses to this page before being freed.
-    pub(super)  unsafe fn free_page(&self, page_id: PageId) {
+    pub(super) unsafe fn free_page(&self, page_id: PageId) {
         let state = self.page_at(page_id);
         let offset = page_id * self.page_size.num_bytes();
 
@@ -127,7 +127,6 @@ fn get_num_pages(size: usize, page_size: usize) -> usize {
     num_pages
 }
 
-
 /// A mutable reference to a memory page.
 pub(super) struct MutPageRef {
     state: *const PageState,
@@ -141,11 +140,11 @@ impl MutPageRef {
     pub fn size(&self) -> usize {
         self.mem_len
     }
-    
+
     /// Marks the current page as "to be freed".
     ///
     /// # Safety
-    /// 
+    ///
     /// The caller must hold an exclusive lock to the current page state.    
     pub(super) unsafe fn mark_to_be_freed(&mut self) {
         (*self.state).set_to_be_freed_unchecked();
@@ -154,18 +153,17 @@ impl MutPageRef {
     /// Marks the current page as "to be freed".
     ///
     /// # Safety
-    /// 
+    ///
     /// The caller must hold an exclusive lock to the current page state, and the
     /// buffer length must be less than or equal to the page size.
     /// In the event of a buffer size that is _less than_ the page size, it is the callers
     /// responsibility to ensure the bytes _not_ overwritten by the buffer are not read/accessed
     /// by readers.
     pub(super) unsafe fn write(&mut self, buffer: &[u8]) {
-        std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.mem_ptr, buffer.len());        
+        std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.mem_ptr, buffer.len());
         (*self.state).set_allocated_unchecked();
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -194,30 +192,30 @@ mod tests {
     //         .expect("Allocate zeroed space");
     //     assert_eq!(block.memory_usage(), 0);
     //     assert_eq!(block.virtual_address_space_usage(), 8 << 10);
-    // 
+    //
     //     let error = block.read_page(2).unwrap_err();
     //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
     //     assert_eq!(error.to_string(), "page index is out of bounds");
-    // 
+    //
     //     let error = block.read_page(0).unwrap_err();
     //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
     //     assert_eq!(error.to_string(), "cannot read unallocated pages");
-    // 
+    //
     //     let error = block
     //         .write_page(0, b"Hello, world!".as_slice())
     //         .unwrap_err();
     //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
     //     assert_eq!(error.to_string(), "write buffer is not size of page");
-    // 
+    //
     //     let data = vec![1; 8 << 10];
     //     let error = block.write_page(2, &data).unwrap_err();
     //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
     //     assert_eq!(error.to_string(), "page index is out of bounds");
-    // 
+    //
     //     block
     //         .write_page(0, &[1; 8 << 10])
     //         .expect("Write memory to page");
-    // 
+    //
     //     let slice = block.read_page(0).unwrap();
     //     assert_eq!(
     //         slice,
@@ -225,27 +223,27 @@ mod tests {
     //         "Read data should match written buffer"
     //     );
     // }
-    // 
+    //
     // #[test]
     // fn test_block_free() {
     //     let mut block = VirtualFileBlock::allocate(1 << 20, PageSize::Size8KB)
     //         .expect("Allocate zeroed space");
     //     assert_eq!(block.memory_usage(), 0);
     //     assert_eq!(block.virtual_address_space_usage(), 1 << 20);
-    // 
+    //
     //     block
     //         .write_page(0, &[1; 8 << 10])
     //         .expect("Write memory to page");
-    // 
+    //
     //     let slice = block.read_page(0).unwrap();
     //     assert_eq!(
     //         slice,
     //         &[1; 8 << 10],
     //         "Read data should match written buffer"
     //     );
-    // 
+    //
     //     block.free_page(0).unwrap();
-    // 
+    //
     //     let error = block.read_page(0).unwrap_err();
     //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
     //     assert_eq!(error.to_string(), "cannot read unallocated pages");

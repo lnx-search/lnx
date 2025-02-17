@@ -22,7 +22,7 @@ pub const READ_SPLIT_SIZE: u64 = 8 << 10;
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 /// The page size used for disk reads and memory allocations
 /// within lnx-fs.
-/// 
+///
 /// The size is determined by the RAM allowance given to the system,
 /// the more RAM available, the bigger the page size to prevent
 /// too much contention around the cache itself and increase
@@ -42,31 +42,33 @@ pub enum PageSize {
 impl PageSize {
     /// Returns the page size based on the available memory.
     pub fn from_available_memory(size_in_bytes: usize) -> Self {
-        if size_in_bytes <= (256 << 30) {          // 256GB RAM or less
+        if size_in_bytes <= (256 << 30) {
+            // 256GB RAM or less
             Self::Size8KB
-        } else if size_in_bytes <= (512 << 30) {   // 256GB - 512GB RAM
+        } else if size_in_bytes <= (512 << 30) {
+            // 256GB - 512GB RAM
             Self::Size16KB
-        } else if size_in_bytes <= (1024 << 30) {  // 512 - 1TB RAM
+        } else if size_in_bytes <= (1024 << 30) {
+            // 512 - 1TB RAM
             Self::Size32KB
-        } else {                                   // 1TB+
+        } else {
+            // 1TB+
             Self::Size64KB
         }
     }
-    
+
     #[inline]
     /// Returns the size of the page in bytes.
     pub fn num_bytes(&self) -> usize {
         *self as usize
     }
-    
+
     #[inline]
     /// Returns if the input position is aligned to the page size.
     pub fn is_aligned(&self, pos: usize) -> bool {
         (pos % self.num_bytes()) == 0
     }
 }
-
-
 
 macro_rules! set_config {
     ($slf:ident, $metastore:expr, $key:ident) => {{
@@ -230,33 +232,51 @@ mod tests {
     fn test_page_size_selection() {
         assert_eq!(PageSize::from_available_memory(1 << 30), PageSize::Size8KB);
         assert_eq!(PageSize::from_available_memory(4 << 30), PageSize::Size8KB);
-        assert_eq!(PageSize::from_available_memory(256 << 30), PageSize::Size8KB);
-        assert_eq!(PageSize::from_available_memory(257 << 30), PageSize::Size16KB);
-        assert_eq!(PageSize::from_available_memory(512 << 30), PageSize::Size16KB);
-        assert_eq!(PageSize::from_available_memory(513 << 30), PageSize::Size32KB);
-        assert_eq!(PageSize::from_available_memory(1024 << 30), PageSize::Size32KB);
-        assert_eq!(PageSize::from_available_memory(1025 << 30), PageSize::Size64KB);
+        assert_eq!(
+            PageSize::from_available_memory(256 << 30),
+            PageSize::Size8KB
+        );
+        assert_eq!(
+            PageSize::from_available_memory(257 << 30),
+            PageSize::Size16KB
+        );
+        assert_eq!(
+            PageSize::from_available_memory(512 << 30),
+            PageSize::Size16KB
+        );
+        assert_eq!(
+            PageSize::from_available_memory(513 << 30),
+            PageSize::Size32KB
+        );
+        assert_eq!(
+            PageSize::from_available_memory(1024 << 30),
+            PageSize::Size32KB
+        );
+        assert_eq!(
+            PageSize::from_available_memory(1025 << 30),
+            PageSize::Size64KB
+        );
     }
-    
+
     #[test]
     fn test_page_size_align_check() {
         assert!(PageSize::Size8KB.is_aligned(0));
         assert!(!PageSize::Size8KB.is_aligned(4 << 10));
         assert!(PageSize::Size8KB.is_aligned(8 << 10));
-        
+
         assert!(PageSize::Size16KB.is_aligned(0));
         assert!(!PageSize::Size16KB.is_aligned(8 << 10));
         assert!(PageSize::Size16KB.is_aligned(16 << 10));
-        
+
         assert!(PageSize::Size32KB.is_aligned(0));
         assert!(!PageSize::Size32KB.is_aligned(8 << 10));
         assert!(PageSize::Size32KB.is_aligned(32 << 10));
-        
+
         assert!(PageSize::Size64KB.is_aligned(0));
         assert!(!PageSize::Size64KB.is_aligned(32 << 10));
         assert!(PageSize::Size64KB.is_aligned(64 << 10));
     }
-    
+
     #[tokio::test]
     async fn test_bucket_config_metastore_interactions_set_all() {
         let metastore = Metastore::connect(":memory:").await.unwrap();
