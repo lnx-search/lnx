@@ -1,6 +1,5 @@
-use std::io::ErrorKind;
-use std::ops::{Index, Range};
-use std::{cmp, io};
+use std::ops::Index;
+use std::io;
 
 use memmap2::UncheckedAdvice;
 
@@ -20,8 +19,6 @@ pub(super) struct VirtualFileBlock {
     /// The size of the pages being allocated, this is used
     /// to calculate the actual memory usage of the block.
     page_size: PageSize,
-    /// The total number of pages allocated.
-    pages_allocated: usize,
 }
 
 impl VirtualFileBlock {
@@ -38,17 +35,7 @@ impl VirtualFileBlock {
             mem,
             page_state_table,
             page_size,
-            pages_allocated: 0,
         })
-    }
-
-    #[inline]
-    /// Returns the amount of bytes allocated.
-    ///
-    /// This is the number of allocated pages multiplied by
-    /// the page size.
-    pub fn memory_usage(&self) -> usize {
-        self.pages_allocated * self.page_size.num_bytes()
     }
 
     #[inline]
@@ -67,6 +54,26 @@ impl VirtualFileBlock {
     pub fn page_at(&self, page_id: PageId) -> &PageState {
         self.page_state_table.at(page_id)
     }
+    
+    #[inline]
+    /// Returns the page ID which the pointer is attached to.
+    pub(super) unsafe fn pointer_to_page_id(&self, ptr: *const PageState) -> PageId {
+        self.page_state_table.pointer_to_index(ptr)
+    }
+    
+    /// Returns a read-only pointer starting from the given page ID.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that the page ID is valid for the given file block,
+    /// and must ensure all access to the raw memory are initialised pages.
+    /// 
+    /// The caller must also ensure that any reads using this pointer do not go out
+    /// of bounds of the file block itself.
+    pub(super) unsafe fn get_page_ptr(&self, page_id: PageId) -> *const u8 {
+        let offset = page_id * self.page_size.num_bytes();
+        self.mem.as_ptr().add(offset)
+    }
 
     /// Returns a mutable page reference for the given page ID.
     ///
@@ -77,32 +84,16 @@ impl VirtualFileBlock {
     ///
     /// This method is `&self` because mutability is controlled on the page-level,
     /// and no over values are allowed to be modified outside the memory pages themselves.
-    pub unsafe fn get_mut_page(&self, page_id: PageId) -> MutPageRef {
+    pub(super)  unsafe fn get_mut_page(&self, page_id: PageId) -> MutPageRef {
         let state = self.page_at(page_id);
-        let offset = page_id * self.page_size.num_bytes();
-
-        let mem_ptr = self.mem.as_ptr().add(offset) as *mut u8;
+        
+        let mem_ptr = self.get_page_ptr(page_id) as *mut u8;
         let mem_len = self.page_size.num_bytes();
 
         MutPageRef {
-    
-        }
-    }
-
-    /// Returns a page reference for the given page ID.
-    ///
-    /// # Safety
-    /// 
-    /// The caller must ensure that the page ID is valid for the given file block.
-    pub unsafe fn get_page(&self, page_id: PageId) -> PageRef {
-        let state = self.page_at(page_id);
-        let offset = page_id * self.page_size.num_bytes();
-
-        let mem_ptr = self.mem.as_ptr().add(offset);
-        let mem_len = self.page_size.num_bytes();
-
-        PageRef {
-
+            state: state as *const PageState,
+            mem_ptr,
+            mem_len,
         }
     }
 
@@ -112,7 +103,7 @@ impl VirtualFileBlock {
     /// 
     /// The caller must ensure that the page ID is valid for the given file block and that there are
     /// no other active readers or accesses to this page before being freed.
-    pub unsafe fn free_page(&self, page_id: PageId) {
+    pub(super)  unsafe fn free_page(&self, page_id: PageId) {
         let state = self.page_at(page_id);
         let offset = page_id * self.page_size.num_bytes();
 
@@ -136,25 +127,45 @@ fn get_num_pages(size: usize, page_size: usize) -> usize {
     num_pages
 }
 
+
+/// A mutable reference to a memory page.
 pub(super) struct MutPageRef {
+    state: *const PageState,
     mem_ptr: *mut u8,
     mem_len: usize,
 }
 
 impl MutPageRef {
+    #[inline]
+    /// Returns the size of the page memory.
+    pub fn size(&self) -> usize {
+        self.mem_len
+    }
+    
+    /// Marks the current page as "to be freed".
+    ///
+    /// # Safety
+    /// 
+    /// The caller must hold an exclusive lock to the current page state.    
     pub(super) unsafe fn mark_to_be_freed(&mut self) {
-        todo!()
+        (*self.state).set_to_be_freed_unchecked();
     }
 
+    /// Marks the current page as "to be freed".
+    ///
+    /// # Safety
+    /// 
+    /// The caller must hold an exclusive lock to the current page state, and the
+    /// buffer length must be less than or equal to the page size.
+    /// In the event of a buffer size that is _less than_ the page size, it is the callers
+    /// responsibility to ensure the bytes _not_ overwritten by the buffer are not read/accessed
+    /// by readers.
     pub(super) unsafe fn write(&mut self, buffer: &[u8]) {
-        todo!()
+        std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.mem_ptr, buffer.len());        
+        (*self.state).set_allocated_unchecked();
     }
 }
 
-pub(super) struct PageRef {
-    mem_ptr: *const u8,
-    mem_len: usize,
-}
 
 #[cfg(test)]
 mod tests {
@@ -174,7 +185,6 @@ mod tests {
     fn test_block_allocate_large() {
         let block = VirtualFileBlock::allocate(64 << 30, PageSize::Size8KB)
             .expect("Allocate zeroed space");
-        assert_eq!(block.memory_usage(), 0);
         assert_eq!(block.virtual_address_space_usage(), 64 << 30);
     }
 
