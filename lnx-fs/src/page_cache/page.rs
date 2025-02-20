@@ -51,7 +51,7 @@ impl PageState {
     ///
     /// The caller must hold the page lock before calling this method.
     pub(super) unsafe fn set_allocated_unchecked(&self) {
-        self.flags.set_free()
+        self.flags.set_allocated()
     }
 
     /// Marks the page as free and reset flags without checks.
@@ -144,7 +144,7 @@ impl AtomicPageFlags {
     }
 
     fn set_allocated(&self) {
-        self.0.fetch_or(PageFlags::ALLOCATED, Ordering::Release);
+        self.0.store(PageFlags::ALLOCATED, Ordering::Release);
     }
 
     fn set_to_be_freed(&self) {
