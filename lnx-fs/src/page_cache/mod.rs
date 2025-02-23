@@ -24,14 +24,14 @@ mod utils;
 use std::hash::Hash;
 use std::io;
 use std::ops::Range;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use ahash::RandomState;
 
-use crate::page_cache::block::VirtualFileBlock;
 pub use self::prepared_read::PreparedRead;
 use self::utils::NoOpRandomState;
+use crate::page_cache::block::VirtualFileBlock;
 
 /// A page cache holds files partially or full in memory using virtual memory
 /// addressing.
@@ -59,7 +59,7 @@ pub struct FilePageCache {
     /// The primary LFU cache (Cache memory.)
     primary: moka::sync::Cache<u64, (), NoOpRandomState>,
     /// The secondary LRU cache (Working Memory.)
-    secondary: dashmap::DashMap<u64, (), NoOpRandomState>,
+    secondary: moka::sync::Cache<u64, (), NoOpRandomState>,
     /// The file blocks backing pages.
     file_blocks: dashmap::DashMap<u64, FileBlockState, NoOpRandomState>,
 }
@@ -85,11 +85,14 @@ impl FilePageCache {
     }
 
     #[inline(never)]
-    fn prepare_read_inner(&self, file_id: u64, range: Range<usize>) -> io::Result<PreparedRead> {
+    fn prepare_read_inner(
+        &self,
+        file_id: u64,
+        range: Range<usize>,
+    ) -> io::Result<PreparedRead> {
         todo!()
     }
 }
-
 
 struct FileBlockState {
     file_id: u64,
@@ -100,12 +103,12 @@ struct FileBlockState {
 impl FileBlockState {
     fn prepare_read(&self, bytes_range: Range<usize>) -> io::Result<PreparedRead> {
         let generation_id = self.generation_counter.fetch_add(1, Ordering::Relaxed);
-        
+
         let generation = TrackedGeneration {
             file_id: self.file_id,
             generation_id,
         };
-        
+
         PreparedRead::from_block_and_generation(
             self.block.clone(),
             bytes_range,

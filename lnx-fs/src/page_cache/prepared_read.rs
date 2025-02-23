@@ -1,14 +1,16 @@
-use std::{io, mem};
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Range};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::{io, mem};
+
 use smallvec::SmallVec;
 use stable_deref_trait::StableDeref;
 use tokio::sync::Notify;
-use crate::config::PageSize;
+
 use super::block::{MutPageRef, PageId, VirtualFileBlock};
 use super::page::{PageState, PageWriteLockGuard};
-use super::{TrackedGeneration};
+use super::TrackedGeneration;
+use crate::config::PageSize;
 
 /// The global waker that notifies pending readers when a page has been written.
 ///
@@ -56,6 +58,8 @@ pub struct PreparedRead {
     /// We need to wait for these locks to release before we can read the data,
     /// and we need to ensure all these locks were completed successfully.
     inflight_locks: SmallVec<[*const PageState; 4]>,
+    /// Returns the pages read.
+    page_range: Range<PageId>,
     /// The number of bytes to skip from the _first_ page of the memory.
     page_relative_offset: usize,
     /// The total length of the read which is added to the `raw_mem_ptr`
@@ -76,46 +80,47 @@ impl PreparedRead {
         generation: TrackedGeneration,
     ) -> io::Result<Self> {
         let waker = get_waker(generation.file_id);
-        
+
         let mut write_requests = SmallVec::new();
         let mut inflight_locks = SmallVec::new();
-        
-        let page_range = get_page_range(bytes_range, file_block.page_size());
+
+        let page_size = file_block.page_size();
+        let page_range = get_page_range(bytes_range, page_size);
+
+        let page_relative_offset = page_range.start % page_size.num_bytes();
+        let total_read_len = page_range.len();
 
         let op_guard = OpGuards {
             generation: Arc::new(generation),
             block: file_block.clone(),
         };
-        
+
         let raw_mem_ptr = unsafe { file_block.get_page_ptr(page_range.start) };
-        
-        for page_id in page_range {
+
+        for page_id in page_range.clone() {
             let state = file_block.page_at(page_id);
             let flags = state.flags();
 
             // The page is allocated, it was previously marked to be freed.
-            // TODO: Need to feed this back to the main cached, so they can re-schedule
-            //       the page being freed, otherwise, we're going to leak memory slowly
-            //       if the GC task keeps running after the read resets the alloc flag.
             if flags.is_allocated() && flags.is_to_be_freed() {
                 unsafe {
                     if let Some(_guard) = state.try_acquire_write_guard() {
                         // Load the flags again just to make sure now we have the guard.
                         let flags = state.flags();
-                        
+
                         // Page is still allocated, we can unset the flag without re-reading.
                         if flags.is_allocated() {
                             // Reset the page marker so it is no longer marked to be freed,
                             // we can do this because the allocation is still valid.
-                            // 
+                            //
                             // # Safety
                             // We hold the write lock for the page and can safely update the flag.
-                            state.set_allocated_unchecked();                            
+                            state.set_allocated_unchecked();
                         }
                     }
                 }
             } else if flags.is_allocated() {
-                continue
+                continue;
             }
 
             // Page has been deallocated, we need to read from disk.
@@ -126,7 +131,7 @@ impl PreparedRead {
                     // We hold the page lock for the target `page_id`, which means we are allowed
                     // to acquire a mutable reference to the page.
                     let mut_page = file_block.get_mut_page(page_id);
-                    
+
                     let write_request = WriteRequest {
                         op_guard: op_guard.clone(),
                         lock_guard: guard,
@@ -137,27 +142,31 @@ impl PreparedRead {
                     };
 
                     write_requests.push(write_request);
-                } else {  // Write already in process, we just need to wait until the lock gets released.
+                } else {
+                    // Write already in process, we just need to wait until the lock gets released.
                     inflight_locks.push(state as *const PageState);
                 }
-            }            
+            }
         }
-        
+
         Ok(Self {
             op_guard,
             write_requests,
             inflight_locks,
-            page_relative_offset: 0,
-            total_read_len: 0,
+            page_range,
+            page_relative_offset,
+            total_read_len,
             raw_mem_ptr,
         })
     }
-    
+
+    #[inline]
     /// The ID of the file this operation is mutating.
     pub fn file_id(&self) -> u64 {
         self.op_guard.generation.file_id
     }
 
+    #[inline]
     /// The generation ID tied to this operation.
     pub fn generation_id(&self) -> u64 {
         self.op_guard.generation.generation_id
@@ -168,6 +177,12 @@ impl PreparedRead {
     /// TODO: This API _sucks_ I mean, really sucks.
     pub fn next_outstanding_write(&mut self) -> Option<WriteRequest> {
         self.write_requests.pop()
+    }
+
+    #[inline]
+    /// Returns the pages read.
+    pub fn page_range(&self) -> Range<usize> {
+        self.page_range.clone()
     }
 
     /// Waits for all pending writes to blank pages to be completed
@@ -393,6 +408,10 @@ fn get_waker(file_id: u64) -> &'static Notify {
 }
 
 fn get_page_range(range: Range<usize>, page_size: PageSize) -> Range<PageId> {
-    
-    
+    let page_start = range.start / page_size.num_bytes();
+    let mut page_end = range.end / page_size.num_bytes();
+    if range.end % page_size.num_bytes() != 0 {
+        page_end += 1;
+    }
+    page_start..page_end
 }
