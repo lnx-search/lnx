@@ -45,8 +45,15 @@ impl VirtualFileBlock {
     }
 
     #[inline]
+    /// Returns the page size being used by the block.
     pub fn page_size(&self) -> PageSize {
         self.page_size
+    }
+
+    #[inline]
+    /// Returns the number of pages in the block.
+    pub fn num_pages(&self) -> usize {
+        self.page_state_table.len()
     }
 
     #[inline]

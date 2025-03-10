@@ -78,7 +78,7 @@ impl PreparedRead {
         file_block: Arc<VirtualFileBlock>,
         bytes_range: Range<usize>,
         generation: TrackedGeneration,
-    ) -> io::Result<Self> {
+    ) -> Self {
         let waker = get_waker(generation.file_id);
 
         let mut write_requests = SmallVec::new();
@@ -149,7 +149,7 @@ impl PreparedRead {
             }
         }
 
-        Ok(Self {
+        Self {
             op_guard,
             write_requests,
             inflight_locks,
@@ -157,7 +157,7 @@ impl PreparedRead {
             page_relative_offset,
             total_read_len,
             raw_mem_ptr,
-        })
+        }
     }
 
     #[inline]
