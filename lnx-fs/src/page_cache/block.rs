@@ -1,8 +1,7 @@
 use std::io;
-use std::ops::Index;
 
 use memmap2::UncheckedAdvice;
-
+use tracing::error;
 use crate::config::PageSize;
 use crate::page_cache::page::{PageState, PageStateTable};
 
@@ -106,23 +105,31 @@ impl VirtualFileBlock {
 
     /// Free the given page.
     ///
+    /// Returns if the page was freed successfully or not.
+    /// 
     /// # Safety
     ///
     /// The caller must ensure that the page ID is valid for the given file block and that there are
     /// no other active readers or accesses to this page before being freed.
-    pub(super) unsafe fn free_page(&self, page_id: PageId) {
+    pub(super) unsafe fn free_page(&self, page_id: PageId) -> bool {
         let state = self.page_at(page_id);
         let offset = page_id * self.page_size.num_bytes();
 
-        self.mem
+        let result = self.mem
             .unchecked_advise_range(
                 UncheckedAdvice::Free,
                 offset,
                 self.page_size.num_bytes(),
-            )
-            .expect("madvise free call should not fail");
+            );
+        
+        if let Err(error) = result {
+            error!(error = ?error, "failed to free page due to error");
+            return false;
+        }
 
         state.set_free_unchecked();
+        
+        true
     }
 }
 

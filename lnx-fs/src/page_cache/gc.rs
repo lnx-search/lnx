@@ -2,14 +2,24 @@ use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use std::ops::Range;
-use std::panic::UnwindSafe;
+use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use parking_lot::Condvar;
 use smallvec::SmallVec;
 
-type TriggerCallback = Box<dyn FnOnce() + Send + UnwindSafe>;
+type TriggerCallback = Box<dyn Fn() -> bool + Send>;
+type FileIdAndGenerationPair = (u64, u64);
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+struct TriggerKey {
+    /// The ID of the file the trigger belongs to.
+    file_id: u64,
+    /// A marker that requires all generations before this ID
+    /// to be dead before the trigger can be called.
+    generation_id: u64,
+}
 
 /// The minimum number of dead generations to accumulate before
 /// the GC considers purging data.
@@ -43,21 +53,21 @@ pub(crate) fn track_generation(file_id: u64, generation_id: u64) {
     GC.send(event);
 }
 
-/// Register a new trigger when a generation range is no longer alive.
+/// Register a new trigger when all generations upto the provided point are dead.
 ///
 /// This method _may_ panic if the GC thread has yet to be started and attempting
 /// to create a new GC thread errors.
 pub(crate) fn register_trigger<CB>(
     file_id: u64,
-    trigger_once_range_dead: Range<u64>,
+    trigger_once_checkpoint_at: u64,
     callback: CB,
 ) where
-    CB: FnOnce() + Send + UnwindSafe + 'static,
+    CB: Fn() -> bool + Send + 'static,
 {
     let callback = Box::new(callback) as TriggerCallback;
     let event = GCEvent::RegisterTrigger {
         file_id,
-        trigger_once_range_dead,
+        trigger_once_checkpoint_at,
         callback,
     };
     GC.send(event);
@@ -70,9 +80,9 @@ struct CacheGCActor {
     /// The guard marks the GC as dead when dropped.
     guard: ThreadLiveGuard,
     /// Triggers still waiting for generations to be cleaned up before triggering.
-    triggers: BTreeMap<u64, SmallVec<[(Range<u64>, TriggerCallback); 1]>>,
+    triggers: BTreeMap<TriggerKey, TriggerCallback>,
     /// A global tree of all the currently active generations.
-    active_generations: BTreeSet<(u64, u64)>,
+    active_generations: BTreeSet<TriggerKey>,
     /// The number of dead generations accumulated.
     num_dead_generations: usize,
 }
@@ -107,25 +117,37 @@ impl CacheGCActor {
                 file_id,
                 generation_id,
             } => {
+                let key = TriggerKey {
+                    file_id,
+                    generation_id,
+                };
+                
                 let did_remove =
-                    self.active_generations.remove(&(file_id, generation_id));
+                    self.active_generations.remove(&key);
                 self.num_dead_generations += did_remove as usize;
             },
             GCEvent::RegisterGeneration {
                 file_id,
                 generation_id,
             } => {
-                self.active_generations.insert((file_id, generation_id));
+                let key = TriggerKey {
+                    file_id,
+                    generation_id,
+                };
+                
+                self.active_generations.insert(key);
             },
             GCEvent::RegisterTrigger {
                 file_id,
-                trigger_once_range_dead,
+                trigger_once_checkpoint_at,
                 callback,
             } => {
-                self.triggers
-                    .entry(file_id)
-                    .or_default()
-                    .push((trigger_once_range_dead, callback));
+                let key = TriggerKey {
+                    file_id,
+                    generation_id: trigger_once_checkpoint_at,
+                };
+                
+                self.triggers.insert(key, callback);
             },
         }
     }
@@ -158,20 +180,42 @@ impl CacheGCActor {
     }
 
     fn run_gc_cycle(&mut self) {
-        for (file_id, triggers) in mem::take(&mut self.triggers) {
-            for (range, cb) in triggers {
-                let start = (file_id, range.start);
-                let end = (file_id, range.end);
-
-                // TODO: Optimise this step, we can easily just manually iterate over this
-                //       and check all the triggers in a single pass.
-                let alive_generations =
-                    self.active_generations.range(start..end).count();
-                if alive_generations == 0 {
-                    if let Err(e) = std::panic::catch_unwind(cb) {
-                        handle_trigger_panic(file_id, range, e);
-                    }
-                }
+        let mut current_triggers = mem::take(&mut self.triggers)
+            .into_iter()
+            .peekable();
+        
+        while let Some((key, trigger)) = current_triggers.next() {
+            let start = TriggerKey { file_id: key.file_id, generation_id: 0 };
+            let end = key;
+            
+            let can_trigger = self.active_generations
+                .range(start..end)
+                .next()
+                .is_none();
+            
+            // Advance the iterator until we encounter a new file id.
+            if !can_trigger {
+                while let Some(entry) = current_triggers
+                    .next_if(|(next_key, _)| next_key.file_id == key.file_id) 
+                {
+                    self.triggers.insert(entry.0, entry.1);
+                }         
+                continue;
+            }
+            
+            let wrapped_trigger = AssertUnwindSafe(|| trigger());
+            let did_complete = std::panic::catch_unwind(wrapped_trigger)
+                .map_err(|err| {
+                    handle_trigger_panic(
+                        key.file_id,
+                        key.generation_id,
+                        err,
+                    );
+                })
+                .unwrap_or_default();
+            
+            if !did_complete {
+                self.triggers.insert(key, trigger);
             }
         }
     }
@@ -205,9 +249,9 @@ enum GCEvent {
     RegisterTrigger {
         /// The ID of the file.
         file_id: u64,
-        /// The range of generation IDs that need to not exist in order
+        /// The of generation IDs that need to not exist in order        
         /// for this trigger to be called.
-        trigger_once_range_dead: Range<u64>,
+        trigger_once_checkpoint_at: u64,
         /// The callback to call once the condition is met.
         callback: TriggerCallback,
     },
@@ -257,25 +301,25 @@ impl Drop for ThreadLiveGuard {
 }
 
 /// Log when a trigger panics.
-fn handle_trigger_panic(file_id: u64, range: Range<u64>, error: Box<dyn Any>) {
+fn handle_trigger_panic(file_id: u64, generation: u64, error: Box<dyn Any>) {
     if let Some(msg) = error.downcast_ref::<String>() {
         tracing::error!(
             file_id = file_id,
-            generation_target = ?range,
+            generation_target = generation,
             error = %msg,
             "gc callback panicked, memory may leak",
         );
     } else if let Some(msg) = error.downcast_ref::<&'static str>() {
         tracing::error!(
             file_id = file_id,
-            generation_target = ?range,
+            generation_target = generation,
             error = %msg,
             "gc callback panicked, memory may leak"
         );
     } else {
         tracing::error!(
             file_id = file_id,
-            generation_target = ?range,
+            generation_target = generation,
             "gc callback panicked with unknown error, memory may leak",
         );
     }

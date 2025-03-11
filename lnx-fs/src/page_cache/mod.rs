@@ -28,6 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use ahash::RandomState;
+use dashmap::Entry;
 use crate::config::PageSize;
 pub use self::prepared_read::PreparedRead;
 use self::utils::NoOpRandomState;
@@ -40,6 +41,9 @@ pub enum CacheError {
     #[error("file not found")]
     /// The target file does not exist in the cache.
     FileNotFound,
+    #[error("file already exists")]
+    /// The target file already exists in the cache.
+    FileAlreadyExists,
     #[error("range {range:?} is out of bounds, file size is {file_size}")]
     /// The file range attempting to be read is out of bounds.
     OutOfBounds {
@@ -73,7 +77,11 @@ pub enum CacheError {
 // /// If there is not enough working memory to fit an allocation, the system will return an
 // /// "OutOfMemory" error, this is done to prevent accidental OOMs.
 pub struct FilePageCache {
+    /// The random state used to produce the hash values used in the Moka caches
+    /// and file blocks table.
     random_state: RandomState,
+    /// The configured page size of the cache.
+    page_size: PageSize,
     /// The primary LFU cache (Cache memory.)
     primary: moka::sync::Cache<u64, PageId, NoOpRandomState>,
     /// The file blocks backing pages.
@@ -104,6 +112,7 @@ impl FilePageCache {
         
         
         Self {
+            page_size,
             random_state: RandomState::new(),
             primary,
             file_blocks,
@@ -164,7 +173,7 @@ impl FilePageCache {
             // Call `get` on the cache to register the page being accessed for the LFU.
             self.primary.get(&page_hash_id);
             // Update the primary cache.
-            self.primary.insert(page_hash_id, ());
+            self.primary.insert(page_hash_id, page_id);
         }
 
         Ok(prepared)
@@ -188,8 +197,19 @@ impl FilePageCache {
         file_id: u64,
         file_size: usize,
     ) -> Result<(), CacheError> {
+        if self.file_blocks.contains_key(&file_id) {
+            return Err(CacheError::FileAlreadyExists);
+        }
         
-        Ok(())
+        let block = FileBlockState::allocate(file_id, file_size, self.page_size)?;
+        
+        match self.file_blocks.entry(file_id) {
+            Entry::Occupied(_) => Err(CacheError::FileAlreadyExists),
+            Entry::Vacant(entry) => {
+                entry.insert(block);
+                Ok(())
+            },
+        }
     }
     
     /// Remove an existing file entry from the cache.
@@ -234,6 +254,21 @@ struct FileBlockState {
 }
 
 impl FileBlockState {
+    fn allocate(
+        file_id: u64,
+        file_len: usize,
+        page_size: PageSize
+    ) -> io::Result<Self> {
+        let block = VirtualFileBlock::allocate(file_len, page_size)?;
+        
+        Ok(Self {
+            file_id,
+            file_len,
+            generation_counter: AtomicU64::default(),
+            block: Arc::new(block),
+        })        
+    }
+    
     fn prepare_read(&self, bytes_range: Range<usize>) -> PreparedRead {
         let generation_id = self.generation_counter.fetch_add(1, Ordering::Relaxed);
 
@@ -250,7 +285,64 @@ impl FileBlockState {
     }
     
     fn mark_for_deletion(&self, page_id: PageId) {
+        let generation_id = self.generation_counter.fetch_add(1, Ordering::Relaxed);
         
+        let block = self.block.clone();
+        
+        // WARNING
+        // There is an implicit contract that this callback is unwind safe.
+        // The way parking lot's mutexes works means this is unwind safe 
+        // _for our use case_ since the lack of poisoning does not affect
+        // the end result.
+        let cleanup_callback = move || {
+            let page_state = block.page_at(page_id);
+
+            let flags = page_state.flags();
+
+            // The page flag has been unset, we should not deallocate the page.
+            if !flags.is_to_be_freed() {
+                return true;
+            }
+            
+            unsafe {
+                // Try to acquire the lock, if we cannot, signal to the GC to reschedule.
+                // 
+                // # Safety:
+                // We know the page state will live long enough and the guard
+                // will be dropped before the block is deallocated as we
+                // hold a strong reference to the page block.
+                let Some(_guard) = page_state.try_acquire_write_guard() else { return false };
+                
+                // Now we have exclusive write access we need to check the flags again
+                // to ensure there was no race happening when we first read the flags.
+                let flags = page_state.flags();
+                
+                // Page no longer wants to be freed, abort.
+                if !flags.is_to_be_freed() {
+                    return true;                        
+                }
+                
+                // # Safety
+                // We have an exclusive write lock for the page and ensured the page 
+                // is still marked as waiting to be freed, this means we can safely
+                // call this operation without triggering use-after free or UB to readers.
+                let did_free = block.free_page(page_id);                 
+                
+                if did_free {
+                    // Set the page state as free now we know the page is given back to the OS.
+                    page_state.set_free_unchecked();
+                }
+                
+                // If the page did not get freed correctly, we have to re-schedule.
+                did_free                
+            }
+        };
+        
+        gc::register_trigger(
+            self.file_id,
+            generation_id,
+            cleanup_callback,
+        );
     }
 }
 
