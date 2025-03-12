@@ -77,6 +77,7 @@ impl VirtualFileBlock {
     /// The caller must also ensure that any reads using this pointer do not go out
     /// of bounds of the file block itself.
     pub(super) unsafe fn get_page_ptr(&self, page_id: PageId) -> *const u8 {
+        assert!(page_id < self.page_state_table.len(), "Attempting to read page out bounds");
         let offset = page_id * self.page_size.num_bytes();
         self.mem.as_ptr().add(offset)
     }
@@ -200,66 +201,155 @@ mod tests {
         assert_eq!(block.virtual_address_space_usage(), 64 << 30);
     }
 
-    // #[test]
-    // fn test_block_write_and_read() {
-    //     let mut block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
-    //         .expect("Allocate zeroed space");
-    //     assert_eq!(block.memory_usage(), 0);
-    //     assert_eq!(block.virtual_address_space_usage(), 8 << 10);
-    //
-    //     let error = block.read_page(2).unwrap_err();
-    //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    //     assert_eq!(error.to_string(), "page index is out of bounds");
-    //
-    //     let error = block.read_page(0).unwrap_err();
-    //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    //     assert_eq!(error.to_string(), "cannot read unallocated pages");
-    //
-    //     let error = block
-    //         .write_page(0, b"Hello, world!".as_slice())
-    //         .unwrap_err();
-    //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    //     assert_eq!(error.to_string(), "write buffer is not size of page");
-    //
-    //     let data = vec![1; 8 << 10];
-    //     let error = block.write_page(2, &data).unwrap_err();
-    //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    //     assert_eq!(error.to_string(), "page index is out of bounds");
-    //
-    //     block
-    //         .write_page(0, &[1; 8 << 10])
-    //         .expect("Write memory to page");
-    //
-    //     let slice = block.read_page(0).unwrap();
-    //     assert_eq!(
-    //         slice,
-    //         &[1; 8 << 10],
-    //         "Read data should match written buffer"
-    //     );
-    // }
-    //
-    // #[test]
-    // fn test_block_free() {
-    //     let mut block = VirtualFileBlock::allocate(1 << 20, PageSize::Size8KB)
-    //         .expect("Allocate zeroed space");
-    //     assert_eq!(block.memory_usage(), 0);
-    //     assert_eq!(block.virtual_address_space_usage(), 1 << 20);
-    //
-    //     block
-    //         .write_page(0, &[1; 8 << 10])
-    //         .expect("Write memory to page");
-    //
-    //     let slice = block.read_page(0).unwrap();
-    //     assert_eq!(
-    //         slice,
-    //         &[1; 8 << 10],
-    //         "Read data should match written buffer"
-    //     );
-    //
-    //     block.free_page(0).unwrap();
-    //
-    //     let error = block.read_page(0).unwrap_err();
-    //     assert_eq!(error.kind(), ErrorKind::InvalidInput);
-    //     assert_eq!(error.to_string(), "cannot read unallocated pages");
-    // }
+    #[test]
+    fn test_block_write_and_read_single_page() {
+        #[allow(unused_mut)]
+        let mut block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        assert_eq!(block.virtual_address_space_usage(), 8 << 10);
+    
+        unsafe { 
+            let ptr = block.get_page_ptr(0);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice.len(), 8 << 10);
+            assert_eq!(slice, &[0; 8 << 10]);
+            
+            let mut page_ref = block.get_mut_page(0);
+            assert_eq!(page_ref.size(), 8 << 10);
+            page_ref.write(&[4; 8 << 10]);
+            
+            let state = block.page_at(0);
+            let flags = state.flags();
+            assert!(flags.is_allocated());
+            assert!(!flags.is_to_be_freed());
+            assert!(!state.is_locked());
+
+            let ptr = block.get_page_ptr(0);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice, &[4; 8 << 10]);
+        };        
+    }
+
+    #[test]
+    fn test_block_write_and_read_many_pages() {
+        #[allow(unused_mut)]
+        let mut block = VirtualFileBlock::allocate(64 << 10, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        assert_eq!(block.virtual_address_space_usage(), 64 << 10);
+
+        unsafe {
+            let ptr = block.get_page_ptr(4);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice.len(), 8 << 10);
+            assert_eq!(slice, &[0; 8 << 10]);
+
+            let mut page_ref = block.get_mut_page(4);
+            assert_eq!(page_ref.size(), 8 << 10);
+            page_ref.write(&[4; 8 << 10]);
+
+            let state = block.page_at(4);
+            let flags = state.flags();
+            assert!(flags.is_allocated());
+            assert!(!flags.is_to_be_freed());
+            assert!(!state.is_locked());
+
+            let state = block.page_at(2);
+            let flags = state.flags();
+            assert!(!flags.is_allocated());
+            assert!(!flags.is_to_be_freed());
+            assert!(!state.is_locked());
+            
+            let ptr = block.get_page_ptr(0);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice, &[0; 8 << 10]);
+            
+            let ptr = block.get_page_ptr(4);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice, &[4; 8 << 10]);
+        };
+    }
+    
+    #[test]
+    #[should_panic]
+    fn test_block_read_out_of_bounds() {
+        let block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        unsafe {
+            let _ptr = block.get_page_ptr(4);
+        };
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_block_write_out_of_bounds() {
+        let block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        unsafe {
+            let _ptr = block.get_mut_page(4);
+        };
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_block_free_out_of_bounds() {
+        let block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        unsafe {
+            let _ptr = block.free_page(4);
+        };
+    }
+    
+    #[test]
+    fn test_block_free_single_page() {
+        #[allow(unused_mut)]
+        let mut block = VirtualFileBlock::allocate(1 << 20, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+        
+        unsafe {
+            let mut page_ref = block.get_mut_page(0);
+            assert_eq!(page_ref.size(), 8 << 10);
+            page_ref.write(&[4; 8 << 10]);
+            
+            let ptr = block.get_page_ptr(0);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice, &[4; 8 << 10]);
+            
+            block.free_page(0);
+
+            let state = block.page_at(0);
+            let flags = state.flags();
+            assert!(!flags.is_allocated());
+            assert!(!flags.is_to_be_freed());
+            assert!(!state.is_locked());
+        }
+    }
+
+    #[test]
+    fn test_block_free_many_page() {
+        #[allow(unused_mut)]
+        let mut block = VirtualFileBlock::allocate(1 << 20, PageSize::Size8KB)
+            .expect("Allocate zeroed space");
+
+        unsafe {
+            let mut page_ref = block.get_mut_page(0);
+            assert_eq!(page_ref.size(), 8 << 10);
+            page_ref.write(&[4; 8 << 10]);
+
+            let ptr = block.get_page_ptr(0);
+            let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
+            assert_eq!(slice, &[4; 8 << 10]);
+
+            block.free_page(0);
+
+            let state = block.page_at(0);
+            let flags = state.flags();
+            assert!(!flags.is_allocated());
+            assert!(!flags.is_to_be_freed());
+            assert!(!state.is_locked());
+            
+            // We can't actually check if the page was truly freed by the OS or not because
+            // Linux doesn't actually give us any guarantee that the page is immediately freed
+            // and zeroed or not.
+        }
+    }
 }

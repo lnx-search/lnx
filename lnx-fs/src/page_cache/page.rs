@@ -60,7 +60,7 @@ impl PageState {
     ///
     /// The caller must hold the page lock before calling this method.
     pub(super) unsafe fn set_to_be_freed_unchecked(&self) {
-        self.flags.set_free()
+        self.flags.set_to_be_freed()
     }
 
     /// Attempts to acquire the lock for the given page if it is not already locked.
@@ -167,5 +167,38 @@ impl PageFlags {
     /// Returns if the page is waiting to be freed by the gc.
     pub(super) fn is_to_be_freed(&self) -> bool {
         self.0 & Self::TO_BE_FREED != 0
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_atomic_flags() {
+        let flags = AtomicPageFlags::default();
+        
+        let v = flags.load();
+        assert!(!v.is_allocated());
+        assert!(!v.is_to_be_freed());
+
+        flags.set_allocated();
+        
+        let v = flags.load();
+        assert!(v.is_allocated());
+        assert!(!v.is_to_be_freed());
+        
+        flags.set_to_be_freed();
+        
+        let v = flags.load();
+        assert!(v.is_allocated());
+        assert!(v.is_to_be_freed());
+        
+        flags.set_free();
+
+        let v = flags.load();
+        assert!(!v.is_allocated());
+        assert!(!v.is_to_be_freed());   
     }
 }

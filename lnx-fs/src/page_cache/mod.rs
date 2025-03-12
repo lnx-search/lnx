@@ -285,7 +285,7 @@ impl FileBlockState {
     }
     
     fn mark_for_deletion(&self, page_id: PageId) {
-        let generation_id = self.generation_counter.fetch_add(1, Ordering::Relaxed);
+        let generation_id = self.generation_counter.fetch_add(1, Ordering::Release);
         
         let block = self.block.clone();
         
@@ -357,5 +357,46 @@ pub struct TrackedGeneration {
 impl Drop for TrackedGeneration {
     fn drop(&mut self) {
         gc::mark_dead_generation(self.file_id, self.generation_id);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_small_cache_create() {
+        let cache = FilePageCache::new(1 << 30, PageSize::Size8KB);
+        
+        cache
+            .prepare_read(
+                "test.txt",
+                0..5,
+            )
+            .expect_err("Cache entry should not exist");
+        
+        cache
+            .create_cache_entry(
+                "test.txt",
+                64 << 10,
+            )
+            .expect("Create entry");
+
+        let mut read = cache
+            .prepare_read(
+                "test.txt",
+                0..5,
+            )
+            .expect("Cache entry should exist");
+
+        assert_eq!(read.generation_id(), 0);
+        assert_eq!(read.page_range(), 0..1);
+        
+        let outstanding_write = read.next_outstanding_write();
+        assert!(outstanding_write.is_some());
+        
+        let write_request = outstanding_write.unwrap();
+        assert_eq!(write_request.bytes_range(), 0..8<<10);
     }
 }

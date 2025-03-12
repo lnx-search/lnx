@@ -2,7 +2,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Range};
 use std::sync::Arc;
 use std::{io, mem};
-
+use std::fmt::{Debug, Formatter};
 use smallvec::SmallVec;
 use stable_deref_trait::StableDeref;
 use tokio::sync::Notify;
@@ -71,6 +71,16 @@ pub struct PreparedRead {
     /// Accessing the memory behind this pointer is UB until all pages are
     /// guaranteed to be allocated and contiguous.
     raw_mem_ptr: *const u8,
+}
+
+impl Debug for PreparedRead {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedRead")
+            .field("file_id", &self.op_guard.generation.file_id)
+            .field("generation_id", &self.op_guard.generation.generation_id)
+            .field("page_range", &self.page_range)
+            .finish()
+    }
 }
 
 impl PreparedRead {
