@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use parking_lot::Condvar;
+use parking_lot::{Condvar, Mutex};
 use smallvec::SmallVec;
 
 type TriggerCallback = Box<dyn Fn() -> bool + Send>;
@@ -91,11 +91,9 @@ impl CacheGCActor {
     fn run(mut self) {
         tracing::info!("GC actor is running");
 
-        let waiter = parking_lot::Mutex::new(());
-        let mut lock = waiter.lock();
         loop {
             // Wait for new event triggers
-            GC.wake.wait(&mut lock);
+            GC.wake.wait(&mut GC.wake_mutex.lock());
 
             self.drain_events();
 
@@ -121,9 +119,8 @@ impl CacheGCActor {
                     file_id,
                     generation_id,
                 };
-                
-                let did_remove =
-                    self.active_generations.remove(&key);
+
+                let did_remove = self.active_generations.remove(&key);
                 self.num_dead_generations += did_remove as usize;
             },
             GCEvent::RegisterGeneration {
@@ -134,7 +131,7 @@ impl CacheGCActor {
                     file_id,
                     generation_id,
                 };
-                
+
                 self.active_generations.insert(key);
             },
             GCEvent::RegisterTrigger {
@@ -146,7 +143,7 @@ impl CacheGCActor {
                     file_id,
                     generation_id: trigger_once_checkpoint_at,
                 };
-                
+
                 self.triggers.insert(key, callback);
             },
         }
@@ -180,40 +177,34 @@ impl CacheGCActor {
     }
 
     fn run_gc_cycle(&mut self) {
-        let mut current_triggers = mem::take(&mut self.triggers)
-            .into_iter()
-            .peekable();
-        
+        let mut current_triggers = mem::take(&mut self.triggers).into_iter().peekable();
+
         while let Some((key, trigger)) = current_triggers.next() {
-            let start = TriggerKey { file_id: key.file_id, generation_id: 0 };
+            let start = TriggerKey {
+                file_id: key.file_id,
+                generation_id: 0,
+            };
             let end = key;
-            
-            let can_trigger = self.active_generations
-                .range(start..end)
-                .next()
-                .is_none();
-            
+
+            let can_trigger = self.active_generations.range(start..end).next().is_none();
+
             // Advance the iterator until we encounter a new file id.
             if !can_trigger {
                 while let Some(entry) = current_triggers
-                    .next_if(|(next_key, _)| next_key.file_id == key.file_id) 
+                    .next_if(|(next_key, _)| next_key.file_id == key.file_id)
                 {
                     self.triggers.insert(entry.0, entry.1);
-                }         
+                }
                 continue;
             }
-            
-            let wrapped_trigger = AssertUnwindSafe(|| trigger());
+
+            let wrapped_trigger = AssertUnwindSafe(&trigger);
             let did_complete = std::panic::catch_unwind(wrapped_trigger)
                 .map_err(|err| {
-                    handle_trigger_panic(
-                        key.file_id,
-                        key.generation_id,
-                        err,
-                    );
+                    handle_trigger_panic(key.file_id, key.generation_id, err);
                 })
                 .unwrap_or_default();
-            
+
             if !did_complete {
                 self.triggers.insert(key, trigger);
             }
@@ -259,6 +250,7 @@ enum GCEvent {
 
 struct GCState {
     wake: Condvar,
+    wake_mutex: Mutex<()>,
     is_live: AtomicBool,
     pending_events: crossbeam_queue::SegQueue<GCEvent>,
 }
@@ -267,6 +259,7 @@ impl GCState {
     const fn new() -> Self {
         Self {
             wake: Condvar::new(),
+            wake_mutex: Mutex::new(()),
             is_live: AtomicBool::new(false),
             pending_events: crossbeam_queue::SegQueue::new(),
         }

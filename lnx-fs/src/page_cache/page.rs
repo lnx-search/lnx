@@ -170,35 +170,34 @@ impl PageFlags {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_atomic_flags() {
         let flags = AtomicPageFlags::default();
-        
+
         let v = flags.load();
         assert!(!v.is_allocated());
         assert!(!v.is_to_be_freed());
 
         flags.set_allocated();
-        
+
         let v = flags.load();
         assert!(v.is_allocated());
         assert!(!v.is_to_be_freed());
-        
+
         flags.set_to_be_freed();
-        
+
         let v = flags.load();
         assert!(v.is_allocated());
         assert!(v.is_to_be_freed());
-        
+
         flags.set_free();
 
         let v = flags.load();
         assert!(!v.is_allocated());
-        assert!(!v.is_to_be_freed());   
+        assert!(!v.is_to_be_freed());
     }
 }

@@ -1,7 +1,9 @@
-use std::io;
+use std::ops::Range;
+use std::{cmp, io};
 
 use memmap2::UncheckedAdvice;
 use tracing::error;
+
 use crate::config::PageSize;
 use crate::page_cache::page::{PageState, PageStateTable};
 
@@ -18,6 +20,10 @@ pub(super) struct VirtualFileBlock {
     /// The size of the pages being allocated, this is used
     /// to calculate the actual memory usage of the block.
     page_size: PageSize,
+    /// The size of the file.
+    ///
+    /// This may be smaller than the address space allocated.
+    file_size: usize,
 }
 
 impl VirtualFileBlock {
@@ -34,6 +40,7 @@ impl VirtualFileBlock {
             mem,
             page_state_table,
             page_size,
+            file_size: size,
         })
     }
 
@@ -47,6 +54,23 @@ impl VirtualFileBlock {
     /// Returns the page size being used by the block.
     pub fn page_size(&self) -> PageSize {
         self.page_size
+    }
+
+    #[inline]
+    /// Returns the page size being used by the block.
+    pub fn file_size(&self) -> usize {
+        self.file_size
+    }
+
+    /// Returns the byte range of the file for the given page.
+    ///
+    /// This may not be exactly the page size as if it is the last page
+    /// the file may be smaller than the total virtual address space allocated.
+    pub fn page_to_bytes_range(&self, page_id: PageId) -> Range<usize> {
+        let page_size_bytes = self.page_size().num_bytes();
+        let read_start = page_id * page_size_bytes;
+        let read_end = cmp::min(read_start + page_size_bytes, self.file_size());
+        read_start..read_end
     }
 
     #[inline]
@@ -77,7 +101,10 @@ impl VirtualFileBlock {
     /// The caller must also ensure that any reads using this pointer do not go out
     /// of bounds of the file block itself.
     pub(super) unsafe fn get_page_ptr(&self, page_id: PageId) -> *const u8 {
-        assert!(page_id < self.page_state_table.len(), "Attempting to read page out bounds");
+        assert!(
+            page_id < self.page_state_table.len(),
+            "Attempting to read page out bounds"
+        );
         let offset = page_id * self.page_size.num_bytes();
         self.mem.as_ptr().add(offset)
     }
@@ -107,7 +134,7 @@ impl VirtualFileBlock {
     /// Free the given page.
     ///
     /// Returns if the page was freed successfully or not.
-    /// 
+    ///
     /// # Safety
     ///
     /// The caller must ensure that the page ID is valid for the given file block and that there are
@@ -116,20 +143,19 @@ impl VirtualFileBlock {
         let state = self.page_at(page_id);
         let offset = page_id * self.page_size.num_bytes();
 
-        let result = self.mem
-            .unchecked_advise_range(
-                UncheckedAdvice::Free,
-                offset,
-                self.page_size.num_bytes(),
-            );
-        
+        let result = self.mem.unchecked_advise_range(
+            UncheckedAdvice::Free,
+            offset,
+            self.page_size.num_bytes(),
+        );
+
         if let Err(error) = result {
             error!(error = ?error, "failed to free page due to error");
             return false;
         }
 
         state.set_free_unchecked();
-        
+
         true
     }
 }
@@ -207,17 +233,17 @@ mod tests {
         let mut block = VirtualFileBlock::allocate(8 << 10, PageSize::Size8KB)
             .expect("Allocate zeroed space");
         assert_eq!(block.virtual_address_space_usage(), 8 << 10);
-    
-        unsafe { 
+
+        unsafe {
             let ptr = block.get_page_ptr(0);
             let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
             assert_eq!(slice.len(), 8 << 10);
             assert_eq!(slice, &[0; 8 << 10]);
-            
+
             let mut page_ref = block.get_mut_page(0);
             assert_eq!(page_ref.size(), 8 << 10);
             page_ref.write(&[4; 8 << 10]);
-            
+
             let state = block.page_at(0);
             let flags = state.flags();
             assert!(flags.is_allocated());
@@ -227,7 +253,7 @@ mod tests {
             let ptr = block.get_page_ptr(0);
             let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
             assert_eq!(slice, &[4; 8 << 10]);
-        };        
+        };
     }
 
     #[test]
@@ -258,17 +284,17 @@ mod tests {
             assert!(!flags.is_allocated());
             assert!(!flags.is_to_be_freed());
             assert!(!state.is_locked());
-            
+
             let ptr = block.get_page_ptr(0);
             let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
             assert_eq!(slice, &[0; 8 << 10]);
-            
+
             let ptr = block.get_page_ptr(4);
             let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
             assert_eq!(slice, &[4; 8 << 10]);
         };
     }
-    
+
     #[test]
     #[should_panic]
     fn test_block_read_out_of_bounds() {
@@ -298,22 +324,22 @@ mod tests {
             let _ptr = block.free_page(4);
         };
     }
-    
+
     #[test]
     fn test_block_free_single_page() {
         #[allow(unused_mut)]
         let mut block = VirtualFileBlock::allocate(1 << 20, PageSize::Size8KB)
             .expect("Allocate zeroed space");
-        
+
         unsafe {
             let mut page_ref = block.get_mut_page(0);
             assert_eq!(page_ref.size(), 8 << 10);
             page_ref.write(&[4; 8 << 10]);
-            
+
             let ptr = block.get_page_ptr(0);
             let slice = std::slice::from_raw_parts(ptr, block.page_size().num_bytes());
             assert_eq!(slice, &[4; 8 << 10]);
-            
+
             block.free_page(0);
 
             let state = block.page_at(0);
@@ -346,7 +372,7 @@ mod tests {
             assert!(!flags.is_allocated());
             assert!(!flags.is_to_be_freed());
             assert!(!state.is_locked());
-            
+
             // We can't actually check if the page was truly freed by the OS or not because
             // Linux doesn't actually give us any guarantee that the page is immediately freed
             // and zeroed or not.

@@ -1,15 +1,15 @@
-use std::hash::{Hash, Hasher};
+use std::fmt::{Debug, Formatter};
+use std::mem;
 use std::ops::{Deref, Range};
 use std::sync::Arc;
-use std::{io, mem};
-use std::fmt::{Debug, Formatter};
+
 use smallvec::SmallVec;
 use stable_deref_trait::StableDeref;
 use tokio::sync::Notify;
 
 use super::block::{MutPageRef, PageId, VirtualFileBlock};
 use super::page::{PageState, PageWriteLockGuard};
-use super::TrackedGeneration;
+use super::{gc, TrackedGeneration};
 use crate::config::PageSize;
 
 /// The global waker that notifies pending readers when a page has been written.
@@ -63,8 +63,8 @@ pub struct PreparedRead {
     /// The number of bytes to skip from the _first_ page of the memory.
     page_relative_offset: usize,
     /// The total length of the read which is added to the `raw_mem_ptr`
-    /// in order to get the end pointer.
-    total_read_len: usize,
+    /// in order to get the end pointer which is then returned to the user.
+    public_read_range_len: usize,
     /// The raw pointer located at the start of the page attempting to be
     /// read by this operation.
     ///
@@ -94,11 +94,11 @@ impl PreparedRead {
         let mut write_requests = SmallVec::new();
         let mut inflight_locks = SmallVec::new();
 
+        let public_read_range_len = bytes_range.len();
         let page_size = file_block.page_size();
         let page_range = get_page_range(bytes_range, page_size);
 
         let page_relative_offset = page_range.start % page_size.num_bytes();
-        let total_read_len = page_range.len();
 
         let op_guard = OpGuards {
             generation: Arc::new(generation),
@@ -141,13 +141,13 @@ impl PreparedRead {
                     // We hold the page lock for the target `page_id`, which means we are allowed
                     // to acquire a mutable reference to the page.
                     let mut_page = file_block.get_mut_page(page_id);
+                    let read_bytes_range = file_block.page_to_bytes_range(page_id);
 
                     let write_request = WriteRequest {
                         op_guard: op_guard.clone(),
                         lock_guard: guard,
                         waker,
-                        target_page: page_id,
-                        page_size: file_block.page_size(),
+                        read_bytes_range,
                         mut_page,
                     };
 
@@ -165,7 +165,7 @@ impl PreparedRead {
             inflight_locks,
             page_range,
             page_relative_offset,
-            total_read_len,
+            public_read_range_len,
             raw_mem_ptr,
         }
     }
@@ -215,6 +215,7 @@ impl PreparedRead {
             waker_future.set(waker.notified());
         }
 
+        dbg!(self.page_relative_offset, self.public_read_range_len);
         // # Safety
         // We know the offset will be valid because the offset is calculated by aligning to page
         // boundaries when the prepared read is created.
@@ -224,7 +225,7 @@ impl PreparedRead {
         Ok(ReadRef {
             _op_guard: self.op_guard.clone(),
             mem_ptr: mem_ptr_with_offset,
-            mem_len: self.total_read_len,
+            mem_len: self.public_read_range_len,
         })
     }
 
@@ -261,13 +262,13 @@ impl PreparedRead {
 
                 let page_id = unsafe { file_block.pointer_to_page_id(page_state) };
                 let mut_page = unsafe { file_block.get_mut_page(page_id) };
+                let read_bytes_range = file_block.page_to_bytes_range(page_id);
 
                 let request = WriteRequest {
                     op_guard: self.op_guard.clone(),
                     lock_guard,
                     waker,
-                    target_page: page_id,
-                    page_size: file_block.page_size(),
+                    read_bytes_range,
                     mut_page,
                 };
 
@@ -302,16 +303,16 @@ impl PreparedRead {
 ///
 /// The byte range to read from the file is provided by the write request.
 pub struct WriteRequest {
+    #[allow(unused)] // needed in order to keep ensure everything stays alive properly.
     /// The operation guard.
     op_guard: OpGuards,
+    #[allow(unused)] // needed in order to prevent concurrent page accesses.
     /// The page write lock guard.
     lock_guard: PageWriteLockGuard<'static>,
     /// The write waker for the file.
     waker: &'static Notify,
-    /// The page being targeted.
-    target_page: usize,
-    /// The page size to be read.
-    page_size: PageSize,
+    /// The range of bytes to read in order to populate the page.
+    read_bytes_range: Range<usize>,
     /// The mutable page memory pointer.
     mut_page: MutPageRef,
 }
@@ -319,10 +320,8 @@ pub struct WriteRequest {
 impl WriteRequest {
     #[inline]
     /// Returns the target bytes range to read from the file.
-    pub fn bytes_range(&self) -> Range<usize> {
-        let start = self.target_page * self.page_size.num_bytes();
-        let end = start + self.page_size.num_bytes();
-        start..end
+    pub fn read_bytes_range(&self) -> Range<usize> {
+        self.read_bytes_range.clone()
     }
 
     /// Copy the bytes from `buffer` to the page.
@@ -331,33 +330,13 @@ impl WriteRequest {
     pub fn write(self, buffer: &[u8]) {
         assert_eq!(
             buffer.len(),
-            self.mut_page.size(),
-            "buffer length does not match page size"
+            self.read_bytes_range.len(),
+            "buffer length does not match write request size"
         );
 
         // # Safety
         // The buffer is checked above to ensure it matches the page sizer.
         unsafe { self.write_unchecked(buffer) }
-    }
-
-    /// Copy the bytes from `buffer` to the page.
-    ///
-    /// Unlike `write`, the buffer length can be _less than_ the length of the page.
-    ///
-    /// # Safety
-    ///
-    /// You _must_ ensure the bytes not written to the page cannot be accessed by reads as
-    /// these are technically uninitialized bytes from the perspective of the reader.
-    pub unsafe fn write_partial(self, buffer: &[u8]) {
-        assert!(
-            buffer.len() <= self.mut_page.size(),
-            "buffer length cannot exceed page size"
-        );
-
-        // # Safety
-        // The buffer is checked above to ensure it does not exceed the page size,
-        // protection of the uninitialized bytes are the responsibility of the caller.
-        self.write_unchecked(buffer)
     }
 
     /// Copy the bytes from `buffer` into the page without any checks.

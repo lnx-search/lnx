@@ -7,14 +7,12 @@ description = "A virtualized file system for writing small blobs efficiently."
 
 [dependencies]
 async-trait = { workspace = true }
-arc-swap = { workspace = true }
 thiserror = { workspace = true }
 glommio = { workspace = true }
 sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
-slab = { workspace = true }
 ulid = { workspace = true }
 tracing = { workspace = true }
 moka = { workspace = true }
@@ -23,18 +21,15 @@ bon = { workspace = true }
 tokio = { workspace = true }
 futures-util = { workspace = true }
 bytes = { workspace = true }
-fnv = { workspace = true }
 ahash = { workspace = true }
 parking_lot = { workspace = true, features = ["arc_lock"] }
 rmp-serde = { workspace = true }
 tempfile = { workspace = true }
 smallvec = { workspace = true }
 memmap2 = { workspace = true }
-bitvec = { workspace = true }
 stable_deref_trait = { workspace = true }
 crossbeam-queue = { workspace = true }
 dashmap = { workspace = true }
-intrusive-collections = { workspace = true }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
@@ -42,6 +37,7 @@ tokio = { workspace = true }
 fastrand = { workspace = true }
 mockall = { workspace = true }
 crc32fast = { workspace = true }
+futures = { workspace = true }
 
 [features]
 # Enables testing utilities like `VirtualFileSystem::create_for_test()`.
