@@ -57,11 +57,20 @@ impl VirtualFileBlock {
     }
 
     #[inline]
-    /// Returns the page size being used by the block.
+    /// Returns the file size being used by the block.
     pub fn file_size(&self) -> usize {
         self.file_size
     }
 
+    #[inline]
+    /// Returns the allocated bytes size being used by the block.
+    /// 
+    /// This can differ from the file size because allocations are aligned to the
+    /// page size.
+    pub fn allocated_size(&self) -> usize {
+        self.mem.len()
+    }
+    
     /// Returns the byte range of the file for the given page.
     ///
     /// This may not be exactly the page size as if it is the last page
@@ -154,7 +163,7 @@ impl VirtualFileBlock {
             return false;
         }
 
-        state.set_free_unchecked();
+        state.mark_free_unchecked();
 
         true
     }
@@ -183,12 +192,16 @@ impl MutPageRef {
     }
 
     /// Marks the current page as "to be freed".
-    ///
+    /// 
+    /// You must provide the generation attached to this operation in order
+    /// to prevent use-after free situations where older GC callbacks can cleanup
+    /// memory now in use.
+    /// 
     /// # Safety
     ///
     /// The caller must hold an exclusive lock to the current page state.    
-    pub(super) unsafe fn mark_to_be_freed(&mut self) {
-        (*self.state).set_to_be_freed_unchecked();
+    pub(super) unsafe fn mark_to_be_freed(&mut self, generation: u64) {
+        (*self.state).mark_dirty_unchecked(generation);
     }
 
     /// Marks the current page as "to be freed".
@@ -202,7 +215,7 @@ impl MutPageRef {
     /// by readers.
     pub(super) unsafe fn write(&mut self, buffer: &[u8]) {
         std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.mem_ptr, buffer.len());
-        (*self.state).set_allocated_unchecked();
+        (*self.state).mark_allocated_unchecked();
     }
 }
 
@@ -247,7 +260,7 @@ mod tests {
             let state = block.page_at(0);
             let flags = state.flags();
             assert!(flags.is_allocated());
-            assert!(!flags.is_to_be_freed());
+            assert!(!flags.is_dirty());
             assert!(!state.is_locked());
 
             let ptr = block.get_page_ptr(0);
@@ -276,13 +289,13 @@ mod tests {
             let state = block.page_at(4);
             let flags = state.flags();
             assert!(flags.is_allocated());
-            assert!(!flags.is_to_be_freed());
+            assert!(!flags.is_dirty());
             assert!(!state.is_locked());
 
             let state = block.page_at(2);
             let flags = state.flags();
             assert!(!flags.is_allocated());
-            assert!(!flags.is_to_be_freed());
+            assert!(!flags.is_dirty());
             assert!(!state.is_locked());
 
             let ptr = block.get_page_ptr(0);
@@ -345,7 +358,7 @@ mod tests {
             let state = block.page_at(0);
             let flags = state.flags();
             assert!(!flags.is_allocated());
-            assert!(!flags.is_to_be_freed());
+            assert!(!flags.is_dirty());
             assert!(!state.is_locked());
         }
     }
@@ -370,7 +383,7 @@ mod tests {
             let state = block.page_at(0);
             let flags = state.flags();
             assert!(!flags.is_allocated());
-            assert!(!flags.is_to_be_freed());
+            assert!(!flags.is_dirty());
             assert!(!state.is_locked());
 
             // We can't actually check if the page was truly freed by the OS or not because

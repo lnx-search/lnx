@@ -1,11 +1,12 @@
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::mem;
 use std::ops::Range;
 use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
-
+use futures::channel::oneshot;
 use parking_lot::{Condvar, Mutex};
 use smallvec::SmallVec;
 
@@ -71,6 +72,13 @@ pub(crate) fn register_trigger<CB>(
         callback,
     };
     GC.send(event);
+}
+
+/// Forces the GC to run a collection cycle.
+pub(crate) fn force_collection() -> impl Future<Output = ()> + Send + 'static {
+    let (tx, rx) = oneshot::channel();
+    GC.send(GCEvent::ForceCollection { signal: tx });
+    async move { let _ = rx.await; }
 }
 
 #[derive(Default)]
@@ -146,6 +154,10 @@ impl CacheGCActor {
 
                 self.triggers.insert(key, callback);
             },
+            GCEvent::ForceCollection { signal } => {
+                self.run_gc_cycle();
+                let _ = signal.send(());
+            }
         }
     }
 
@@ -157,12 +169,16 @@ impl CacheGCActor {
             return;
         }
 
+        self.run_gc_cycle();
+    }
+    
+    fn run_gc_cycle(&mut self) {
         tracing::trace!("dead generation threshold met, purging pages");
 
         let num_evicted_triggers = 0;
         let start = Instant::now();
 
-        self.run_gc_cycle();
+        self.collect_dead_pages();
 
         self.num_dead_generations = 0;
 
@@ -176,7 +192,7 @@ impl CacheGCActor {
         }
     }
 
-    fn run_gc_cycle(&mut self) {
+    fn collect_dead_pages(&mut self) {
         let mut current_triggers = mem::take(&mut self.triggers).into_iter().peekable();
 
         while let Some((key, trigger)) = current_triggers.next() {
@@ -198,6 +214,7 @@ impl CacheGCActor {
                 continue;
             }
 
+            eprintln!("freeing {key:?}");
             let wrapped_trigger = AssertUnwindSafe(&trigger);
             let did_complete = std::panic::catch_unwind(wrapped_trigger)
                 .map_err(|err| {
@@ -245,6 +262,10 @@ enum GCEvent {
         trigger_once_checkpoint_at: u64,
         /// The callback to call once the condition is met.
         callback: TriggerCallback,
+    },
+    /// Forcefully triggers a GC collection cycle
+    ForceCollection {
+        signal: oneshot::Sender<()>
     },
 }
 

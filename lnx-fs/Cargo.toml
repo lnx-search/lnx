@@ -30,6 +30,7 @@ memmap2 = { workspace = true }
 stable_deref_trait = { workspace = true }
 crossbeam-queue = { workspace = true }
 dashmap = { workspace = true }
+futures = { workspace = true  }
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }

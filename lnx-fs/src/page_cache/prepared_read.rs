@@ -98,6 +98,13 @@ impl PreparedRead {
         let page_size = file_block.page_size();
         let page_range = get_page_range(bytes_range, page_size);
 
+        // Sanity check that should never trigger since we check the bounds at the public method level.
+        assert!(
+            (page_range.start < file_block.num_pages()) 
+            && (page_range.end <= file_block.num_pages()), 
+            "bug: page read range is out of bounds of the file block",
+        );
+        
         let page_relative_offset = page_range.start % page_size.num_bytes();
 
         let op_guard = OpGuards {
@@ -105,38 +112,32 @@ impl PreparedRead {
             block: file_block.clone(),
         };
 
+        // # Safety: 
+        // The file block will live at least as long as we use the pointer for.
+        // The page being accessed is always within the bounds of the memory because
+        // we have asserted that the pages are within bounds.
         let raw_mem_ptr = unsafe { file_block.get_page_ptr(page_range.start) };
 
         for page_id in page_range.clone() {
             let state = file_block.page_at(page_id);
             let flags = state.flags();
-
-            // The page is allocated, it was previously marked to be freed.
-            if flags.is_allocated() && flags.is_to_be_freed() {
-                unsafe {
-                    if let Some(_guard) = state.try_acquire_write_guard() {
-                        // Load the flags again just to make sure now we have the guard.
-                        let flags = state.flags();
-
-                        // Page is still allocated, we can unset the flag without re-reading.
-                        if flags.is_allocated() {
-                            // Reset the page marker so it is no longer marked to be freed,
-                            // we can do this because the allocation is still valid.
-                            //
-                            // # Safety
-                            // We hold the write lock for the page and can safely update the flag.
-                            state.set_allocated_unchecked();
-                        }
-                    }
-                }
-            } else if flags.is_allocated() {
+            
+            if flags.is_allocated() {
                 continue;
             }
 
-            // Page has been deallocated, we need to read from disk.
+            // Page has been deallocated/invalidated, we need to read from disk.
+            // # Safety: 
+            // The page state will live for at least as long as we need it because we hold a strong
+            // reference to the current block, we can perform accesses and mutations on the page
+            // state because have acquire the page lock first.
             unsafe {
                 // No active write is in flight if we can acquire the lock.
-                if let Some(guard) = state.try_acquire_write_guard() {
+                if let Some(guard) = state.try_acquire_static_write_guard() {
+                    // We always have to load the flags again once we hold the lock
+                    // to ensure nothing has changed due to a concurrent access.
+                    state.mark_free_if_dirty();
+                    
                     // # Safety
                     // We hold the page lock for the target `page_id`, which means we are allowed
                     // to acquire a mutable reference to the page.
@@ -257,9 +258,13 @@ impl PreparedRead {
             }
 
             // Attempt to acquire the write guard so we can ensure we re attempt to write the page.
-            if let Some(lock_guard) = unsafe { page.try_acquire_write_guard() } {
+            if let Some(lock_guard) = page.try_acquire_write_guard() {
+                // Safety: We hold the page lock
+                unsafe { page.mark_free_if_dirty() };
+                
                 let file_block = self.file_block();
 
+                // Safety: We hold the page lock
                 let page_id = unsafe { file_block.pointer_to_page_id(page_state) };
                 let mut_page = unsafe { file_block.get_mut_page(page_id) };
                 let read_bytes_range = file_block.page_to_bytes_range(page_id);
