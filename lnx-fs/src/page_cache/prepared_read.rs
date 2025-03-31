@@ -157,10 +157,10 @@ impl PreparedRead {
                         mut_page,
                     };
                     write_requests.push(write_request);
-                } else {
-                    // Write already in process, we just need to wait until the lock gets released.
-                    inflight_locks.push(state as *const PageState);
                 }
+
+                // Write already in process, we just need to wait until the lock gets released.
+                inflight_locks.push(state as *const PageState);
             }
         }
 
@@ -223,8 +223,10 @@ impl PreparedRead {
             self.check_inflight_locks();
             self.err_if_outstanding_writes()?;
 
-            waker_future.as_mut().await;
-            waker_future.set(waker.notified());
+            if !self.inflight_locks.is_empty() {
+                waker_future.as_mut().await;
+                waker_future.set(waker.notified());
+            }
         }
 
         // # Safety

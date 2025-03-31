@@ -30,6 +30,7 @@ use std::sync::Arc;
 
 use ahash::RandomState;
 use dashmap::Entry;
+use moka::notification::RemovalCause;
 
 pub use self::prepared_read::PreparedRead;
 use self::utils::NoOpRandomState;
@@ -105,8 +106,11 @@ impl FilePageCache {
             .eviction_listener({
                 let manager = manager.clone();
 
-                move |_, (file_id, page_id), _| {
-                    eprintln!("evicting file:{file_id} page:{page_id}");
+                move |_, (file_id, page_id), r| {
+                    // The system is just updating to ensure it is registered.
+                    if r == RemovalCause::Replaced {
+                        return;
+                    }
                     manager.push_eviction(file_id, page_id);
                 }
             })
@@ -184,8 +188,8 @@ impl FilePageCache {
     ) -> Result<PreparedRead, CacheError> {
         let block_state = self.manager.get_block(file_id)?;
 
-        if read_range.start > block_state.file_len
-            && read_range.end > block_state.file_len
+        if read_range.start >= block_state.file_len
+            || read_range.end > block_state.file_len
         {
             return Err(CacheError::OutOfBounds {
                 range: read_range,
@@ -407,6 +411,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_cache_boundary_checks() {
+        let cache = FilePageCache::new(1 << 30, PageSize::Size8KB);
+
+        cache.create_cache_entry("test.txt", 15).unwrap();
+
+        cache
+            .prepare_read("test.txt", 0..15)
+            .expect("Create read with valid bounds");
+
+        cache
+            .prepare_read("test.txt", 15..15)
+            .expect_err("start bound should be rejected");
+
+        cache
+            .prepare_read("test.txt", 16..15)
+            .expect_err("start bound should be rejected");
+
+        cache
+            .prepare_read("test.txt", 0..18)
+            .expect_err("end bound should be rejected");
+
+        cache
+            .prepare_read("test.txt", 0..0)
+            .expect("bound should be ok");
+
+        cache
+            .prepare_read("test.txt", 4..5)
+            .expect("bound should be ok");
+    }
+
+    #[test]
     fn test_small_cache_create() {
         let cache = FilePageCache::new(1 << 30, PageSize::Size8KB);
 
@@ -525,7 +560,6 @@ mod tests {
             "data mismatch after page write and page being marked dirty",
         );
 
-        // :( Why dont you work
         let mut third_read = cache
             .prepare_read("entry2.txt", 0..8)
             .expect("Cache entry should exist");
@@ -533,11 +567,64 @@ mod tests {
     }
 
     #[test]
-    fn test_generation_ordering_page_eviction_scheduling() {}
+    fn test_concurrent_page_read() {
+        let cache = FilePageCache::new(8 << 10, PageSize::Size8KB);
+
+        cache
+            .create_cache_entry("entry1.txt", 15)
+            .expect("Create entry");
+
+        let mut first_read = cache
+            .prepare_read("entry1.txt", 0..15)
+            .expect("Cache entry should exist");
+
+        // Second read should be able to wait on the first read's IO.
+        let mut second_read = cache
+            .prepare_read("entry1.txt", 0..15)
+            .expect("Cache entry should exist");
+        assert!(second_read.next_outstanding_write().is_none());
+
+        first_read.next_outstanding_write().unwrap().write(&[1; 15]);
+
+        let first_read_ref = block_on(first_read.try_finish()).expect("Finish read ref");
+        assert_eq!(first_read_ref.len(), 15);
+
+        let second_read_ref =
+            block_on(second_read.try_finish()).expect("Finish read ref");
+        assert_eq!(second_read_ref.len(), 15);
+    }
 
     #[test]
-    fn test_cancel_page_free_on_read() {}
+    fn test_reads_cannot_read_dirty_data() {
+        let cache = FilePageCache::new(8 << 10, PageSize::Size8KB);
 
-    #[test]
-    fn test_reads_cannot_read_dirty_data() {}
+        cache
+            .create_cache_entry("entry1.txt", 15)
+            .expect("Create entry");
+        cache
+            .create_cache_entry("entry2.txt", 15)
+            .expect("Create entry");
+
+        // We're effectively just checking that the entry1 that will be marked dirty
+        // cannot then be re-read and forces a required write.
+        let mut first_read = cache
+            .prepare_read("entry1.txt", 0..15)
+            .expect("Cache entry should exist");
+        assert!(first_read.next_outstanding_write().is_some());
+        assert!(block_on(first_read.try_finish()).is_err());
+        let mut second_read = cache
+            .prepare_read("entry2.txt", 0..15)
+            .expect("Cache entry should exist");
+        assert!(second_read.next_outstanding_write().is_some());
+        assert!(block_on(second_read.try_finish()).is_err());
+
+        drop(first_read);
+        drop(second_read);
+
+        let mut third_read = cache
+            .prepare_read("entry1.txt", 0..15)
+            .expect("Cache entry should exist");
+        assert!(third_read.next_outstanding_write().is_some());
+        assert!(block_on(third_read.try_finish()).is_err());
+    }
 }

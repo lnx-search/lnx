@@ -125,8 +125,6 @@ impl CacheGCActor {
                 file_id,
                 generation_id,
             } => {
-                eprintln!("GOT GenerationDead: {file_id:?} {generation_id}");
-
                 let key = TriggerKey {
                     file_id,
                     generation_id,
@@ -139,8 +137,6 @@ impl CacheGCActor {
                 file_id,
                 generation_id,
             } => {
-                eprintln!("GOT RegisterGeneration: {file_id:?} {generation_id}");
-
                 let key = TriggerKey {
                     file_id,
                     generation_id,
@@ -153,8 +149,6 @@ impl CacheGCActor {
                 trigger_once_checkpoint_at,
                 callback,
             } => {
-                eprintln!("GOT RegisterTrigger: {file_id:?}");
-
                 let key = TriggerKey {
                     file_id,
                     generation_id: trigger_once_checkpoint_at,
@@ -163,8 +157,6 @@ impl CacheGCActor {
                 self.triggers.insert(key, callback);
             },
             GCEvent::ForceCollection { signal } => {
-                eprintln!("GOT ForceCollection");
-
                 self.run_gc_cycle();
                 let _ = signal.send(());
             },
@@ -224,7 +216,6 @@ impl CacheGCActor {
                 continue;
             }
 
-            eprintln!("freeing {key:?}");
             let wrapped_trigger = AssertUnwindSafe(&trigger);
             let did_complete = std::panic::catch_unwind(wrapped_trigger)
                 .map_err(|err| {

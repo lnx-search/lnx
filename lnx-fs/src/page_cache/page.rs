@@ -93,11 +93,6 @@ impl PageState {
         >(result)
     }
 
-    /// Acquire the page lock guard for writing.
-    pub(super) fn acquire_write_guard(&self) -> PageWriteLockGuard<'_> {
-        self.lock.lock()
-    }
-
     /// Attempt to acquire the page lock guard for writing otherwise return None
     /// if it is already locked.
     pub(super) fn try_acquire_write_guard(&self) -> Option<PageWriteLockGuard<'_>> {
