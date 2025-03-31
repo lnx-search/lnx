@@ -64,13 +64,13 @@ impl VirtualFileBlock {
 
     #[inline]
     /// Returns the allocated bytes size being used by the block.
-    /// 
+    ///
     /// This can differ from the file size because allocations are aligned to the
     /// page size.
     pub fn allocated_size(&self) -> usize {
         self.mem.len()
     }
-    
+
     /// Returns the byte range of the file for the given page.
     ///
     /// This may not be exactly the page size as if it is the last page
@@ -192,11 +192,11 @@ impl MutPageRef {
     }
 
     /// Marks the current page as "to be freed".
-    /// 
+    ///
     /// You must provide the generation attached to this operation in order
     /// to prevent use-after free situations where older GC callbacks can cleanup
     /// memory now in use.
-    /// 
+    ///
     /// # Safety
     ///
     /// The caller must hold an exclusive lock to the current page state.    

@@ -1,14 +1,14 @@
 use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Debug;
 use std::future::Future;
 use std::mem;
-use std::ops::Range;
-use std::panic::{AssertUnwindSafe, UnwindSafe};
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+
 use futures::channel::oneshot;
 use parking_lot::{Condvar, Mutex};
-use smallvec::SmallVec;
 
 type TriggerCallback = Box<dyn Fn() -> bool + Send>;
 type FileIdAndGenerationPair = (u64, u64);
@@ -78,7 +78,9 @@ pub(crate) fn register_trigger<CB>(
 pub(crate) fn force_collection() -> impl Future<Output = ()> + Send + 'static {
     let (tx, rx) = oneshot::channel();
     GC.send(GCEvent::ForceCollection { signal: tx });
-    async move { let _ = rx.await; }
+    async move {
+        let _ = rx.await;
+    }
 }
 
 #[derive(Default)]
@@ -123,6 +125,8 @@ impl CacheGCActor {
                 file_id,
                 generation_id,
             } => {
+                eprintln!("GOT GenerationDead: {file_id:?} {generation_id}");
+
                 let key = TriggerKey {
                     file_id,
                     generation_id,
@@ -135,6 +139,8 @@ impl CacheGCActor {
                 file_id,
                 generation_id,
             } => {
+                eprintln!("GOT RegisterGeneration: {file_id:?} {generation_id}");
+
                 let key = TriggerKey {
                     file_id,
                     generation_id,
@@ -147,6 +153,8 @@ impl CacheGCActor {
                 trigger_once_checkpoint_at,
                 callback,
             } => {
+                eprintln!("GOT RegisterTrigger: {file_id:?}");
+
                 let key = TriggerKey {
                     file_id,
                     generation_id: trigger_once_checkpoint_at,
@@ -155,9 +163,11 @@ impl CacheGCActor {
                 self.triggers.insert(key, callback);
             },
             GCEvent::ForceCollection { signal } => {
+                eprintln!("GOT ForceCollection");
+
                 self.run_gc_cycle();
                 let _ = signal.send(());
-            }
+            },
         }
     }
 
@@ -171,7 +181,7 @@ impl CacheGCActor {
 
         self.run_gc_cycle();
     }
-    
+
     fn run_gc_cycle(&mut self) {
         tracing::trace!("dead generation threshold met, purging pages");
 
@@ -264,9 +274,7 @@ enum GCEvent {
         callback: TriggerCallback,
     },
     /// Forcefully triggers a GC collection cycle
-    ForceCollection {
-        signal: oneshot::Sender<()>
-    },
+    ForceCollection { signal: oneshot::Sender<()> },
 }
 
 struct GCState {

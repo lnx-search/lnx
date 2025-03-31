@@ -16,6 +16,7 @@
 //!
 
 mod block;
+mod file_block_manager;
 mod gc;
 mod page;
 mod prepared_read;
@@ -34,6 +35,7 @@ pub use self::prepared_read::PreparedRead;
 use self::utils::NoOpRandomState;
 use crate::config::PageSize;
 use crate::page_cache::block::{PageId, VirtualFileBlock};
+use crate::page_cache::file_block_manager::FileBlockManager;
 
 type CacheEntryKey = u64;
 type FileId = u64;
@@ -87,8 +89,8 @@ pub struct FilePageCache {
     page_size: PageSize,
     /// The primary LFU cache (Cache memory.)
     primary: moka::sync::Cache<CacheEntryKey, (FileId, PageId), NoOpRandomState>,
-    /// The file blocks backing pages.
-    file_blocks: Arc<dashmap::DashMap<FileId, FileBlockState, NoOpRandomState>>,
+    /// The live file block manager.
+    manager: Arc<FileBlockManager>,
 }
 
 impl FilePageCache {
@@ -96,21 +98,16 @@ impl FilePageCache {
     pub fn new(cache_size_bytes: usize, page_size: PageSize) -> Self {
         let num_pages_capacity = cache_size_bytes / page_size.num_bytes();
 
-        let file_blocks = Arc::new(
-            dashmap::DashMap::<u64, FileBlockState, _>::with_hasher(NoOpRandomState),
-        );
+        let manager = Arc::new(FileBlockManager::default());
 
         let primary = moka::sync::Cache::builder()
             .max_capacity(num_pages_capacity as u64)
             .eviction_listener({
-                let file_blocks = file_blocks.clone();
+                let manager = manager.clone();
 
                 move |_, (file_id, page_id), _| {
-                    if let Some(block) = file_blocks.get(&file_id) {
-                        eprintln!("evicting file = {file_id}, page = {page_id}");
-                        let state = block.value();
-                        state.mark_for_deletion(page_id);
-                    }
+                    eprintln!("evicting file:{file_id} page:{page_id}");
+                    manager.push_eviction(file_id, page_id);
                 }
             })
             .build_with_hasher(NoOpRandomState);
@@ -119,7 +116,7 @@ impl FilePageCache {
             page_size,
             random_state: RandomState::new(),
             primary,
-            file_blocks,
+            manager,
         }
     }
 
@@ -139,7 +136,8 @@ impl FilePageCache {
     /// A test helper which explicitly asks the moka cache to process
     /// and outstanding evictions it has queued.
     pub fn process_evictions(&self) {
-        self.primary.run_pending_tasks()
+        self.primary.run_pending_tasks();
+        self.manager.try_clear_evictions();
     }
 
     #[inline]
@@ -152,23 +150,7 @@ impl FilePageCache {
     /// Invalidates all pages in the cache.
     pub fn invalidates_file<K: Hash>(&self, file: K) -> Result<(), CacheError> {
         let file_id = self.random_state.hash_one(file);
-
-        let file_block = self
-            .file_blocks
-            .get(&file_id)
-            .ok_or(CacheError::FileNotFound)?;
-
-        let size = file_block.block.allocated_size();
-        let page_size = file_block.block.page_size();
-        drop(file_block);
-
-        // Create a new blank file block which allows us to zero the cache
-        // for that file without scanning the existing cache.
-        let block = FileBlockState::allocate(file_id, size, page_size)?;
-
-        self.file_blocks.insert(file_id, block);
-
-        Ok(())
+        self.manager.rebuild_block(file_id)
     }
 
     /// Creates a [PreparedRead] which allows the system to load any pre-cached
@@ -200,11 +182,7 @@ impl FilePageCache {
         file_hash_state: ahash::AHasher,
         read_range: Range<usize>,
     ) -> Result<PreparedRead, CacheError> {
-        dbg!(file_id);
-        let block_state = self
-            .file_blocks
-            .get(&file_id)
-            .ok_or(CacheError::FileNotFound)?;
+        let block_state = self.manager.get_block(file_id)?;
 
         if read_range.start > block_state.file_len
             && read_range.end > block_state.file_len
@@ -224,9 +202,18 @@ impl FilePageCache {
 
             // Call `get` on the cache to register the page being accessed for the LFU.
             self.primary.get(&page_hash_id);
+        }
+
+        for page_id in prepared.pages_to_be_written() {
+            let mut hasher = file_hash_state.clone();
+            page_id.hash(&mut hasher);
+            let page_hash_id = hasher.finish();
+
             // Update the primary cache.
             self.primary.insert(page_hash_id, (file_id, page_id));
         }
+
+        self.manager.try_clear_evictions();
 
         Ok(prepared)
     }
@@ -249,13 +236,13 @@ impl FilePageCache {
         file_id: u64,
         file_size: usize,
     ) -> Result<(), CacheError> {
-        if self.file_blocks.contains_key(&file_id) {
+        if self.manager.contains_block(file_id) {
             return Err(CacheError::FileAlreadyExists);
         }
 
         let block = FileBlockState::allocate(file_id, file_size, self.page_size)?;
 
-        match self.file_blocks.entry(file_id) {
+        match self.manager.entry(file_id) {
             Entry::Occupied(_) => Err(CacheError::FileAlreadyExists),
             Entry::Vacant(entry) => {
                 entry.insert(block);
@@ -276,7 +263,7 @@ impl FilePageCache {
 
     #[inline(never)]
     fn delete_cache_entry_inner(&self, file_id: u64, file_hash_state: ahash::AHasher) {
-        let Some((_, block)) = self.file_blocks.remove(&file_id) else {
+        let Some(block) = self.manager.remove_block(file_id) else {
             return;
         };
 
@@ -314,7 +301,6 @@ impl FileBlockState {
 
         // Notify the GC that we have a new generation that is live.
         gc::track_generation(self.file_id, generation_id);
-        dbg!("got past track generation");
 
         let generation = TrackedGeneration {
             file_id: self.file_id,
@@ -328,15 +314,17 @@ impl FileBlockState {
         )
     }
 
-    fn mark_for_deletion(&self, page_id: PageId) {
+    fn try_mark_for_deletion(&self, page_id: PageId) -> bool {
         let generation_id = self.generation_counter.fetch_add(1, Ordering::Release);
 
         let block = self.block.clone();
 
         {
             let state = self.block.page_at(page_id);
-            let _guard = state.acquire_write_guard();
-            unsafe { state.mark_dirty_unchecked(generation_id) }
+            let Some(_guard) = state.try_acquire_write_guard() else {
+                return false;
+            };
+            unsafe { state.mark_dirty_unchecked(generation_id) };
         }
 
         // WARNING
@@ -370,7 +358,9 @@ impl FileBlockState {
                 match flags.dirty_marker_generation() {
                     None => return true,
                     // The page still wants to be freed, but by a different callback.
-                    Some(live_generation) if live_generation != callback_generation => return true, 
+                    Some(live_generation) if live_generation != callback_generation => {
+                        return true
+                    },
                     Some(_) => {},
                 }
 
@@ -391,6 +381,8 @@ impl FileBlockState {
         };
 
         gc::register_trigger(self.file_id, generation_id, cleanup_callback);
+
+        true
     }
 }
 
@@ -491,46 +483,53 @@ mod tests {
         cache
             .create_cache_entry("entry1.txt", 15)
             .expect("Create entry");
+        cache
+            .create_cache_entry("entry2.txt", 8)
+            .expect("Create entry");
 
         let mut first_read = cache
             .prepare_read("entry1.txt", 0..15)
             .expect("Cache entry should exist");
-        eprintln!("got past first read");
 
         first_read.next_outstanding_write().unwrap().write(&[1; 15]);
 
         // Create the read reference which holds access to the current pages
         let live_read_ref =
             block_on(first_read.try_finish()).expect("All writes should be completed");
-        eprintln!("got past read ref");
 
         let mut second_read = cache
             .prepare_read("entry1.txt", 0..15)
             .expect("Cache entry should exist");
         assert!(second_read.next_outstanding_write().is_none());
-        eprintln!("got second read ref");
+        drop(second_read);
+
+        let mut third_read = cache
+            .prepare_read("entry2.txt", 0..8)
+            .expect("Cache entry should exist");
+        third_read.next_outstanding_write().unwrap().write(&[1; 8]);
+
+        let third_read_live_read_ref =
+            block_on(third_read.try_finish()).expect("All writes should be completed");
+        drop(third_read_live_read_ref);
+        drop(third_read);
 
         cache.process_evictions();
         assert_eq!(cache.num_allocated_pages(), 1);
-        eprintln!("evicting stuff");
 
         // Run the GC to truly free the page.
         block_on(gc::force_collection());
-        eprintln!("gc ran");
 
         assert_eq!(
             live_read_ref.as_ref(),
             &[1; 15],
             "data mismatch after page write and page being marked dirty",
         );
-        eprintln!("ig it is ok?");
 
         // :( Why dont you work
         let mut third_read = cache
-            .prepare_read("entry1.txt", 0..15)
+            .prepare_read("entry2.txt", 0..8)
             .expect("Cache entry should exist");
         assert!(third_read.next_outstanding_write().is_some());
-        eprintln!("the assert ran ig?");
     }
 
     #[test]

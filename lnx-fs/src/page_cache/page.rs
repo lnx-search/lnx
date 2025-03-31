@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::mem;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::page_cache::block::PageId;
 
 pub(super) type PageWriteLockGuard<'a> = parking_lot::MutexGuard<'a, ()>;
@@ -37,8 +38,8 @@ impl PageState {
     }
 
     /// Mark a page as free if it is already marked as dirty.
-    /// 
-    /// This is useful in situation where the page is going to be imediately written to again 
+    ///
+    /// This is useful in situation where the page is going to be imediately written to again
     /// and you just need to cancel the pending GC operation.
     pub(super) unsafe fn mark_free_if_dirty(&self) {
         let flags = self.flags();
@@ -46,7 +47,7 @@ impl PageState {
             self.mark_free_unchecked();
         }
     }
-    
+
     /// Marks the page as free and reset flags without checks.
     ///
     /// # Safety
@@ -86,15 +87,18 @@ impl PageState {
         &self,
     ) -> Option<PageWriteLockGuard<'static>> {
         let result = self.try_acquire_write_guard();
-        mem::transmute::<Option<PageWriteLockGuard<'_>>, Option<PageWriteLockGuard<'static>>>(result)
+        mem::transmute::<
+            Option<PageWriteLockGuard<'_>>,
+            Option<PageWriteLockGuard<'static>>,
+        >(result)
     }
-    
+
     /// Acquire the page lock guard for writing.
     pub(super) fn acquire_write_guard(&self) -> PageWriteLockGuard<'_> {
         self.lock.lock()
     }
 
-    /// Attempt to acquire the page lock guard for writing otherwise return None 
+    /// Attempt to acquire the page lock guard for writing otherwise return None
     /// if it is already locked.
     pub(super) fn try_acquire_write_guard(&self) -> Option<PageWriteLockGuard<'_>> {
         self.lock.try_lock()
@@ -129,7 +133,6 @@ impl PageStateTable {
     /// Returns the page state for the given page ID.
     pub(super) fn at(&self, idx: PageId) -> &PageState {
         &self.table[idx]
-    
     }
 
     /// Calculates the page index based on the pointer.
@@ -184,14 +187,13 @@ impl PageFlags {
     pub(super) fn is_free(&self) -> bool {
         self.0 == Self::UNALLOCATED
     }
-    
+
     /// Returns if the page is waiting to be freed by the gc.
     pub(super) fn is_dirty(&self) -> bool {
-        self.0 != Self::ALLOCATED
-            && self.0 != Self::UNALLOCATED
+        self.0 != Self::ALLOCATED && self.0 != Self::UNALLOCATED
     }
-    
-    /// The 
+
+    /// The
     pub(super) fn dirty_marker_generation(&self) -> Option<u64> {
         if self.is_dirty() {
             Some(self.0)
@@ -203,7 +205,12 @@ impl PageFlags {
 
 impl Debug for PageFlags {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PageFlags(is_allocated={}, is_dirty={})", self.is_allocated(), self.is_dirty())
+        write!(
+            f,
+            "PageFlags(is_allocated={}, is_dirty={})",
+            self.is_allocated(),
+            self.is_dirty()
+        )
     }
 }
 
@@ -234,7 +241,7 @@ mod tests {
         assert!(v.is_dirty());
 
         flags.set_free();
-        
+
         let v = flags.load();
         assert_eq!(v.dirty_marker_generation(), None);
         assert!(!v.is_allocated());

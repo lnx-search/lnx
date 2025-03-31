@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 
 use super::block::{MutPageRef, PageId, VirtualFileBlock};
 use super::page::{PageState, PageWriteLockGuard};
-use super::{gc, TrackedGeneration};
+use super::TrackedGeneration;
 use crate::config::PageSize;
 
 /// The global waker that notifies pending readers when a page has been written.
@@ -58,6 +58,8 @@ pub struct PreparedRead {
     /// We need to wait for these locks to release before we can read the data,
     /// and we need to ensure all these locks were completed successfully.
     inflight_locks: SmallVec<[*const PageState; 4]>,
+    /// A list of pages that this read will eventually in some capacity write to.
+    pages_to_be_written: SmallVec<[PageId; 8]>,
     /// Returns the pages read.
     page_range: Range<PageId>,
     /// The number of bytes to skip from the _first_ page of the memory.
@@ -93,6 +95,7 @@ impl PreparedRead {
 
         let mut write_requests = SmallVec::new();
         let mut inflight_locks = SmallVec::new();
+        let mut pages_to_be_written = SmallVec::new();
 
         let public_read_range_len = bytes_range.len();
         let page_size = file_block.page_size();
@@ -100,11 +103,11 @@ impl PreparedRead {
 
         // Sanity check that should never trigger since we check the bounds at the public method level.
         assert!(
-            (page_range.start < file_block.num_pages()) 
-            && (page_range.end <= file_block.num_pages()), 
+            (page_range.start < file_block.num_pages())
+                && (page_range.end <= file_block.num_pages()),
             "bug: page read range is out of bounds of the file block",
         );
-        
+
         let page_relative_offset = page_range.start % page_size.num_bytes();
 
         let op_guard = OpGuards {
@@ -112,7 +115,7 @@ impl PreparedRead {
             block: file_block.clone(),
         };
 
-        // # Safety: 
+        // # Safety:
         // The file block will live at least as long as we use the pointer for.
         // The page being accessed is always within the bounds of the memory because
         // we have asserted that the pages are within bounds.
@@ -121,13 +124,15 @@ impl PreparedRead {
         for page_id in page_range.clone() {
             let state = file_block.page_at(page_id);
             let flags = state.flags();
-            
+
             if flags.is_allocated() {
                 continue;
             }
 
+            pages_to_be_written.push(page_id);
+
             // Page has been deallocated/invalidated, we need to read from disk.
-            // # Safety: 
+            // # Safety:
             // The page state will live for at least as long as we need it because we hold a strong
             // reference to the current block, we can perform accesses and mutations on the page
             // state because have acquire the page lock first.
@@ -137,7 +142,7 @@ impl PreparedRead {
                     // We always have to load the flags again once we hold the lock
                     // to ensure nothing has changed due to a concurrent access.
                     state.mark_free_if_dirty();
-                    
+
                     // # Safety
                     // We hold the page lock for the target `page_id`, which means we are allowed
                     // to acquire a mutable reference to the page.
@@ -151,7 +156,6 @@ impl PreparedRead {
                         read_bytes_range,
                         mut_page,
                     };
-
                     write_requests.push(write_request);
                 } else {
                     // Write already in process, we just need to wait until the lock gets released.
@@ -164,6 +168,7 @@ impl PreparedRead {
             op_guard,
             write_requests,
             inflight_locks,
+            pages_to_be_written,
             page_range,
             page_relative_offset,
             public_read_range_len,
@@ -192,8 +197,14 @@ impl PreparedRead {
 
     #[inline]
     /// Returns the pages read.
-    pub fn page_range(&self) -> Range<usize> {
+    pub fn page_range(&self) -> Range<PageId> {
         self.page_range.clone()
+    }
+
+    #[inline]
+    /// Returns an iterator of page IDs being written as part of this operation.
+    pub fn pages_to_be_written(&self) -> impl Iterator<Item = PageId> + '_ {
+        self.pages_to_be_written.iter().copied()
     }
 
     /// Waits for all pending writes to blank pages to be completed
@@ -216,7 +227,6 @@ impl PreparedRead {
             waker_future.set(waker.notified());
         }
 
-        dbg!(self.page_relative_offset, self.public_read_range_len);
         // # Safety
         // We know the offset will be valid because the offset is calculated by aligning to page
         // boundaries when the prepared read is created.
@@ -259,9 +269,11 @@ impl PreparedRead {
 
             // Attempt to acquire the write guard so we can ensure we re attempt to write the page.
             if let Some(lock_guard) = page.try_acquire_write_guard() {
-                // Safety: We hold the page lock
+                // # Safety:
+                // We hold the page lock and are immediately going to write to the page.
+                // So this will not accidentally leak memory.
                 unsafe { page.mark_free_if_dirty() };
-                
+
                 let file_block = self.file_block();
 
                 // Safety: We hold the page lock
