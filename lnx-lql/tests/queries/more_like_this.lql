@@ -1,0 +1,13 @@
+from("books")
+| select(col("title"), col("description"), col("categories"))
+| where(
+    moreLikeThis()
+        .stopWords(["at", "then"])
+        .docFrequencyMin(10)
+        .docFrequencyMax(100)
+        .using(
+            from("books")
+            | select(col("title"), col("description"))
+            | where(fuzzy("some inner query").matches(col("title") || col("description")))
+        )
+  )

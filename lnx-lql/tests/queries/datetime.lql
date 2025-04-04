@@ -1,0 +1,2 @@
+from("books")
+| where(col("created_at") >= (now() - day(4))

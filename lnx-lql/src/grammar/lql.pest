@@ -1,0 +1,28 @@
+WHITESPACE = _{ " " | "\t" | "\n" }
+
+pipeline = _{ SOI ~ command ~ ("|" ~ command)* ~ EOI }
+
+command = _{ from | select | where }
+
+from = { "from" ~ "(" ~ string ~ ")" }
+
+select = { "select" ~ "(" ~ select_item ~ ("," ~ select_item)* ~ ")" }
+
+where = { "where" ~ OPEN_BRACKET ~ condition ~ CLOSING_BRACKET }
+
+OPEN_BRACKET = { "(" }
+CLOSING_BRACKET = { ")" }
+
+select_item = { column }
+
+condition = { text_match }
+
+text_match = { text_function ~ "." ~ "matches" ~ "(" ~ column ~ ("||" ~ column)* ~ ")" }
+
+text_function = { "text" ~ "(" ~ string_literal ~ ")" }
+
+column = { "col" ~ "(" ~ string ~ ")" }
+
+string = @{ QUOTATION_MARK ~ ASCII_ALPHANUMERIC+ ~ QUOTATION_MARK }
+
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }

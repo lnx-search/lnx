@@ -1,0 +1,3 @@
+from("books")
+| select(col("title"), col("description"), col("categories"))
+| where(text("old man and the sea").matches(col("title") || col("description"))

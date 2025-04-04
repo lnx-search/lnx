@@ -1,0 +1,3 @@
+from("books")
+| select(count(), col("author"), min(col("rating")), max(col("rating")))
+| group_by(col("author"))

@@ -1,0 +1,4 @@
+from("books")
+| select(col("title"))
+| where(regex("[0-9a-z]{1,4}").matches(col("title")))
+| parallel()

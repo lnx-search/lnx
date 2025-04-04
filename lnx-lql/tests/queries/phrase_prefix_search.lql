@@ -1,0 +1,3 @@
+from("books")
+| select(col("title"), col("description"), col("categories"))
+| where(prefix("part t").matches(col("title")))

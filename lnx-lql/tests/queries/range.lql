@@ -1,0 +1,3 @@
+from("books")
+| select(col("title"), col("description"), col("categories"))
+| where(range(5..16).matches(col("comments")))

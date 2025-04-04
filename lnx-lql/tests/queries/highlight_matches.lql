@@ -1,0 +1,3 @@
+from("book")
+| select(highlight(col("title")), col("description"), col("categories"))
+| where(text("hobbit").matches(col("title")))

@@ -1,0 +1,3 @@
+from("books")
+| select(col("title"), col("description"), col("categories"))
+| where(fuzzy("bagillion").matches(col("title") || col("description")))

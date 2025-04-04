@@ -10,6 +10,7 @@ members = [
     "lnx-shell",
     "lnx-doc",
     "lnx-tantivy",
+    "lnx-lql",
 ]
 
 [workspace.dependencies]
@@ -30,7 +31,6 @@ bytes = "1.8.0"
 fnv = "1"
 ahash = "0.8.11"
 parking_lot = "0.12.3"
-bytemuck = "1.19"
 cityhasher = "0.1.0"
 stable_deref_trait = "1.2.0"
 fastrand = "2.3.0"
@@ -39,6 +39,7 @@ crc32fast = "1.4.2"
 mockall = "0.13.1"
 smallvec = "1.13.2"
 rayon = "1.10.0"
+nom = "8.0.0"
 
 # Dev Dependencies
 rstest = "0.23.0"

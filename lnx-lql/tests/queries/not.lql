@@ -1,0 +1,5 @@
+from("books")
+| where(
+    !text("old man and the sea")
+        .matches(col("title"), col("description")))
+  )

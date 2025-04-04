@@ -1,0 +1,6 @@
+from("books")
+| where(
+    col("rating") > 3.0
+    && col("comments") >= 4
+    || col("title") == "The Hobbit"
+  )

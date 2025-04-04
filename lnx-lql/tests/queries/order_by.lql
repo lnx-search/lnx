@@ -1,0 +1,2 @@
+from("books")
+| orderBy(asc(col("creation_date")), desc(col("rating")))
