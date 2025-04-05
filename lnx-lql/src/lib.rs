@@ -20,11 +20,12 @@ pub fn parse_query_string(query: &str) -> Result<(), ParseQueryError> {
 mod tests {
     use pest::Parser;
     use super::*;
-    
+        
     #[test]
     fn test_query_parse()  {
+        
         let q = include_str!("../tests/queries/full_text_search.lql");
-        match LqlParser::parse(Rule::pipeline, q) {
+        match LqlParser::parse(Rule::query, q) {
             Err(e) => {
                 println!("{e}");
                 return;

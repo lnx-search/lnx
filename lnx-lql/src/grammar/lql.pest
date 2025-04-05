@@ -1,28 +1,59 @@
-WHITESPACE = _{ " " | "\t" | "\n" }
+//
+// Created by intellij-pest on 2025-04-04
+// lql
+// Author: chillfish8
+//
 
-pipeline = _{ SOI ~ command ~ ("|" ~ command)* ~ EOI }
 
-command = _{ from | select | where }
+// from
+// | select
+// | limit
 
-from = { "from" ~ "(" ~ string ~ ")" }
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
-select = { "select" ~ "(" ~ select_item ~ ("," ~ select_item)* ~ ")" }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+inner_str = @{ char* }
 
-where = { "where" ~ OPEN_BRACKET ~ condition ~ CLOSING_BRACKET }
+string = { "\"" ~ inner_str ~ "\"" }
+bytes = { "b" ~ string }
+integer = { ("-")? ~ ASCII_DIGIT+ }
+float = @{ integer ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ integer)? }
+bool = { "true" | "false" }
 
-OPEN_BRACKET = { "(" }
-CLOSING_BRACKET = { ")" }
+literal = {
+ string
+ | bytes
+ | integer
+ | float
+ | bool
+}
 
-select_item = { column }
+ident = { ("_" | ASCII_ALPHA) ~ ( "_" | ASCII_ALPHANUMERIC )* }
 
-condition = { text_match }
+kw_from = { "from" }
+kw_select = { "select" }
+kw_where = { "where" }
+kw_limit = { "limit" }
+kw_offset = { "offset" }
+kw_group_by = { "group_by" }
+kw_parallel = { "parallel" }
 
-text_match = { text_function ~ "." ~ "matches" ~ "(" ~ column ~ ("||" ~ column)* ~ ")" }
+params = { literal* }
 
-text_function = { "text" ~ "(" ~ string_literal ~ ")" }
+PIPE = _{ "|" }
 
-column = { "col" ~ "(" ~ string ~ ")" }
-
-string = @{ QUOTATION_MARK ~ ASCII_ALPHANUMERIC+ ~ QUOTATION_MARK }
-
-string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+query = {
+    SOI
+    ~ (        kw_from     ~ "(" ~ params ~ ")" )
+    ~ ( PIPE ~ kw_select   ~ "(" ~ params ~ ")" )?
+    ~ ( PIPE ~ kw_where    ~ "(" ~ params ~ ")" )?
+    ~ ( PIPE ~ kw_limit    ~ "(" ~ integer  ~ ")" )?
+    ~ ( PIPE ~ kw_offset   ~ "(" ~ integer  ~ ")" )?
+    ~ ( PIPE ~ kw_group_by ~ "(" ~ params ~ ")" )?
+    ~ ( PIPE ~ kw_parallel ~ "(" ~ integer? ~ ")" )?
+    ~ EOI
+}
