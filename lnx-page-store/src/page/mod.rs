@@ -39,8 +39,9 @@ impl<'a> Debug for Page<'a> {
 }
 
 impl<'a> Page<'a> {
+    pub(super) const ALIGN_PADDING: usize = align_of::<rkyv::Archived<Self>>();
     pub(super) const OVERHEAD: usize =
-        size_of::<rkyv::Archived<Self>>() + align_of::<rkyv::Archived<Self>>();
+        size_of::<rkyv::Archived<Self>>() + Self::ALIGN_PADDING;
 
     /// Create a new [Page] from the given id, block and data.
     ///

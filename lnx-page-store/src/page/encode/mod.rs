@@ -113,10 +113,7 @@ impl AnyPageEncoder {
         &self,
         buf: &'buf [u8],
     ) -> impl Iterator<Item = &'buf [u8]> {
-        // TODO: This doesn't quite account for the few bytes of padding rkyv can do, so we are
-        //       _technically_ not making 100% use of the disk space here... Although it is likely
-        //       8 bytes at most.
-        let chunk_size = self.0.overhead() + Page::OVERHEAD + HEADER_SIZE;
+        let chunk_size = self.0.overhead() + (Page::OVERHEAD - Page::ALIGN_PADDING) + HEADER_SIZE;
         buf.chunks(chunk_size)
     }
 
