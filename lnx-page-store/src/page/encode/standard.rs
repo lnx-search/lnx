@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use anyhow::bail;
 use rkyv::ser::Positional;
 use rkyv::ser::writer::Buffer;
@@ -22,7 +24,11 @@ impl PageEncoderDecoder for StdEncoderDecoder {
         0
     }
 
-    fn encode(&self, page: &Page, buffer: &mut [u8]) -> anyhow::Result<usize> {
+    fn encode(
+        &self,
+        page: &Page,
+        buffer: &mut [MaybeUninit<u8>],
+    ) -> anyhow::Result<usize> {
         let mut writer = Buffer::from(buffer);
         writer = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(page, writer)
             .map_err(|e| anyhow::Error::msg("unable to serialize page").context(e))?;
@@ -49,20 +55,27 @@ mod tests {
     #[test]
     fn test_encode() {
         let page = Page::new(PageId(1), BlockId(4), b"hello, world");
-        let mut buffer = vec![0; page.serialize_size() + 15];
+        let mut buffer = vec![MaybeUninit::new(0); page.serialize_size() + 15];
 
         let encoder = StdEncoderDecoder;
         let size = encoder
             .encode(&page, &mut buffer)
             .expect("encode page to buffer");
         assert_eq!(size, page.serialize_size());
-        assert_eq!(&buffer[page.serialize_size()..], &[0; 15]);
+        assert_eq!(
+            unsafe {
+                std::mem::transmute::<&[MaybeUninit<u8>], &[u8]>(
+                    &buffer[page.serialize_size()..],
+                )
+            },
+            &[0; 15]
+        );
     }
 
     #[test]
     fn test_encode_fails_buffer_too_small() {
         let page = Page::new(PageId(1), BlockId(0), b"hello, world");
-        let mut buffer = vec![0; 12];
+        let mut buffer = vec![MaybeUninit::new(0); 12];
 
         let encoder = StdEncoderDecoder;
         let err = encoder

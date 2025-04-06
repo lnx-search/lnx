@@ -4,9 +4,12 @@ mod flags;
 use std::borrow::Cow;
 use std::fmt::{Debug, Formatter};
 
-pub use self::encode::PageEncoderDecoder;
+pub use self::encode::AnyPageEncoder;
 pub use self::flags::PageFlags;
 use crate::{BlockId, PageId};
+
+/// The total size of a single page (8KB)
+pub const PAGE_SIZE: usize = 8 << 10;
 
 /// A type alias for a static archived page.
 pub type PageRef = rkyv::Archived<Page<'static>>;
@@ -36,10 +39,15 @@ impl<'a> Debug for Page<'a> {
 }
 
 impl<'a> Page<'a> {
+    pub(super) const OVERHEAD: usize =
+        size_of::<rkyv::Archived<Self>>() + align_of::<rkyv::Archived<Self>>();
+
     /// Create a new [Page] from the given id, block and data.
     ///
     /// The checksum will be automatically calculated.
     pub fn new(id: PageId, block: BlockId, data: &'a [u8]) -> Self {
+        debug_assert!(!data.is_empty(), "data cannot be empty");
+
         let checksum = crc32fast::hash(&data);
 
         Self {
@@ -71,9 +79,10 @@ impl<'a> Page<'a> {
     #[inline]
     /// Returns the size of the page when serialized.
     pub fn serialize_size(&self) -> usize {
-        size_of::<rkyv::Archived<Self>>()
-            + size_of::<u32>()   // Included because AsOwned, makes Cow<'_, [u8]> become a Vec<u8>.
-            + self.data.len()
+        // Rkyv will use the alignment bytes if it can, hence this little adjustment formula
+        // to calculate the size correctly.
+        Self::OVERHEAD + self.data.len()
+            - (self.data.len() % align_of::<rkyv::Archived<Self>>())
     }
 }
 
