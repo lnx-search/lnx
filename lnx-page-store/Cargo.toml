@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror = "2"
-anyhow = "1"
-crc32fast = "1.4.2"
-
-rkyv = { version = "0.8.10", features = ["little_endian", "pointer_width_32"] }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+crc32fast = { workspace = true }
+rkyv = { workspace = true }
