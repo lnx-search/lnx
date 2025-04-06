@@ -1,22 +1,6 @@
 # lnx-fs
 
-An object-storage list abstraction over a file system.
-
-This is optimized for writing and reading data _fast_ without relying on the file system cache.
-
-The system is completely asynchronous using Direct IO and io_uring (sorry non-linux people!) backed
-by the `glommio` runtime. 
-
-It works by having immutable "tablets" where all writes are sequentially appended to the end of an active tablet,
-once that tablet reaches a certain size, it is closed and a new tablet is created.
-This allows the system to write very small blobs _very_ quickly which is good in lnx's use case where
-some writes might only be one or two documents.
-
-The downside to this approach is it uses a bit more disk space that strictly necessary, and relies on a periodic
-GC job to compact tablets and cleanup dead blobs.
-
-Ensuring durability of objects is largely down to the metastore, which is a SQLite database, files are only
-registered in the metastore once the blob itself has been successfully flushed to disk.
+An object-storage abstraction over the `lnx-page-store` system.
 
 ## Buckets
 

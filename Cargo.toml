@@ -11,6 +11,8 @@ members = [
     "lnx-doc",
     "lnx-tantivy",
     "lnx-config",
+    "lnx-tantivy",
+    "lnx-page-store",
 ]
 
 [workspace.dependencies]
