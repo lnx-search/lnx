@@ -1,132 +1,65 @@
-mod encode;
-mod flags;
-
 use std::borrow::Cow;
-use std::fmt::{Debug, Formatter};
-
-pub use self::encode::AnyPageEncoder;
-pub use self::flags::PageFlags;
+use rkyv::rancor;
 use crate::{BlockId, PageId};
+use crate::page::mem::PageEncodeBuffer;
+use crate::page::version::LayoutVersion;
 
-/// The total size of a single page (8KB)
+mod version;
+mod metadata;
+mod mem;
+mod view;
+
+/// The total size of a page (metadata included) on disk.
 pub const PAGE_SIZE: usize = 8 << 10;
 
-/// A type alias for a static archived page.
-pub type PageRef = rkyv::Archived<Page<'static>>;
-
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-/// A page holds some chunk of data for a given block.
-pub struct Page<'a> {
-    /// The ID of the page.
-    id: PageId,
-    /// The page data checksum.
-    checksum: u32,
-    /// The block this page contains data for.
-    block: BlockId,
-    #[rkyv(with = rkyv::with::AsOwned)]
-    /// The raw data contained within the page.
-    data: Cow<'a, [u8]>,
+/// An owned, mutable disk page, mostly used for constructing and writing new pages.
+pub struct DiskPage<'buf> {
+    metadata: metadata::DiskPageMetadata, 
+    data: Cow<'buf, [u8]>,
 }
 
-impl<'a> Debug for Page<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Page")
-            .field("id", &self.id)
-            .field("checksum", &self.checksum)
-            .field("block", &self.block)
-            .finish()
-    }
-}
-
-impl<'a> Page<'a> {
-    pub(super) const ALIGN_PADDING: usize = align_of::<rkyv::Archived<Self>>();
-    pub(super) const OVERHEAD: usize =
-        size_of::<rkyv::Archived<Self>>() + Self::ALIGN_PADDING;
-
-    /// Create a new [Page] from the given id, block and data.
-    ///
-    /// The checksum will be automatically calculated.
-    pub fn new(id: PageId, block: BlockId, data: &'a [u8]) -> Self {
-        debug_assert!(!data.is_empty(), "data cannot be empty");
-
+impl<'buf> DiskPage<'buf> {
+    pub fn new(
+        id: PageId,
+        block: BlockId,
+        revision: u32,
+        layout_version: LayoutVersion,
+        data: Cow<'buf, [u8]>,
+    ) -> Self {        
+        assert!(
+            data.len() < layout_version.max_data_size(),
+            "Page data exceeds maximum size allowance", 
+        );
+        
         let checksum = crc32fast::hash(&data);
-
-        Self {
+        
+        let metadata = metadata::DiskPageMetadata {
             id,
-            block,
             checksum,
-            data: Cow::Borrowed(data),
+            block,
+            revision,
+            layout_version,
+            data_len: data.len() as u16,
+        };
+        
+        Self {
+            metadata,
+            data,
         }
     }
-
-    #[inline]
-    /// The ID of the page.
-    pub fn id(&self) -> PageId {
-        self.id
-    }
-
-    #[inline]
-    /// The block this page contains data for.
-    pub fn block(&self) -> BlockId {
-        self.block
-    }
-
-    #[inline]
-    /// Returns the CRC32 checksum of the data.
-    pub fn checksum(&self) -> u32 {
-        self.checksum
-    }
-
-    #[inline]
-    /// Returns the size of the page when serialized.
-    pub fn serialize_size(&self) -> usize {
-        // Rkyv will use the alignment bytes if it can, hence this little adjustment formula
-        // to calculate the size correctly.
-        Self::OVERHEAD + self.data.len()
-            - (self.data.len() % align_of::<rkyv::Archived<Self>>())
-    }
-}
-
-impl Debug for ArchivedPage<'static> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Page")
-            .field("id", &self.id)
-            .field("checksum", &self.checksum)
-            .field("block", &self.block)
-            .finish()
-    }
-}
-
-impl ArchivedPage<'static> {
-    #[inline]
-    /// The ID of the page.
-    pub fn id(&self) -> PageId {
-        PageId(self.id.0.to_native())
-    }
-
-    #[inline]
-    /// The block this page contains data for.
-    pub fn block(&self) -> BlockId {
-        BlockId(self.block.0.to_native())
-    }
-
-    #[inline]
-    /// Returns the CRC32 checksum of the data.
-    pub fn checksum(&self) -> u32 {
-        self.checksum.to_native()
-    }
-
-    #[inline]
-    /// The slice of page data.
-    pub fn data(&self) -> &[u8] {
-        self.data.as_ref()
-    }
-
-    #[inline]
-    /// Compares the checksum stored in the page with the calculated checksum
-    /// of the data.
-    pub fn checksums_match(&self) -> bool {
-        let actual = crc32fast::hash(self.data());
-        actual == self.checksum
+    
+    /// Encode the page into the provided [PageEncodeBuffer].
+    /// 
+    /// This will automatically apply and reserved space in the buffer or padding
+    /// bytes based on the set [LayoutVersion].
+    pub fn encode(&self, buffer: &mut PageEncodeBuffer) -> Result<(), rancor::Error> {
+        let layout_bytes = self.metadata.layout_version().to_bytes();
+        
+        buffer.write_bytes(&layout_bytes);
+        buffer.write_bytes(&[0; 6]);  // Pad reserved bytes for alignment.
+        self.metadata.write_to(buffer)?;        
+        buffer.write_bytes(self.data.as_ref());
+        
+        Ok(())
     }
 }

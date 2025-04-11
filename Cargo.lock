@@ -1663,7 +1663,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crc32fast",
+ "glommio",
  "rkyv",
+ "stable_deref_trait",
  "thiserror 2.0.3",
 ]
 

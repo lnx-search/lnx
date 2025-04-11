@@ -7,4 +7,6 @@ edition = "2024"
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 crc32fast = { workspace = true }
+glommio = { workspace = true }
 rkyv = { workspace = true }
+stable_deref_trait = { workspace = true }
