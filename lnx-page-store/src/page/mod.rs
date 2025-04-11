@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use rkyv::rancor;
 use crate::{BlockId, PageId};
-use crate::page::mem::PageEncodeBuffer;
-use crate::page::version::LayoutVersion;
+use self::mem::PageEncodeBuffer;
+use self::version::LayoutVersion;
 
 mod version;
 mod metadata;

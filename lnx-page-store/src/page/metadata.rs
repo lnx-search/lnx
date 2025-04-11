@@ -4,8 +4,8 @@ use rkyv::rancor;
 use rkyv::ser::Positional;
 use rkyv::ser::writer::Buffer;
 use crate::{BlockId, PageId};
-use crate::page::mem::PageEncodeBuffer;
-use crate::page::version::LayoutVersion;
+use super::mem::PageEncodeBuffer;
+use super::version::LayoutVersion;
 
 /// The total size of a single page (8KB)
 pub const PAGE_SIZE: usize = 8 << 10;
