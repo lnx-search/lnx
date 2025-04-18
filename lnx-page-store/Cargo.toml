@@ -10,3 +10,6 @@ crc32fast = { workspace = true }
 glommio = { workspace = true }
 rkyv = { workspace = true }
 stable_deref_trait = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

@@ -1665,6 +1665,7 @@ dependencies = [
  "crc32fast",
  "glommio",
  "rkyv",
+ "rstest",
  "stable_deref_trait",
  "thiserror 2.0.3",
 ]
