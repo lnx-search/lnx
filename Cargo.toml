@@ -43,6 +43,10 @@ mockall = "0.13.1"
 smallvec = "1.13.2"
 rayon = "1.10.0"
 
+
+# Encryption at rest
+chacha20poly1305 = "0.10.1"
+
 # Dev Dependencies
 rstest = "0.23.0"
 tempfile = "3.14.0"

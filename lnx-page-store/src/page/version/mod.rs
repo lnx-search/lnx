@@ -1,4 +1,8 @@
-use super::PAGE_SIZE;
+mod v1;
+mod v1_enc;
+
+use std::any::{Any, TypeId};
+use super::{DiskPageView, PAGE_SIZE};
 use super::metadata::DiskPageMetadataRef;
 
 #[repr(u16)]
@@ -43,10 +47,12 @@ impl LayoutVersion {
         /// Currently made up of the layout version bytes and remaining 6 bytes to keep
         /// buffer alignment and future signals.
         const CORE_OVERHEAD: usize = size_of::<LayoutVersion>() + 6;
+        /// The size of the encryption tag from ChaCha20.
+        const CHA_CHA_20_TAG_SIZE: usize = 16;
 
         let variable_overhead = match self {
             LayoutVersion::V1 => RKYV_METADATA_OVERHEAD,
-            LayoutVersion::V1Enc => RKYV_METADATA_OVERHEAD,
+            LayoutVersion::V1Enc => RKYV_METADATA_OVERHEAD + CHA_CHA_20_TAG_SIZE,
         };
 
         let mut total_overhead =
@@ -64,4 +70,35 @@ impl From<ArchivedLayoutVersion> for LayoutVersion {
             ArchivedLayoutVersion::V1Enc => Self::V1Enc,
         }
     }
+}
+
+/// A version processor decodes/encodes the inner page data in order
+/// to apply additional rules or operations (i.e. encryption.)
+trait VersionProcessor {
+    /// Decode the provided page data so it can be read by the [DiskPageView].
+    ///
+    /// The reserved bytes for the given version is also provided.
+    fn decode(
+        &self,
+        encoded_bytes: &mut [u8],
+        reserved_bytes: &[u8],
+    ) -> Result<(), ()>;
+
+    /// Encode the raw page data with the version encoding.
+    ///
+    /// A pre-allocated buffer is provided for writing into the version's reserved space on the page.
+    fn encode(
+        &self,
+        raw_bytes: &mut [u8],
+        reserved_bytes: &mut [u8],
+    ) -> Result<(), ()>;
+}
+
+/// A registry that stores pre-configured version encoders and decoders.
+///
+/// A [VersionProcessor] must be registered for the given [LayoutVersion] in order
+/// to be decoded or encoded, otherwise an error will be returned when attempting
+/// to use it.
+pub struct VersionProcessorRegistry {
+    processors: ahash::HashMap<TypeId, Box<dyn Any>>,
 }

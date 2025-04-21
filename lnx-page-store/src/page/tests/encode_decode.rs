@@ -13,7 +13,7 @@ mod layout_v1 {
 
     use super::*;
     use crate::page::metadata::DiskPageMetadata;
-    use crate::page::{DiskPageBuilder, LayoutVersion, PAGE_SIZE, PageEncodeBuffer};
+    use crate::page::{DiskPageBuilder, LayoutVersion, PAGE_SIZE, PageEncodeBuffer, DiskPageView};
     use crate::{BlockId, PageId};
 
     #[rstest]
@@ -60,5 +60,32 @@ mod layout_v1 {
         );
     }
 
-    fn test_decode() {}
+    #[rstest]
+    #[case(PageId(0), BlockId(0), 0, 0)]
+    fn test_decode(
+        #[case] page_id: PageId,
+        #[case] block_id: BlockId,
+        #[case] revision: u32,
+        #[case] buffer_size: usize
+    ) {
+        let buffer = vec![1; buffer_size];
+        let page_builder = DiskPageBuilder::new(
+            page_id,
+            block_id,
+            revision,
+            LayoutVersion::V1,
+            Cow::Owned(buffer),
+        );
+
+        let mut buffer = PageEncodeBuffer::default();
+
+        page_builder
+            .encode(&mut buffer)
+            .expect("encode page should fit and serialize into fixed buffer");
+
+        let bytes_written = buffer.as_ref();
+        
+        let view = DiskPageView::decode(bytes_written);
+        
+    }
 }
