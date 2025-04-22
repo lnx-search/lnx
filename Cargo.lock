@@ -1695,6 +1695,7 @@ dependencies = [
  "rstest",
  "stable_deref_trait",
  "thiserror 2.0.3",
+ "tracing",
 ]
 
 [[package]]

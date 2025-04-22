@@ -11,6 +11,7 @@ crc32fast = { workspace = true }
 glommio = { workspace = true }
 rkyv = { workspace = true }
 stable_deref_trait = { workspace = true }
+tracing = { workspace = true }
 
 # Encryption at rest
 chacha20poly1305 = "0.10.1"

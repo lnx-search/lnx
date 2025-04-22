@@ -5,6 +5,8 @@ use std::any::{Any, TypeId};
 use super::{DiskPageView, PAGE_SIZE};
 use super::metadata::DiskPageMetadataRef;
 
+
+
 #[repr(u16)]
 #[derive(
     Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Eq, PartialEq,
@@ -82,7 +84,7 @@ trait VersionProcessor {
         &self,
         encoded_bytes: &mut [u8],
         reserved_bytes: &[u8],
-    ) -> Result<(), ()>;
+    ) -> anyhow::Result<()>;
 
     /// Encode the raw page data with the version encoding.
     ///
@@ -91,9 +93,10 @@ trait VersionProcessor {
         &self,
         raw_bytes: &mut [u8],
         reserved_bytes: &mut [u8],
-    ) -> Result<(), ()>;
+    ) -> anyhow::Result<()>;
 }
 
+#[derive(Debug, Default)]
 /// A registry that stores pre-configured version encoders and decoders.
 ///
 /// A [VersionProcessor] must be registered for the given [LayoutVersion] in order
@@ -101,4 +104,31 @@ trait VersionProcessor {
 /// to use it.
 pub struct VersionProcessorRegistry {
     processors: ahash::HashMap<TypeId, Box<dyn Any>>,
+}
+
+impl VersionProcessorRegistry {
+    /// Creates a new [VersionProcessorRegistry] that has the default [v1::VersionV1Processor]
+    /// attached.
+    pub fn with_default_processors() -> Self {
+        let mut slf = Self::default();
+        slf.insert_processor(v1::VersionV1Processor::default());
+        slf
+    }
+    
+    /// Retrieve an existing, pre-configured [VersionProcessor] if it exists within the registry.
+    fn get_processor<P: Any + VersionProcessor>(&self) -> Option<&P> {
+        let type_id = TypeId::of::<P>();
+        self.processors
+            .get(&type_id)
+            .and_then(|p| p.downcast_ref())
+    }
+    
+    /// Insert a new [VersionProcessor] into the registry, replacing an existing entry if it
+    /// already had a processor associated with the type.
+    pub fn insert_processor<P: Any + VersionProcessor>(&mut self, processor: P) { 
+        let type_id = TypeId::of::<P>();
+        let boxed = Box::new(processor) as Box<dyn Any>;
+        self.processors
+            .insert(type_id, boxed);
+    }
 }
