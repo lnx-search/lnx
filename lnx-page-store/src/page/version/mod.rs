@@ -2,6 +2,7 @@ mod v1;
 mod v1_enc;
 
 use std::fmt::Debug;
+
 use super::PAGE_SIZE;
 use super::metadata::DiskPageMetadataRef;
 
@@ -13,7 +14,15 @@ pub mod processors {
 
 #[repr(u16)]
 #[derive(
-    Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Eq, PartialEq, Hash,
+    Debug,
+    Copy,
+    Clone,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
 )]
 #[rkyv(derive(Debug, Copy, Clone))]
 /// The version of the page layout.
@@ -83,7 +92,7 @@ impl From<ArchivedLayoutVersion> for LayoutVersion {
 pub(super) trait VersionProcessor: Debug {
     /// The layout version associated with the processor.
     fn associated_layout_version(&self) -> LayoutVersion;
-    
+
     /// Decode the provided page data so it can be read by the [DiskPageView].
     ///
     /// The reserved bytes for the given version is also provided.
@@ -121,19 +130,20 @@ impl VersionProcessorRegistry {
         slf.insert_processor(v1::VersionV1Processor::default());
         slf
     }
-    
+
     /// Retrieve an existing, pre-configured [VersionProcessor] if it exists within the registry.
-    pub(super) fn get_processor(&self, layout_version: LayoutVersion) -> Option<&Box<dyn VersionProcessor>> {
-        self.processors
-            .get(&layout_version)
+    pub(super) fn get_processor(
+        &self,
+        layout_version: LayoutVersion,
+    ) -> Option<&Box<dyn VersionProcessor>> {
+        self.processors.get(&layout_version)
     }
-    
+
     /// Insert a new [VersionProcessor] into the registry, replacing an existing entry if it
     /// already had a processor associated with the type.
-    pub fn insert_processor<P: VersionProcessor + 'static>(&mut self, processor: P) { 
+    pub fn insert_processor<P: VersionProcessor + 'static>(&mut self, processor: P) {
         let layout_version = processor.associated_layout_version();
         let boxed = Box::new(processor) as Box<dyn VersionProcessor>;
-        self.processors
-            .insert(layout_version, boxed);
+        self.processors.insert(layout_version, boxed);
     }
 }

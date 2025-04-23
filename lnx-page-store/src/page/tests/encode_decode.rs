@@ -15,7 +15,13 @@ mod raw_view {
 
     use super::*;
     use crate::page::metadata::DiskPageMetadata;
-    use crate::page::{DiskPageBuilder, LayoutVersion, PAGE_SIZE, PageEncodeBuffer, DiskPageView};
+    use crate::page::{
+        DiskPageBuilder,
+        DiskPageView,
+        LayoutVersion,
+        PAGE_SIZE,
+        PageEncodeBuffer,
+    };
     use crate::{BlockId, PageId};
 
     #[rstest]
@@ -68,7 +74,7 @@ mod raw_view {
         #[case] page_id: PageId,
         #[case] block_id: BlockId,
         #[case] revision: u32,
-        #[case] buffer_size: usize
+        #[case] buffer_size: usize,
     ) {
         let buffer = vec![1; buffer_size];
         let page_builder = DiskPageBuilder::new(
@@ -86,8 +92,7 @@ mod raw_view {
             .expect("encode page should fit and serialize into fixed buffer");
 
         let bytes_written = buffer.as_ref();
-        
+
         let view = DiskPageView::decode(bytes_written);
-        
     }
 }
