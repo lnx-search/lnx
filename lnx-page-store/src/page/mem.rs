@@ -67,4 +67,15 @@ impl PageEncodeBuffer {
         );
         self.initialised_len += by;
     }
+    
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [u8] {
+        // Safety: The buffer controls the initialised bytes and knows that all bytes up to
+        //         `initialised_len` are valid and safe to read.
+        unsafe {
+            std::slice::from_raw_parts_mut(
+                self.buffer.as_mut_ptr() as *mut u8,
+                self.initialised_len,
+            )
+        }
+    }
 }
