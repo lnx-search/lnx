@@ -1,7 +1,8 @@
+use std::fmt::Formatter;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::{AeadCore, AeadInPlace, Key, KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use anyhow::{anyhow, bail, Result};
-
+use crate::page::LayoutVersion;
 use super::VersionProcessor;
 
 
@@ -26,7 +27,17 @@ impl VersionV1EncProcessor {
     }
 }
 
+impl std::fmt::Debug for VersionV1EncProcessor {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Processor(V1 Layout w/Encryption at rest)")
+    }
+}
+
 impl VersionProcessor for VersionV1EncProcessor {
+    fn associated_layout_version(&self) -> LayoutVersion {
+        LayoutVersion::V1Enc
+    }
+
     fn decode(
         &self,
         encoded_bytes: &mut [u8],
@@ -35,14 +46,14 @@ impl VersionProcessor for VersionV1EncProcessor {
         if reserved_bytes.len() < 40 {
             bail!("reserved bytes buffer too small")
         }
-        
+
         let tag = Tag::from_slice(&reserved_bytes[..16]);
         let nonce = XNonce::from_slice(&reserved_bytes[16..40]);        
-        
+
         self.cipher
             .decrypt_in_place_detached(nonce, b"", encoded_bytes, tag)
             .map_err(|e| {
-                tracing::warn!(error = %e, "system failed to decrypt page");
+                tracing::error!(error = %e, "system failed to decrypt page");
                 anyhow!("failed to encrypt page")
             })?;
         
@@ -57,13 +68,13 @@ impl VersionProcessor for VersionV1EncProcessor {
         if reserved_bytes.len() < 40 {
             bail!("reserved bytes buffer too small")
         }
-        
+
         let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
-        
+
         let tag = self.cipher
             .encrypt_in_place_detached(&nonce, b"", raw_bytes)
             .map_err(|e| {
-                tracing::warn!(error = %e, "system failed to encrypt page");
+                tracing::error!(error = %e, "system failed to encrypt page");
                 anyhow!("failed to encrypt page")
             })?;
         
@@ -78,7 +89,7 @@ impl VersionProcessor for VersionV1EncProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[rstest::rstest]
     #[case(10, 40)]
     #[case(0, 40)]
@@ -95,10 +106,10 @@ mod tests {
     ) {
         let key = XChaCha20Poly1305::generate_key(&mut OsRng);
         let processor =  VersionV1EncProcessor::create_with_key(&key);
-        
+
         let mut raw_bytes = vec![1; data_len];
         let mut reserved_bytes = vec![1; reserved_len];
-    
+
         processor
             .encode(&mut raw_bytes, &mut reserved_bytes)
             .expect("Page should be encoded");

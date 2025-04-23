@@ -1,15 +1,19 @@
 mod v1;
 mod v1_enc;
 
-use std::any::{Any, TypeId};
-use super::{DiskPageView, PAGE_SIZE};
+use std::fmt::Debug;
+use super::PAGE_SIZE;
 use super::metadata::DiskPageMetadataRef;
 
-
+/// The available version processors.
+pub mod processors {
+    pub use super::v1::VersionV1Processor;
+    pub use super::v1_enc::VersionV1EncProcessor;
+}
 
 #[repr(u16)]
 #[derive(
-    Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Eq, PartialEq,
+    Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Eq, PartialEq, Hash,
 )]
 #[rkyv(derive(Debug, Copy, Clone))]
 /// The version of the page layout.
@@ -76,7 +80,10 @@ impl From<ArchivedLayoutVersion> for LayoutVersion {
 
 /// A version processor decodes/encodes the inner page data in order
 /// to apply additional rules or operations (i.e. encryption.)
-trait VersionProcessor {
+pub(super) trait VersionProcessor: Debug {
+    /// The layout version associated with the processor.
+    fn associated_layout_version(&self) -> LayoutVersion;
+    
     /// Decode the provided page data so it can be read by the [DiskPageView].
     ///
     /// The reserved bytes for the given version is also provided.
@@ -103,7 +110,7 @@ trait VersionProcessor {
 /// to be decoded or encoded, otherwise an error will be returned when attempting
 /// to use it.
 pub struct VersionProcessorRegistry {
-    processors: ahash::HashMap<TypeId, Box<dyn Any>>,
+    processors: ahash::HashMap<LayoutVersion, Box<dyn VersionProcessor>>,
 }
 
 impl VersionProcessorRegistry {
@@ -116,19 +123,17 @@ impl VersionProcessorRegistry {
     }
     
     /// Retrieve an existing, pre-configured [VersionProcessor] if it exists within the registry.
-    fn get_processor<P: Any + VersionProcessor>(&self) -> Option<&P> {
-        let type_id = TypeId::of::<P>();
+    pub(super) fn get_processor(&self, layout_version: LayoutVersion) -> Option<&Box<dyn VersionProcessor>> {
         self.processors
-            .get(&type_id)
-            .and_then(|p| p.downcast_ref())
+            .get(&layout_version)
     }
     
     /// Insert a new [VersionProcessor] into the registry, replacing an existing entry if it
     /// already had a processor associated with the type.
-    pub fn insert_processor<P: Any + VersionProcessor>(&mut self, processor: P) { 
-        let type_id = TypeId::of::<P>();
-        let boxed = Box::new(processor) as Box<dyn Any>;
+    pub fn insert_processor<P: VersionProcessor + 'static>(&mut self, processor: P) { 
+        let layout_version = processor.associated_layout_version();
+        let boxed = Box::new(processor) as Box<dyn VersionProcessor>;
         self.processors
-            .insert(type_id, boxed);
+            .insert(layout_version, boxed);
     }
 }

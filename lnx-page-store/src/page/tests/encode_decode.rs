@@ -8,7 +8,9 @@
 //!
 use rstest::rstest;
 
-mod layout_v1 {
+/// Test the decoding/encoding of the raw page views ignoring any relevance to the layout versions
+/// minus the max data allowance.
+mod raw_view {
     use std::borrow::Cow;
 
     use super::*;
