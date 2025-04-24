@@ -44,7 +44,10 @@ impl<'buf> DiskPageBuilder<'buf> {
     ///
     /// This will automatically apply and reserved space in the buffer or padding
     /// bytes based on the set [LayoutVersion].
-    pub(crate) fn encode(&self, buffer: &mut PageEncodeBuffer) -> Result<(), rancor::Error> {
+    pub(crate) fn encode(
+        &self,
+        buffer: &mut PageEncodeBuffer,
+    ) -> Result<(), rancor::Error> {
         let layout_bytes = self.metadata.layout_version().to_bytes();
 
         buffer.write_bytes(&layout_bytes);

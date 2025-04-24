@@ -6,76 +6,57 @@ use super::PAGE_SIZE;
 /// A writeable buffer of memory for encoding a page.
 pub struct PageEncodeBuffer {
     initialised_len: usize,
-    buffer: Box<[MaybeUninit<u8>]>,
+    buffer: Box<[u8]>,
 }
 
 impl Default for PageEncodeBuffer {
     fn default() -> Self {
+        let buffer = vec![0; PAGE_SIZE];
         Self {
             initialised_len: 0,
-            buffer: Box::new_uninit_slice(PAGE_SIZE),
+            buffer: buffer.into_boxed_slice(),
         }
     }
 }
 
 impl AsRef<[u8]> for PageEncodeBuffer {
     fn as_ref(&self) -> &[u8] {
-        // Safety: The buffer controls the initialised bytes and knows that all bytes up to
-        //         `initialised_len` are valid and safe to read.
-        unsafe {
-            std::slice::from_raw_parts(
-                self.buffer.as_ptr() as *const u8,
-                self.initialised_len,
-            )
-        }
+        &self.buffer[..self.initialised_len]
     }
 }
 
 impl PageEncodeBuffer {
-    /// Write a set of bytes into the buffer.
-    ///
-    /// This method will panic if the bytes being written would go out of bounds.
-    pub fn write_bytes(&mut self, bytes: &[u8]) {
+    pub(crate) fn write_bytes(&mut self, bytes: &[u8]) {
         assert!(
             self.initialised_len + bytes.len() <= self.buffer.len(),
             "Page encoding tried to write out of bounds"
         );
 
-        let write_ptr = self.buffer.as_mut_ptr() as *mut u8;
-        let read_ptr = bytes.as_ptr();
+        let start = self.initialised_len;
+        let end = self.initialised_len + bytes.len();
+        self.buffer[start..end].copy_from_slice(bytes);
 
-        // Safety: We have already checked that the write will not go out of bounds.
-        unsafe { std::ptr::copy_nonoverlapping(read_ptr, write_ptr, bytes.len()) };
-
-        self.initialised_len += bytes.len();
+        self.advance_cursor(bytes.len());
     }
 
-    /// Returns the slice of remaining uninitialized bytes.
-    pub fn remaining_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+    pub(crate) fn remaining_mut(&mut self) -> &mut [u8] {
         &mut self.buffer[self.initialised_len..]
     }
 
-    /// Advances the internal cursor of initialised bytes by the given number of bytes.
-    ///
-    /// # Safety
-    /// The caller must ensure no uninitialized bytes remain upto the point they are advancing
-    /// the cursor by.
-    pub unsafe fn advance_initialised_cursor(&mut self, by: usize) {
-        assert!(
-            self.initialised_len + by <= self.buffer.len(),
-            "Cursor would go out of bounds"
-        );
-        self.initialised_len += by;
+    pub(crate) fn advance_cursor(&mut self, by: usize) {
+        self.set_cursor(self.initialised_len + by)
     }
-    
+
+    pub(crate) fn set_cursor(&mut self, pos: usize) {
+        assert!(pos <= self.buffer.len(), "position out of bounds");
+        self.initialised_len = pos;
+    }
+
     pub(crate) fn as_mut_slice(&mut self) -> &mut [u8] {
-        // Safety: The buffer controls the initialised bytes and knows that all bytes up to
-        //         `initialised_len` are valid and safe to read.
-        unsafe {
-            std::slice::from_raw_parts_mut(
-                self.buffer.as_mut_ptr() as *mut u8,
-                self.initialised_len,
-            )
-        }
+        &mut self.buffer
+    }
+
+    pub(crate) fn total_size(&self) -> usize {
+        self.buffer.len()
     }
 }

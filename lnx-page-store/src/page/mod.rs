@@ -6,7 +6,6 @@ mod tests;
 mod version;
 mod view;
 
-use std::borrow::Cow;
 use rkyv::rancor;
 
 pub use self::builder::DiskPageBuilder;
@@ -14,11 +13,11 @@ pub use self::mem::PageEncodeBuffer;
 use self::version::VersionProcessorRegistry;
 pub use self::version::{ArchivedLayoutVersion, LayoutVersion, processors};
 pub use self::view::{DiskPageView, OwnedDiskPageView};
-use crate::page::metadata::{DiskPageMetadata, DiskPageMetadataRef};
 use crate::{BlockId, PageId};
 
 /// The total size of a page (metadata included) on disk.
 pub const PAGE_SIZE: usize = 8 << 10;
+const HEADER_START_POS: usize = 8;
 
 #[derive(Debug, thiserror::Error)]
 /// An error that prevented the page from being decoded into its view form.
@@ -63,7 +62,7 @@ pub struct IntegrityCheckConditions {
 ///
 /// This method expects the page data to be of size [PAGE_SIZE] in order to process
 /// the page.
-/// 
+///
 /// A set of additional [IntegrityCheckConditions] should also be passed in order to
 /// validate the integrity of the page aligns with what the system was expecting.
 pub fn decode_page<'buf>(
@@ -75,10 +74,11 @@ pub fn decode_page<'buf>(
         return Err(PageDecodeError::IncorrectPageSize(page_data.len()));
     }
 
-    let (declared_version, page_bytes) = version_aware_decode_buffer(registry, page_data)?;
-    
-    let page_view = DiskPageView::decode(page_bytes)
-        .map_err(PageDecodeError::PageMalformed)?;
+    let (declared_version, page_bytes) =
+        version_aware_decode_buffer(registry, page_data)?;
+
+    let page_view =
+        DiskPageView::decode(page_bytes).map_err(PageDecodeError::PageMalformed)?;
 
     let page_metadata = page_view.metadata();
 
@@ -100,6 +100,16 @@ pub fn decode_page<'buf>(
 /// An error that prevented the system from encoding and serializing the page data into
 /// a binary buffer.
 pub enum PageEncodeError {
+    #[error("{0}")]
+    /// The [VersionProcessor](version::VersionProcessor) was unable to decode
+    /// the raw data.
+    ///
+    /// This normally means the page is malformed/corrupted.
+    Processor(anyhow::Error),
+    #[error("processor for layout version {0:?} does not exist within the registry")]
+    /// The processor required for encoding the target [LayoutVersion] does not exist
+    /// within the [VersionProcessorRegistry] provided to the encode function.
+    ProcessorNotFound(LayoutVersion),
     #[error("metadata serialize fail: {0}")]
     /// The page metadata could not be serialized to its binary format correctly.
     MetadataSerialize(rancor::Error),
@@ -113,27 +123,41 @@ pub fn encode_page(
 ) -> Result<(), PageEncodeError> {
     let processor = registry
         .get_processor(builder.metadata.layout_version)
-        .ok_or_else(|| PageDecodeError::ProcessorNotFound(builder.metadata.layout_version))?;
-     
+        .ok_or_else(|| {
+            PageEncodeError::ProcessorNotFound(builder.metadata.layout_version)
+        })?;
+
     builder
         .encode(buffer)
         .map_err(PageEncodeError::MetadataSerialize)?;
-    
-    let serialized_data = buffer.as_mut_slice();    
-    
-    
-    // TODO: Add processor encoding stage
-    
+
+    let total_size = buffer.total_size();
+    let reserved_bytes_start =
+        total_size - builder.metadata.layout_version.reserved_space();
+
+    let page_data = buffer.as_mut_slice();
+
+    let slice_positions = [
+        HEADER_START_POS..reserved_bytes_start,
+        reserved_bytes_start..total_size,
+    ];
+    let [page_data, reserved_bytes] =
+        page_data.get_disjoint_mut(slice_positions).unwrap();
+
+    processor
+        .encode(page_data, reserved_bytes)
+        .map_err(PageEncodeError::Processor)?;
+
+    // Set the cursor to the end of the buffer to mark it as complete.
+    buffer.set_cursor(total_size);
+
     Ok(())
 }
-
 
 fn version_aware_decode_buffer<'buf>(
     registry: &VersionProcessorRegistry,
     page_data: &'buf mut [u8],
 ) -> Result<(LayoutVersion, &'buf mut [u8]), PageDecodeError> {
-    const HEADER_START_POS: usize = 8;
-    
     let version_bytes = page_data[..2].try_into().unwrap();
     let layout_version =
         LayoutVersion::maybe_from_bytes(version_bytes).ok_or_else(|| {

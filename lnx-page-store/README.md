@@ -25,5 +25,21 @@ Of that specified size, some bytes are reserved:
 - Bytes `2..8` reserved.
 
 #### Footer
-- `v0x02` **only**, Bytes `-128..` are reserved for encryption metadata.
+- `v0x02` **only**, Bytes `-40..` are reserved for encryption metadata.
 
+
+#### Versions
+
+##### V1 (`0x01`)
+
+V1 page format consists of a metadata header serialized with `rkyv` followed by the data bytes of the page,
+this layout has no additional overhead/reserved space but does not perform any encryption of additional integrity checks.
+
+##### V1 Encrypted (`0x02`)
+
+This uses the same internal layout as [V1](#v1-0x01) but with the addition of being encrypted
+at rest using the [XChaCha20Polly1305](https://docs.rs/chacha20poly1305/latest/chacha20poly1305/index.html)
+algorithm.
+
+Unlike V1, this system is encrypted and has additional data integrity checks but at the cost of having an additional
+`40` bytes overhead per page for reserved space.

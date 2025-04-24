@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 
 use rkyv::rancor;
 use rkyv::ser::Positional;
@@ -47,8 +47,7 @@ impl DiskPageMetadata {
         let writer = rkyv::api::high::to_bytes_in(self, writer)?;
         let num_bytes_written = writer.pos();
 
-        // Safety: We know rkyv has written all bytes to the buffer up to this point.
-        unsafe { buffer.advance_initialised_cursor(num_bytes_written) };
+        buffer.advance_cursor(num_bytes_written);
 
         Ok(())
     }

@@ -50,7 +50,7 @@ impl LayoutVersion {
     pub(super) const fn reserved_space(&self) -> usize {
         match self {
             LayoutVersion::V1 => 0,
-            LayoutVersion::V1Enc => 120,
+            LayoutVersion::V1Enc => 40,
         }
     }
 
@@ -62,18 +62,13 @@ impl LayoutVersion {
         /// Currently made up of the layout version bytes and remaining 6 bytes to keep
         /// buffer alignment and future signals.
         const CORE_OVERHEAD: usize = size_of::<LayoutVersion>() + 6;
-        /// The size of the encryption tag from ChaCha20.
-        const CHA_CHA_20_TAG_SIZE: usize = 16;
 
         let variable_overhead = match self {
             LayoutVersion::V1 => RKYV_METADATA_OVERHEAD,
-            LayoutVersion::V1Enc => RKYV_METADATA_OVERHEAD + CHA_CHA_20_TAG_SIZE,
+            LayoutVersion::V1Enc => RKYV_METADATA_OVERHEAD,
         };
 
-        let mut total_overhead =
-            CORE_OVERHEAD + variable_overhead + self.reserved_space();
-        total_overhead += total_overhead % 8; // Align to 8 bytes.
-
+        let total_overhead = CORE_OVERHEAD + variable_overhead + self.reserved_space();
         PAGE_SIZE - total_overhead
     }
 }

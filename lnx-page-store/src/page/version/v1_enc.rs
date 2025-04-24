@@ -1,6 +1,7 @@
 use std::fmt::Formatter;
 
 use anyhow::{Result, anyhow, bail};
+use bytes::BufMut;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::{
     AeadCore,
