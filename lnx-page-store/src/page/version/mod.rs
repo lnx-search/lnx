@@ -84,7 +84,7 @@ impl From<ArchivedLayoutVersion> for LayoutVersion {
 
 /// A version processor decodes/encodes the inner page data in order
 /// to apply additional rules or operations (i.e. encryption.)
-pub(super) trait VersionProcessor: Debug {
+pub trait VersionProcessor: Debug {
     /// The layout version associated with the processor.
     fn associated_layout_version(&self) -> LayoutVersion;
 
@@ -122,7 +122,7 @@ impl VersionProcessorRegistry {
     /// attached.
     pub fn with_default_processors() -> Self {
         let mut slf = Self::default();
-        slf.insert_processor(v1::VersionV1Processor::default());
+        slf.insert_processor(v1::VersionV1Processor);
         slf
     }
 
@@ -140,5 +140,21 @@ impl VersionProcessorRegistry {
         let layout_version = processor.associated_layout_version();
         let boxed = Box::new(processor) as Box<dyn VersionProcessor>;
         self.processors.insert(layout_version, boxed);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[rstest::rstest]
+    #[case(LayoutVersion::V1)]
+    #[case(LayoutVersion::V1Enc)]
+    fn test_versions_serialized_and_deserialize(#[case] version: LayoutVersion) {
+        let version_bytes = version.to_bytes();
+        let deserialized_bytes = LayoutVersion::maybe_from_bytes(version_bytes)
+            .expect("version should be able to decode itself");
+        assert_eq!(deserialized_bytes, version, "version deserialized does not match expected");
     }
 }

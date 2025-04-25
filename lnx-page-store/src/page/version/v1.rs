@@ -29,3 +29,38 @@ impl VersionProcessor for VersionV1Processor {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[rstest::rstest]
+    #[case(10, 40)]
+    #[case(0, 40)]
+    #[case(7 << 10, 40)]
+    #[case(51, 40)]
+    #[case(51, 128)]
+    #[case(51, 20)]
+    #[case(12, 0)]
+    fn test_buffer_encode_decode(#[case] data_len: usize, #[case] reserved_len: usize) {
+        let processor = VersionV1Processor;
+        assert_eq!(processor.associated_layout_version(), LayoutVersion::V1);
+
+        let mut input_bytes = vec![1; data_len];
+        let mut reserved_bytes = vec![0; reserved_len];
+
+        processor
+            .encode(&mut input_bytes, &mut reserved_bytes)
+            .expect("encode data");
+        assert_eq!(input_bytes, vec![1; data_len]);
+        assert_eq!(reserved_bytes, vec![0; reserved_len]);
+
+        processor
+            .decode(&mut input_bytes, &reserved_bytes)
+            .expect("decode data");
+        assert_eq!(input_bytes, vec![1; data_len]);
+        assert_eq!(reserved_bytes, vec![0; reserved_len]);
+    }
+}

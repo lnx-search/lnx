@@ -105,11 +105,18 @@ mod tests {
         let key = XChaCha20Poly1305::generate_key(&mut OsRng);
         let processor = VersionV1EncProcessor::create_with_key(&key);
 
-        let mut raw_bytes = vec![1; data_len];
+        let mut input_bytes = vec![1; data_len];
         let mut reserved_bytes = vec![1; reserved_len];
 
         processor
-            .encode(&mut raw_bytes, &mut reserved_bytes)
-            .expect("Page should be encoded");
+            .encode(&mut input_bytes, &mut reserved_bytes) 
+            .expect("encode data");
+        assert!(input_bytes.is_empty() || input_bytes != vec![1; data_len]);
+        assert!(reserved_bytes.is_empty() || reserved_bytes != vec![0; reserved_len]);
+
+        processor
+            .decode(&mut input_bytes, &reserved_bytes)
+            .expect("decode data");
+        assert_eq!(input_bytes, vec![1; data_len]);
     }
 }
