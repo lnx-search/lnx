@@ -2,7 +2,7 @@ mod v1;
 mod v1_enc;
 
 use std::fmt::Debug;
-
+use chacha20poly1305::Key;
 use super::PAGE_SIZE;
 use super::metadata::DiskPageMetadataRef;
 
@@ -123,6 +123,14 @@ impl VersionProcessorRegistry {
     pub fn with_default_processors() -> Self {
         let mut slf = Self::default();
         slf.insert_processor(v1::VersionV1Processor);
+        slf
+    }
+    
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        let mut slf = Self::default();
+        slf.insert_processor(v1::VersionV1Processor);
+        slf.insert_processor(v1_enc::VersionV1EncProcessor::create_with_key(&Key::default()));
         slf
     }
 

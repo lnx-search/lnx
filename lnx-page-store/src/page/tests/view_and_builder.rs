@@ -1,11 +1,7 @@
-//! page encoding decoding tests
+//! page view encoding decoding tests
 //!
 //! This is checking that the base page data is serialized correctly and can
 //! be read from the desired layout version.
-//!
-//!
-//!
-//!
 use rstest::rstest;
 
 /// Test the decoding/encoding of the raw page views ignoring any relevance to the layout versions
@@ -70,6 +66,12 @@ mod raw_view {
 
     #[rstest]
     #[case(PageId(0), BlockId(0), 0, 0)]
+    #[case(PageId(1), BlockId(1), 1, 1 << 10)]
+    #[case(PageId(1), BlockId(1), 1, 7 << 10)]
+    #[should_panic]
+    #[case(PageId(1), BlockId(1), 1, 12 << 10)]
+    #[should_panic]
+    #[case(PageId(1), BlockId(1), 1, 8 << 10)]
     fn test_decode(
         #[case] page_id: PageId,
         #[case] block_id: BlockId,
@@ -93,6 +95,11 @@ mod raw_view {
 
         let bytes_written = buffer.as_ref();
 
-        let view = DiskPageView::decode(bytes_written);
+        let view = DiskPageView::decode(&bytes_written[8..])
+            .unwrap_or_else(|e| panic!( "page should be decoded from bytes: {e}"));
+        assert_eq!(view.metadata().layout_version(), LayoutVersion::V1);
+        assert_eq!(view.metadata().block(), block_id);
+        assert_eq!(view.metadata().id(), page_id);
+        assert_eq!(view.metadata().revision(), revision);
     }
 }
