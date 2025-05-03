@@ -58,3 +58,36 @@ impl<'buf> DiskPageBuilder<'buf> {
         Ok(())
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::metadata::PAGE_SIZE;
+    
+    #[rstest::rstest]
+    #[case(LayoutVersion::V1, Cow::Borrowed(b"hello, world".as_ref()))]
+    #[case(LayoutVersion::V1, Cow::Borrowed(b"".as_ref()))]
+    #[case(LayoutVersion::V1, Cow::Owned(vec![1; LayoutVersion::V1.max_data_size()]))]
+    #[should_panic]
+    #[case(LayoutVersion::V1, Cow::Owned(vec![1; PAGE_SIZE]))]
+    fn test_page_builder(
+        #[case] layout_version: LayoutVersion,
+        #[case] data: Cow<'static, [u8]>,
+    ) {
+        let builder = DiskPageBuilder::new(
+            PageId(u32::MIN),
+            BlockId(u64::MAX),
+            u32::MIN,
+            layout_version,
+            data,
+        );
+        
+        let mut buffer = PageEncodeBuffer::default();
+        builder
+            .encode(&mut buffer)
+            .expect("encode page data into buffer");
+        
+                
+    }
+}
