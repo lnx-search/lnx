@@ -10,11 +10,13 @@ members = [
     "lnx-shell",
     "lnx-doc",
     "lnx-tantivy",
+    "lnx-config",
 ]
 
 [workspace.dependencies]
 anyhow = "1"
 thiserror = "2"
+arc-swap = "1.7"
 async-trait = "0.1"
 tracing = "0.1"
 serde_json = "1"
