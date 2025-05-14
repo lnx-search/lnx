@@ -9,7 +9,46 @@ provides a few unique features:
 - Only requires 2 background threads to operate
 - Produces contiguous slices of memory from reads
 
-### Page Spec
+## Features 
+
+- Encryption at rest
+- Asynchronous IO
+- Atomic bulk operations
+- Minimal write amplification
+
+## Page Tagging
+
+As well as the data stored in the pages themselves, the system allows the user to store upto `32` bytes worth of
+`tag` space, which is stored together will the rest of the pages, making bulk loading of this data quick.
+
+* This data is stored within pages themselves and are therefore encrypted if enabled.
+
+## File Layout
+
+The page store consists of "Page Files", which are isolated parts of the store, each file is made up of the following:
+
+- Allocation Table Bitset
+- Page Operations Log (POL)
+- Encoded pages
+
+### Core concept
+
+One of the primary challenges faced with this store is that we need to be able to write multiple pages (in same file)
+in bulk and as part of an all-or-nothing transaction. However, we also want to avoid solutions like a separate WAL file
+or separate metadata files in order to avoid additional flushes and write amplification associated with them.
+
+The solution in this case is the Page Operations Log (POL), which stores a small amount of metadata of the most recent
+operations in a log-like format near the start of the file. This is then read in conjunction with the allocation table
+to work out what operations should be applied to the store or aborted (in the case of transactions.)
+
+Every so often a "checkpoint" will be performed on the log resulting in the allocation table being updated and the
+generation marker being updated to reflect the number of operations seen by the allocation table.
+Once this step is complete the POL can be overwritten with new entry for the cycle to restart.
+
+The advantage of this approach is it allows us to still perform multiple operations together as part of a single operation
+while still being crash safe.
+
+## Page Layout 
 
 The storage system divides a fixed size file into `N` pages of equal size,
 each page is `8192` bytes in length.
@@ -43,3 +82,19 @@ algorithm.
 
 Unlike V1, this system is encrypted and has additional data integrity checks but at the cost of having an additional
 `40` bytes overhead per page for reserved space.
+
+### 
+
+
+### TODO List:
+
+- page allocator system.
+- Think about how to do disk layout
+- Disk handlers
+
+What do we need in the page table?
+
+- Is allocated flags (bool)
+- PageId
+
+We should be eating our dog food, use the page system to store the header

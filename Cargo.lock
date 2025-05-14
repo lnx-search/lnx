@@ -1692,8 +1692,10 @@ dependencies = [
  "chacha20poly1305",
  "crc32fast",
  "glommio",
+ "hmac",
  "rkyv",
  "rstest",
+ "sha256",
  "stable_deref_trait",
  "thiserror 2.0.3",
  "tracing",
@@ -2813,6 +2815,19 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "sha256"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f880fc8562bdeb709793f00eb42a2ad0e672c4f883bbe59122b926eca935c8f6"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "hex",
+ "sha2",
+ "tokio",
 ]
 
 [[package]]
