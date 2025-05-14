@@ -3,7 +3,46 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 type DynConfig = Arc<dyn Any + Send + Sync>;
-type State = RwLock<ahash::HashMap<TypeId, DynConfig>>;
+type CallbackTrigger = Box<dyn Fn() + Send + Sync>;
+
+struct StateEntry {
+    entry: DynConfig,
+    triggers: Arc<RwLock<Vec<CallbackTrigger>>>,
+}
+
+#[derive(Default)]
+struct State(RwLock<ahash::HashMap<TypeId, StateEntry>>);
+
+impl State {
+    fn exists(&self, type_id: TypeId) -> bool {
+        self.0.read().contains_key(&type_id)
+    }
+    
+    fn set(&self, cfg: DynConfig) {
+        let type_id = cfg.type_id();
+        self.0
+            .write()
+            .entry(type_id)
+            .and_modify(|e| {
+                e.entry = cfg.clone();
+            })
+            .or_insert_with(|| StateEntry {
+                entry: cfg,
+                triggers: Arc::default(),
+            });
+    }
+    
+    fn get(&self, type_id: TypeId) -> Option<DynConfig> {
+        self.0
+            .read()
+            .get(&type_id)
+            .map(|e| e.entry.clone())
+    }
+    
+    fn activate_triggers(&self, mode: ()) {
+        
+    }
+}
 
 
 mod global_state {
@@ -15,17 +54,17 @@ mod global_state {
     pub(super) fn set(cfg: DynConfig) {
         let type_id = cfg.type_id();
         let state = GLOBAL_STATE.get_or_init(State::default);
-        state.write().insert(type_id, cfg);
+        state.set(cfg)
     }
     
     pub(super) fn exists(type_id: TypeId) -> bool {
         let state = GLOBAL_STATE.get_or_init(State::default);
-        state.read().contains_key(&type_id)        
+        state.exists(type_id)
     }
     
     pub(super) fn get(type_id: TypeId) -> Option<DynConfig> {
         let state = GLOBAL_STATE.get_or_init(State::default);
-        state.read().get(&type_id).cloned()
+        state.get(type_id)
     }
 }
 
@@ -35,28 +74,27 @@ mod thread_local_state {
     use super::*;
 
     thread_local! {
-        static GLOBAL_STATE: OnceLock<State> = OnceLock::new();
+        static GLOBAL_STATE: OnceLock<State> = const { OnceLock::new() };
     }
     
     pub(super) fn set(cfg: DynConfig) {
-        let type_id = cfg.type_id();
         GLOBAL_STATE.with(|s| {
             let state = s.get_or_init(State::default);
-            state.write().insert(type_id, cfg);
+            state.set(cfg)
         })
     }
 
     pub(super) fn exists(type_id: TypeId) -> bool {
         GLOBAL_STATE.with(|s| {
             let state = s.get_or_init(State::default);
-            state.read().contains_key(&type_id)
+            state.exists(type_id)
         })
     }
 
     pub(super) fn get(type_id: TypeId) -> Option<DynConfig> {
         GLOBAL_STATE.with(|s| {
             let state = s.get_or_init(State::default);
-            state.read().get(&type_id).cloned()
+            state.get(type_id)
         })
     }
 }
