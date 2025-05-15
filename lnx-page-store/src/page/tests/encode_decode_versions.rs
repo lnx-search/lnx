@@ -1,9 +1,19 @@
-use rstest::rstest;
 use std::borrow::Cow;
-use crate::page::{decode_page, encode_page, DiskPageBuilder, IntegrityCheckConditions, LayoutVersion, PageDecodeError, PageEncodeBuffer};
-use crate::page::version::VersionProcessorRegistry;
-use crate::{BlockId, PageId};
+
+use rstest::rstest;
+
 use super::*;
+use crate::page::version::VersionProcessorRegistry;
+use crate::page::{
+    DiskPageBuilder,
+    IntegrityCheckConditions,
+    LayoutVersion,
+    PageDecodeError,
+    PageEncodeBuffer,
+    decode_page,
+    encode_page,
+};
+use crate::{BlockId, PageId};
 
 #[rstest]
 #[case(LayoutVersion::V1, 0)]
@@ -18,17 +28,10 @@ use super::*;
 #[case(LayoutVersion::V1Enc, 7 << 10)]
 #[should_panic]
 #[case(LayoutVersion::V1Enc, 8 << 10)]
-fn test_encode(
-    #[case] layout_version: LayoutVersion,
-    #[case] buffer_size: usize,
-) {
+fn test_encode(#[case] layout_version: LayoutVersion, #[case] buffer_size: usize) {
     let registry = VersionProcessorRegistry::for_test();
 
-    encode_inner(
-        &registry,
-        layout_version,
-        buffer_size,
-    );
+    encode_inner(&registry, layout_version, buffer_size);
 }
 
 #[rstest]
@@ -63,17 +66,10 @@ fn test_encode_decode(
 ) {
     let registry = VersionProcessorRegistry::for_test();
 
-    let mut buffer = encode_inner(
-        &registry,
-        layout_version,
-        buffer_size,
-    );    
-    
-    let page = decode_page(
-        &registry,
-        buffer.as_mut_slice(),
-        checks,
-    ).expect("decode page from data");
+    let mut buffer = encode_inner(&registry, layout_version, buffer_size);
+
+    let page = decode_page(&registry, buffer.as_mut_slice(), checks)
+        .expect("decode page from data");
 
     assert_eq!(page.metadata().layout_version(), layout_version);
     assert_eq!(page.metadata().block(), BlockId(0));
@@ -98,25 +94,17 @@ fn test_integrity_check_fails(
 ) {
     let registry = VersionProcessorRegistry::for_test();
 
-    let mut buffer = encode_inner(
-        &registry,
-        layout_version,
-        512,
-    );
+    let mut buffer = encode_inner(&registry, layout_version, 512);
 
-    let error = decode_page(
-        &registry,
-        buffer.as_mut_slice(),
-        checks,
-    ).expect_err("page should not pass integrity check");
-    
+    let error = decode_page(&registry, buffer.as_mut_slice(), checks)
+        .expect_err("page should not pass integrity check");
+
     assert!(
-        matches!(error, PageDecodeError::IntegrityCheckFailed), 
-        "integrity check error should be returned, got: {:?}", 
+        matches!(error, PageDecodeError::IntegrityCheckFailed),
+        "integrity check error should be returned, got: {:?}",
         error,
     );
 }
-
 
 fn encode_inner(
     registry: &VersionProcessorRegistry,
@@ -132,11 +120,7 @@ fn encode_inner(
         layout_version,
         Cow::Owned(vec![1; buffer_size]),
     );
-    encode_page(
-        &registry,
-        page_builder,
-        &mut buffer,
-    ).expect("encode page data");
-    
+    encode_page(&registry, page_builder, &mut buffer).expect("encode page data");
+
     buffer
 }

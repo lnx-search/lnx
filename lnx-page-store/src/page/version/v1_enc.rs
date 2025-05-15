@@ -109,7 +109,7 @@ mod tests {
         let mut reserved_bytes = vec![1; reserved_len];
 
         processor
-            .encode(&mut input_bytes, &mut reserved_bytes) 
+            .encode(&mut input_bytes, &mut reserved_bytes)
             .expect("encode data");
         assert!(input_bytes.is_empty() || input_bytes != vec![1; data_len]);
         assert!(reserved_bytes.is_empty() || reserved_bytes != vec![0; reserved_len]);

@@ -2,7 +2,9 @@ mod v1;
 mod v1_enc;
 
 use std::fmt::Debug;
+
 use chacha20poly1305::Key;
+
 use super::PAGE_SIZE;
 use super::metadata::DiskPageMetadataRef;
 
@@ -125,12 +127,14 @@ impl VersionProcessorRegistry {
         slf.insert_processor(v1::VersionV1Processor);
         slf
     }
-    
+
     #[cfg(test)]
     pub fn for_test() -> Self {
         let mut slf = Self::default();
         slf.insert_processor(v1::VersionV1Processor);
-        slf.insert_processor(v1_enc::VersionV1EncProcessor::create_with_key(&Key::default()));
+        slf.insert_processor(v1_enc::VersionV1EncProcessor::create_with_key(
+            &Key::default(),
+        ));
         slf
     }
 
@@ -151,11 +155,10 @@ impl VersionProcessorRegistry {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[rstest::rstest]
     #[case(LayoutVersion::V1)]
     #[case(LayoutVersion::V1Enc)]
@@ -163,6 +166,9 @@ mod tests {
         let version_bytes = version.to_bytes();
         let deserialized_bytes = LayoutVersion::maybe_from_bytes(version_bytes)
             .expect("version should be able to decode itself");
-        assert_eq!(deserialized_bytes, version, "version deserialized does not match expected");
+        assert_eq!(
+            deserialized_bytes, version,
+            "version deserialized does not match expected"
+        );
     }
 }

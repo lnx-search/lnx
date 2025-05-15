@@ -30,11 +30,9 @@ impl VersionProcessor for VersionV1Processor {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[rstest::rstest]
     #[case(10, 40)]

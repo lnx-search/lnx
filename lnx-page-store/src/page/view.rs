@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+
 use rkyv::rancor;
 use stable_deref_trait::StableDeref;
 
@@ -43,7 +44,7 @@ pub struct DiskPageView<'buf> {
 impl<'buf> Debug for DiskPageView<'buf> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
-            f, 
+            f,
             "DiskPageView(id={:?}, block_id={:?}, revision={}, checksum={})",
             self.metadata.id(),
             self.metadata.block(),

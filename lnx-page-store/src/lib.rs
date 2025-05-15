@@ -1,5 +1,5 @@
-mod page;
 mod file;
+mod page;
 
 #[derive(
     Debug,

@@ -96,7 +96,7 @@ mod raw_view {
         let bytes_written = buffer.as_ref();
 
         let view = DiskPageView::decode(&bytes_written[8..])
-            .unwrap_or_else(|e| panic!( "page should be decoded from bytes: {e}"));
+            .unwrap_or_else(|e| panic!("page should be decoded from bytes: {e}"));
         assert_eq!(view.metadata().layout_version(), LayoutVersion::V1);
         assert_eq!(view.metadata().block(), block_id);
         assert_eq!(view.metadata().id(), page_id);

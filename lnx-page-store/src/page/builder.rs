@@ -59,12 +59,11 @@ impl<'buf> DiskPageBuilder<'buf> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::metadata::PAGE_SIZE;
-    
+    use super::*;
+
     #[rstest::rstest]
     #[case(LayoutVersion::V1, Cow::Borrowed(b"hello, world".as_ref()))]
     #[case(LayoutVersion::V1, Cow::Borrowed(b"".as_ref()))]
@@ -82,12 +81,10 @@ mod tests {
             layout_version,
             data,
         );
-        
+
         let mut buffer = PageEncodeBuffer::default();
         builder
             .encode(&mut buffer)
             .expect("encode page data into buffer");
-        
-                
     }
 }
