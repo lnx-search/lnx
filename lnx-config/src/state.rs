@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-use crate::trigger::Trigger;
-
 type DynConfig = Arc<dyn Any + Send + Sync>;
 
 struct StateEntry {
@@ -19,8 +17,7 @@ impl State {
         self.0.read().contains_key(&type_id)
     }
 
-    fn set(&self, cfg: DynConfig) {
-        let type_id = cfg.type_id();
+    fn set(&self, type_id: TypeId, cfg: DynConfig) {
         self.0
             .write()
             .entry(type_id)
@@ -42,9 +39,9 @@ mod global_state {
 
     static GLOBAL_STATE: OnceLock<State> = OnceLock::new();
 
-    pub(super) fn set(cfg: DynConfig) {
+    pub(super) fn set(type_id: TypeId, cfg: DynConfig) {
         let state = GLOBAL_STATE.get_or_init(State::default);
-        state.set(cfg)
+        state.set(type_id, cfg)
     }
 
     pub(super) fn exists(type_id: TypeId) -> bool {
@@ -68,10 +65,10 @@ mod thread_local_state {
         static GLOBAL_STATE: OnceLock<State> = const { OnceLock::new() };
     }
 
-    pub(super) fn set(cfg: DynConfig) {
+    pub(super) fn set(type_id: TypeId, cfg: DynConfig) {
         GLOBAL_STATE.with(|s| {
             let state = s.get_or_init(State::default);
-            state.set(cfg)
+            state.set(type_id, cfg)
         })
     }
 
@@ -90,15 +87,15 @@ mod thread_local_state {
     }
 }
 
-pub(crate) fn set_auto(cfg: DynConfig) {
+pub(crate) fn set_auto(type_id: TypeId, cfg: DynConfig) {
     #[cfg(feature = "thread-local")]
-    thread_local_state::set(cfg);
+    thread_local_state::set(type_id, cfg);
     #[cfg(not(feature = "thread-local"))]
-    set_global(cfg);
+    set_global(type_id, cfg);
 }
 
-pub(crate) fn set_global(cfg: DynConfig) {
-    global_state::set(cfg)
+pub(crate) fn set_global(type_id: TypeId, cfg: DynConfig) {
+    global_state::set(type_id, cfg)
 }
 
 pub(crate) fn exists(type_id: TypeId) -> bool {

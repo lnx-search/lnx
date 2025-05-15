@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 
 #[macro_export]
@@ -10,7 +11,9 @@ macro_rules! get {
     };
     ($cfg:ident.$attr:ident) => {
         $crate::get_config::<$cfg>()
-            .map(|c| unsafe { Accessed::__with_value_and_parent(c.clone(), &c.$attr) })
+            .map(|c| unsafe {
+                $crate::access::Accessed::__with_value_and_parent(c.clone(), &c.$attr)
+            })
             .unwrap_or_else(|| {
                 panic!("config {} has not be initialised yet", stringify!($cfg))
             })
@@ -28,6 +31,33 @@ where
     #[allow(unused)]
     inner: C,
     value: &'static T,
+}
+
+impl<C, T> Debug for Accessed<C, T>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+impl<C, T> Display for Accessed<C, T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
+impl<C, T> PartialEq<T> for Accessed<C, T>
+where
+    T: PartialEq<T>,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.value == other
+    }
 }
 
 impl<C, T> Accessed<C, T> {

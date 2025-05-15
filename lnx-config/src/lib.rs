@@ -1,11 +1,9 @@
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
-pub use crate::trigger::Trigger;
-
-mod access;
+#[doc(hidden)]
+pub mod access;
 mod state;
-mod trigger;
 
 #[derive(Debug, thiserror::Error)]
 #[error("provided config type is already initialised")]
@@ -24,10 +22,11 @@ pub fn init<T>(config: T) -> Result<(), ConfigAlreadyExists>
 where
     T: Any + Send + Sync + 'static,
 {
-    if state::exists(TypeId::of::<T>()) {
+    let type_id = TypeId::of::<T>();
+    if state::exists(type_id) {
         return Err(ConfigAlreadyExists);
     }
-    state::set_auto(Arc::new(config));
+    state::set_auto(type_id, Arc::new(config));
     Ok(())
 }
 
@@ -39,10 +38,11 @@ pub fn init_global<T>(config: T) -> Result<(), ConfigAlreadyExists>
 where
     T: Any + Send + Sync + 'static,
 {
-    if state::exists(TypeId::of::<T>()) {
+    let type_id = TypeId::of::<T>();
+    if state::exists(type_id) {
         return Err(ConfigAlreadyExists);
     }
-    state::set_global(Arc::new(config));
+    state::set_global(type_id, Arc::new(config));
     Ok(())
 }
 
@@ -53,10 +53,11 @@ pub fn update<T>(config: T) -> Result<(), ConfigNotInitialisedExists>
 where
     T: Any + Send + Sync + 'static,
 {
-    if !state::exists(TypeId::of::<T>()) {
+    let type_id = TypeId::of::<T>();
+    if !state::exists(type_id) {
         return Err(ConfigNotInitialisedExists);
     }
-    state::set_auto(Arc::new(config));
+    state::set_auto(type_id, Arc::new(config));
     Ok(())
 }
 
@@ -68,13 +69,15 @@ pub fn update_global<T>(config: T) -> Result<(), ConfigNotInitialisedExists>
 where
     T: Any + Send + Sync + 'static,
 {
-    if !state::exists(TypeId::of::<T>()) {
+    let type_id = TypeId::of::<T>();
+    if !state::exists(type_id) {
         return Err(ConfigNotInitialisedExists);
     }
-    state::set_global(Arc::new(config));
+    state::set_global(type_id, Arc::new(config));
     Ok(())
 }
 
+#[doc(hidden)]
 /// Get an existing config if it is initialised.
 pub fn get_config<T>() -> Option<Arc<T>>
 where
