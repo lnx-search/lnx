@@ -1,5 +1,8 @@
 mod allocated_table;
+mod integrity;
 mod log;
+#[cfg(test)]
+mod tests;
 
 /// The total number of pages each page file holds onto.
 pub const PAGES_PER_FILE: usize = 1_000_000;

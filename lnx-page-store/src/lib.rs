@@ -13,7 +13,7 @@ mod page;
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[rkyv(derive(Debug))]
+#[rkyv(derive(Debug), compare(PartialEq))]
 /// A unique identifier for a block of pages.
 pub struct BlockId(pub(crate) u64);
 
@@ -29,7 +29,7 @@ pub struct BlockId(pub(crate) u64);
     rkyv::Serialize,
     rkyv::Deserialize,
 )]
-#[rkyv(derive(Debug))]
+#[rkyv(derive(Debug), compare(PartialEq))]
 /// A unique ID for a page of data within a storage file.
 pub struct PageId(pub(crate) u32);
 
