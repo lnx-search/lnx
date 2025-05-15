@@ -1,6 +1,7 @@
 use rkyv::rancor;
 
 use crate::PageId;
+use crate::file::integrity::DecodeVerification;
 use crate::file::log::*;
 
 static SAMPLE_LOG_ENTRY: LogEntry = LogEntry {
@@ -46,13 +47,7 @@ fn test_log_decoding(
     encode_log_entry(entry, &mut output, hmac_key)
         .expect("log entry should be encoded successfully");
 
-    let decoder = LogDecoder {
-        hmac_key,
-        verification,
-    };
-
-    let entry = decoder
-        .decode_entry(&output)
+    let entry = decode_log_entry(&output, hmac_key, verification)
         .expect("entry should be decoded successfully");
     let entry = rkyv::deserialize::<LogEntry, rancor::Error>(entry).unwrap();
     assert_eq!(entry, SAMPLE_LOG_ENTRY);
@@ -107,13 +102,7 @@ fn test_log_decoding_errors(
         output[..overwrite.len()].copy_from_slice(overwrite);
     }
 
-    let decoder = LogDecoder {
-        hmac_key: verify_hmac_key,
-        verification,
-    };
-
-    let err = decoder
-        .decode_entry(&output)
+    let err = decode_log_entry(&output, verify_hmac_key, verification)
         .expect_err("entry should fail to decode");
     assert_eq!(err.to_string(), expected_error.to_string());
 }

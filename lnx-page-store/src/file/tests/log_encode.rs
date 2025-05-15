@@ -124,7 +124,7 @@ fn test_encode_log_errors(
     #[case] expected_error: EncodeLogEntryError,
 ) {
     let mut output = vec![0; buffer_size];
-    let error = encode_log_entry(&entry, &mut output, hmac_key)
+    let error = encode_log_entry(&entry, &mut output[..], hmac_key)
         .expect_err("log entry should reject data");
     assert_eq!(error.to_string(), expected_error.to_string());
 }

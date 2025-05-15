@@ -7,34 +7,69 @@
 //! For the purposes of upgrades, the system can relax HMAC checks to treat it like a checksum,
 //! but this SHOULD NEVER BE ENABLED IN PRODUCTION.
 
+use bytes::BufMut;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
-const PREFIX_SIZE: usize = 32;
+const INTEGRITY_PREFIX_SIZE: usize = 32;
+
+#[derive(Debug, Copy, Clone)]
+/// The verification to perform on the entry.
+pub enum DecodeVerification {
+    /// Use SHA256 checksums.
+    Sha256,
+    /// Use a HMAC authenticated digest.
+    Hmac,
+    /// Treat a HMAC as a checksum and allow either HMAC or SHA256.
+    ///
+    /// DANGER! This should only be used for updating existing data to and from encryption
+    /// at rest.
+    DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256,
+}
+
+impl DecodeVerification {
+    /// Verify and extract the data from the given buffer.
+    pub fn verify<'buf>(
+        &self,
+        buffer: &'buf [u8],
+        hmac_key: Option<&[u8]>,
+    ) -> (bool, &'buf [u8]) {
+        match self {
+            DecodeVerification::Sha256 => verify_sha256_buffer(buffer),
+            DecodeVerification::Hmac => verify_hmac_buffer(
+                buffer,
+                hmac_key.expect(
+                    "HMAC key should be provided when HMAC verification is enabled",
+                ),
+            ),
+            DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256 => {
+                dangerous_relaxed_hmac_or_sha256_check_buffer(buffer, hmac_key)
+            },
+        }
+    }
+}
 
 /// Prefix the given output buffer with a set of check bytes
 /// containing either a HMAC or SHA256 digest depending on
 /// if a HMAC key is provided or not.
 pub fn copy_with_check_bytes(
     input_buffer: &[u8],
-    output_buffer: &mut [u8],
+    mut output_buffer: impl BufMut,
     hmac_key: Option<&[u8]>,
 ) {
-    assert!(output_buffer.len() >= PREFIX_SIZE + input_buffer.len());
-
     if let Some(key) = hmac_key {
         let mut mac =
             HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
         mac.update(input_buffer);
         let result = mac.finalize().into_bytes();
-        output_buffer[..PREFIX_SIZE].copy_from_slice(result.as_slice());
+        output_buffer.put(result.as_slice());
     } else {
         let result = hash_sha256(input_buffer);
-        output_buffer[..PREFIX_SIZE].copy_from_slice(result.as_slice());
+        output_buffer.put(result.as_slice());
     }
 
-    output_buffer[PREFIX_SIZE..].copy_from_slice(input_buffer);
+    output_buffer.put(input_buffer);
 }
 
 /// Check the HMAC at the start of the buffer aligns with the calculated HMAC
@@ -45,12 +80,12 @@ pub fn verify_hmac_buffer<'buf>(
     buffer: &'buf [u8],
     hmac_key: &[u8],
 ) -> (bool, &'buf [u8]) {
-    if buffer.len() < PREFIX_SIZE {
+    if buffer.len() < INTEGRITY_PREFIX_SIZE {
         return (false, buffer);
     }
 
-    let hmac = &buffer[..PREFIX_SIZE];
-    let bytes = &buffer[PREFIX_SIZE..];
+    let hmac = &buffer[..INTEGRITY_PREFIX_SIZE];
+    let bytes = &buffer[INTEGRITY_PREFIX_SIZE..];
 
     let mut mac =
         HmacSha256::new_from_slice(hmac_key).expect("HMAC can take key of any size");
@@ -62,12 +97,12 @@ pub fn verify_hmac_buffer<'buf>(
 ///
 /// Returns `false` if the checksums did not match
 pub fn verify_sha256_buffer<'buf>(buffer: &'buf [u8]) -> (bool, &'buf [u8]) {
-    if buffer.len() < PREFIX_SIZE {
+    if buffer.len() < INTEGRITY_PREFIX_SIZE {
         return (false, buffer);
     }
 
-    let sha256 = &buffer[..PREFIX_SIZE];
-    let bytes = &buffer[PREFIX_SIZE..];
+    let sha256 = &buffer[..INTEGRITY_PREFIX_SIZE];
+    let bytes = &buffer[INTEGRITY_PREFIX_SIZE..];
 
     let result = hash_sha256(bytes);
     (result.as_slice() == sha256, bytes)
@@ -83,12 +118,12 @@ pub fn dangerous_relaxed_hmac_or_sha256_check_buffer<'buf>(
     buffer: &'buf [u8],
     hmac_key: Option<&[u8]>,
 ) -> (bool, &'buf [u8]) {
-    if buffer.len() < PREFIX_SIZE {
+    if buffer.len() < INTEGRITY_PREFIX_SIZE {
         return (false, buffer);
     }
 
-    let hmac_or_sha256 = &buffer[..PREFIX_SIZE];
-    let bytes = &buffer[PREFIX_SIZE..];
+    let hmac_or_sha256 = &buffer[..INTEGRITY_PREFIX_SIZE];
+    let bytes = &buffer[INTEGRITY_PREFIX_SIZE..];
 
     if let Some(key) = hmac_key {
         let mut mac =
@@ -115,19 +150,16 @@ mod tests {
     use super::*;
 
     #[rstest::rstest]
-    #[case::no_hmac(b"hello, world!".as_ref(), 45, None)]
-    #[case::hmac(b"hello, world!".as_ref(), 45, Some(b"test".as_ref()))]
-    #[should_panic]
-    #[case::no_hmac_too_small_buffer(b"hello, world!".as_ref(), 32, Some(b"test".as_ref()))]
-    #[should_panic]
-    #[case::hmac_too_small_buffer(b"hello, world!".as_ref(), 32, None)]
+    #[case::no_hmac(b"hello, world!".as_ref(), None, 45)]
+    #[case::hmac(b"hello, world!".as_ref(), Some(b"test".as_ref()), 45)]
     fn test_copy_with_check_bytes(
         #[case] input_buffer: &[u8],
-        #[case] output_buffer_len: usize,
         #[case] hmac_key: Option<&[u8]>,
+        #[case] expected_len: usize,
     ) {
-        let mut output = vec![0; output_buffer_len];
+        let mut output = Vec::new();
         copy_with_check_bytes(input_buffer, &mut output, hmac_key);
+        assert_eq!(output.len(), expected_len);
     }
 
     #[rstest::rstest]
@@ -141,7 +173,7 @@ mod tests {
         #[case] verify_hmac: &[u8],
         #[case] should_be_valid: bool,
     ) {
-        let mut output = vec![0; input_buffer.len() + 32];
+        let mut output = Vec::new();
         copy_with_check_bytes(input_buffer, &mut output, Some(sign_hmac));
 
         let (verified, buffer) = verify_hmac_buffer(&output, verify_hmac);
@@ -159,7 +191,7 @@ mod tests {
         #[case] overwrite_digest: Option<&[u8]>,
         #[case] should_be_valid: bool,
     ) {
-        let mut output = vec![0; input_buffer.len() + 32];
+        let mut output = Vec::new();
         copy_with_check_bytes(input_buffer, &mut output, None);
 
         if let Some(overwrite) = overwrite_digest {
@@ -190,7 +222,7 @@ mod tests {
         #[case] overwrite_digest: Option<&[u8]>,
         #[case] should_be_valid: bool,
     ) {
-        let mut output = vec![0; input_buffer.len() + 32];
+        let mut output = Vec::new();
         copy_with_check_bytes(input_buffer, &mut output, sign_hmac);
 
         if let Some(overwrite) = overwrite_digest {

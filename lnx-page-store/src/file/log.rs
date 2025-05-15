@@ -11,75 +11,35 @@
 //! The reliability of this log is achieved on the assumption that the
 //! disk sector size for atomic writes is some multiple of `512` bytes.
 
+use bytes::BufMut;
 use rkyv::rancor;
 
+use super::integrity::DecodeVerification;
 use crate::PageId;
 
 /// The fixed size of a single log entry in bytes.
 pub const LOG_ENTRY_SIZE: usize = 64;
 
-#[derive(Debug, Copy, Clone)]
-/// The verification to perform on the log entry.
-pub enum DecodeVerification {
-    /// Use SHA256 checksums.
-    Sha256,
-    /// Use a HMAC authenticated digest.
-    Hmac,
-    /// Treat a HMAC as a checksum and allow either HMAC or SHA256.
-    ///
-    /// DANGER! This should only be used for updating existing data to and from encryption
-    /// at rest.
-    DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256,
-}
-
-/// A decoder for parsing and validating individual entries in the Page Operation Log.
-pub struct LogDecoder<'key> {
-    /// The HMAC authentication key used to verify the log entries.
-    ///
-    /// If this is `None` then regular SHA256 checksums are used to verify the integrity
-    /// (but not the authentication) of the data.
-    pub hmac_key: Option<&'key [u8]>,
-    /// The verification the decoder should perform on the bytes.
-    pub verification: DecodeVerification,
-}
-
-impl LogDecoder<'_> {
-    /// Try to decode a log entry from the provided set of bytes.
-    ///
-    /// This will verify the integrity of the entry with either a HMAC
-    /// check or SHA256 checksum check depending on if `hmac_key` is `None` or not.
-    pub fn decode_entry<'buf>(
-        &self,
-        encoded_entry: &'buf [u8],
-    ) -> Result<&'buf rkyv::Archived<LogEntry>, DecodeLogEntryError> {
-        if encoded_entry.len() != LOG_ENTRY_SIZE {
-            return Err(DecodeLogEntryError::BufferWrongSize);
-        }
-
-        let (verified, bytes) = match self.verification {
-            DecodeVerification::Sha256 => {
-                super::integrity::verify_sha256_buffer(encoded_entry)
-            },
-            DecodeVerification::Hmac => super::integrity::verify_hmac_buffer(
-                encoded_entry,
-                self.hmac_key.expect(
-                    "HMAC key should be provided when HMAC verification is enabled",
-                ),
-            ),
-            DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256 => {
-                super::integrity::dangerous_relaxed_hmac_or_sha256_check_buffer(
-                    encoded_entry,
-                    self.hmac_key,
-                )
-            },
-        };
-
-        if !verified {
-            return Err(DecodeLogEntryError::VerificationFail);
-        }
-
-        rkyv::access::<_, rancor::Error>(bytes).map_err(DecodeLogEntryError::Deserialize)
+/// Try to decode a log entry from the provided set of bytes.
+///
+/// This will verify the integrity of the entry with either a HMAC
+/// check or SHA256 checksum check depending on if `hmac_key` is `None` or not.
+pub fn decode_log_entry<'buf>(
+    encoded_entry: &'buf [u8],
+    hmac_key: Option<&[u8]>,
+    verification: DecodeVerification,
+) -> Result<&'buf rkyv::Archived<LogEntry>, DecodeLogEntryError> {
+    if encoded_entry.len() != LOG_ENTRY_SIZE {
+        return Err(DecodeLogEntryError::BufferWrongSize);
     }
+
+    let (verified, bytes) = verification.verify(encoded_entry, hmac_key);
+
+    if !verified {
+        return Err(DecodeLogEntryError::VerificationFail);
+    }
+
+    rkyv::access::<_, rancor::Error>(bytes).map_err(DecodeLogEntryError::Deserialize)
 }
 
 #[derive(Debug, thiserror::Error)]
