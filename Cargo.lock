@@ -1595,6 +1595,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-config"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.11",
+ "parking_lot",
+ "thiserror 2.0.3",
+]
+
+[[package]]
 name = "lnx-doc"
 version = "0.1.0"
 dependencies = [
@@ -1658,9 +1667,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "lnx-models"
+name = "lnx-query"
 version = "0.1.0"
 dependencies = [
+ "lnx-common",
  "lnx-tantivy",
  "poem-openapi",
  "rstest",
@@ -1678,7 +1688,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "lnx-common",
- "lnx-models",
+ "lnx-query",
  "poem",
  "poem-openapi",
  "serde_json",
