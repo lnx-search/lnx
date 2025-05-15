@@ -1620,6 +1620,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lnx-config"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.11",
+ "parking_lot",
+ "thiserror 2.0.3",
+]
+
+[[package]]
 name = "lnx-doc"
 version = "0.1.0"
 dependencies = [
