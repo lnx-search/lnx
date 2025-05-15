@@ -1,9 +1,11 @@
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
+pub use crate::trigger::Trigger;
+
 mod access;
 mod state;
-
+mod trigger;
 
 #[derive(Debug, thiserror::Error)]
 #[error("provided config type is already initialised")]
@@ -19,13 +21,13 @@ pub struct ConfigNotInitialisedExists;
 ///
 /// Errors if the config already exists within the state.
 pub fn init<T>(config: T) -> Result<(), ConfigAlreadyExists>
-where 
+where
     T: Any + Send + Sync + 'static,
 {
     if state::exists(TypeId::of::<T>()) {
-        return Err(ConfigAlreadyExists)    
+        return Err(ConfigAlreadyExists);
     }
-    state::set_auto(Arc::new(config));    
+    state::set_auto(Arc::new(config));
     Ok(())
 }
 
@@ -38,7 +40,7 @@ where
     T: Any + Send + Sync + 'static,
 {
     if state::exists(TypeId::of::<T>()) {
-        return Err(ConfigAlreadyExists)
+        return Err(ConfigAlreadyExists);
     }
     state::set_global(Arc::new(config));
     Ok(())
@@ -52,9 +54,9 @@ where
     T: Any + Send + Sync + 'static,
 {
     if !state::exists(TypeId::of::<T>()) {
-        return Err(ConfigNotInitialisedExists)
+        return Err(ConfigNotInitialisedExists);
     }
-    state::set_auto(Arc::new(config));    
+    state::set_auto(Arc::new(config));
     Ok(())
 }
 
@@ -67,7 +69,7 @@ where
     T: Any + Send + Sync + 'static,
 {
     if !state::exists(TypeId::of::<T>()) {
-        return Err(ConfigNotInitialisedExists)
+        return Err(ConfigNotInitialisedExists);
     }
     state::set_global(Arc::new(config));
     Ok(())
@@ -78,14 +80,5 @@ pub fn get_config<T>() -> Option<Arc<T>>
 where
     T: Any + Send + Sync + 'static,
 {
-    state::get(TypeId::of::<T>())
-        .and_then(|v| v.downcast().ok())
+    state::get(TypeId::of::<T>()).and_then(|v| v.downcast().ok())
 }
-
-/// Triggers any watcher callbacks that use the [WatchMod::Manual] mode and
-/// have had their target config parameters change.
-pub fn trigger_manual_callbacks() {
-
-}
-
-
