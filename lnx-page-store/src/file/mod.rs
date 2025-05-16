@@ -1,4 +1,4 @@
-mod allocated_table;
+mod allocation_table;
 mod integrity;
 mod log;
 #[cfg(test)]
