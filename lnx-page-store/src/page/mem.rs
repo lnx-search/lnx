@@ -1,4 +1,5 @@
 use std::mem::MaybeUninit;
+use std::ops::Deref;
 
 use super::PAGE_SIZE;
 
@@ -60,3 +61,14 @@ impl PageEncodeBuffer {
         self.buffer.len()
     }
 }
+
+impl Deref for PageEncodeBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+// Safety: The buffer is backed by a Box<[u8]> which holds a stable pointer.
+unsafe impl stable_deref_trait::StableDeref for PageEncodeBuffer {}

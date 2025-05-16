@@ -6,13 +6,15 @@ mod tests;
 mod version;
 mod view;
 
+use std::ops::{Deref, DerefMut};
+
 use rkyv::rancor;
 
 pub use self::builder::DiskPageBuilder;
 pub use self::mem::PageEncodeBuffer;
 use self::version::VersionProcessorRegistry;
 pub use self::version::{ArchivedLayoutVersion, LayoutVersion, processors};
-pub use self::view::{DiskPageView, OwnedDiskPageView};
+pub use self::view::DiskPageView;
 use crate::{BlockId, PageId};
 
 /// The total size of a page (metadata included) on disk.
@@ -161,7 +163,7 @@ fn version_aware_decode_buffer<'buf>(
     let version_bytes = page_data[..2].try_into().unwrap();
     let layout_version =
         LayoutVersion::maybe_from_bytes(version_bytes).ok_or_else(|| {
-            let code = format!("{:0x}", u16::from_le_bytes(version_bytes));
+            let code = format!("0x{:0x}", u16::from_le_bytes(version_bytes));
             PageDecodeError::UnknownLayoutVersion(code)
         })?;
 

@@ -12,7 +12,7 @@ pub struct VersionV1Processor;
 
 impl std::fmt::Debug for VersionV1Processor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Processor(V1 Layout w/Encryption at rest)")
+        write!(f, "Processor(V1 Layout wo/Encryption at rest)")
     }
 }
 
@@ -60,5 +60,13 @@ mod tests {
             .expect("decode data");
         assert_eq!(input_bytes, vec![1; data_len]);
         assert_eq!(reserved_bytes, vec![0; reserved_len]);
+    }
+
+    #[test]
+    fn test_debug_display() {
+        assert_eq!(
+            format!("{:?}", VersionV1Processor),
+            "Processor(V1 Layout wo/Encryption at rest)"
+        );
     }
 }

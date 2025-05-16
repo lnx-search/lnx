@@ -2,18 +2,74 @@ use std::borrow::Cow;
 
 use rstest::rstest;
 
-use super::*;
 use crate::page::version::VersionProcessorRegistry;
 use crate::page::{
     DiskPageBuilder,
     IntegrityCheckConditions,
     LayoutVersion,
+    PAGE_SIZE,
     PageDecodeError,
     PageEncodeBuffer,
     decode_page,
     encode_page,
 };
 use crate::{BlockId, PageId};
+
+#[test]
+fn test_encode_page_missing_registry() {
+    let registry = VersionProcessorRegistry::default();
+
+    let mut buffer = PageEncodeBuffer::default();
+
+    let page_builder = DiskPageBuilder::new(
+        PageId(0),
+        BlockId(0),
+        0,
+        LayoutVersion::V1Enc,
+        Cow::Owned(vec![1; 10]),
+    );
+    let error = encode_page(&registry, page_builder, &mut buffer)
+        .expect_err("encoder should error because of registry missing version");
+    assert_eq!(
+        error.to_string(),
+        PageDecodeError::ProcessorNotFound(LayoutVersion::V1Enc).to_string()
+    );
+}
+
+#[test]
+fn test_decode_page_registry_missing_version() {
+    let registry = VersionProcessorRegistry::for_test();
+    let mut page_data = encode_inner(&registry, LayoutVersion::V1Enc, 512);
+
+    let checks = IntegrityCheckConditions {
+        block_id: BlockId(1),
+        page_id: PageId(0),
+    };
+    let registry = VersionProcessorRegistry::with_default_processors();
+    let error = decode_page(&registry, page_data.as_mut_slice(), checks)
+        .expect_err("system should not decode page with unknown version");
+    assert_eq!(
+        error.to_string(),
+        PageDecodeError::ProcessorNotFound(LayoutVersion::V1Enc).to_string()
+    );
+}
+
+#[test]
+fn test_decode_page_unknown_version() {
+    let registry = VersionProcessorRegistry::with_default_processors();
+    let checks = IntegrityCheckConditions {
+        block_id: BlockId(1),
+        page_id: PageId(0),
+    };
+
+    let mut invalid_page = vec![64; PAGE_SIZE];
+    let error = decode_page(&registry, &mut invalid_page, checks)
+        .expect_err("system should not decode page with unknown version");
+    assert_eq!(
+        error.to_string(),
+        PageDecodeError::UnknownLayoutVersion("0x4040".into()).to_string()
+    );
+}
 
 #[rstest]
 #[case(LayoutVersion::V1, 0)]
@@ -120,7 +176,8 @@ fn encode_inner(
         layout_version,
         Cow::Owned(vec![1; buffer_size]),
     );
-    encode_page(&registry, page_builder, &mut buffer).expect("encode page data");
+
+    encode_page(registry, page_builder, &mut buffer).expect("encode page data");
 
     buffer
 }

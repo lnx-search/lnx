@@ -126,3 +126,28 @@ impl ArchivedDiskPageMetadata {
         self.data_len.to_native() as usize
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Mostly just used for coverage.
+    #[test]
+    fn test_metadata_getters() {
+        let metadata = DiskPageMetadata {
+            id: PageId(1),
+            checksum: 2,
+            block: BlockId(3),
+            revision: 4,
+            layout_version: LayoutVersion::V1,
+            data_len: 5,
+        };
+
+        assert_eq!(metadata.id(), PageId(1));
+        assert_eq!(metadata.checksum(), 2);
+        assert_eq!(metadata.block(), BlockId(3));
+        assert_eq!(metadata.revision(), 4);
+        assert_eq!(metadata.layout_version(), LayoutVersion::V1);
+        assert_eq!(metadata.data_len(), 5);
+    }
+}

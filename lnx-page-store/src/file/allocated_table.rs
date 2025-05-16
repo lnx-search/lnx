@@ -210,13 +210,13 @@ mod tests {
         assert!(table.is_allocated(PageId(0)));
         assert!(table.is_allocated(PageId(5)));
         assert!(table.is_allocated(PageId((size - 1) as u32)));
-        
+
         table.mark_free(PageId(5));
-        
+
         assert!(table.is_allocated(PageId(0)));
         assert!(!table.is_allocated(PageId(5)));
         assert!(table.is_allocated(PageId((size - 1) as u32)));
-        
+
         assert_eq!(table.checkpoint(), 0);
         table.advance_checkpoint(5);
         assert_eq!(table.checkpoint(), 5);
