@@ -14,17 +14,22 @@ pub fn decode_allocation_table(
     hmac_key: Option<&[u8]>,
     verification: DecodeVerification,
 ) -> Result<PageAllocationTable, DecodeAllocationTableError> {
-    todo!()
+    let (verified, buffer) = verification.verify(buffer, hmac_key);
+
+    if !verified {
+        return Err(DecodeAllocationTableError::VerificationFail);
+    }
+
+    let accessed = rkyv::access::<rkyv::Archived<PageAllocationTable>, _>(buffer)
+        .map_err(DecodeAllocationTableError::Deserialize)?;
+    rkyv::deserialize::<PageAllocationTable, _>(accessed)
+        .map_err(DecodeAllocationTableError::Deserialize)
 }
 
 #[derive(Debug, thiserror::Error)]
 /// An error that prevented the system from decoding an allocation table
 /// from a buffer.
 pub enum DecodeAllocationTableError {
-    #[error("buffer too small")]
-    /// The provided buffer is too small and can never contain a valid
-    /// allocation table within it.
-    BufferWrongSize,
     #[error("HMAC or SHA256 verification check failed")]
     /// The verification method specified by the [DecodeVerification] enum failed.
     VerificationFail,
@@ -53,6 +58,7 @@ pub fn encode_allocation_table(
 pub struct EncodeAllocationTableError(rancor::Error);
 
 #[derive(Default, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 /// A table header signalling what pages are allocated and what point in the operations
 /// log the table accounts for.
 pub struct PageAllocationTable {
@@ -100,6 +106,7 @@ impl PageAllocationTable {
 }
 
 #[derive(Default, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 /// A simple bit set which can be serialized and deserialized with rkyv.
 ///
 /// The size of the bitset is always aligned to 64.
@@ -123,12 +130,6 @@ impl SimpleBitSet {
     /// Returns the size of the bitset.
     fn size(&self) -> usize {
         self.data.len() * 64
-    }
-
-    /// Returns the estimated number of bytes the bitset
-    /// will take up on disk if laid out inline.
-    fn estimated_serialized_size(&self) -> usize {
-        size_of::<u64>() * self.data.len()
     }
 
     /// Set the flag at a given index.
@@ -166,6 +167,7 @@ mod tests {
     #[case(0)]
     fn test_bitset(#[case] size: usize) {
         let mut bitset = SimpleBitSet::new(size);
+        assert_eq!(bitset.size() % 64, 0);
 
         assert!(!bitset.get(0));
         assert!(!bitset.get(7));
@@ -208,13 +210,63 @@ mod tests {
         assert!(table.is_allocated(PageId(0)));
         assert!(table.is_allocated(PageId(5)));
         assert!(table.is_allocated(PageId((size - 1) as u32)));
+        
+        table.mark_free(PageId(5));
+        
+        assert!(table.is_allocated(PageId(0)));
+        assert!(!table.is_allocated(PageId(5)));
+        assert!(table.is_allocated(PageId((size - 1) as u32)));
+        
+        assert_eq!(table.checkpoint(), 0);
+        table.advance_checkpoint(5);
+        assert_eq!(table.checkpoint(), 5);
+    }
 
-        // let buffer = table.to_bytes();
-        // let copy = PageAllocationTable::from_bytes(&buffer)
-        //     .expect("Page table should be able to be deserialized");
-        //
-        // assert!(table.is_allocated(PageId(0)));
-        // assert!(table.is_allocated(PageId(5)));
-        // assert!(table.is_allocated(PageId((size - 1) as u32)));
+    #[rstest]
+    #[case::encode_table_without_hmac(None)]
+    #[case::encode_table_with_hmac(Some(b"test".as_ref()))]
+    fn test_encoding_allocation_table(#[case] hmac_key: Option<&[u8]>) {
+        let table = PageAllocationTable::new(34);
+        let mut buffer = Vec::new();
+        encode_allocation_table(&table, hmac_key, &mut buffer)
+            .expect("allocation table should be encoded successfully");
+    }
+
+    #[rstest]
+    #[case::decode_sha256(None, None, DecodeVerification::Sha256)]
+    #[case::decode_hmac(Some(b"test".as_ref()), Some(b"test".as_ref()), DecodeVerification::Hmac)]
+    #[case::decode_either_sha256(
+        None,
+        None,
+        DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256
+    )]
+    #[case::decode_either_with_hmac_key(None, Some(b"test".as_ref()), DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256)]
+    #[should_panic]
+    #[case::encode_table_with_hmac_fail(Some(b"test".as_ref()), Some(b"other".as_ref()), DecodeVerification::Hmac)]
+    #[should_panic]
+    #[case::encode_table_with_hmac_fail(Some(b"test".as_ref()), None, DecodeVerification::Hmac)]
+    #[should_panic]
+    #[case::encode_table_with_hmac_fail(None, Some(b"test".as_ref()), DecodeVerification::Hmac)]
+    #[should_panic]
+    #[case::encode_table_with_sha_fail(Some(b"test".as_ref()), None, DecodeVerification::Sha256)]
+    fn test_encode_decode_allocation_table(
+        #[case] sign_hmac_key: Option<&[u8]>,
+        #[case] verify_hmac_key: Option<&[u8]>,
+        #[case] verification: DecodeVerification,
+    ) {
+        let mut table = PageAllocationTable::new(34);
+
+        table.mark_allocated(PageId(0));
+        table.mark_allocated(PageId(5));
+        table.mark_allocated(PageId(33));
+
+        let mut buffer = Vec::new();
+        encode_allocation_table(&table, sign_hmac_key, &mut buffer)
+            .expect("allocation table should be encoded successfully");
+
+        let decoded_table =
+            decode_allocation_table(&buffer, verify_hmac_key, verification)
+                .expect("decode log entry should pass");
+        assert_eq!(decoded_table, table);
     }
 }
