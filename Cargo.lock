@@ -1702,6 +1702,8 @@ dependencies = [
  "crc32fast",
  "glommio",
  "hmac",
+ "memmap2",
+ "parking_lot",
  "rkyv",
  "rstest",
  "sha2",
