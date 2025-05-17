@@ -1,9 +1,14 @@
 use std::io;
 use std::ops::Range;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::cache::mem_block::generation::GenerationTicketMachine;
+use crate::cache::mem_block::prepared::PreparedRead;
 
 mod flags;
 mod generation;
+mod prepared;
 mod raw;
 mod state;
 
@@ -19,11 +24,9 @@ pub struct VirtualMemoryBlock {
     inner: raw::RawVirtualMemoryPages,
     /// The associate state for each page within the memory.
     state: Box<[state::PageStateEntry]>,
-    /// A monotonic counter assigning new generation IDs for every operation
-    /// performed on the virtual memory block.
-    ///
-    /// This is used to manage the GC collection of memory when it is not in use.
-    generation: AtomicU64,
+    /// The ticket machine tracks operations and ensures thread safe access to the pages
+    /// using generational GC-like patterns.
+    ticket_machine: GenerationTicketMachine,
 }
 
 impl VirtualMemoryBlock {
@@ -54,7 +57,7 @@ impl VirtualMemoryBlock {
             uid,
             inner,
             state: state.into_boxed_slice(),
-            generation: AtomicU64::new(0),
+            ticket_machine: GenerationTicketMachine::default(),
         })
     }
 
@@ -79,7 +82,7 @@ impl VirtualMemoryBlock {
         // We first try check the page flags before acquiring the lock,
         // since another operation might have already changed the flags
         // and our permit is now expired, so no point contesting the lock.
-        if !generation_is_active(state, permit.generation) {
+        if !generation_is_active(state, permit.ticket_id) {
             return Err(TryFreeError::PermitExpired);
         }
 
@@ -89,7 +92,7 @@ impl VirtualMemoryBlock {
 
         // Acquire the lock and check flags again in case they changed. Now we have the lock
         // we can be sure they won't change as long as we hold the guard.
-        if !generation_is_active(state, permit.generation) {
+        if !generation_is_active(state, permit.ticket_id) {
             return Err(TryFreeError::PermitExpired);
         }
 
@@ -124,7 +127,7 @@ impl VirtualMemoryBlock {
             return Err(PageLockedError);
         };
         let permit = self.make_free_permit(page);
-        state.mark_dirty(&guard, permit.generation);
+        state.mark_dirty(&guard, permit.ticket_id);
         Ok(permit)
     }
 
@@ -140,7 +143,7 @@ impl VirtualMemoryBlock {
             return Err(PageLockedError);
         };
         let permit = self.make_free_permit(page);
-        state.mark_revertible_eviction_scheduled(&guard, permit.generation);
+        state.mark_revertible_eviction_scheduled(&guard, permit.ticket_id);
         Ok(permit)
     }
 
@@ -148,19 +151,16 @@ impl VirtualMemoryBlock {
     ///
     /// This will allow the caller to select pages and write any pages that need to be
     /// allocated before the read is safe.
-    pub fn prepare_read(&self, range: Range<PageIndex>) -> () {
-        // Maybe issues;
-        // - We increment the generation here, so we advance the state machine
-        // - Something calls dirty_page..., task tries to immediately act on the permit
-        //   because this op hasn't completed yet.
-        let generation = self.generation.fetch_add(1, Ordering::Relaxed);
+    pub fn prepare_read(self: &Arc<Self>, range: Range<PageIndex>) -> PreparedRead {
+        assert!(
+            range.start.0 < self.state.len()
+                && range.end.0 <= self.state.len()
+                && range.start <= range.end,
+            "invalid page range provided, this is a bug"
+        );
 
-        for page in iter_pages(range) {
-            let state = self.state_at(page);
-            let flags = state.flags();
-
-            if flags.is_allocated() {}
-        }
+        let ticket_guard = self.ticket_machine.get_next_ticket();
+        PreparedRead::for_page_range(ticket_guard, self.clone(), range)
     }
 
     fn state_at(&self, index: PageIndex) -> &state::PageStateEntry {
@@ -168,10 +168,10 @@ impl VirtualMemoryBlock {
     }
 
     fn make_free_permit(&self, page: PageIndex) -> PageFreePermit {
-        let generation = self.generation.fetch_add(1, Ordering::Relaxed);
+        let ticket_id = self.ticket_machine.increment_ticket_id();
         PageFreePermit {
             uid: self.uid,
-            generation,
+            ticket_id,
             page,
         }
     }
@@ -208,7 +208,7 @@ pub struct PageLockedError;
 pub struct PageFreePermit {
     uid: u64,
     page: PageIndex,
-    generation: u64,
+    ticket_id: u64,
 }
 
 fn generation_is_active(
@@ -216,7 +216,7 @@ fn generation_is_active(
     expected_generation: u64,
 ) -> bool {
     let flags = state.flags();
-    if let Some(active_generation) = flags.extract_generation() {
+    if let Some(active_generation) = flags.extract_ticket_id() {
         active_generation != expected_generation
     } else {
         false

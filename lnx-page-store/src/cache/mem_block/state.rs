@@ -31,14 +31,14 @@ impl PageStateEntry {
     pub(super) fn mark_revertible_eviction_scheduled(
         &self,
         _guard: &PageWriteLockGuard,
-        generation: u64,
+        ticket_id: u64,
     ) {
-        self.flags.set_revertible_eviction(generation);
+        self.flags.set_revertible_eviction(ticket_id);
     }
 
     /// Mark the page as dirty.
-    pub(super) fn mark_dirty(&self, _guard: &PageWriteLockGuard, generation: u64) {
-        self.flags.set_eviction(generation);
+    pub(super) fn mark_dirty(&self, _guard: &PageWriteLockGuard, ticket_id: u64) {
+        self.flags.set_eviction(ticket_id);
     }
 
     /// Attempt to acquire the lock without blocking.

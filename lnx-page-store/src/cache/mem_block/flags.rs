@@ -46,16 +46,16 @@ impl AtomicPageFlags {
         self.0.store(PAGE_ALLOCATED, Ordering::Relaxed);
     }
 
-    pub(super) fn set_eviction(&self, generation: u64) {
+    pub(super) fn set_eviction(&self, ticket_id: u64) {
         self.0.store(
-            pack_generation(PAGE_EVICTION_SCHEDULED, generation),
+            pack_ticket_id(PAGE_EVICTION_SCHEDULED, ticket_id),
             Ordering::Relaxed,
         );
     }
 
-    pub(super) fn set_revertible_eviction(&self, generation: u64) {
+    pub(super) fn set_revertible_eviction(&self, ticket_id: u64) {
         self.0.store(
-            pack_generation(PAGE_REVERTIBLE_EVICTION_SCHEDULED, generation),
+            pack_ticket_id(PAGE_REVERTIBLE_EVICTION_SCHEDULED, ticket_id),
             Ordering::Relaxed,
         );
     }
@@ -99,24 +99,23 @@ impl PageFlags {
         !self.is_allocated() && self.is_marked_for_eviction()
     }
 
-    /// Extracts the bit packed generation counter
-    /// from the flags if applicable.
-    pub fn extract_generation(&self) -> Option<u64> {
+    /// Extracts the bit packed ticket_id from the flags if applicable.
+    pub fn extract_ticket_id(&self) -> Option<u64> {
         if self.is_marked_for_eviction() {
-            Some(extract_generation(self.0))
+            Some(extract_ticket_id(self.0))
         } else {
             None
         }
     }
 }
 
-fn extract_generation(packed_bits: u64) -> u64 {
+fn extract_ticket_id(packed_bits: u64) -> u64 {
     packed_bits >> 2
 }
 
-fn pack_generation(flag: u64, generation: u64) -> u64 {
-    assert!(generation < (1 << 62), "generation counter is too big");
-    let shifted = generation << 2;
+fn pack_ticket_id(flag: u64, ticket_id: u64) -> u64 {
+    assert!(ticket_id < (1 << 62), "ticket_id is too big");
+    let shifted = ticket_id << 2;
     shifted | flag
 }
 
@@ -128,15 +127,15 @@ mod tests {
     #[case::pack_allocated_flag(PAGE_ALLOCATED, 2)]
     #[case::pack_eviction_flag(PAGE_EVICTION_SCHEDULED, 3)]
     #[case::pack_revertible_eviction_flag(PAGE_REVERTIBLE_EVICTION_SCHEDULED, 4)]
-    #[case::generation_big(PAGE_REVERTIBLE_EVICTION_SCHEDULED, 1 << 61)]
+    #[case::ticket_id_big(PAGE_REVERTIBLE_EVICTION_SCHEDULED, 1 << 61)]
     #[should_panic]
-    #[case::panic_generation_too_big(PAGE_REVERTIBLE_EVICTION_SCHEDULED, 1 << 62)]
-    fn test_generation_bit_packing(#[case] flag: u64, #[case] generation: u64) {
-        let packed = pack_generation(flag, generation);
-        let extracted = extract_generation(packed);
+    #[case::panic_ticket_id_too_big(PAGE_REVERTIBLE_EVICTION_SCHEDULED, 1 << 62)]
+    fn test_ticket_id_bit_packing(#[case] flag: u64, #[case] ticket_id: u64) {
+        let packed = pack_ticket_id(flag, ticket_id);
+        let extracted = extract_ticket_id(packed);
         assert_eq!(
-            extracted, generation,
-            "extracted generation should match input"
+            extracted, ticket_id,
+            "extracted ticket_id should match input"
         );
         assert_ne!(packed & flag, 0, "flags should still be maintained");
     }
@@ -148,27 +147,27 @@ mod tests {
         assert!(!flags.is_allocated());
         assert!(!flags.is_marked_for_eviction());
         assert!(!flags.is_dirty());
-        assert!(flags.extract_generation().is_none());
+        assert!(flags.extract_ticket_id().is_none());
 
         let flags = PageFlags(PAGE_ALLOCATED);
         assert!(!flags.is_free());
         assert!(flags.is_allocated());
         assert!(!flags.is_marked_for_eviction());
         assert!(!flags.is_dirty());
-        assert!(flags.extract_generation().is_none());
+        assert!(flags.extract_ticket_id().is_none());
 
         let flags = PageFlags(PAGE_REVERTIBLE_EVICTION_SCHEDULED);
         assert!(!flags.is_free());
         assert!(flags.is_allocated());
         assert!(flags.is_marked_for_eviction());
         assert!(!flags.is_dirty());
-        assert_eq!(flags.extract_generation(), Some(0));
+        assert_eq!(flags.extract_ticket_id(), Some(0));
 
         let flags = PageFlags(PAGE_EVICTION_SCHEDULED);
         assert!(!flags.is_free());
         assert!(!flags.is_allocated());
         assert!(flags.is_marked_for_eviction());
         assert!(flags.is_dirty());
-        assert_eq!(flags.extract_generation(), Some(0));
+        assert_eq!(flags.extract_ticket_id(), Some(0));
     }
 }
