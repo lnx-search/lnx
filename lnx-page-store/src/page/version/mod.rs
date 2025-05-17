@@ -3,11 +3,6 @@ mod v1_enc;
 
 use std::fmt::Debug;
 
-use chacha20poly1305::Key;
-
-use super::PAGE_SIZE;
-use super::metadata::DiskPageMetadataRef;
-
 /// The available version processors.
 pub mod processors {
     pub use super::v1::VersionV1Processor;
@@ -36,7 +31,7 @@ pub enum LayoutVersion {
 }
 
 impl LayoutVersion {
-    pub(super) fn to_bytes(&self) -> [u8; 2] {
+    pub(super) fn as_bytes(&self) -> [u8; 2] {
         (*self as u16).to_le_bytes()
     }
 
@@ -54,24 +49,6 @@ impl LayoutVersion {
             LayoutVersion::V1 => 0,
             LayoutVersion::V1Enc => 40,
         }
-    }
-
-    pub(super) const fn max_data_size(&self) -> usize {
-        /// The size rkyv takes up laying out the metadata in bytes.
-        const RKYV_METADATA_OVERHEAD: usize = size_of::<DiskPageMetadataRef>();
-        /// The overhead every page will have.
-        ///
-        /// Currently made up of the layout version bytes and remaining 6 bytes to keep
-        /// buffer alignment and future signals.
-        const CORE_OVERHEAD: usize = size_of::<LayoutVersion>() + 6;
-
-        let variable_overhead = match self {
-            LayoutVersion::V1 => RKYV_METADATA_OVERHEAD,
-            LayoutVersion::V1Enc => RKYV_METADATA_OVERHEAD,
-        };
-
-        let total_overhead = CORE_OVERHEAD + variable_overhead + self.reserved_space();
-        PAGE_SIZE - total_overhead
     }
 }
 
@@ -130,6 +107,8 @@ impl VersionProcessorRegistry {
 
     #[cfg(test)]
     pub fn for_test() -> Self {
+        use chacha20poly1305::Key;
+
         let mut slf = Self::default();
         slf.insert_processor(v1::VersionV1Processor);
         slf.insert_processor(v1_enc::VersionV1EncProcessor::create_with_key(
@@ -163,7 +142,7 @@ mod tests {
     #[case(LayoutVersion::V1)]
     #[case(LayoutVersion::V1Enc)]
     fn test_versions_serialized_and_deserialize(#[case] version: LayoutVersion) {
-        let version_bytes = version.to_bytes();
+        let version_bytes = version.as_bytes();
         let deserialized_bytes = LayoutVersion::maybe_from_bytes(version_bytes)
             .expect("version should be able to decode itself");
         assert_eq!(

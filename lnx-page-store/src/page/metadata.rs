@@ -8,9 +8,6 @@ use super::mem::PageEncodeBuffer;
 use super::version::LayoutVersion;
 use crate::{BlockId, PageId};
 
-/// The total size of a single page (8KB)
-pub const PAGE_SIZE: usize = 8 << 10;
-
 /// A type alias for a static archived page metadata entry.
 pub type DiskPageMetadataRef = rkyv::Archived<DiskPageMetadata>;
 
@@ -36,6 +33,7 @@ pub struct DiskPageMetadata {
 }
 
 impl DiskPageMetadata {
+    // 24 Bytes
     pub(super) const SERIALIZED_SIZE: usize = size_of::<rkyv::Archived<Self>>();
 
     pub(super) fn write_to(

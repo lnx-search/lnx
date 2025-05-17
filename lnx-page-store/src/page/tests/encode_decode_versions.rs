@@ -7,6 +7,7 @@ use crate::page::{
     DiskPageBuilder,
     IntegrityCheckConditions,
     LayoutVersion,
+    PAGE_DATA_MAX_SIZE,
     PAGE_SIZE,
     PageDecodeError,
     PageEncodeBuffer,
@@ -76,14 +77,16 @@ fn test_decode_page_unknown_version() {
 #[case(LayoutVersion::V1, 512)]
 #[case(LayoutVersion::V1, 4 << 10)]
 #[case(LayoutVersion::V1, 7 << 10)]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE)]
 #[should_panic]
-#[case(LayoutVersion::V1, 8 << 10)]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE + 1)]
 #[case(LayoutVersion::V1Enc, 0)]
 #[case(LayoutVersion::V1Enc, 512)]
 #[case(LayoutVersion::V1Enc, 4 << 10)]
 #[case(LayoutVersion::V1Enc, 7 << 10)]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE)]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, 8 << 10)]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE + 1)]
 fn test_encode(#[case] layout_version: LayoutVersion, #[case] buffer_size: usize) {
     let registry = VersionProcessorRegistry::for_test();
 
@@ -95,8 +98,9 @@ fn test_encode(#[case] layout_version: LayoutVersion, #[case] buffer_size: usize
 #[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[case(LayoutVersion::V1, 4 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[case(LayoutVersion::V1, 7 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1, 8 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[should_panic]
 #[case(LayoutVersion::V1, 0, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
 #[should_panic]
@@ -107,8 +111,9 @@ fn test_encode(#[case] layout_version: LayoutVersion, #[case] buffer_size: usize
 #[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[case(LayoutVersion::V1Enc, 4 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[case(LayoutVersion::V1Enc, 7 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, 8 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
 #[should_panic]
 #[case(LayoutVersion::V1Enc, 0, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
 #[should_panic]

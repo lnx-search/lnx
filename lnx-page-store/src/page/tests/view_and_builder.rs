@@ -15,6 +15,7 @@ mod raw_view {
         DiskPageBuilder,
         DiskPageView,
         LayoutVersion,
+        PAGE_DATA_MAX_SIZE,
         PAGE_SIZE,
         PageEncodeBuffer,
     };
@@ -25,7 +26,7 @@ mod raw_view {
     #[case(16)]
     #[case(59)]
     #[case(2 << 10)]
-    #[case(LayoutVersion::V1.max_data_size())]
+    #[case(PAGE_DATA_MAX_SIZE)]
     fn test_encode(#[case] buffer_size: usize) {
         let buffer = vec![1; buffer_size];
         let page_builder = DiskPageBuilder::new(
@@ -51,7 +52,7 @@ mod raw_view {
 
     #[rstest]
     #[case(PAGE_SIZE)]
-    #[case(LayoutVersion::V1.max_data_size() + 1)]
+    #[case(PAGE_DATA_MAX_SIZE + 1)]
     #[should_panic]
     fn test_encode_panic_on_too_big(#[case] buffer_size: usize) {
         let buffer = vec![1; buffer_size];
@@ -68,10 +69,9 @@ mod raw_view {
     #[case(PageId(0), BlockId(0), 0, 0)]
     #[case(PageId(1), BlockId(1), 1, 1 << 10)]
     #[case(PageId(1), BlockId(1), 1, 7 << 10)]
+    #[case(PageId(1), BlockId(1), 1, 8 << 10)]
     #[should_panic]
     #[case(PageId(1), BlockId(1), 1, 12 << 10)]
-    #[should_panic]
-    #[case(PageId(1), BlockId(1), 1, 8 << 10)]
     fn test_decode(
         #[case] page_id: PageId,
         #[case] block_id: BlockId,

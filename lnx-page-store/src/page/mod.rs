@@ -17,8 +17,10 @@ pub use self::version::{ArchivedLayoutVersion, LayoutVersion, processors};
 pub use self::view::DiskPageView;
 use crate::{BlockId, PageId};
 
+/// The maximum data package size in bytes. (8KB)
+pub const PAGE_DATA_MAX_SIZE: usize = 8 << 10;
 /// The total size of a page (metadata included) on disk.
-pub const PAGE_SIZE: usize = 8 << 10;
+pub const PAGE_SIZE: usize = PAGE_DATA_MAX_SIZE + 128;
 const HEADER_START_POS: usize = 8;
 
 #[derive(Debug, thiserror::Error)]

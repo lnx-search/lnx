@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use rkyv::rancor;
 
 use super::mem::PageEncodeBuffer;
-use super::metadata;
 use super::version::LayoutVersion;
+use super::{PAGE_DATA_MAX_SIZE, metadata};
 use crate::{BlockId, PageId};
 
 /// An owned, mutable disk page, used for constructing and writing new pages.
@@ -22,7 +22,7 @@ impl<'buf> DiskPageBuilder<'buf> {
         data: Cow<'buf, [u8]>,
     ) -> Self {
         assert!(
-            data.len() <= layout_version.max_data_size(),
+            data.len() <= PAGE_DATA_MAX_SIZE,
             "Page data exceeds maximum size allowance",
         );
 
@@ -48,7 +48,7 @@ impl<'buf> DiskPageBuilder<'buf> {
         &self,
         buffer: &mut PageEncodeBuffer,
     ) -> Result<(), rancor::Error> {
-        let layout_bytes = self.metadata.layout_version().to_bytes();
+        let layout_bytes = self.metadata.layout_version().as_bytes();
 
         buffer.write_bytes(&layout_bytes);
         buffer.write_bytes(&[0; 6]); // Pad reserved bytes for alignment.
@@ -61,13 +61,15 @@ impl<'buf> DiskPageBuilder<'buf> {
 
 #[cfg(test)]
 mod tests {
-    use super::metadata::PAGE_SIZE;
     use super::*;
+    use crate::page::{PAGE_DATA_MAX_SIZE, PAGE_SIZE};
 
     #[rstest::rstest]
     #[case(LayoutVersion::V1, Cow::Borrowed(b"hello, world".as_ref()))]
     #[case(LayoutVersion::V1, Cow::Borrowed(b"".as_ref()))]
-    #[case(LayoutVersion::V1, Cow::Owned(vec![1; LayoutVersion::V1.max_data_size()]))]
+    #[case(LayoutVersion::V1, Cow::Owned(vec![1; PAGE_DATA_MAX_SIZE]))]
+    #[should_panic]
+    #[case(LayoutVersion::V1, Cow::Owned(vec![1; PAGE_DATA_MAX_SIZE + 1]))]
     #[should_panic]
     #[case(LayoutVersion::V1, Cow::Owned(vec![1; PAGE_SIZE]))]
     fn test_page_builder(
