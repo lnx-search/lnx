@@ -36,7 +36,7 @@ impl RawVirtualMemoryPages {
         let memory = VirtualMemory::allocate(num_pages, page_size)?;
         Ok(Self { memory, page_size })
     }
-    
+
     /// Returns the number of pages this memory contains.
     pub(super) fn num_pages(&self) -> usize {
         self.memory.len() / self.page_size as usize
@@ -209,7 +209,7 @@ impl VirtualMemory {
     fn len(&self) -> usize {
         self.mem.len()
     }
-    
+
     fn get_ptr_at(&self, pos: usize) -> *mut u8 {
         assert!(pos < self.mem.len());
         // Safety: We have pre-checked that the pos is within bounds.
@@ -217,11 +217,10 @@ impl VirtualMemory {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[rstest::rstest]
     #[case::zero_pages(0)]
     #[case::one_page(1)]
@@ -230,7 +229,7 @@ mod tests {
         VirtualMemory::allocate(num_pages, PageSize::Standard)
             .expect("virtual memory should be created");
     }
-    
+
     #[cfg(feature = "test-huge-pages")]
     #[rstest::rstest]
     #[case::zero_pages(0)]
@@ -240,7 +239,7 @@ mod tests {
         VirtualMemory::allocate(num_pages, PageSize::Huge)
             .expect("virtual memory should be created");
     }
-    
+
     #[rstest::rstest]
     #[case::zero_pages(0)]
     #[case::one_page(1)]
@@ -261,7 +260,7 @@ mod tests {
             .expect("virtual memory pages should be created");
         assert_eq!(pages.num_pages(), num_pages);
     }
-    
+
     #[rstest::rstest]
     #[case::page_read(1, PageIndex(0))]
     #[case::page_read(2, PageIndex(1))]
@@ -271,17 +270,24 @@ mod tests {
     #[case::page_out_of_bounds_panic_1(0, PageIndex(0))]
     #[should_panic]
     #[case::page_out_of_bounds_panic_2(0, PageIndex(2))]
-    fn test_read_only_page_access(#[case] num_pages: usize, #[case] target_page_index: PageIndex) {
+    fn test_read_only_page_access(
+        #[case] num_pages: usize,
+        #[case] target_page_index: PageIndex,
+    ) {
         let pages = RawVirtualMemoryPages::allocate(num_pages, PageSize::Standard)
             .expect("virtual memory pages should be created");
         let ptr = pages.get_page(target_page_index);
         assert_eq!(ptr.pages_spanned(), 1);
-        
+
         unsafe {
-            assert_eq!(ptr.access(), vec![0; STANDARD_PAGE_SIZE], "memory should be zeroed");
+            assert_eq!(
+                ptr.access(),
+                vec![0; STANDARD_PAGE_SIZE],
+                "memory should be zeroed"
+            );
         }
     }
-    
+
     #[rstest::rstest]
     #[case::page_read(1, PageIndex(0))]
     #[case::page_read(2, PageIndex(1))]
@@ -291,22 +297,29 @@ mod tests {
     #[case::page_out_of_bounds_panic_1(0, PageIndex(0))]
     #[should_panic]
     #[case::page_out_of_bounds_panic_2(0, PageIndex(2))]
-    fn test_mut_page_access(#[case] num_pages: usize, #[case] target_page_index: PageIndex) {
+    fn test_mut_page_access(
+        #[case] num_pages: usize,
+        #[case] target_page_index: PageIndex,
+    ) {
         let pages = RawVirtualMemoryPages::allocate(num_pages, PageSize::Standard)
             .expect("virtual memory pages should be created");
         let mut ptr = pages.get_mut_page(target_page_index);
         assert_eq!(ptr.pages_spanned(), 1);
 
         unsafe {
-            assert_eq!(ptr.access_uninit().len(), STANDARD_PAGE_SIZE, "memory should be zeroed");
+            assert_eq!(
+                ptr.access_uninit().len(),
+                STANDARD_PAGE_SIZE,
+                "memory should be zeroed"
+            );
         }
     }
-    
+
     #[test]
     fn test_ptr_unsplit() {
         let pages = RawVirtualMemoryPages::allocate(4, PageSize::Standard)
             .expect("virtual memory pages should be created");
-        
+
         let mut ptr1 = pages.get_mut_page(PageIndex(0));
         let ptr2 = pages.get_mut_page(PageIndex(1));
         assert!(unsafe { ptr1.unsplit(ptr2).is_ok() });
