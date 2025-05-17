@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 const TICKETS_PER_GENERATION: u64 = 256;
 
 /// The generation handler keeps track of active references
-/// to pages.
+/// to pages over time.
 ///
 /// The page cache uses a generational GC-like system.
 ///
@@ -20,7 +20,7 @@ const TICKETS_PER_GENERATION: u64 = 256;
 ///
 /// This method is designed to minimise contention and additional cleanup cycles while still
 /// having relatively low memory overhead.
-pub(super) struct GenerationHandler {
+pub(super) struct GenerationTicketMachine {
     /// The monotonic ticket ID counter.
     ///
     /// This increments with every operation performed.
@@ -36,7 +36,7 @@ pub(super) struct GenerationHandler {
     shared_state: Arc<SharedState>,
 }
 
-impl Default for GenerationHandler {
+impl Default for GenerationTicketMachine {
     fn default() -> Self {
         let shared_state = Arc::new(SharedState {
             oldest_alive_ticket: AtomicU64::new(0),
@@ -62,7 +62,7 @@ impl Default for GenerationHandler {
     }
 }
 
-impl GenerationHandler {
+impl GenerationTicketMachine {
     /// Returns the oldest alive ticket still in use.
     ///
     /// It can be assumed that any ticket older than this value
