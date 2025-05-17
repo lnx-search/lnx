@@ -65,13 +65,10 @@ impl VirtualMemoryBlock {
     ///
     /// This call may fail if any one of the following is true:
     ///
+    /// - There are still active readers that might be accessing the page.
     /// - The page has been mutated since meaning the [PageFreePermit] has now expired.
     /// - The page lock is already being held by another task.
-    ///
-    /// # Safety
-    /// The caller must ensure that no readers currently hold a reference to the target page
-    /// otherwise this will cause the reads to become UB.
-    pub unsafe fn try_free(&self, permit: &PageFreePermit) -> Result<(), TryFreeError> {
+    pub fn try_free(&self, permit: &PageFreePermit) -> Result<(), TryFreeError> {
         assert_eq!(
             permit.uid, self.uid,
             "uid of permit does not match uid of memory block, this likely means there is a bug",
@@ -82,8 +79,13 @@ impl VirtualMemoryBlock {
         // We first try check the page flags before acquiring the lock,
         // since another operation might have already changed the flags
         // and our permit is now expired, so no point contesting the lock.
-        if !generation_is_active(state, permit.ticket_id) {
+        if !flags_tagged_with_ticket(state, permit.ticket_id) {
             return Err(TryFreeError::PermitExpired);
+        }
+
+        // If there is a chance a reader may still be accessing the page, we abort.
+        if permit.ticket_id >= self.ticket_machine.oldest_alive_ticket() {
+            return Err(TryFreeError::InUse);
         }
 
         let Some(guard) = state.try_acquire_lock() else {
@@ -92,13 +94,14 @@ impl VirtualMemoryBlock {
 
         // Acquire the lock and check flags again in case they changed. Now we have the lock
         // we can be sure they won't change as long as we hold the guard.
-        if !generation_is_active(state, permit.ticket_id) {
+        if !flags_tagged_with_ticket(state, permit.ticket_id) {
             return Err(TryFreeError::PermitExpired);
         }
 
         // Page is still marked for eviction and tagged with our generation ID, we can free the page.
         // Safety:
-        // - The caller is responsible for ensuring no active readers still hold the memory.
+        // - We checked to ensure that no generations or ticket guards are still active
+        //   for readers that came before the permit.
         // - We mark the page as freed, preventing reads from occurring until a write passes.
         let result = unsafe { self.inner.free(permit.page) };
 
@@ -186,6 +189,10 @@ pub enum TryFreeError {
     #[error("page locked")]
     /// The page is currently locked by another task.
     Locked,
+    #[error("page is still potentially still in use")]
+    /// The page may still be referenced by readers and is therefore
+    /// no safe to free the page.
+    InUse,
     #[error("{0}")]
     /// An IO error prevented the operation from completing.
     ///
@@ -211,19 +218,14 @@ pub struct PageFreePermit {
     ticket_id: u64,
 }
 
-fn generation_is_active(
+fn flags_tagged_with_ticket(
     state: &state::PageStateEntry,
     expected_generation: u64,
 ) -> bool {
     let flags = state.flags();
     if let Some(active_generation) = flags.extract_ticket_id() {
-        active_generation != expected_generation
+        active_generation == expected_generation
     } else {
         false
     }
-}
-
-// Eventually we can implement the `Step` trait when it is stable.
-fn iter_pages(range: Range<PageIndex>) -> impl Iterator<Item = PageIndex> {
-    (range.start.0..range.end.0).map(PageIndex)
 }

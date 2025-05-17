@@ -26,3 +26,8 @@ impl PreparedRead {
         }
     }
 }
+
+// Eventually we can implement the `Step` trait when it is stable.
+fn iter_pages(range: Range<PageIndex>) -> impl Iterator<Item = PageIndex> {
+    (range.start.0..range.end.0).map(PageIndex)
+}
