@@ -37,6 +37,28 @@ impl AtomicPageFlags {
     pub fn load(&self, ordering: Ordering) -> PageFlags {
         PageFlags(self.0.load(ordering))
     }
+
+    pub(super) fn set_free(&self) {
+        self.0.store(PAGE_FREE, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_allocated(&self) {
+        self.0.store(PAGE_ALLOCATED, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_eviction(&self, generation: u64) {
+        self.0.store(
+            pack_generation(PAGE_EVICTION_SCHEDULED, generation),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(super) fn set_revertible_eviction(&self, generation: u64) {
+        self.0.store(
+            pack_generation(PAGE_REVERTIBLE_EVICTION_SCHEDULED, generation),
+            Ordering::Relaxed,
+        );
+    }
 }
 
 #[derive(Default)]

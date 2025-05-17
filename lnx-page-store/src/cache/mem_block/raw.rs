@@ -16,7 +16,7 @@ pub enum PageSize {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 /// The unique ID of a page within the memory block.
-pub struct PageIndex(usize);
+pub struct PageIndex(pub(super) usize);
 
 /// A raw block of virtual memory split into pages.
 ///
@@ -40,6 +40,19 @@ impl RawVirtualMemoryPages {
     /// Returns the number of pages this memory contains.
     pub(super) fn num_pages(&self) -> usize {
         self.memory.len() / self.page_size as usize
+    }
+
+    /// Marks a page as available to be reclaimed by the OS.
+    ///
+    /// # Safety
+    /// The caller must ensure that no reads still access this page
+    /// and that no subsequent reads take place on this page until a write op
+    /// has completed.
+    ///
+    /// This is because after a free operation, the memory is considered uninitialized.
+    pub(super) unsafe fn free(&self, page: PageIndex) -> io::Result<()> {
+        let start = self.resolve_pos(page);
+        unsafe { self.memory.free(start, self.page_size as usize) }
     }
 
     /// Get mutable pointer access to a given page.
@@ -204,6 +217,19 @@ impl VirtualMemory {
         let mem = map_options.map_anon()?;
 
         Ok(Self { mem })
+    }
+
+    /// # Safety
+    /// The caller must ensure that no reads are still held to this memory region
+    /// and that no subsequent reads take place until memory is written again.
+    ///
+    /// This is because from this point on, the bytes in this region are considered
+    /// uninitialized.
+    pub(super) unsafe fn free(&self, start: usize, len: usize) -> io::Result<()> {
+        use memmap2::UncheckedAdvice;
+
+        self.mem
+            .unchecked_advise_range(UncheckedAdvice::Free, start, len)
     }
 
     fn len(&self) -> usize {
