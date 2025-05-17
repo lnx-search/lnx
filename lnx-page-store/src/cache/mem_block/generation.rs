@@ -36,6 +36,32 @@ pub(super) struct GenerationHandler {
     shared_state: Arc<SharedState>,
 }
 
+impl Default for GenerationHandler {
+    fn default() -> Self {
+        let shared_state = Arc::new(SharedState {
+            oldest_alive_ticket: AtomicU64::new(0),
+            generation: Mutex::new(GenerationState {
+                next_generation_id: 0,
+                active_generations: std::ptr::null_mut(),
+            }),
+        });
+
+        // This entry is immediately replaced, always.
+        let base_entry = GenerationEntry {
+            generation_id: 0,
+            shared_state: shared_state.clone(),
+            next: std::ptr::null_mut(),
+            prev: std::ptr::null_mut(),
+        };
+
+        Self {
+            ticket_counter: AtomicU64::new(0),
+            active_generation: ArcSwap::from_pointee(base_entry),
+            shared_state,
+        }
+    }
+}
+
 impl GenerationHandler {
     /// Returns the oldest alive ticket still in use.
     ///
@@ -138,6 +164,9 @@ impl GenerationState {
         generation_id
     }
 }
+
+unsafe impl Send for GenerationState {}
+unsafe impl Sync for GenerationState {}
 
 /// A doubly-linked list of active generations.
 struct GenerationEntry {
