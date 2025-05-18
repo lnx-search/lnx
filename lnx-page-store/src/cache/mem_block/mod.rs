@@ -2,6 +2,8 @@ mod flags;
 mod prepared;
 mod raw;
 mod state;
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests;
 mod ticket;
 
 use std::io;
@@ -42,7 +44,7 @@ impl VirtualMemoryBlock {
         let uid = BLOCK_UID_GENERATOR.fetch_add(1, Ordering::Relaxed);
 
         let mut num_pages = size_bytes / page_size as usize;
-        if num_pages % page_size as usize != 0 {
+        if size_bytes % page_size as usize != 0 {
             num_pages += 1;
         }
 
@@ -130,7 +132,7 @@ impl VirtualMemoryBlock {
     pub fn try_dirty_page(
         &self,
         target: PageOrRetry,
-    ) -> Result<PageFreePermit, TryEvictError> {
+    ) -> Result<PageFreePermit, PrepareEvictError> {
         let permit = self.get_or_reserve_free_permit(target);
 
         assert_eq!(
@@ -160,7 +162,7 @@ impl VirtualMemoryBlock {
     pub fn try_mark_for_revertible_eviction(
         &self,
         target: PageOrRetry,
-    ) -> Result<PageFreePermit, TryEvictError> {
+    ) -> Result<PageFreePermit, PrepareEvictError> {
         let permit = self.get_or_reserve_free_permit(target);
 
         assert_eq!(
@@ -182,27 +184,60 @@ impl VirtualMemoryBlock {
         Ok(permit)
     }
 
+    /// Write the provided set of bytes to the target page specified by the [PageFreePermit].
+    ///
+    /// This operation is technically infallible as it is just a memcpy under the hood and atomic
+    /// flag change.
+    ///
+    /// This method can panic if the permit UID does not match with current memory block
+    /// and if the data length + offset goes beyond the boundaries of the page memory.
+    pub fn write_page(&self, permit: PageWritePermit, data: &[u8], offset: usize) {
+        assert_eq!(
+            permit.uid, self.uid,
+            "uid of permit does not match uid of memory block, this likely means there is a bug",
+        );
+
+        let state = self.state_at(permit.page);
+        let mut page_mem = self.inner.get_mut_page(permit.page);
+
+        assert!(
+            (data.len() + offset) < page_mem.len(),
+            "data len + offset is attempting to write beyond the bounds of the page memory"
+        );
+
+        unsafe {
+            let uninit_mem = page_mem.access_uninit();
+
+            let mem_ptr = uninit_mem.as_mut_ptr().add(offset);
+
+            std::ptr::copy_nonoverlapping(data.as_ptr(), mem_ptr as *mut u8, data.len());
+        }
+
+        state.mark_allocated(&permit.page_lock_guard, permit.ticket_id);
+    }
+
     /// Attempt to get access to a page for writing and obtain a guard to allow
     /// writing to the page at a later point in time.
     ///
-    /// This call can return a [TryWriteError] in the event the page is already allocated
+    /// This call can return a [PrepareWriteError] in the event the page is already allocated
     /// or the page lock could not be acquired.
     pub fn try_prepare_for_write(
         self: &Arc<Self>,
         page: PageIndex,
-    ) -> Result<PageWritePermit, TryWriteError> {
+    ) -> Result<PageWritePermit, PrepareWriteError> {
         let state = self.state_at(page);
         let flags = state.flags();
 
         if flags.is_allocated() && !flags.is_marked_for_eviction() {
-            return Err(TryWriteError::AlreadyAllocated);
+            return Err(PrepareWriteError::AlreadyAllocated);
         }
 
-        let page_lock_guard = state.try_acquire_lock().ok_or(TryWriteError::Locked)?;
+        let page_lock_guard =
+            state.try_acquire_lock().ok_or(PrepareWriteError::Locked)?;
 
         let flags = state.flags();
         if flags.is_allocated() && !flags.is_marked_for_eviction() {
-            return Err(TryWriteError::AlreadyAllocated);
+            return Err(PrepareWriteError::AlreadyAllocated);
         }
 
         let ticket_id = self.ticket_machine.increment_ticket_id();
@@ -211,7 +246,7 @@ impl VirtualMemoryBlock {
         // revert the eviction and say the page is already allocated.
         if flags.is_allocated() && flags.is_marked_for_eviction() {
             state.mark_allocated(&page_lock_guard, ticket_id);
-            return Err(TryWriteError::AlreadyAllocated);
+            return Err(PrepareWriteError::AlreadyAllocated);
         }
 
         Ok(PageWritePermit {
@@ -248,15 +283,15 @@ impl VirtualMemoryBlock {
     fn try_lock_and_check_for_eviction(
         &self,
         permit: &PageFreePermit,
-    ) -> Result<PageWriteLockGuard, TryEvictError> {
+    ) -> Result<PageWriteLockGuard, PrepareEvictError> {
         let state = self.state_at(permit.page);
 
         if let Some(guard) = state.try_acquire_lock() {
             let flags = state.flags();
             if flags.is_free() {
-                Err(TryEvictError::AlreadyFree)
+                Err(PrepareEvictError::AlreadyFree)
             } else if flags.is_stale(permit.ticket_id) {
-                Err(TryEvictError::OperationStale)
+                Err(PrepareEvictError::OperationStale)
             } else {
                 Ok(guard)
             }
@@ -265,16 +300,21 @@ impl VirtualMemoryBlock {
 
             if flags.is_stale(permit.ticket_id) {
                 // The operation has been superseded.
-                Err(TryEvictError::OperationStale)
+                Err(PrepareEvictError::OperationStale)
             } else {
                 // We do not implement Copy or Clone in order to prevent misuse.
-                Err(TryEvictError::PageLocked(EvictRetry(PageFreePermit {
+                Err(PrepareEvictError::PageLocked(EvictRetry(PageFreePermit {
                     uid: permit.uid,
                     ticket_id: permit.ticket_id,
                     page: permit.page,
                 })))
             }
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn get_page_flags(&self, index: PageIndex) -> flags::PageFlags {
+        self.state_at(index).flags()
     }
 
     fn state_at(&self, index: PageIndex) -> &state::PageStateEntry {
@@ -320,7 +360,7 @@ pub enum TryFreeError {
 
 #[derive(Debug, thiserror::Error)]
 /// The system could not schedule a page eviction due to a given reason.
-pub enum TryEvictError {
+pub enum PrepareEvictError {
     #[error("page locked")]
     /// The page is currently locked and cannot be marked.
     ///
@@ -350,7 +390,7 @@ pub enum PageOrRetry {
 
 #[derive(Debug, thiserror::Error)]
 /// An error preventing the block from issuing a [PageWritePermit].
-pub enum TryWriteError {
+pub enum PrepareWriteError {
     #[error("page locked")]
     /// The page is currently locked by another task.
     Locked,

@@ -125,6 +125,11 @@ impl RawMutPagePtr {
     pub(super) fn pages_spanned(&self) -> usize {
         self.span.pages_spanned()
     }
+
+    /// Returns the length of the page in bytes.
+    pub(super) fn len(&self) -> usize {
+        self.span.len
+    }
 }
 
 /// A raw pointer to the given page memory.
