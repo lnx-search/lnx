@@ -16,6 +16,21 @@ provides a few unique features:
 - Atomic bulk operations
 - Minimal write amplification
 
+## Development
+
+#### Running Miri tests
+
+```shell
+cargo +nightly miri nextest run -p lnx-page-store --all-features
+```
+
+#### Running Base tests
+
+Remove the `test-huge-pages` feature if your OS does not support huge pages (or have it enabled.)
+```shell
+cargo +nightly nextest run -p lnx-page-store --features test-huge-pages
+```
+
 ## Page Tagging
 
 As well as the data stored in the pages themselves, the system allows the user to store upto `32` bytes worth of
@@ -64,8 +79,8 @@ Of that specified size, some bytes are reserved:
 - Bytes `2..8` reserved.
 
 #### Footer
-- `v0x02` **only**, Bytes `-40..` are reserved for encryption metadata.
-
+- Bytes `-96..` are reserved for metadata.
+  * `v0x02` **only**, Bytes `-40..` are used within this reversed space.
 
 #### Versions
 
@@ -82,19 +97,3 @@ algorithm.
 
 Unlike V1, this system is encrypted and has additional data integrity checks but at the cost of having an additional
 `40` bytes overhead per page for reserved space.
-
-### 
-
-
-### TODO List:
-
-- page allocator system.
-- Think about how to do disk layout
-- Disk handlers
-
-What do we need in the page table?
-
-- Is allocated flags (bool)
-- PageId
-
-We should be eating our dog food, use the page system to store the header
