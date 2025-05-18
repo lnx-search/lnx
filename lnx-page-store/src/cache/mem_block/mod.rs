@@ -1,19 +1,18 @@
-use std::io;
-use std::ops::Range;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use crate::cache::mem_block::prepared::PreparedRead;
-use crate::cache::mem_block::state::PageWriteLockGuard;
-use crate::cache::mem_block::ticket::GenerationTicketMachine;
-
 mod flags;
 mod prepared;
 mod raw;
 mod state;
 mod ticket;
 
+use std::io;
+use std::ops::Range;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+pub use self::prepared::PreparedRead;
 pub use self::raw::{PageIndex, PageSize};
+use self::state::PageWriteLockGuard;
+use self::ticket::GenerationTicketMachine;
 
 static BLOCK_UID_GENERATOR: AtomicU64 = AtomicU64::new(0);
 
@@ -185,7 +184,7 @@ impl VirtualMemoryBlock {
 
     /// Attempt to get access to a page for writing and obtain a guard to allow
     /// writing to the page at a later point in time.
-    /// 
+    ///
     /// This call can return a [TryWriteError] in the event the page is already allocated
     /// or the page lock could not be acquired.
     pub fn try_prepare_for_write(
