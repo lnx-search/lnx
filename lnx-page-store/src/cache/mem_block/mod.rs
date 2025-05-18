@@ -95,9 +95,7 @@ impl VirtualMemoryBlock {
             return Err(TryFreeError::InUse);
         }
 
-        let Some(guard) = state.try_acquire_lock() else {
-            return Err(TryFreeError::Locked);
-        };
+        let guard = state.try_acquire_lock().ok_or(TryFreeError::Locked)?;
 
         // Acquire the lock and check flags again in case they changed. Now we have the lock
         // we can be sure they won't change as long as we hold the guard.
@@ -187,11 +185,42 @@ impl VirtualMemoryBlock {
 
     /// Attempt to get access to a page for writing and obtain a guard to allow
     /// writing to the page at a later point in time.
-    pub fn try_get_write_permit(
+    /// 
+    /// This call can return a [TryWriteError] in the event the page is already allocated
+    /// or the page lock could not be acquired.
+    pub fn try_prepare_for_write(
         self: &Arc<Self>,
         page: PageIndex,
     ) -> Result<PageWritePermit, TryWriteError> {
-        todo!()
+        let state = self.state_at(page);
+        let flags = state.flags();
+
+        if flags.is_allocated() && !flags.is_marked_for_eviction() {
+            return Err(TryWriteError::AlreadyAllocated);
+        }
+
+        let page_lock_guard = state.try_acquire_lock().ok_or(TryWriteError::Locked)?;
+
+        let flags = state.flags();
+        if flags.is_allocated() && !flags.is_marked_for_eviction() {
+            return Err(TryWriteError::AlreadyAllocated);
+        }
+
+        let ticket_id = self.ticket_machine.increment_ticket_id();
+
+        // If the page is allocated but marked for eviction, we can simply
+        // revert the eviction and say the page is already allocated.
+        if flags.is_allocated() && flags.is_marked_for_eviction() {
+            state.mark_allocated(&page_lock_guard, ticket_id);
+            return Err(TryWriteError::AlreadyAllocated);
+        }
+
+        Ok(PageWritePermit {
+            uid: self.uid,
+            page,
+            ticket_id,
+            page_lock_guard,
+        })
     }
 
     /// Prepare to read the given range of pages.
@@ -349,10 +378,13 @@ pub struct PageFreePermit {
 ///
 /// This permit allows an operation to reserve its spot and prevent other tasks
 /// from reforming needless additional IO or frees of the page.
-pub struct PageWritePermit {
+///
+/// Unlike the rest of the operations, this permit holds onto the acquired page lock.
+pub struct PageWritePermit<'guard> {
     uid: u64,
     page: PageIndex,
     ticket_id: u64,
+    page_lock_guard: PageWriteLockGuard<'guard>,
 }
 
 fn flags_tagged_with_ticket(
