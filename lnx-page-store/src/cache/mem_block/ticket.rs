@@ -150,11 +150,16 @@ impl GenerationState {
     ) -> Arc<GenerationEntry> {
         let mut entry = Arc::new(entry);
 
-        let entry_ptr = Arc::get_mut(&mut entry).unwrap() as *mut GenerationEntry;
-        if self.active_generations.is_null() {
-            self.active_generations = entry_ptr;
+        let entry_ptr = Arc::get_mut(&mut entry).unwrap();
+        
+        // Connect the new head of the list with the old head.
+        if !self.active_generations.is_null() {
+            entry_ptr.next = self.active_generations;
+            unsafe { (*self.active_generations).prev = entry_ptr as *mut GenerationEntry };
         }
-
+        
+        self.active_generations = entry_ptr as *mut GenerationEntry;
+        
         entry
     }
 
@@ -176,17 +181,15 @@ struct GenerationEntry {
     prev: *mut GenerationEntry,
 }
 
-impl GenerationEntry {
-    /// Removes `self` from the chain of active generations and updates
-    /// the oldest alive generation if applicable.
-    fn remove_generation(&mut self) {
+impl Drop for GenerationEntry {
+    fn drop(&mut self) {        
         // We have to acquire the lock guard first in order to
         // safely mutate the other generation entries.
         //
         // Once we have this lock, we can be assured that no other
         // concurrent accesses are going on, which also ensures that it
         // is safe to read out `next` and `prev` pointers.
-        let _guard = self.shared_state.generation.lock();
+        let guard = self.shared_state.generation.lock();
 
         if !self.next.is_null() {
             unsafe { (*self.next).prev = self.prev };
@@ -206,14 +209,113 @@ impl GenerationEntry {
 
         self.next = std::ptr::null_mut();
         self.prev = std::ptr::null_mut();
-    }
-}
 
-impl Drop for GenerationEntry {
-    fn drop(&mut self) {
-        self.remove_generation();
+        drop(guard);
     }
 }
 
 unsafe impl Send for GenerationEntry {}
 unsafe impl Sync for GenerationEntry {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_ticket_machine_increment() {
+        let machine = GenerationTicketMachine::default();
+        
+        assert_eq!(machine.increment_ticket_id(), 0);
+        assert_eq!(machine.increment_ticket_id(), 1);
+        assert_eq!(machine.increment_ticket_id(), 2);
+
+        assert_eq!(machine.oldest_alive_ticket(), 0);    
+        
+        for _ in 0..256 {
+            machine.increment_ticket_id();
+        }
+        assert_eq!(machine.oldest_alive_ticket(), 256);
+        
+        for _ in 0..256 {
+            machine.increment_ticket_id();
+        }
+        assert_eq!(machine.oldest_alive_ticket(), 512);
+    }
+    
+    #[test]
+    fn test_threaded_ticket_machine_increment() {
+        let machine = Arc::new(GenerationTicketMachine::default());
+        
+        let handle1 = std::thread::spawn({
+            let machine = machine.clone();
+            move || {
+                for _ in 0..1024 {
+                    machine.increment_ticket_id();
+                }
+            }
+        });
+
+        let handle2 = std::thread::spawn({
+            let machine = machine.clone();
+            move || {
+                for _ in 0..1024 {
+                    machine.increment_ticket_id();
+                }
+            }
+        });
+        
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+        
+        assert_eq!(machine.oldest_alive_ticket(), 1792);
+    }
+    
+    #[test]
+    fn test_ticket_guard_prevent_oldest_advancing() {
+        let machine = GenerationTicketMachine::default();
+        assert_eq!(machine.increment_ticket_id(), 0);
+        
+        let guard = machine.get_next_ticket();
+        
+        for _ in 0..256 {
+            machine.increment_ticket_id();
+        }
+        assert_eq!(machine.oldest_alive_ticket(), 0);
+        
+        drop(guard);
+        assert_eq!(machine.oldest_alive_ticket(), 256);
+    }
+    
+    #[test]
+    fn test_threaded_ticket_guard_prevent_oldest_advancing() {
+        let machine = Arc::new(GenerationTicketMachine::default());
+        assert_eq!(machine.increment_ticket_id(), 0);
+
+        let guard = machine.get_next_ticket();
+
+        let handle1 = std::thread::spawn({
+            let machine = machine.clone();
+            move || {
+                for _ in 0..1024 {
+                    machine.increment_ticket_id();
+                }
+            }
+        });
+
+        let handle2 = std::thread::spawn({
+            let machine = machine.clone();
+            move || {
+                for _ in 0..1024 {
+                    machine.increment_ticket_id();
+                }
+            }
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
+        assert_eq!(machine.oldest_alive_ticket(), 0);
+
+        drop(guard);
+        assert_eq!(machine.oldest_alive_ticket(), 2048);
+    }
+}

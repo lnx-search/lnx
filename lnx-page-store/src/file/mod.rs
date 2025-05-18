@@ -1,7 +1,7 @@
 mod allocation_table;
 mod integrity;
 mod log;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 
 /// The total number of pages each page file holds onto.

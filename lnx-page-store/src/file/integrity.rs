@@ -145,7 +145,7 @@ fn hash_sha256(data: &[u8]) -> sha2::digest::Output<Sha256> {
     digest.finalize()
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
 

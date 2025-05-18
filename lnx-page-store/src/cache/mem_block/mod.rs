@@ -3,11 +3,11 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::cache::mem_block::generation::GenerationTicketMachine;
+use crate::cache::mem_block::ticket::GenerationTicketMachine;
 use crate::cache::mem_block::prepared::PreparedRead;
 
 mod flags;
-mod generation;
+mod ticket;
 mod prepared;
 mod raw;
 mod state;

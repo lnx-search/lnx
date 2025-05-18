@@ -29,3 +29,5 @@ rstest = { workspace = true }
 [features]
 # Enables huge page allocation tests within the cache.
 test-huge-pages = []
+# Enable miri tests (and disables the rest.)
+test-miri = []

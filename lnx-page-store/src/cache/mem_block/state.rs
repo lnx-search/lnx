@@ -47,20 +47,4 @@ impl PageStateEntry {
     pub(super) fn try_acquire_lock(&self) -> Option<PageWriteLockGuard> {
         self.lock.try_lock()
     }
-
-    /// Attempt to acquire the lock without blocking returning a static
-    /// reference to the guard.
-    ///
-    /// # Safety
-    /// It is the responsibility of the caller to ensure the returned guard
-    /// does not live beyond the life of `self`.
-    pub(super) unsafe fn try_acquire_static_lock(
-        &self,
-    ) -> Option<PageWriteLockGuard<'static>> {
-        self.try_acquire_lock().map(|guard| unsafe {
-            std::mem::transmute::<PageWriteLockGuard<'_>, PageWriteLockGuard<'static>>(
-                guard,
-            )
-        })
-    }
 }

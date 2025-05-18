@@ -1,7 +1,7 @@
 mod builder;
 mod mem;
 mod metadata;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 mod version;
 mod view;

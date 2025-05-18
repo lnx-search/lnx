@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::generation::TicketGuard;
+use super::ticket::TicketGuard;
 use super::{PageIndex, VirtualMemoryBlock};
 
 /// A prepared read allows for reading multiple pages while incrementally
