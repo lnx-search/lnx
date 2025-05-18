@@ -8,7 +8,6 @@ mod ticket;
 
 use std::io;
 use std::ops::Range;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use self::prepared::PreparedRead;
@@ -32,21 +31,12 @@ pub struct VirtualMemoryBlock {
 }
 
 impl VirtualMemoryBlock {
-    /// Allocate a new [VirtualMemoryBlock] with capacity for at least `size_bytes`
-    /// and allocate pages with the target [PageSize].
+    /// Allocate a new [VirtualMemoryBlock] with `num_pages` pages with the target [PageSize].
     ///
-    /// This will align the `size_bytes` _up_ to the nearest page size. I.e. 128 bytes
-    /// in size will be rounded up to a single 8KB page if [PageSize::Standard].
-    ///
-    /// May error if there is not enough virtual memory capacity or huge pages are targetted
+    /// May error if there is not enough virtual memory capacity or huge pages are targeted
     /// but are not enabled in the system.
-    pub fn allocate(size_bytes: usize, page_size: PageSize) -> io::Result<Self> {
+    pub fn allocate(num_pages: usize, page_size: PageSize) -> io::Result<Self> {
         let uid = BLOCK_UID_GENERATOR.fetch_add(1, Ordering::Relaxed);
-
-        let mut num_pages = size_bytes / page_size as usize;
-        if size_bytes % page_size as usize != 0 {
-            num_pages += 1;
-        }
 
         let mut state = Vec::with_capacity(num_pages);
         for _ in 0..num_pages {
@@ -132,7 +122,7 @@ impl VirtualMemoryBlock {
     pub fn try_dirty_page(
         &self,
         target: PageOrRetry,
-    ) -> Result<PageFreePermit, PrepareEvictError> {
+    ) -> Result<PageFreePermit, PrepareDirtyEvictionError> {
         let permit = self.get_or_reserve_free_permit(target);
 
         assert_eq!(
@@ -140,7 +130,33 @@ impl VirtualMemoryBlock {
             "uid of permit does not match uid of memory block, this likely means there is a bug",
         );
 
-        let guard = self.try_lock_and_check_for_eviction(&permit)?;
+        let state = self.state_at(permit.page);
+
+        let guard = match state.try_acquire_lock() {
+            Some(guard) => guard,
+            None => {
+                let flags = state.flags();
+
+                // We do not return an early error if the page dirty because
+                // we have to be sure the ordering is correct, and we cannot do
+                // that unless we have the page lock.
+                return if flags.is_stale(permit.ticket_id) {
+                    // The operation has been superseded.
+                    Err(PrepareDirtyEvictionError::OperationStale)
+                } else {
+                    Err(PrepareDirtyEvictionError::PageLocked(EvictRetry(permit)))
+                };
+            },
+        };
+
+        let flags = state.flags();
+        if flags.is_free() {
+            return Err(PrepareDirtyEvictionError::AlreadyFree);
+        } else if flags.is_dirty() {
+            return Err(PrepareDirtyEvictionError::AlreadyDirty);
+        } else if flags.is_stale(permit.ticket_id) {
+            return Err(PrepareDirtyEvictionError::OperationStale);
+        }
 
         // We must always issue a new permit once we have the guard because
         // we may be performing a retry on an operation, which we know logically
@@ -162,7 +178,7 @@ impl VirtualMemoryBlock {
     pub fn try_mark_for_revertible_eviction(
         &self,
         target: PageOrRetry,
-    ) -> Result<PageFreePermit, PrepareEvictError> {
+    ) -> Result<PageFreePermit, PrepareRevertibleEvictionError> {
         let permit = self.get_or_reserve_free_permit(target);
 
         assert_eq!(
@@ -170,7 +186,35 @@ impl VirtualMemoryBlock {
             "uid of permit does not match uid of memory block, this likely means there is a bug",
         );
 
-        let guard = self.try_lock_and_check_for_eviction(&permit)?;
+        let state = self.state_at(permit.page);
+
+        let guard = match state.try_acquire_lock() {
+            Some(guard) => guard,
+            None => {
+                let flags = state.flags();
+
+                // We do not return an early error if the page dirty because
+                // we have to be sure the ordering is correct, and we cannot do
+                // that unless we have the page lock.
+                return if flags.is_stale(permit.ticket_id) {
+                    // The operation has been superseded.
+                    Err(PrepareRevertibleEvictionError::OperationStale)
+                } else {
+                    Err(PrepareRevertibleEvictionError::PageLocked(EvictRetry(
+                        permit,
+                    )))
+                };
+            },
+        };
+
+        let flags = state.flags();
+        if flags.is_free() {
+            return Err(PrepareRevertibleEvictionError::AlreadyFree);
+        } else if flags.is_dirty() {
+            return Err(PrepareRevertibleEvictionError::Dirty);
+        } else if flags.is_stale(permit.ticket_id) {
+            return Err(PrepareRevertibleEvictionError::OperationStale);
+        }
 
         // We must always issue a new permit once we have the guard because
         // we may be performing a retry on an operation, which we know logically
@@ -201,9 +245,14 @@ impl VirtualMemoryBlock {
         let mut page_mem = self.inner.get_mut_page(permit.page);
 
         assert!(
-            (data.len() + offset) < page_mem.len(),
+            (data.len() + offset) <= page_mem.len(),
             "data len + offset is attempting to write beyond the bounds of the page memory"
         );
+
+        if data.is_empty() {
+            state.mark_allocated(&permit.page_lock_guard, permit.ticket_id);
+            return;
+        }
 
         unsafe {
             let uninit_mem = page_mem.access_uninit();
@@ -222,7 +271,7 @@ impl VirtualMemoryBlock {
     /// This call can return a [PrepareWriteError] in the event the page is already allocated
     /// or the page lock could not be acquired.
     pub fn try_prepare_for_write(
-        self: &Arc<Self>,
+        &self,
         page: PageIndex,
     ) -> Result<PageWritePermit, PrepareWriteError> {
         let state = self.state_at(page);
@@ -261,7 +310,7 @@ impl VirtualMemoryBlock {
     ///
     /// This will allow the caller to select pages and write any pages that need to be
     /// allocated before the read is safe.
-    pub fn prepare_read(self: &Arc<Self>, range: Range<PageIndex>) -> PreparedRead {
+    pub fn prepare_read(&self, range: Range<PageIndex>) -> PreparedRead {
         assert!(
             range.start.0 < self.state.len()
                 && range.end.0 <= self.state.len()
@@ -270,50 +319,23 @@ impl VirtualMemoryBlock {
         );
 
         let ticket_guard = self.ticket_machine.get_next_ticket();
-        PreparedRead::for_page_range(ticket_guard, self.clone(), range)
+        PreparedRead::for_page_range(ticket_guard, self, range)
     }
 
-    /// Attempts to acquire the page lock and validates that the provided
-    /// [PageFreePermit] has not become stale or redundant.
-    ///
-    /// A [PageFreePermit] is considered stale/redundant if:
-    /// - The lock was acquired and the page is already free.
-    /// - The lock was not acquired and the page flags contain a ticket ID that is newer than
-    ///   the ticket ID contained by the permit.
-    fn try_lock_and_check_for_eviction(
-        &self,
-        permit: &PageFreePermit,
-    ) -> Result<PageWriteLockGuard, PrepareEvictError> {
-        let state = self.state_at(permit.page);
+    #[cfg(test)]
+    fn for_test_get_raw_page_ptr(&self, index: PageIndex) -> raw::RawMutPagePtr {
+        self.inner.get_mut_page(index)
+    }
 
-        if let Some(guard) = state.try_acquire_lock() {
-            let flags = state.flags();
-            if flags.is_free() {
-                Err(PrepareEvictError::AlreadyFree)
-            } else if flags.is_stale(permit.ticket_id) {
-                Err(PrepareEvictError::OperationStale)
-            } else {
-                Ok(guard)
-            }
-        } else {
-            let flags = state.flags();
-
-            if flags.is_stale(permit.ticket_id) {
-                // The operation has been superseded.
-                Err(PrepareEvictError::OperationStale)
-            } else {
-                // We do not implement Copy or Clone in order to prevent misuse.
-                Err(PrepareEvictError::PageLocked(EvictRetry(PageFreePermit {
-                    uid: permit.uid,
-                    ticket_id: permit.ticket_id,
-                    page: permit.page,
-                })))
-            }
+    #[cfg(test)]
+    fn for_test_advance_ticket_counter(&self, by: usize) {
+        for _ in 0..by {
+            self.ticket_machine.increment_ticket_id();
         }
     }
 
     #[cfg(test)]
-    pub(super) fn get_page_flags(&self, index: PageIndex) -> flags::PageFlags {
+    fn for_test_get_page_flags(&self, index: PageIndex) -> flags::PageFlags {
         self.state_at(index).flags()
     }
 
@@ -360,7 +382,7 @@ pub enum TryFreeError {
 
 #[derive(Debug, thiserror::Error)]
 /// The system could not schedule a page eviction due to a given reason.
-pub enum PrepareEvictError {
+pub enum PrepareDirtyEvictionError {
     #[error("page locked")]
     /// The page is currently locked and cannot be marked.
     ///
@@ -373,6 +395,29 @@ pub enum PrepareEvictError {
     #[error("page already free")]
     /// The page is already free.
     AlreadyFree,
+    #[error("page already dirty")]
+    /// The page is already marked as dirty.
+    AlreadyDirty,
+}
+
+#[derive(Debug, thiserror::Error)]
+/// The system could not schedule a page eviction due to a given reason.
+pub enum PrepareRevertibleEvictionError {
+    #[error("page locked")]
+    /// The page is currently locked and cannot be marked.
+    ///
+    /// A retry value is provided if the operation wants to retry.
+    PageLocked(EvictRetry),
+    #[error("operation is stale")]
+    /// The operation attempting to be applied is stale and newer operations
+    /// have since superseded it.
+    OperationStale,
+    #[error("page already free")]
+    /// The page is already free.
+    AlreadyFree,
+    #[error("page dirty")]
+    /// The page is dirty and cannot be marked as revertible.
+    Dirty,
 }
 
 #[derive(Debug)]

@@ -6,17 +6,17 @@ use super::{PageIndex, VirtualMemoryBlock};
 
 /// A prepared read allows for reading multiple pages while incrementally
 /// filling any gaps the span of memory may have with unallocated data.
-pub struct PreparedRead {
+pub struct PreparedRead<'block> {
     guard: TicketGuard,
-    parent: Arc<VirtualMemoryBlock>,
+    parent: &'block VirtualMemoryBlock,
     page_range: Range<PageIndex>,
 }
 
-impl PreparedRead {
+impl<'block> PreparedRead<'block> {
     /// Create a new [PageIndex] for the given range of pages.
     pub(super) fn for_page_range(
         guard: TicketGuard,
-        parent: Arc<VirtualMemoryBlock>,
+        parent: &'block VirtualMemoryBlock,
         page_range: Range<PageIndex>,
     ) -> Self {
         Self {
