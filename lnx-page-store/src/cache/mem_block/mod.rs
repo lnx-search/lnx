@@ -3,14 +3,14 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::cache::mem_block::ticket::GenerationTicketMachine;
 use crate::cache::mem_block::prepared::PreparedRead;
+use crate::cache::mem_block::ticket::GenerationTicketMachine;
 
 mod flags;
-mod ticket;
 mod prepared;
 mod raw;
 mod state;
+mod ticket;
 
 pub use self::raw::{PageIndex, PageSize};
 

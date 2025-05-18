@@ -151,15 +151,17 @@ impl GenerationState {
         let mut entry = Arc::new(entry);
 
         let entry_ptr = Arc::get_mut(&mut entry).unwrap();
-        
+
         // Connect the new head of the list with the old head.
         if !self.active_generations.is_null() {
             entry_ptr.next = self.active_generations;
-            unsafe { (*self.active_generations).prev = entry_ptr as *mut GenerationEntry };
+            unsafe {
+                (*self.active_generations).prev = entry_ptr as *mut GenerationEntry
+            };
         }
-        
+
         self.active_generations = entry_ptr as *mut GenerationEntry;
-        
+
         entry
     }
 
@@ -182,7 +184,7 @@ struct GenerationEntry {
 }
 
 impl Drop for GenerationEntry {
-    fn drop(&mut self) {        
+    fn drop(&mut self) {
         // We have to acquire the lock guard first in order to
         // safely mutate the other generation entries.
         //
@@ -220,32 +222,32 @@ unsafe impl Sync for GenerationEntry {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_ticket_machine_increment() {
         let machine = GenerationTicketMachine::default();
-        
+
         assert_eq!(machine.increment_ticket_id(), 0);
         assert_eq!(machine.increment_ticket_id(), 1);
         assert_eq!(machine.increment_ticket_id(), 2);
 
-        assert_eq!(machine.oldest_alive_ticket(), 0);    
-        
+        assert_eq!(machine.oldest_alive_ticket(), 0);
+
         for _ in 0..256 {
             machine.increment_ticket_id();
         }
         assert_eq!(machine.oldest_alive_ticket(), 256);
-        
+
         for _ in 0..256 {
             machine.increment_ticket_id();
         }
         assert_eq!(machine.oldest_alive_ticket(), 512);
     }
-    
+
     #[test]
     fn test_threaded_ticket_machine_increment() {
         let machine = Arc::new(GenerationTicketMachine::default());
-        
+
         let handle1 = std::thread::spawn({
             let machine = machine.clone();
             move || {
@@ -263,29 +265,29 @@ mod tests {
                 }
             }
         });
-        
+
         handle1.join().unwrap();
         handle2.join().unwrap();
-        
+
         assert_eq!(machine.oldest_alive_ticket(), 1792);
     }
-    
+
     #[test]
     fn test_ticket_guard_prevent_oldest_advancing() {
         let machine = GenerationTicketMachine::default();
         assert_eq!(machine.increment_ticket_id(), 0);
-        
+
         let guard = machine.get_next_ticket();
-        
+
         for _ in 0..256 {
             machine.increment_ticket_id();
         }
         assert_eq!(machine.oldest_alive_ticket(), 0);
-        
+
         drop(guard);
         assert_eq!(machine.oldest_alive_ticket(), 256);
     }
-    
+
     #[test]
     fn test_threaded_ticket_guard_prevent_oldest_advancing() {
         let machine = Arc::new(GenerationTicketMachine::default());
