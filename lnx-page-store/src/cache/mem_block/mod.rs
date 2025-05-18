@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::cache::mem_block::prepared::PreparedRead;
+use crate::cache::mem_block::state::PageWriteLockGuard;
 use crate::cache::mem_block::ticket::GenerationTicketMachine;
 
 mod flags;
@@ -59,6 +60,12 @@ impl VirtualMemoryBlock {
             state: state.into_boxed_slice(),
             ticket_machine: GenerationTicketMachine::default(),
         })
+    }
+
+    #[inline]
+    /// Returns the number of pages in this block.
+    pub fn num_pages(&self) -> usize {
+        self.state.len()
     }
 
     /// Attempt to free the target page.
@@ -120,34 +127,71 @@ impl VirtualMemoryBlock {
 
     /// Attempt to mark the page as dirty and get back a [PageFreePermit].
     ///
-    /// This call may fail if it cannot acquire the page lock.
+    /// This call may fail if it cannot acquire the page lock or the operation
+    /// has become stale, the event the lock cannot be acquired, a retry is provided
+    /// within the error so operation ordering can be maintained.
     pub fn try_dirty_page(
         &self,
-        page: PageIndex,
-    ) -> Result<PageFreePermit, PageLockedError> {
-        let state = self.state_at(page);
-        let Some(guard) = state.try_acquire_lock() else {
-            return Err(PageLockedError);
-        };
-        let permit = self.make_free_permit(page);
+        target: PageOrRetry,
+    ) -> Result<PageFreePermit, TryEvictError> {
+        let permit = self.get_or_reserve_free_permit(target);
+
+        assert_eq!(
+            permit.uid, self.uid,
+            "uid of permit does not match uid of memory block, this likely means there is a bug",
+        );
+
+        let guard = self.try_lock_and_check_for_eviction(&permit)?;
+
+        // We must always issue a new permit once we have the guard because
+        // we may be performing a retry on an operation, which we know logically
+        // is valid in terms of order of operations, but new readers may be active
+        // so we need to get a new ticket ID.
+        let permit = self.issue_new_free_permit(permit.page);
+
+        let state = self.state_at(permit.page);
         state.mark_dirty(&guard, permit.ticket_id);
+
         Ok(permit)
     }
 
     /// Attempt to mark the page for eviction and get back a [PageFreePermit].
     ///
-    /// This call may fail if it cannot acquire the page lock.
+    /// This call may fail if it cannot acquire the page lock or the operation
+    /// has become stale, the event the lock cannot be acquired, a retry is provided
+    /// within the error so operation ordering can be maintained.
     pub fn try_mark_for_revertible_eviction(
         &self,
-        page: PageIndex,
-    ) -> Result<PageFreePermit, PageLockedError> {
-        let state = self.state_at(page);
-        let Some(guard) = state.try_acquire_lock() else {
-            return Err(PageLockedError);
-        };
-        let permit = self.make_free_permit(page);
+        target: PageOrRetry,
+    ) -> Result<PageFreePermit, TryEvictError> {
+        let permit = self.get_or_reserve_free_permit(target);
+
+        assert_eq!(
+            permit.uid, self.uid,
+            "uid of permit does not match uid of memory block, this likely means there is a bug",
+        );
+
+        let guard = self.try_lock_and_check_for_eviction(&permit)?;
+
+        // We must always issue a new permit once we have the guard because
+        // we may be performing a retry on an operation, which we know logically
+        // is valid in terms of order of operations, but new readers may be active
+        // so we need to get a new ticket ID.
+        let permit = self.issue_new_free_permit(permit.page);
+
+        let state = self.state_at(permit.page);
         state.mark_revertible_eviction_scheduled(&guard, permit.ticket_id);
+
         Ok(permit)
+    }
+
+    /// Attempt to get access to a page for writing and obtain a guard to allow
+    /// writing to the page at a later point in time.
+    pub fn try_get_write_permit(
+        self: &Arc<Self>,
+        page: PageIndex,
+    ) -> Result<PageWritePermit, TryWriteError> {
+        todo!()
     }
 
     /// Prepare to read the given range of pages.
@@ -166,11 +210,57 @@ impl VirtualMemoryBlock {
         PreparedRead::for_page_range(ticket_guard, self.clone(), range)
     }
 
+    /// Attempts to acquire the page lock and validates that the provided
+    /// [PageFreePermit] has not become stale or redundant.
+    ///
+    /// A [PageFreePermit] is considered stale/redundant if:
+    /// - The lock was acquired and the page is already free.
+    /// - The lock was not acquired and the page flags contain a ticket ID that is newer than
+    ///   the ticket ID contained by the permit.
+    fn try_lock_and_check_for_eviction(
+        &self,
+        permit: &PageFreePermit,
+    ) -> Result<PageWriteLockGuard, TryEvictError> {
+        let state = self.state_at(permit.page);
+
+        if let Some(guard) = state.try_acquire_lock() {
+            let flags = state.flags();
+            if flags.is_free() {
+                Err(TryEvictError::AlreadyFree)
+            } else if flags.is_stale(permit.ticket_id) {
+                Err(TryEvictError::OperationStale)
+            } else {
+                Ok(guard)
+            }
+        } else {
+            let flags = state.flags();
+
+            if flags.is_stale(permit.ticket_id) {
+                // The operation has been superseded.
+                Err(TryEvictError::OperationStale)
+            } else {
+                // We do not implement Copy or Clone in order to prevent misuse.
+                Err(TryEvictError::PageLocked(EvictRetry(PageFreePermit {
+                    uid: permit.uid,
+                    ticket_id: permit.ticket_id,
+                    page: permit.page,
+                })))
+            }
+        }
+    }
+
     fn state_at(&self, index: PageIndex) -> &state::PageStateEntry {
         &self.state[index.0]
     }
 
-    fn make_free_permit(&self, page: PageIndex) -> PageFreePermit {
+    fn get_or_reserve_free_permit(&self, target: PageOrRetry) -> PageFreePermit {
+        match target {
+            PageOrRetry::Retry(retry) => retry.0,
+            PageOrRetry::Page(page) => self.issue_new_free_permit(page),
+        }
+    }
+
+    fn issue_new_free_permit(&self, page: PageIndex) -> PageFreePermit {
         let ticket_id = self.ticket_machine.increment_ticket_id();
         PageFreePermit {
             uid: self.uid,
@@ -201,9 +291,45 @@ pub enum TryFreeError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the target page is currently locked")]
-/// The system could not acquire the page lock.
-pub struct PageLockedError;
+/// The system could not schedule a page eviction due to a given reason.
+pub enum TryEvictError {
+    #[error("page locked")]
+    /// The page is currently locked and cannot be marked.
+    ///
+    /// A retry value is provided if the operation wants to retry.
+    PageLocked(EvictRetry),
+    #[error("operation is stale")]
+    /// The operation attempting to be applied is stale and newer operations
+    /// have since superseded it.
+    OperationStale,
+    #[error("page already free")]
+    /// The page is already free.
+    AlreadyFree,
+}
+
+#[derive(Debug)]
+/// A snapshot of the state in order to retry an eviciton operation
+/// at a later stage without breaking ordering of events.
+pub struct EvictRetry(PageFreePermit);
+
+/// An enum selecting either a page to evict or a retry value.
+pub enum PageOrRetry {
+    /// Apply a new operation to the page with no existing retry.
+    Page(PageIndex),
+    /// Try to apply a previous attempt.
+    Retry(EvictRetry),
+}
+
+#[derive(Debug, thiserror::Error)]
+/// An error preventing the block from issuing a [PageWritePermit].
+pub enum TryWriteError {
+    #[error("page locked")]
+    /// The page is currently locked by another task.
+    Locked,
+    #[error("page already allocated")]
+    /// The page is already allocated and does not need to be written.
+    AlreadyAllocated,
+}
 
 #[derive(Debug)]
 /// A [PageFreePermit] represents a free operation that has been queued
@@ -213,6 +339,17 @@ pub struct PageLockedError;
 /// This contains a UID to the memory block that produced it, the target page
 /// and a generation ID used to check if any new operations have since invalidated the page.
 pub struct PageFreePermit {
+    uid: u64,
+    page: PageIndex,
+    ticket_id: u64,
+}
+
+#[derive(Debug)]
+/// A [PageWritePermit] represents a pending write operation to a target page.
+///
+/// This permit allows an operation to reserve its spot and prevent other tasks
+/// from reforming needless additional IO or frees of the page.
+pub struct PageWritePermit {
     uid: u64,
     page: PageIndex,
     ticket_id: u64,

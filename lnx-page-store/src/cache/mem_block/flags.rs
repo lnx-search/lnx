@@ -42,8 +42,9 @@ impl AtomicPageFlags {
         self.0.store(PAGE_FREE, Ordering::Relaxed);
     }
 
-    pub(super) fn set_allocated(&self) {
-        self.0.store(PAGE_ALLOCATED, Ordering::Relaxed);
+    pub(super) fn set_allocated(&self, ticket_id: u64) {
+        self.0
+            .store(pack_ticket_id(PAGE_ALLOCATED, ticket_id), Ordering::Relaxed);
     }
 
     pub(super) fn set_eviction(&self, ticket_id: u64) {
@@ -101,11 +102,19 @@ impl PageFlags {
 
     /// Extracts the bit packed ticket_id from the flags if applicable.
     pub fn extract_ticket_id(&self) -> Option<u64> {
-        if self.is_marked_for_eviction() {
+        if !self.is_free() {
             Some(extract_ticket_id(self.0))
         } else {
             None
         }
+    }
+
+    /// Checks if the provided ticket ID is stale and older than the ticket
+    /// ID packed within the flags. If the page is free the `is_stale` is always `false`.
+    pub fn is_stale(&self, ticket_id: u64) -> bool {
+        self.extract_ticket_id()
+            .map(|packed_ticket_id| ticket_id < packed_ticket_id)
+            .unwrap_or(false)
     }
 }
 
@@ -154,7 +163,7 @@ mod tests {
         assert!(flags.is_allocated());
         assert!(!flags.is_marked_for_eviction());
         assert!(!flags.is_dirty());
-        assert!(flags.extract_ticket_id().is_none());
+        assert_eq!(flags.extract_ticket_id(), Some(0));
 
         let flags = PageFlags(PAGE_REVERTIBLE_EVICTION_SCHEDULED);
         assert!(!flags.is_free());

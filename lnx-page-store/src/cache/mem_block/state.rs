@@ -23,8 +23,8 @@ impl PageStateEntry {
     }
 
     /// Mark the page as allocated.
-    pub(super) fn mark_allocated(&self, _guard: &PageWriteLockGuard) {
-        self.flags.set_allocated();
+    pub(super) fn mark_allocated(&self, _guard: &PageWriteLockGuard, ticket_id: u64) {
+        self.flags.set_allocated(ticket_id);
     }
 
     /// Mark the page as scheduled for eviction but able to be reverted.
