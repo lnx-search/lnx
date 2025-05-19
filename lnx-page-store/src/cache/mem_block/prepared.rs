@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, Range};
 
 use smallvec::SmallVec;
@@ -14,6 +15,16 @@ pub struct PreparedRead<'block> {
     parent: &'block VirtualMemoryBlock,
     page_range: Range<PageIndex>,
     outstanding_write_pages: PageSet,
+}
+
+impl Debug for PreparedRead<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PreparedRead(page_range={:?})",
+            self.page_range.start.0..self.page_range.end.0
+        )
+    }
 }
 
 impl<'block> PreparedRead<'block> {
@@ -50,7 +61,7 @@ impl<'block> PreparedRead<'block> {
     ///
     /// Returns an `Err(Self)` when there are outstanding writes still left to be
     /// completed.
-    pub fn try_finish(mut self) -> Result<BlockRead, Self> {
+    pub fn try_finish(mut self) -> Result<ReadResult, Self> {
         let has_outstanding_writes = self.check_outstanding_writes();
         if has_outstanding_writes {
             return Err(self);
@@ -61,9 +72,9 @@ impl<'block> PreparedRead<'block> {
         // bounds as every page has an associated state within the block.
         let ptr = unsafe { self.parent.read_pages(self.page_range.clone()) };
 
-        Ok(BlockRead {
+        Ok(ReadResult {
             ptr,
-            _guard: self.guard,
+            guard: self.guard,
         })
     }
 
@@ -85,12 +96,18 @@ pub struct OutstandingWrites;
 ///
 /// This is an owned reference because it contains a guard that prevents
 /// the pages being read from being modified or freed while this read exists.
-pub struct BlockRead {
-    _guard: TicketGuard,
+pub struct ReadResult {
+    guard: TicketGuard,
     ptr: super::raw::RawPagePtr,
 }
 
-impl Deref for BlockRead {
+impl Debug for ReadResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlockRead(num_pages={})", self.ptr.pages_spanned())
+    }
+}
+
+impl Deref for ReadResult {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -98,7 +115,7 @@ impl Deref for BlockRead {
     }
 }
 
-impl AsRef<[u8]> for BlockRead {
+impl AsRef<[u8]> for ReadResult {
     fn as_ref(&self) -> &[u8] {
         unsafe { self.ptr.access() }
     }
