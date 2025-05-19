@@ -234,8 +234,8 @@ impl VirtualMemoryBlock {
     /// flag change.
     ///
     /// This method can panic if the permit UID does not match with current memory block
-    /// and if the data length + offset goes beyond the boundaries of the page memory.
-    pub fn write_page(&self, permit: PageWritePermit, data: &[u8], offset: usize) {
+    /// or if the `data` is not the same size as the configured [PageSize].
+    pub fn write_page(&self, permit: PageWritePermit, data: &[u8]) {
         assert_eq!(
             permit.uid, self.uid,
             "uid of permit does not match uid of memory block, this likely means there is a bug",
@@ -244,22 +244,19 @@ impl VirtualMemoryBlock {
         let state = self.state_at(permit.page);
         let mut page_mem = self.inner.get_mut_page(permit.page);
 
-        assert!(
-            (data.len() + offset) <= page_mem.len(),
-            "data len + offset is attempting to write beyond the bounds of the page memory"
+        assert_eq!(
+            data.len(),
+            self.inner.page_size() as usize,
+            "data length is not equal to the page size."
         );
-
-        if data.is_empty() {
-            state.mark_allocated(&permit.page_lock_guard, permit.ticket_id);
-            return;
-        }
 
         unsafe {
             let uninit_mem = page_mem.access_uninit();
-
-            let mem_ptr = uninit_mem.as_mut_ptr().add(offset);
-
-            std::ptr::copy_nonoverlapping(data.as_ptr(), mem_ptr as *mut u8, data.len());
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                uninit_mem.as_mut_ptr() as *mut u8,
+                data.len(),
+            );
         }
 
         state.mark_allocated(&permit.page_lock_guard, permit.ticket_id);

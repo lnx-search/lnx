@@ -1703,7 +1703,7 @@ dependencies = [
  "crc32fast",
  "glommio",
  "hmac",
- "memmap2",
+ "memmap2 0.9.6",
  "parking_lot",
  "rkyv",
  "rstest",
@@ -1846,6 +1846,14 @@ name = "memmap2"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "memmap2"
+version = "0.9.6"
+source = "git+https://github.com/lnx-search/memmap2-rs.git?rev=b4e936e#b4e936ea8bb3d9e3aefcef2351161d99d80e8161"
 dependencies = [
  "libc",
 ]
@@ -3130,7 +3138,7 @@ dependencies = [
  "lru",
  "lz4_flex",
  "measure_time",
- "memmap2",
+ "memmap2 0.9.5",
  "once_cell",
  "oneshot",
  "rayon",
