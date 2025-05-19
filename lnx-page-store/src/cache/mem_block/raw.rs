@@ -1,5 +1,6 @@
 use std::io;
 use std::mem::MaybeUninit;
+use std::ops::Range;
 
 const STANDARD_PAGE_SIZE: usize = 8 << 10;
 const HUGE_PAGE_SIZE: usize = 2 << 20;
@@ -57,19 +58,19 @@ impl RawVirtualMemoryPages {
 
     /// Get mutable pointer access to a given page.
     pub(super) fn get_mut_page(&self, page: PageIndex) -> RawMutPagePtr {
-        let span = self.get_spanning_ptr(page);
+        let span = self.get_spanning_ptr(page.0..page.0 + 1);
         RawMutPagePtr { span }
     }
 
-    /// Get read-only pointer access to a given page.
-    pub(super) fn get_page(&self, page: PageIndex) -> RawPagePtr {
-        let span = self.get_spanning_ptr(page);
+    /// Get read-only pointer access to a given span of pages.
+    pub(super) fn read_pages(&self, pages: Range<PageIndex>) -> RawPagePtr {
+        let span = self.get_spanning_ptr(pages.start.0..pages.end.0);
         RawPagePtr { span }
     }
 
-    fn get_spanning_ptr<T>(&self, page: PageIndex) -> SpanningPagePtr<T> {
-        let pos = self.resolve_pos(page);
-        let len = self.page_size as usize;
+    fn get_spanning_ptr<T>(&self, range: Range<usize>) -> SpanningPagePtr<T> {
+        let pos = self.resolve_pos(PageIndex(range.start));
+        let len = range.len() * self.page_size as usize;
         let ptr = self.memory.get_ptr_at(pos);
         SpanningPagePtr {
             page_size: self.page_size,
@@ -307,7 +308,8 @@ mod tests {
     ) {
         let pages = RawVirtualMemoryPages::allocate(num_pages, PageSize::Standard)
             .expect("virtual memory pages should be created");
-        let ptr = pages.get_page(target_page_index);
+        let ptr =
+            pages.read_pages(target_page_index..PageIndex(target_page_index.0 + 1));
         assert_eq!(ptr.pages_spanned(), 1);
 
         unsafe {
@@ -361,13 +363,13 @@ mod tests {
         assert!(unsafe { ptr1.unsplit(ptr2).is_err() });
         assert_eq!(ptr1.pages_spanned(), 1);
 
-        let mut ptr1 = pages.get_page(PageIndex(0));
-        let ptr2 = pages.get_page(PageIndex(1));
+        let mut ptr1 = pages.read_pages(PageIndex(0)..PageIndex(1));
+        let ptr2 = pages.read_pages(PageIndex(1)..PageIndex(2));
         assert!(unsafe { ptr1.unsplit(ptr2).is_ok() });
         assert_eq!(ptr1.pages_spanned(), 2);
 
-        let mut ptr1 = pages.get_page(PageIndex(0));
-        let ptr2 = pages.get_page(PageIndex(2));
+        let mut ptr1 = pages.read_pages(PageIndex(0)..PageIndex(1));
+        let ptr2 = pages.read_pages(PageIndex(1)..PageIndex(2));
         assert!(unsafe { ptr1.unsplit(ptr2).is_err() });
         assert_eq!(ptr1.pages_spanned(), 1);
     }

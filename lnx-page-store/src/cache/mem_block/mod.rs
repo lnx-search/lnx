@@ -322,6 +322,17 @@ impl VirtualMemoryBlock {
         PreparedRead::for_page_range(ticket_guard, self, range)
     }
 
+    /// Reads a range of pages and returns the slice of memory spanning those pages.
+    ///
+    /// # Safety
+    /// It is the callers responsibility to ensure:
+    /// - The target range of pages do not change as long as this slice lives.
+    /// - All pages are currently allocated
+    /// - The pages being selected lay within the boundaries of the block.
+    unsafe fn read_pages(&self, range: Range<PageIndex>) -> raw::RawPagePtr {
+        self.inner.read_pages(range)
+    }
+
     #[cfg(test)]
     fn for_test_get_raw_page_ptr(&self, index: PageIndex) -> raw::RawMutPagePtr {
         self.inner.get_mut_page(index)
