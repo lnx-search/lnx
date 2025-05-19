@@ -334,8 +334,7 @@ impl VirtualMemoryBlock {
         }
     }
 
-    #[cfg(test)]
-    fn for_test_get_page_flags(&self, index: PageIndex) -> flags::PageFlags {
+    fn get_page_flags(&self, index: PageIndex) -> flags::PageFlags {
         self.state_at(index).flags()
     }
 

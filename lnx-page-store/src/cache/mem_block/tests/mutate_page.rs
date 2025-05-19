@@ -62,11 +62,10 @@ fn test_write_page(
     let permit = block
         .try_prepare_for_write(PageIndex(write_page_at))
         .expect("write should be prepared successfully");
-
     let data = vec![1; data_size];
     block.write_page(permit, &data, offset);
 
-    let state = block.for_test_get_page_flags(PageIndex(write_page_at));
+    let state = block.get_page_flags(PageIndex(write_page_at));
     assert!(state.is_allocated());
     assert!(!state.is_marked_for_eviction());
     assert!(!state.is_dirty());
@@ -135,7 +134,7 @@ fn test_write_page_revert_eviction_marker() {
         .try_mark_for_revertible_eviction(PageOrRetry::Page(PageIndex(0)))
         .expect("mark page for eviction");
 
-    let state = block.for_test_get_page_flags(PageIndex(0));
+    let state = block.get_page_flags(PageIndex(0));
     assert!(state.is_allocated());
     assert!(state.is_marked_for_eviction());
     assert!(!state.is_dirty());
@@ -150,7 +149,7 @@ fn test_write_page_revert_eviction_marker() {
         PrepareWriteError::AlreadyAllocated.to_string()
     );
 
-    let state = block.for_test_get_page_flags(PageIndex(0));
+    let state = block.get_page_flags(PageIndex(0));
     assert!(state.is_allocated());
     assert!(!state.is_marked_for_eviction());
     assert!(!state.is_dirty());
@@ -166,7 +165,7 @@ fn test_write_page_cannot_revert_dirty_marker() {
         .try_dirty_page(PageOrRetry::Page(PageIndex(0)))
         .expect("mark page for eviction");
 
-    let state = block.for_test_get_page_flags(PageIndex(0));
+    let state = block.get_page_flags(PageIndex(0));
     assert!(!state.is_allocated());
     assert!(state.is_marked_for_eviction());
     assert!(state.is_dirty());
@@ -177,7 +176,7 @@ fn test_write_page_cannot_revert_dirty_marker() {
         .try_prepare_for_write(PageIndex(0))
         .expect("write should be prepared successfully");
 
-    let state = block.for_test_get_page_flags(PageIndex(0));
+    let state = block.get_page_flags(PageIndex(0));
     assert!(!state.is_allocated());
     assert!(state.is_marked_for_eviction());
     assert!(state.is_dirty());

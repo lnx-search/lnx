@@ -80,9 +80,16 @@ impl Debug for PageFlags {
 }
 
 impl PageFlags {
-    /// Is the page currently allocated and valid.
+    /// Is the page currently allocated.
     pub fn is_allocated(&self) -> bool {
         self.0 & PAGE_ALLOCATED != 0
+    }
+
+    /// Is the page safe to read without side effects.
+    pub fn is_readable(&self) -> bool {
+        // Although the page is allowed to be allocated and marked for reversible eviciton
+        // you cannot safely read the page until the eviction tag is taken off the page state.
+        self.is_allocated() && !self.is_marked_for_eviction()
     }
 
     /// Is the page currently marked for eviction in order to be freed.
