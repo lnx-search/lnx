@@ -58,6 +58,11 @@ impl VirtualMemoryBlock {
     pub fn num_pages(&self) -> usize {
         self.state.len()
     }
+    
+    /// Attempt to collapse the memory pages into transparent huge pages.
+    pub fn try_collapse(&self) -> io::Result<()> {
+        self.inner.try_collapse()
+    }
 
     /// Attempt to free the target page.
     ///

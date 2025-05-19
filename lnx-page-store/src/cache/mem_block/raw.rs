@@ -69,6 +69,10 @@ impl RawVirtualMemoryPages {
         self.page_size
     }
 
+    /// Returns the size of the individual memory pages.
+    pub(super) fn try_collapse(&self) -> io::Result<()> {
+        self.memory.collapse()
+    }
     /// Marks a page as available to be reclaimed by the OS.
     ///
     /// # Safety
@@ -270,6 +274,7 @@ impl VirtualMemory {
     }
 
     fn collapse(&self) -> io::Result<()> {
+        // TODO: If `huge: true`, can this even collapse say 32KB HP into 64KB HP?
         if self.collapsable {
             self.mem.advise(Advice::Collapse)
         } else {
