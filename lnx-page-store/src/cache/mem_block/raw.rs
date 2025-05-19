@@ -73,6 +73,7 @@ impl RawVirtualMemoryPages {
     pub(super) fn try_collapse(&self) -> io::Result<()> {
         self.memory.collapse()
     }
+
     /// Marks a page as available to be reclaimed by the OS.
     ///
     /// # Safety
@@ -373,6 +374,17 @@ mod tests {
         let pages = RawVirtualMemoryPages::allocate(num_pages, PageSize::Huge2MB)
             .expect("virtual memory pages should be created");
         assert_eq!(pages.num_pages(), num_pages);
+    }
+
+    #[cfg(feature = "test-huge-pages")]
+    #[test]
+    fn test_raw_thp_collapse() {
+        let mut pages = RawVirtualMemoryPages::allocate(1024, PageSize::Std8KB)
+            .expect("virtual memory pages should be created");
+        pages.memory.mem.fill(1);
+        pages.try_collapse().expect(
+            "system should be able to collapse 1024 * 8KB pages into 4 * 2MB Huge pages",
+        )
     }
 
     #[rstest::rstest]
