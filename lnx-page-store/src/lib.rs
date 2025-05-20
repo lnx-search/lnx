@@ -16,8 +16,8 @@ mod page;
     rkyv::Deserialize,
 )]
 #[rkyv(derive(Debug), compare(PartialEq))]
-/// A unique identifier for a block of pages.
-pub struct BlockId(pub(crate) u64);
+/// A unique identifier for a group of pages.
+pub struct PageGroupId(pub(crate) u64);
 
 #[derive(
     Debug,

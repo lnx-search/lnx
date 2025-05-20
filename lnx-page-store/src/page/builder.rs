@@ -5,7 +5,7 @@ use rkyv::rancor;
 use super::mem::PageEncodeBuffer;
 use super::version::LayoutVersion;
 use super::{PAGE_DATA_MAX_SIZE, metadata};
-use crate::{BlockId, PageId};
+use crate::{PageGroupId, PageId};
 
 /// An owned, mutable disk page, used for constructing and writing new pages.
 pub struct DiskPageBuilder<'buf> {
@@ -16,7 +16,7 @@ pub struct DiskPageBuilder<'buf> {
 impl<'buf> DiskPageBuilder<'buf> {
     pub fn new(
         id: PageId,
-        block: BlockId,
+        block: PageGroupId,
         revision: u32,
         layout_version: LayoutVersion,
         data: Cow<'buf, [u8]>,
@@ -78,7 +78,7 @@ mod tests {
     ) {
         let builder = DiskPageBuilder::new(
             PageId(u32::MIN),
-            BlockId(u64::MAX),
+            PageGroupId(u64::MAX),
             u32::MIN,
             layout_version,
             data,

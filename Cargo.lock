@@ -1704,6 +1704,7 @@ dependencies = [
  "glommio",
  "hmac",
  "memmap2 0.9.6",
+ "moka",
  "parking_lot",
  "rkyv",
  "rstest",

@@ -14,7 +14,7 @@ use crate::page::{
     decode_page,
     encode_page,
 };
-use crate::{BlockId, PageId};
+use crate::{PageGroupId, PageId};
 
 #[test]
 fn test_encode_page_missing_registry() {
@@ -24,7 +24,7 @@ fn test_encode_page_missing_registry() {
 
     let page_builder = DiskPageBuilder::new(
         PageId(0),
-        BlockId(0),
+        PageGroupId(0),
         0,
         LayoutVersion::V1Enc,
         Cow::Owned(vec![1; 10]),
@@ -43,7 +43,7 @@ fn test_decode_page_registry_missing_version() {
     let mut page_data = encode_inner(&registry, LayoutVersion::V1Enc, 512);
 
     let checks = IntegrityCheckConditions {
-        block_id: BlockId(1),
+        block_id: PageGroupId(1),
         page_id: PageId(0),
     };
     let registry = VersionProcessorRegistry::with_default_processors();
@@ -59,7 +59,7 @@ fn test_decode_page_registry_missing_version() {
 fn test_decode_page_unknown_version() {
     let registry = VersionProcessorRegistry::with_default_processors();
     let checks = IntegrityCheckConditions {
-        block_id: BlockId(1),
+        block_id: PageGroupId(1),
         page_id: PageId(0),
     };
 
@@ -94,32 +94,32 @@ fn test_encode(#[case] layout_version: LayoutVersion, #[case] buffer_size: usize
 }
 
 #[rstest]
-#[case(LayoutVersion::V1, 0, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1, 4 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1, 7 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 0, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 4 << 10, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 7 << 10, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1, 0, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 0, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(1) })]
+#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(1) })]
 #[should_panic]
-#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(1) })]
-#[case(LayoutVersion::V1Enc, 0, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, 4 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, 7 << 10, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, 512, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(1) })]
+#[case(LayoutVersion::V1Enc, 0, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, 4 << 10, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, 7 << 10, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, PAGE_DATA_MAX_SIZE + 1, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, 0, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, 0, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(0) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(1) })]
+#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(1) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(1) })]
+#[case(LayoutVersion::V1Enc, 512, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(1) })]
 fn test_encode_decode(
     #[case] layout_version: LayoutVersion,
     #[case] buffer_size: usize,
@@ -133,22 +133,22 @@ fn test_encode_decode(
         .expect("decode page from data");
 
     assert_eq!(page.metadata().layout_version(), layout_version);
-    assert_eq!(page.metadata().block(), BlockId(0));
+    assert_eq!(page.metadata().block(), PageGroupId(0));
     assert_eq!(page.metadata().id(), PageId(0));
     assert_eq!(page.data(), vec![1; buffer_size]);
 }
 
 #[rstest]
-#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
-#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(1) })]
-#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(1) })]
+#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(0) })]
+#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(1) })]
+#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(1) })]
 #[should_panic]
-#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(0) })]
-#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(1) })]
-#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: BlockId(1), page_id: PageId(1) })]
+#[case(LayoutVersion::V1, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(1) })]
+#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: PageGroupId(1), page_id: PageId(1) })]
 #[should_panic]
-#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: BlockId(0), page_id: PageId(0) })]
+#[case(LayoutVersion::V1Enc, IntegrityCheckConditions { block_id: PageGroupId(0), page_id: PageId(0) })]
 fn test_integrity_check_fails(
     #[case] layout_version: LayoutVersion,
     #[case] checks: IntegrityCheckConditions,
@@ -176,7 +176,7 @@ fn encode_inner(
 
     let page_builder = DiskPageBuilder::new(
         PageId(0),
-        BlockId(0),
+        PageGroupId(0),
         0,
         layout_version,
         Cow::Owned(vec![1; buffer_size]),

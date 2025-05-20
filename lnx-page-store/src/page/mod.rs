@@ -15,7 +15,7 @@ pub use self::mem::PageEncodeBuffer;
 use self::version::VersionProcessorRegistry;
 pub use self::version::{ArchivedLayoutVersion, LayoutVersion, processors};
 pub use self::view::DiskPageView;
-use crate::{BlockId, PageId};
+use crate::{PageGroupId, PageId};
 
 /// The maximum data package size in bytes. (8KB)
 pub const PAGE_DATA_MAX_SIZE: usize = 8 << 10;
@@ -57,7 +57,7 @@ pub enum PageDecodeError {
 /// Additional parameters used to validate the integrity of the page data.
 pub struct IntegrityCheckConditions {
     /// The expected block ID the data belongs to.
-    pub block_id: BlockId,
+    pub block_id: PageGroupId,
     /// The expected page ID the data belongs to.
     pub page_id: PageId,
 }

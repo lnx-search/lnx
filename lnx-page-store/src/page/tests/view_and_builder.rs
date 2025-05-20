@@ -19,7 +19,7 @@ mod raw_view {
         PAGE_SIZE,
         PageEncodeBuffer,
     };
-    use crate::{BlockId, PageId};
+    use crate::{PageGroupId, PageId};
 
     #[rstest]
     #[case(0)]
@@ -31,7 +31,7 @@ mod raw_view {
         let buffer = vec![1; buffer_size];
         let page_builder = DiskPageBuilder::new(
             PageId(0),
-            BlockId(1),
+            PageGroupId(1),
             0,
             LayoutVersion::V1,
             Cow::Owned(buffer),
@@ -58,7 +58,7 @@ mod raw_view {
         let buffer = vec![1; buffer_size];
         let _page_builder = DiskPageBuilder::new(
             PageId(0),
-            BlockId(1),
+            PageGroupId(1),
             0,
             LayoutVersion::V1,
             Cow::Owned(buffer),
@@ -66,15 +66,15 @@ mod raw_view {
     }
 
     #[rstest]
-    #[case(PageId(0), BlockId(0), 0, 0)]
-    #[case(PageId(1), BlockId(1), 1, 1 << 10)]
-    #[case(PageId(1), BlockId(1), 1, 7 << 10)]
-    #[case(PageId(1), BlockId(1), 1, 8 << 10)]
+    #[case(PageId(0), PageGroupId(0), 0, 0)]
+    #[case(PageId(1), PageGroupId(1), 1, 1 << 10)]
+    #[case(PageId(1), PageGroupId(1), 1, 7 << 10)]
+    #[case(PageId(1), PageGroupId(1), 1, 8 << 10)]
     #[should_panic]
-    #[case(PageId(1), BlockId(1), 1, 12 << 10)]
+    #[case(PageId(1), PageGroupId(1), 1, 12 << 10)]
     fn test_decode(
         #[case] page_id: PageId,
-        #[case] block_id: BlockId,
+        #[case] block_id: PageGroupId,
         #[case] revision: u32,
         #[case] buffer_size: usize,
     ) {

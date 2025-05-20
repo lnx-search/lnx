@@ -6,7 +6,7 @@ use rkyv::ser::writer::Buffer;
 
 use super::mem::PageEncodeBuffer;
 use super::version::LayoutVersion;
-use crate::{BlockId, PageId};
+use crate::{PageGroupId, PageId};
 
 /// A type alias for a static archived page metadata entry.
 pub type DiskPageMetadataRef = rkyv::Archived<DiskPageMetadata>;
@@ -20,7 +20,7 @@ pub struct DiskPageMetadata {
     /// The page data checksum.
     pub(super) checksum: u32,
     /// The block this page contains data for.
-    pub(super) block: BlockId,
+    pub(super) block: PageGroupId,
     /// The revision is a monotonic ID for each page within a block that
     /// tracks the number of observed updates to the block.
     pub(super) revision: u32,
@@ -58,7 +58,7 @@ impl DiskPageMetadata {
 
     #[inline]
     /// The block this page contains data for.
-    pub fn block(&self) -> BlockId {
+    pub fn block(&self) -> PageGroupId {
         self.block
     }
 
@@ -96,8 +96,8 @@ impl ArchivedDiskPageMetadata {
 
     #[inline]
     /// The block this page contains data for.
-    pub fn block(&self) -> BlockId {
-        BlockId(self.block.0.to_native())
+    pub fn block(&self) -> PageGroupId {
+        PageGroupId(self.block.0.to_native())
     }
 
     #[inline]
@@ -135,7 +135,7 @@ mod tests {
         let metadata = DiskPageMetadata {
             id: PageId(1),
             checksum: 2,
-            block: BlockId(3),
+            block: PageGroupId(3),
             revision: 4,
             layout_version: LayoutVersion::V1,
             data_len: 5,
@@ -143,7 +143,7 @@ mod tests {
 
         assert_eq!(metadata.id(), PageId(1));
         assert_eq!(metadata.checksum(), 2);
-        assert_eq!(metadata.block(), BlockId(3));
+        assert_eq!(metadata.block(), PageGroupId(3));
         assert_eq!(metadata.revision(), 4);
         assert_eq!(metadata.layout_version(), LayoutVersion::V1);
         assert_eq!(metadata.data_len(), 5);
