@@ -43,6 +43,7 @@ crc32fast = "1.4"
 mockall = "0.13"
 smallvec = "1.13"
 rayon = "1.10.0"
+crossbeam-channel = "0.5"
 
 # Encryption at rest
 chacha20poly1305 = "0.10"

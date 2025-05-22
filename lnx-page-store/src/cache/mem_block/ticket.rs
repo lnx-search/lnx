@@ -101,6 +101,17 @@ pub(super) struct TicketGuard {
     generation: Arc<GenerationEntry>,
 }
 
+impl TicketGuard {
+    /// Clones `self` for use in reads.
+    ///
+    /// This is a separate method to prevent accidental misuse.
+    pub(super) fn clone_for_read(&self) -> Self {
+        Self {
+            generation: self.generation.clone(),
+        }
+    }
+}
+
 struct SharedState {
     /// The oldest ticket ID still alive.
     ///

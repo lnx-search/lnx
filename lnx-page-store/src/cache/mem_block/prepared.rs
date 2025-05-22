@@ -57,11 +57,16 @@ impl<'block> PreparedRead<'block> {
         self.outstanding_write_pages.as_slice()
     }
 
+    /// Returns a reference to the parent [VirtualMemoryBlock].
+    pub fn parent(&self) -> &'block VirtualMemoryBlock {
+        self.parent
+    }
+
     /// Try read all pages and produce a single contiguous slice.
     ///
     /// Returns an `Err(Self)` when there are outstanding writes still left to be
     /// completed.
-    pub fn try_finish(mut self) -> Result<ReadResult, Self> {
+    pub fn try_finish(mut self) -> Result<ReadResult<'block>, Self> {
         let has_outstanding_writes = self.check_outstanding_writes();
         if has_outstanding_writes {
             return Err(self);
@@ -75,6 +80,7 @@ impl<'block> PreparedRead<'block> {
         Ok(ReadResult {
             ptr,
             guard: self.guard,
+            parent: self.parent,
         })
     }
 
@@ -96,18 +102,29 @@ pub struct OutstandingWrites;
 ///
 /// This is an owned reference because it contains a guard that prevents
 /// the pages being read from being modified or freed while this read exists.
-pub struct ReadResult {
+pub struct ReadResult<'mem> {
     guard: TicketGuard,
+    parent: &'mem VirtualMemoryBlock,
     ptr: super::raw::RawPagePtr,
 }
 
-impl Debug for ReadResult {
+impl Clone for ReadResult<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            guard: self.guard.clone_for_read(),
+            parent: self.parent,
+            ptr: self.ptr,
+        }
+    }
+}
+
+impl Debug for ReadResult<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "BlockRead(num_pages={})", self.ptr.pages_spanned())
     }
 }
 
-impl Deref for ReadResult {
+impl Deref for ReadResult<'_> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -115,7 +132,7 @@ impl Deref for ReadResult {
     }
 }
 
-impl AsRef<[u8]> for ReadResult {
+impl AsRef<[u8]> for ReadResult<'_> {
     fn as_ref(&self) -> &[u8] {
         unsafe { self.ptr.access() }
     }

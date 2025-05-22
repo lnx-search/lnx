@@ -1701,8 +1701,10 @@ dependencies = [
  "bytes",
  "chacha20poly1305",
  "crc32fast",
+ "crossbeam-channel",
  "glommio",
  "hmac",
+ "humansize",
  "memmap2 0.9.6",
  "moka",
  "parking_lot",
@@ -1712,6 +1714,7 @@ dependencies = [
  "smallvec",
  "stable_deref_trait",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
 ]
 

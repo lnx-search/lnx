@@ -27,6 +27,24 @@ pub struct PageGroupId(pub(crate) u64);
     PartialOrd,
     Eq,
     PartialEq,
+    Hash,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(derive(Debug), compare(PartialEq))]
+/// A unique identifier for a file of pages.
+pub struct PageFileId(pub(crate) u64);
+
+#[derive(
+    Debug,
+    Copy,
+    Clone,
+    Ord,
+    PartialOrd,
+    Eq,
+    PartialEq,
+    Hash,
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,

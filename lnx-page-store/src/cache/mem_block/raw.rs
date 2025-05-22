@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::ErrorKind;
 use std::mem::MaybeUninit;
@@ -5,8 +6,10 @@ use std::ops::Range;
 
 use memmap2::Advice;
 
+use crate::PageId;
+
 #[repr(usize)]
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
 /// The size of memory pages in use.
 pub enum PageSize {
     #[default]
@@ -36,9 +39,33 @@ pub enum PageSize {
     Huge2MB = 2 << 20,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+impl Debug for PageSize {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PageSize::Std8KB => write!(f, "8KB"),
+            PageSize::Std32KB => write!(f, "32KB"),
+            PageSize::Std64KB => write!(f, "64KB"),
+            PageSize::Std128KB => write!(f, "128KB"),
+            PageSize::Huge2MB => write!(f, "2MB"),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 /// The unique ID of a page within the memory block.
-pub struct PageIndex(pub(super) usize);
+pub struct PageIndex(pub(crate) usize);
+
+impl From<PageId> for PageIndex {
+    fn from(value: PageId) -> Self {
+        Self(value.0 as usize)
+    }
+}
+
+impl Into<PageId> for PageIndex {
+    fn into(self) -> PageId {
+        PageId(self.0 as u32)
+    }
+}
 
 /// A raw block of virtual memory split into pages.
 ///
@@ -164,6 +191,7 @@ impl RawMutPagePtr {
     }
 }
 
+#[derive(Copy, Clone)]
 /// A raw pointer to the given page memory.
 pub(super) struct RawPagePtr {
     span: SpanningPagePtr<u8>,
@@ -205,6 +233,7 @@ impl RawPagePtr {
     }
 }
 
+#[derive(Copy, Clone)]
 struct SpanningPagePtr<T> {
     page_size: PageSize,
     ptr: *mut T,

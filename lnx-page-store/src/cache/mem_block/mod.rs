@@ -10,10 +10,11 @@ use std::io;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub use self::prepared::PreparedRead;
+pub use self::prepared::{PreparedRead, ReadResult};
 pub use self::raw::{PageIndex, PageSize};
 use self::state::PageWriteLockGuard;
 use self::ticket::GenerationTicketMachine;
+use crate::cache::mem_block::state::PageStateEntry;
 
 static BLOCK_UID_GENERATOR: AtomicU64 = AtomicU64::new(0);
 
@@ -136,7 +137,6 @@ impl VirtualMemoryBlock {
         );
 
         let state = self.state_at(permit.page);
-
         let guard = match state.try_acquire_lock() {
             Some(guard) => guard,
             None => {
@@ -153,7 +153,35 @@ impl VirtualMemoryBlock {
                 };
             },
         };
+        self.dirty_page_inner(state, permit, &guard)
+    }
 
+    /// Marks a page as dirty.
+    ///
+    /// Unlike [self.try_dirty_page] this method will wait for the page lock
+    /// to become available.
+    pub fn dirty_page(
+        &self,
+        target: PageOrRetry,
+    ) -> Result<PageFreePermit, PrepareDirtyEvictionError> {
+        let permit = self.get_or_reserve_free_permit(target);
+
+        assert_eq!(
+            permit.uid, self.uid,
+            "uid of permit does not match uid of memory block, this likely means there is a bug",
+        );
+
+        let state = self.state_at(permit.page);
+        let guard = state.acquire_lock();
+        self.dirty_page_inner(state, permit, &guard)
+    }
+
+    fn dirty_page_inner(
+        &self,
+        state: &PageStateEntry,
+        permit: PageFreePermit,
+        guard: &PageWriteLockGuard,
+    ) -> Result<PageFreePermit, PrepareDirtyEvictionError> {
         let flags = state.flags();
         if flags.is_free() {
             return Err(PrepareDirtyEvictionError::AlreadyFree);
@@ -351,7 +379,7 @@ impl VirtualMemoryBlock {
         self.state_at(index).flags()
     }
 
-    fn state_at(&self, index: PageIndex) -> &state::PageStateEntry {
+    fn state_at(&self, index: PageIndex) -> &PageStateEntry {
         &self.state[index.0]
     }
 
@@ -454,6 +482,10 @@ pub enum PrepareWriteError {
     #[error("page already allocated")]
     /// The page is already allocated and does not need to be written.
     AlreadyAllocated,
+    #[error("page already allocated due to eviction reverted")]
+    /// The page is already allocated and does not need to be written
+    /// because it was able to revert a scheduled revertible eviction.
+    EvictionReverted,
 }
 
 #[derive(Debug)]
@@ -481,6 +513,12 @@ pub struct PageWritePermit<'guard> {
     page: PageIndex,
     ticket_id: u64,
     page_lock_guard: PageWriteLockGuard<'guard>,
+}
+
+impl PageWritePermit<'_> {
+    pub(super) fn page(&self) -> PageIndex {
+        self.page
+    }
 }
 
 fn flags_tagged_with_ticket(

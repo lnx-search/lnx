@@ -47,4 +47,9 @@ impl PageStateEntry {
     pub(super) fn try_acquire_lock(&self) -> Option<PageWriteLockGuard> {
         self.lock.try_lock()
     }
+
+    /// Attempt to acquire the lock, blocking if the lock is already in use by someone else.
+    pub(super) fn acquire_lock(&self) -> PageWriteLockGuard {
+        self.lock.lock()
+    }
 }
