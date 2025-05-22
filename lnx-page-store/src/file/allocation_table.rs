@@ -48,7 +48,7 @@ pub fn encode_allocation_table(
     output_buffer: impl BufMut,
 ) -> Result<(), EncodeAllocationTableError> {
     let encoded_table = rkyv::to_bytes(table).map_err(EncodeAllocationTableError)?;
-    integrity::copy_with_check_bytes(&encoded_table, output_buffer, hmac_key);
+    integrity::copy_with_check_bytes(&encoded_table, output_buffer, hmac_key);   
     Ok(())
 }
 
