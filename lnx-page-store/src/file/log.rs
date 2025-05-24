@@ -77,7 +77,7 @@ pub fn encode_log_entry(
     high::to_bytes_in::<_, rancor::Error>(entry, Buffer::from(&mut temp_buffer))
         .map_err(EncodeLogEntryError::Serialize)?;
 
-    super::integrity::copy_with_check_bytes(&temp_buffer, buffer, hmac_key);
+    integrity::copy_with_check_bytes(&temp_buffer, buffer, hmac_key);
 
     Ok(())
 }
