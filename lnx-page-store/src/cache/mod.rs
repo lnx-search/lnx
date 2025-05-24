@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moka::notification::RemovalCause;
 use moka::policy::EvictionPolicy;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 
 use crate::PageFileId;
 use crate::cache::evictions::PendingEvictions;
@@ -14,6 +14,7 @@ use crate::cache::page_file::PageFileCacheLayer;
 mod evictions;
 mod mem_block;
 mod page_file;
+mod tests;
 
 type LivePagesLfu = moka::sync::Cache<(PageFileId, PageIndex), (), ahash::RandomState>;
 type LayerEvictionSenders =

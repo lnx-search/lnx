@@ -142,7 +142,7 @@ struct Backlog {
     pages_to_evict: VecDeque<PageFreePermit>,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
     use crate::cache::mem_block::PageSize;

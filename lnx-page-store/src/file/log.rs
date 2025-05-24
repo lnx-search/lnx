@@ -135,7 +135,7 @@ pub enum LogOp {
     UpdateTableMetadata = 0x04,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
 
