@@ -1,8 +1,9 @@
 use bytes::BufMut;
 use rkyv::rancor;
 
-use super::integrity::{self, DecodeVerification};
+use super::integrity;
 use crate::PageId;
+use crate::file::file_metadata::Encryption;
 
 /// Decode the allocation table contained within the given buffer after verifying the integrity
 /// of the data.
@@ -10,11 +11,11 @@ use crate::PageId;
 /// HMAC or SHA256 checksum integrity checks are supported and will be validated according
 /// to the specified [DecodeVerification], if these checks fail an error will be returned.
 pub fn decode_allocation_table(
+    mode: Encryption,
     buffer: &[u8],
     hmac_key: Option<&[u8]>,
-    verification: DecodeVerification,
 ) -> Result<PageAllocationTable, DecodeAllocationTableError> {
-    let (verified, buffer) = verification.verify(buffer, hmac_key);
+    let (verified, buffer) = integrity::verify(mode, buffer, hmac_key);
 
     if !verified {
         return Err(DecodeAllocationTableError::VerificationFail);
@@ -48,7 +49,7 @@ pub fn encode_allocation_table(
     output_buffer: impl BufMut,
 ) -> Result<(), EncodeAllocationTableError> {
     let encoded_table = rkyv::to_bytes(table).map_err(EncodeAllocationTableError)?;
-    integrity::copy_with_check_bytes(&encoded_table, output_buffer, hmac_key);   
+    integrity::copy_with_check_bytes(&encoded_table, output_buffer, hmac_key);
     Ok(())
 }
 
@@ -233,26 +234,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case::decode_sha256(None, None, DecodeVerification::Sha256)]
-    #[case::decode_hmac(Some(b"test".as_ref()), Some(b"test".as_ref()), DecodeVerification::Hmac)]
-    #[case::decode_either_sha256(
-        None,
-        None,
-        DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256
-    )]
-    #[case::decode_either_with_hmac_key(None, Some(b"test".as_ref()), DecodeVerification::DangerousIAbsolutelyKnowWhatImDoingHmacOrSha256)]
+    #[case::decode_sha256(Encryption::Disabled, None, None)]
+    #[case::decode_hmac(Encryption::Enabled, Some(b"test".as_ref()), Some(b"test".as_ref()))]
     #[should_panic]
-    #[case::encode_table_with_hmac_fail(Some(b"test".as_ref()), Some(b"other".as_ref()), DecodeVerification::Hmac)]
+    #[case::encode_table_with_hmac_fail(Encryption::Enabled, Some(b"test".as_ref()), Some(b"other".as_ref()))]
     #[should_panic]
-    #[case::encode_table_with_hmac_fail(Some(b"test".as_ref()), None, DecodeVerification::Hmac)]
+    #[case::encode_table_with_hmac_fail(Encryption::Enabled, Some(b"test".as_ref()), None)]
     #[should_panic]
-    #[case::encode_table_with_hmac_fail(None, Some(b"test".as_ref()), DecodeVerification::Hmac)]
+    #[case::encode_table_with_hmac_fail(Encryption::Enabled, None, Some(b"test".as_ref()))]
     #[should_panic]
-    #[case::encode_table_with_sha_fail(Some(b"test".as_ref()), None, DecodeVerification::Sha256)]
+    #[case::encode_table_with_sha_fail(Encryption::Disabled, Some(b"test".as_ref()), None)]
     fn test_encode_decode_allocation_table(
+        #[case] mode: Encryption,
         #[case] sign_hmac_key: Option<&[u8]>,
         #[case] verify_hmac_key: Option<&[u8]>,
-        #[case] verification: DecodeVerification,
     ) {
         let mut table = PageAllocationTable::new(34);
 
@@ -264,9 +259,8 @@ mod tests {
         encode_allocation_table(&table, sign_hmac_key, &mut buffer)
             .expect("allocation table should be encoded successfully");
 
-        let decoded_table =
-            decode_allocation_table(&buffer, verify_hmac_key, verification)
-                .expect("decode log entry should pass");
+        let decoded_table = decode_allocation_table(mode, &buffer, verify_hmac_key)
+            .expect("decode log entry should pass");
         assert_eq!(decoded_table, table);
     }
 }

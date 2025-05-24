@@ -11,10 +11,10 @@
 //! The reliability of this log is achieved on the assumption that the
 //! disk sector size for atomic writes is some multiple of `512` bytes.
 
-use bytes::BufMut;
 use rkyv::rancor;
 
-use super::integrity::DecodeVerification;
+use super::file_metadata::Encryption;
+use super::integrity;
 use crate::PageId;
 
 /// The fixed size of a single log entry in bytes.
@@ -25,15 +25,15 @@ pub const LOG_ENTRY_SIZE: usize = 64;
 /// This will verify the integrity of the entry with either a HMAC
 /// check or SHA256 checksum check depending on if `hmac_key` is `None` or not.
 pub fn decode_log_entry<'buf>(
+    mode: Encryption,
     encoded_entry: &'buf [u8],
     hmac_key: Option<&[u8]>,
-    verification: DecodeVerification,
 ) -> Result<&'buf rkyv::Archived<LogEntry>, DecodeLogEntryError> {
     if encoded_entry.len() != LOG_ENTRY_SIZE {
         return Err(DecodeLogEntryError::BufferWrongSize);
     }
 
-    let (verified, bytes) = verification.verify(encoded_entry, hmac_key);
+    let (verified, bytes) = integrity::verify(mode, encoded_entry, hmac_key);
 
     if !verified {
         return Err(DecodeLogEntryError::VerificationFail);
@@ -108,15 +108,18 @@ pub enum EncodeLogEntryError {
 pub struct LogEntry {
     /// The current checkpoint of the page allocation table.
     pub checkpoint: u64,
-    /// The target page affected by the operation.
-    pub page_id: PageId,
     /// The transaction ID that groups multiple operations together
     /// to form a single atomic transaction.
     pub transaction_id: u64,
+    /// The target page affected by the operation.
+    pub page_id: PageId,
     /// The operation that was performed.
     pub op: LogOp,
+    /// Padding bytes to ensure the entry is 64B.
+    pub padding: [u8; 8],
 }
 
+#[repr(u32)]
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[cfg_attr(test, rkyv(derive(Debug)))]
@@ -130,4 +133,14 @@ pub enum LogOp {
     /// Update the metadata attached to the page in the table without
     /// updating the page itself.
     UpdateTableMetadata = 0x04,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_log_entry_32_bytes() {
+        assert_eq!(size_of::<ArchivedLogEntry>(), 32);
+    }
 }

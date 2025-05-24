@@ -13,7 +13,8 @@ fn test_ensure_log_size() {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Write
+        op: LogOp::Write,
+        padding: [0; 8],
         },
     None,
 )]
@@ -22,7 +23,8 @@ fn test_ensure_log_size() {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Free
+        op: LogOp::Free,
+        padding: [0; 8],
         },
     None,
 )]
@@ -31,7 +33,8 @@ fn test_ensure_log_size() {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Commit
+        op: LogOp::Commit,
+        padding: [0; 8],
         },
     None,
 )]
@@ -40,7 +43,8 @@ fn test_ensure_log_size() {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::UpdateTableMetadata
+        op: LogOp::UpdateTableMetadata,
+        padding: [0; 8],
         },
     None,
 )]
@@ -56,7 +60,8 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Write
+        op: LogOp::Write,
+        padding: [0; 8],
         },
     32,
     None,
@@ -67,7 +72,8 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Free
+        op: LogOp::Free,
+        padding: [0; 8],
         },
     128,
     None,
@@ -78,7 +84,8 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Write
+        op: LogOp::Write,
+        padding: [0; 8],
         },
     32,
     Some(b"hello, world!".as_ref()),
@@ -89,7 +96,8 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Free
+        op: LogOp::Free,
+        padding: [0; 8],
         },
     128,
     Some(b"hello, world!".as_ref()),
@@ -100,7 +108,8 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Write
+        op: LogOp::Write,
+        padding: [0; 8],
         },
     32,
     Some([].as_ref()),
@@ -111,8 +120,9 @@ fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
         checkpoint: 0,
         page_id: PageId(1),
         transaction_id: 1,
-        op: LogOp::Free
-        },
+        op: LogOp::Free,
+        padding: [0; 8],
+    },
     128,
     Some([].as_ref()),
     EncodeLogEntryError::BufferWrongSize,
