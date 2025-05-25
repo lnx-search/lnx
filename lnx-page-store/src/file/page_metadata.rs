@@ -1,0 +1,144 @@
+use rkyv::rancor;
+use rkyv::ser::writer::Buffer;
+
+use crate::file::encrypt;
+use crate::file::file_metadata::Encryption;
+use crate::{PageGroupId, PageId};
+
+const ENTRIES_PER_BLOCK: usize = 63;
+const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
+
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(derive(Debug))]
+/// Metadata about the page and the ata stored within it when serialized on disk.
+pub struct PageMetadata {
+    /// The ID of the page.
+    pub(crate) id: PageId,
+    /// The page data checksum.
+    pub(crate) checksum: u32,
+    /// The block this page contains data for.
+    pub(crate) block: PageGroupId,
+    /// The revision is a monotonic ID for each page within a block that
+    /// tracks the number of observed updates to the block.
+    pub(crate) revision: u32,
+    /// The length of the buffer within the page.
+    pub(crate) data_len: u32,
+    /// Context bytes used for decrypting the page data.
+    pub(crate) context: [u8; 40],
+}
+
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(derive(Debug))]
+/// A packed block of 63 metadata entries, forming a block of 4032B.
+///
+/// This is the storage layout used in order to account for encryption overhead
+/// of the blocks while still maintaining 4KB alignment.
+pub struct PageMetadataX63Bock {
+    /// The packed page data.
+    pub pages: [PageMetadata; ENTRIES_PER_BLOCK],
+}
+
+#[derive(Debug, thiserror::Error)]
+/// The provided buffer is too small to serialize the block.
+pub enum EncodeError {
+    #[error("provided buffer length is incorrect")]
+    /// The provided buffer is not 4KB.
+    IncorrectBufferSize,
+    #[error("failed to encrypt data")]
+    /// The data could not be encrypted.
+    EncryptionFail,
+}
+
+/// Encode a set of N ([ENTRIES_PER_BLOCK]) page metadata entries and
+/// write the result to the provided buffer.
+///
+/// Metadata entries are packed into blocks in order to maximise read and write
+/// efficiency and maintain a 4KB alignment.
+///
+/// The provided buffer should be 4KB in size.
+pub fn encode_page_metadata_block(
+    cipher: Option<&encrypt::Cipher>,
+    entries: &PageMetadataX63Bock,
+    buffer: &mut [u8],
+) -> Result<(), EncodeError> {
+    if buffer.len() != EXPECTED_BUFFER_SIZE {
+        return Err(EncodeError::IncorrectBufferSize);
+    }
+
+    let [context, buffer] = buffer
+        .get_disjoint_mut([0..64, 64..EXPECTED_BUFFER_SIZE])
+        .unwrap();
+
+    let writer = Buffer::from(&mut buffer[..]);
+    rkyv::api::high::to_bytes_in::<_, rancor::Panic>(entries, writer).unwrap();
+
+    if let Some(cipher) = cipher {
+        encrypt::encrypt_in_place(cipher, buffer, context)
+            .map_err(|_| EncodeError::EncryptionFail)?;
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, thiserror::Error)]
+/// An error that prevented the system from decoding a block of metadata pages.
+pub enum DecodeError {
+    #[error("provided buffer length is incorrect")]
+    /// The provided buffer is too small.
+    IncorrectBufferSize,
+    #[error("decoder missing decryption cipher")]
+    /// The data is encrypted but the decoded was not provided
+    /// with a decryption cipher.
+    MissingDecryptionCipher,
+    #[error("failed to decrypt data")]
+    /// The data could not be decrypted.
+    DecryptionFailed,
+    #[error("{0}")]
+    /// The payload data is malformed and could not be deserialized.
+    Deserialize(rancor::Error),
+}
+
+/// Decode a set of N ([ENTRIES_PER_BLOCK]) page metadata entries and
+/// write the result to the provided buffer.
+///
+/// Metadata entries are packed into blocks in order to maximise read and write
+/// efficiency and maintain a 4KB alignment.
+///
+/// The provided buffer should be 4KB in size.
+pub fn decode_page_metadata_block(
+    mode: Encryption,
+    cipher: Option<&encrypt::Cipher>,
+    buffer: &mut [u8],
+) -> Result<Box<PageMetadataX63Bock>, DecodeError> {
+    if buffer.len() != EXPECTED_BUFFER_SIZE {
+        return Err(DecodeError::IncorrectBufferSize);
+    }
+
+    let [context, buffer] = buffer
+        .get_disjoint_mut([0..64, 64..EXPECTED_BUFFER_SIZE])
+        .unwrap();
+
+    if mode == Encryption::Enabled {
+        let cipher = cipher.ok_or(DecodeError::MissingDecryptionCipher)?;
+        encrypt::decrypt_in_place(cipher, buffer, context)
+            .map_err(|_| DecodeError::DecryptionFailed)?;
+    }
+
+    let view: &rkyv::Archived<PageMetadataX63Bock> =
+        rkyv::access(buffer).map_err(DecodeError::Deserialize)?;
+
+    rkyv::deserialize(view)
+        .map(Box::new)
+        .map_err(DecodeError::Deserialize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_metadata_size() {
+        assert_eq!(size_of::<PageMetadata>(), 64);
+        assert_eq!(size_of::<PageMetadataX63Bock>(), 4032);
+    }
+}

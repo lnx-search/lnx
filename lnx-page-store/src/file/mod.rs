@@ -35,6 +35,7 @@ mod encrypt;
 mod file_metadata;
 mod integrity;
 mod log;
+mod page_metadata;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 
