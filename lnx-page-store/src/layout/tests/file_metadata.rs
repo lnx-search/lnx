@@ -2,8 +2,8 @@ use VersionedPageFileMetadata::*;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
-use crate::file::encrypt;
-use crate::file::file_metadata::{
+use crate::layout::encrypt;
+use crate::layout::file_metadata::{
     DecodeError,
     EncodeError,
     Encryption,

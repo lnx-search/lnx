@@ -1,8 +1,8 @@
 use rkyv::rancor;
 
 use crate::PageId;
-use crate::file::file_metadata::Encryption;
-use crate::file::log::*;
+use crate::layout::file_metadata::Encryption;
+use crate::layout::log::*;
 
 static SAMPLE_LOG_ENTRY: LogEntry = LogEntry {
     checkpoint: 0,

@@ -1,5 +1,5 @@
 use crate::PageId;
-use crate::file::log::*;
+use crate::layout::log::*;
 
 #[test]
 fn test_ensure_log_size() {

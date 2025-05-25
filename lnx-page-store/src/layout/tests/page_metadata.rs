@@ -1,9 +1,9 @@
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use hmac::digest::Key;
 
-use crate::file::encrypt;
-use crate::file::file_metadata::Encryption;
-use crate::file::page_metadata::{
+use crate::layout::encrypt;
+use crate::layout::file_metadata::Encryption;
+use crate::layout::page_metadata::{
     DecodeError,
     PageMetadata,
     PageMetadataX63Bock,

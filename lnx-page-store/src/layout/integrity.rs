@@ -11,7 +11,7 @@ use bytes::BufMut;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use crate::file::file_metadata::Encryption;
+use crate::layout::file_metadata::Encryption;
 
 type HmacSha256 = Hmac<Sha256>;
 const INTEGRITY_PREFIX_SIZE: usize = 32;

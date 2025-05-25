@@ -3,7 +3,7 @@ use rkyv::rancor;
 
 use super::integrity;
 use crate::PageId;
-use crate::file::file_metadata::Encryption;
+use crate::layout::file_metadata::Encryption;
 
 /// Decode the allocation table contained within the given buffer after verifying the integrity
 /// of the data.

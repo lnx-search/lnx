@@ -1,8 +1,8 @@
 use rkyv::rancor;
 use rkyv::ser::writer::Buffer;
 
-use crate::file::encrypt;
-use crate::file::file_metadata::Encryption;
+use crate::layout::encrypt;
+use crate::layout::file_metadata::Encryption;
 use crate::{PageGroupId, PageId};
 
 const ENTRIES_PER_BLOCK: usize = 63;
