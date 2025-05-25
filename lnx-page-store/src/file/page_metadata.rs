@@ -8,7 +8,8 @@ use crate::{PageGroupId, PageId};
 const ENTRIES_PER_BLOCK: usize = 63;
 const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
 
-#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 #[rkyv(derive(Debug))]
 /// Metadata about the page and the ata stored within it when serialized on disk.
 pub struct PageMetadata {
@@ -27,7 +28,26 @@ pub struct PageMetadata {
     pub(crate) context: [u8; 40],
 }
 
+impl PageMetadata {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.id == PageId(u32::MAX)
+    }
+
+    /// Creates a new [PageMetadata] entry representing an empty page.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            id: PageId(u32::MAX),
+            checksum: 0,
+            block: PageGroupId(u64::MAX),
+            revision: 0,
+            data_len: 0,
+            context: [0; 40],
+        }
+    }
+}
+
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 #[rkyv(derive(Debug))]
 /// A packed block of 63 metadata entries, forming a block of 4032B.
 ///
@@ -35,7 +55,16 @@ pub struct PageMetadata {
 /// of the blocks while still maintaining 4KB alignment.
 pub struct PageMetadataX63Bock {
     /// The packed page data.
-    pub pages: [PageMetadata; ENTRIES_PER_BLOCK],
+    pub(crate) pages: [PageMetadata; ENTRIES_PER_BLOCK],
+}
+
+impl PageMetadataX63Bock {
+    /// Creates a new [PageMetadataX63Bock] with all empty pages.
+    pub(crate) const fn empty() -> Self {
+        Self {
+            pages: [const { PageMetadata::empty() }; ENTRIES_PER_BLOCK],
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -66,11 +95,14 @@ pub fn encode_page_metadata_block(
     }
 
     let [context, buffer] = buffer
-        .get_disjoint_mut([0..64, 64..EXPECTED_BUFFER_SIZE])
+        .get_disjoint_mut([0..40, 40..EXPECTED_BUFFER_SIZE])
         .unwrap();
 
-    let writer = Buffer::from(&mut buffer[..]);
+    let writer = Buffer::from(&mut buffer[24..]);
     rkyv::api::high::to_bytes_in::<_, rancor::Panic>(entries, writer).unwrap();
+
+    let checksum = crc32fast::hash(&buffer[24..]);
+    buffer[..4].copy_from_slice(&checksum.to_le_bytes());
 
     if let Some(cipher) = cipher {
         encrypt::encrypt_in_place(cipher, buffer, context)
@@ -93,6 +125,9 @@ pub enum DecodeError {
     #[error("failed to decrypt data")]
     /// The data could not be decrypted.
     DecryptionFailed,
+    #[error("metadata corrupted")]
+    /// The data was corrupted
+    Corrupted,
     #[error("{0}")]
     /// The payload data is malformed and could not be deserialized.
     Deserialize(rancor::Error),
@@ -115,13 +150,20 @@ pub fn decode_page_metadata_block(
     }
 
     let [context, buffer] = buffer
-        .get_disjoint_mut([0..64, 64..EXPECTED_BUFFER_SIZE])
+        .get_disjoint_mut([0..40, 40..EXPECTED_BUFFER_SIZE])
         .unwrap();
 
     if mode == Encryption::Enabled {
         let cipher = cipher.ok_or(DecodeError::MissingDecryptionCipher)?;
         encrypt::decrypt_in_place(cipher, buffer, context)
             .map_err(|_| DecodeError::DecryptionFailed)?;
+    }
+
+    let actual_checksum = crc32fast::hash(&buffer[24..]);
+    let expected_checksum = u32::from_le_bytes(buffer[..4].try_into().unwrap());
+
+    if actual_checksum != expected_checksum {
+        return Err(DecodeError::Corrupted);
     }
 
     let view: &rkyv::Archived<PageMetadataX63Bock> =
