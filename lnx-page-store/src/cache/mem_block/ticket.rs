@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, DefaultStrategy, RefCnt};
 use parking_lot::Mutex;
 
 const TICKETS_PER_GENERATION: u64 = 256;

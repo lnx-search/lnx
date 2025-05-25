@@ -5,6 +5,7 @@ mod state;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 mod ticket;
+mod utils;
 
 use std::io;
 use std::ops::Range;
