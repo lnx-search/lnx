@@ -1,5 +1,6 @@
 use bytes::BufMut;
 use rkyv::rancor;
+use smallvec::SmallVec;
 
 use super::integrity;
 use crate::PageId;
@@ -111,17 +112,18 @@ impl PageAllocationTable {
 /// A simple bit set which can be serialized and deserialized with rkyv.
 ///
 /// The size of the bitset is always aligned to 64.
-struct SimpleBitSet {
+pub struct SimpleBitSet {
     data: Box<[u64]>,
 }
 
 impl SimpleBitSet {
     /// Creates a new [SimpleBitSet] with the given `size` rounded up to the nearest
     /// 64 entries.
-    fn new(mut size: usize) -> Self {
+    pub fn new(mut size: usize) -> Self {
         size += size % 64;
 
-        let data = vec![0; size];
+        let num_entries = size / 64;
+        let data = vec![0; num_entries];
 
         Self {
             data: data.into_boxed_slice(),
@@ -129,30 +131,64 @@ impl SimpleBitSet {
     }
 
     /// Returns the size of the bitset.
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.data.len() * 64
     }
 
     /// Set the flag at a given index.
-    fn set(&mut self, index: usize) {
+    pub fn set(&mut self, index: usize) {
         let sector = index / 64;
         let offset = index % 64;
-        self.data[sector] |= 1 << offset;
+        set_bit_at(&mut self.data[sector], offset);
     }
 
     /// Clear the flag at a given index.
-    fn clear(&mut self, index: usize) {
+    pub fn clear(&mut self, index: usize) {
         let sector = index / 64;
         let offset = index % 64;
         self.data[sector] &= !(1 << offset);
     }
 
     /// Read the flag at the given index.
-    fn get(&self, index: usize) -> bool {
+    pub fn get(&self, index: usize) -> bool {
         let sector = index / 64;
         let offset = index % 64;
-        self.data[sector] & (1 << offset) != 0
+        get_bit_at(self.data[sector], offset)
     }
+
+    /// Reserve and return the next `n` free bits in the set.
+    pub fn reserve_next_n_free(&mut self, n: usize) -> SmallVec<[usize; 8]> {
+        let mut free = SmallVec::new();
+
+        for (block_id, block) in self.data.iter_mut().enumerate() {
+            if *block == u64::MAX {
+                continue;
+            }
+
+            for idx in 0..64 {
+                if get_bit_at(*block, idx) {
+                    continue;
+                }
+
+                set_bit_at(block, idx);
+                free.push((block_id * 64) + idx);
+
+                if free.len() == n {
+                    return free;
+                }
+            }
+        }
+
+        free
+    }
+}
+
+fn get_bit_at(value: u64, offset: usize) -> bool {
+    value & (1 << offset) != 0
+}
+
+fn set_bit_at(value: &mut u64, offset: usize) {
+    *value |= 1 << offset
 }
 
 #[cfg(all(test, not(feature = "test-miri")))]
@@ -192,6 +228,19 @@ mod tests {
         assert!(!bitset.get(0));
         assert!(!bitset.get(7));
         assert!(!bitset.get(size - 1));
+    }
+
+    #[test]
+    fn test_bitset_reserve() {
+        let mut bitset = SimpleBitSet::new(64);
+        bitset.set(4);
+        bitset.set(6);
+
+        let indices = bitset.reserve_next_n_free(5);
+        assert_eq!(indices.as_slice(), &[0, 1, 2, 3, 5]);
+
+        let indices = bitset.reserve_next_n_free(3);
+        assert_eq!(indices.as_slice(), &[7, 8, 9]);
     }
 
     #[rstest]
