@@ -20,22 +20,22 @@
 //!     * The log is containing up to `524,288` entries totalling 32MB of reserved
 //!       space.
 //! - Page Meta Table
-//!     * Contains a fixed lookup table holding page metadata which are 128B in size.
-//!     * Blocks are aligned on 512B boundaries (4 x entries per block)
-//!     * 1 entry per page, so 1,000,000 entries totalling ~122.07MB.
+//!     * Contains a fixed lookup table holding page metadata which are 64B in size.
+//!     * Blocks are aligned on 4KB boundaries (63 x entries per block + offset)
+//!     * 1 entry per page, so 1,000,000 entries totalling ~65MB.
 //! - Page data
 //!     * 8KB blocks of data.
 //!     * Raw data, left as is.
 //!
-//! Overall the total overhead of the file is roughly ~154.2MB (128KB + 32MB + 122.07MB.)
+//! Overall the total overhead of the file is roughly ~98MB (128KB + 32MB + 65MB.)
 //!
 
-mod allocation_table;
-mod encrypt;
-mod file_metadata;
+pub mod allocation_table;
+pub mod encrypt;
+pub mod file_metadata;
 mod integrity;
-mod log;
-mod page_metadata;
+pub mod log;
+pub mod page_metadata;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 

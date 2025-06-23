@@ -5,10 +5,8 @@ edition = "2024"
 
 [dependencies]
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 ahash = { workspace = true }
 crc32fast = { workspace = true }
-glommio = { workspace = true }
 rkyv = { workspace = true }
 stable_deref_trait = { workspace = true }
 tracing = { workspace = true }
@@ -24,6 +22,8 @@ crossbeam-channel = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_derive = { workspace = true }
+bytemuck = { workspace = true }
+i2o2 = { workspace = true }
 
 # Encryption at rest
 chacha20poly1305 = { workspace = true }

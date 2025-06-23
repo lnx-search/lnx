@@ -119,10 +119,11 @@ pub struct SimpleBitSet {
 impl SimpleBitSet {
     /// Creates a new [SimpleBitSet] with the given `size` rounded up to the nearest
     /// 64 entries.
-    pub fn new(mut size: usize) -> Self {
-        size += size % 64;
-
-        let num_entries = size / 64;
+    pub fn new(size: usize) -> Self {
+        let mut num_entries = size / 64;
+        if size % 64 != 0 {
+            num_entries += 1;
+        }
         let data = vec![0; num_entries];
 
         Self {
@@ -156,8 +157,20 @@ impl SimpleBitSet {
         get_bit_at(self.data[sector], offset)
     }
 
+    /// Returns the number of set bits.
+    pub fn num_set(&self) -> usize {
+        let mut total = 0;
+        for block in self.data.iter() {
+            total += block.count_ones() as usize;
+        }
+        total
+    }
+
     /// Reserve and return the next `n` free bits in the set.
-    pub fn reserve_next_n_free(&mut self, n: usize) -> SmallVec<[usize; 8]> {
+    ///
+    /// `None` is returned if the number of free bits is less than the number
+    /// asked for.
+    pub fn reserve_next_n_free(&mut self, n: usize) -> Option<SmallVec<[usize; 8]>> {
         let mut free = SmallVec::new();
 
         for (block_id, block) in self.data.iter_mut().enumerate() {
@@ -174,12 +187,19 @@ impl SimpleBitSet {
                 free.push((block_id * 64) + idx);
 
                 if free.len() == n {
-                    return free;
+                    return Some(free);
                 }
             }
         }
 
-        free
+        if free.len() != n {
+            for idx in free {
+                self.clear(idx);
+            }
+            None
+        } else {
+            Some(free)
+        }
     }
 }
 
@@ -214,6 +234,8 @@ mod tests {
         bitset.set(7);
         bitset.set(size - 1);
 
+        assert_eq!(bitset.num_set(), 3);
+
         assert!(bitset.get(0));
         assert!(!bitset.get(1));
         assert!(!bitset.get(6));
@@ -236,10 +258,10 @@ mod tests {
         bitset.set(4);
         bitset.set(6);
 
-        let indices = bitset.reserve_next_n_free(5);
+        let indices = bitset.reserve_next_n_free(5).unwrap_or_default();
         assert_eq!(indices.as_slice(), &[0, 1, 2, 3, 5]);
 
-        let indices = bitset.reserve_next_n_free(3);
+        let indices = bitset.reserve_next_n_free(3).unwrap_or_default();
         assert_eq!(indices.as_slice(), &[7, 8, 9]);
     }
 

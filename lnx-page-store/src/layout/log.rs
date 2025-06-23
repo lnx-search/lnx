@@ -19,6 +19,9 @@ use crate::PageId;
 
 /// The fixed size of a single log entry in bytes.
 pub const LOG_ENTRY_SIZE: usize = 64;
+/// The maximum number of log entries that can be in the file
+/// before a log rollup must take place
+pub const MAX_LOG_ENTRIES: usize = 524_288;
 
 /// Try to decode a log entry from the provided set of bytes.
 ///
@@ -141,6 +144,7 @@ mod tests {
 
     #[test]
     fn ensure_log_entry_32_bytes() {
+        // WARNING! Changing this has side effects!
         assert_eq!(size_of::<ArchivedLogEntry>(), 32);
     }
 }

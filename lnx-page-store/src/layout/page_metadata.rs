@@ -15,8 +15,6 @@ const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
 pub struct PageMetadata {
     /// The ID of the page.
     pub(crate) id: PageId,
-    /// The page data checksum.
-    pub(crate) checksum: u32,
     /// The block this page contains data for.
     pub(crate) block: PageGroupId,
     /// The revision is a monotonic ID for each page within a block that
@@ -37,7 +35,6 @@ impl PageMetadata {
     pub(crate) const fn empty() -> Self {
         Self {
             id: PageId(u32::MAX),
-            checksum: 0,
             block: PageGroupId(u64::MAX),
             revision: 0,
             data_len: 0,

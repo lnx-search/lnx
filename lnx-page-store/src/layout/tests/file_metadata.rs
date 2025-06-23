@@ -14,10 +14,10 @@ use crate::layout::file_metadata::{
 };
 
 #[rstest::rstest]
-#[case::encode_v1_no_enc(V1(PageFileMetadataV1 { encryption: Encryption::Disabled, num_pages: 1_000_000 }), false)]
-#[case::encode_v1_enc(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000 }), true)]
+#[case::encode_v1_no_enc(V1(PageFileMetadataV1 { encryption: Encryption::Disabled, num_pages: 1_000_000, page_size: 8 << 10 }), false)]
+#[case::encode_v1_enc(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000, page_size: 8 << 10 }), true)]
 #[should_panic]
-#[case::encode_v1_sanity_check(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000 }), false)]
+#[case::encode_v1_sanity_check(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000, page_size: 8 << 10 }), false)]
 fn test_encode(#[case] metadata: VersionedPageFileMetadata, #[case] encrypt: bool) {
     let mut buffer = vec![0; 8 << 10];
 
@@ -39,6 +39,7 @@ fn test_encode_error(#[case] buffer_size: usize, #[case] expected_error: EncodeE
     let metadata = V1(PageFileMetadataV1 {
         encryption: Encryption::Disabled,
         num_pages: 1_000_000,
+        page_size: 8 << 10,
     });
 
     let mut buffer = vec![0; buffer_size];
@@ -48,8 +49,8 @@ fn test_encode_error(#[case] buffer_size: usize, #[case] expected_error: EncodeE
 }
 
 #[rstest::rstest]
-#[case::encode_v1_no_enc(V1(PageFileMetadataV1 { encryption: Encryption::Disabled, num_pages: 1_000_000 }), false)]
-#[case::encode_v1_enc(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000 }), true)]
+#[case::encode_v1_no_enc(V1(PageFileMetadataV1 { encryption: Encryption::Disabled, num_pages: 1_000_000, page_size: 8 << 10 }), false)]
+#[case::encode_v1_enc(V1(PageFileMetadataV1 { encryption: Encryption::Enabled, num_pages: 1_000_000, page_size: 8 << 10 }), true)]
 fn test_encode_decode(
     #[case] metadata: VersionedPageFileMetadata,
     #[case] encrypt: bool,
@@ -169,6 +170,7 @@ fn create_sample_buffer(encryption: Encryption) -> (Vec<u8>, Option<encrypt::Cip
     let metadata = V1(PageFileMetadataV1 {
         encryption,
         num_pages: 1_000_000,
+        page_size: 8 << 10,
     });
     let mut buffer = vec![0; 8 << 10];
 

@@ -1,5 +1,5 @@
 mod cache;
-mod io;
+mod file;
 mod layout;
 
 #[derive(
@@ -35,6 +35,7 @@ pub struct PageGroupId(pub(crate) u64);
 /// A unique identifier for a file of pages.
 pub struct PageFileId(pub(crate) u64);
 
+#[repr(transparent)]
 #[derive(
     Debug,
     Copy,

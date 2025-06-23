@@ -28,6 +28,7 @@
       <sourceFolder url="file://$MODULE_DIR$/lnx-query/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-config/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-config/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/bench-sampel/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/lnx-tarp/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
@@ -37,6 +38,7 @@
       <excludeFolder url="file://$MODULE_DIR$/lnx-compile/shared/lnx-ffi/target" />
       <excludeFolder url="file://$MODULE_DIR$/lnx-compile/shared/target" />
       <excludeFolder url="file://$MODULE_DIR$/scripts" />
+      <excludeFolder url="file://$MODULE_DIR$/bench-sampel/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

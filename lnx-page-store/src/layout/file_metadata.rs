@@ -24,6 +24,13 @@ impl VersionedPageFileMetadata {
             VersionedPageFileMetadata::V1(v) => v.num_pages,
         }
     }
+
+    /// Returns the size of each page in bytes.
+    pub fn page_size(&self) -> usize {
+        match self {
+            VersionedPageFileMetadata::V1(v) => v.page_size,
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
@@ -35,6 +42,8 @@ pub struct PageFileMetadataV1 {
     pub encryption: Encryption,
     /// The total number of pages in the file.
     pub num_pages: usize,
+    /// The size of each page in bytes.
+    pub page_size: usize,
 }
 
 #[repr(u32)]
