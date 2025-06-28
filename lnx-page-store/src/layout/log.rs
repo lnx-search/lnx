@@ -104,7 +104,7 @@ pub enum EncodeLogEntryError {
 /// A single entry in the [PageOperationLog].
 ///
 /// NOTE: Each entry must maintain a size that allows the system
-/// to keep an alignment of `512` bytes, this is required in order
+/// to keep an alignment of at least `512` bytes, this is required in order
 /// to perform atomic writes to disk without a partial write occurring.
 ///
 /// We assume `512` is the disk sector size here.

@@ -1,50 +1,7 @@
 use super::encrypt;
 
 /// The magic bytes prefix of page files.
-static MAGIC_BYTES: &[u8] = b"__LNX_PAGEFILE__";
-
-#[derive(Debug, Eq, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
-/// The version number for the page file.
-pub enum VersionedPageFileMetadata {
-    /// Version 1
-    V1(PageFileMetadataV1),
-}
-
-impl VersionedPageFileMetadata {
-    /// Returns the [Encryption] mode used by the page.
-    pub fn encryption(&self) -> Encryption {
-        match self {
-            VersionedPageFileMetadata::V1(v) => v.encryption,
-        }
-    }
-
-    /// Returns number of pages in the page.
-    pub fn num_pages(&self) -> usize {
-        match self {
-            VersionedPageFileMetadata::V1(v) => v.num_pages,
-        }
-    }
-
-    /// Returns the size of each page in bytes.
-    pub fn page_size(&self) -> usize {
-        match self {
-            VersionedPageFileMetadata::V1(v) => v.page_size,
-        }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq, serde_derive::Serialize, serde_derive::Deserialize)]
-/// The V1 metadata information.
-///
-/// This information is encrypted
-pub struct PageFileMetadataV1 {
-    /// The true encryption mode of the data.
-    pub encryption: Encryption,
-    /// The total number of pages in the file.
-    pub num_pages: usize,
-    /// The size of each page in bytes.
-    pub page_size: usize,
-}
+static MAGIC_BYTES: &[u8] = b"__LNX_DATAFILE__";
 
 #[repr(u32)]
 #[derive(
@@ -120,10 +77,10 @@ pub enum DecodeError {
 }
 
 /// Decode a page file metadata entry from the provided buffer.
-pub fn decode_page_file_metadata(
+pub fn decode_page_file_metadata<T: serde::de::DeserializeOwned>(
     cipher: Option<&encrypt::Cipher>,
     mut buffer: &mut [u8],
-) -> Result<VersionedPageFileMetadata, DecodeError> {
+) -> Result<T, DecodeError> {
     if !has_magic_bytes(buffer) {
         return Err(DecodeError::MissingMagicBytes);
     }
@@ -169,15 +126,11 @@ pub enum EncodeError {
 /// Encode the metadata into the given buffer.
 ///
 /// This data will be encrypted if the cipher is provided.
-pub fn encode_page_file_metadata(
+pub fn encode_page_file_metadata<T: serde::Serialize>(
     cipher: Option<&encrypt::Cipher>,
-    metadata: &VersionedPageFileMetadata,
+    metadata: &T,
     mut buffer: &mut [u8],
 ) -> Result<(), EncodeError> {
-    if matches!(metadata.encryption(), Encryption::Enabled) && cipher.is_none() {
-        panic!("metadata signals data is encrypted but cipher is not provided");
-    }
-
     if buffer.len() != (8 << 10) {
         return Err(EncodeError::IncorrectBufferSize);
     }

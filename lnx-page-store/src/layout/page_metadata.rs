@@ -19,7 +19,7 @@ pub struct PageMetadata {
     pub(crate) block: PageGroupId,
     /// The revision is a monotonic ID for each page within a block that
     /// tracks the number of observed updates to the block.
-    pub(crate) revision: u32,
+    pub(crate) revision: u64,
     /// The length of the buffer within the page.
     pub(crate) data_len: u32,
     /// Context bytes used for decrypting the page data.
