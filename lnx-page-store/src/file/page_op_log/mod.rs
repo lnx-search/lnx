@@ -11,13 +11,6 @@ pub struct MetadataHeader {
     pub log_file_id: u64,
 }
 
-// What do we need in the log for each entry?
-// - Sequence ID - 4 bytes
-// - FLush position - 4 bytes
-// - Operation type (Write, Metadata Update) - 4 bytes
-// - Metadata entry itself (duh) - 64 bytes
-// going to have 128 bytes to kill...
-
 /// The op log writer acts as a WAL for page metadata changes.
 ///
 /// The log must only be written to once the page data itself is confirmed

@@ -103,8 +103,6 @@ pub fn encode_log_block(
     let n_bytes_written = writer.pos();
     blk_len.copy_from_slice(&(n_bytes_written as u64).to_le_bytes());
 
-    eprintln!("{:?}", &blk[..60 + 8]);
-    eprintln!("{blk:?}");
     if let Some(cipher) = cipher {
         encrypt::encrypt_in_place(cipher, associated_data, blk, context)
             .map_err(EncodeLogBlockError::EncryptionFail)?;

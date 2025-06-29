@@ -76,8 +76,8 @@ pub enum DecodeError {
     Deserialize(serde_json::Error),
 }
 
-/// Decode a page file metadata entry from the provided buffer.
-pub fn decode_page_file_metadata<T: serde::de::DeserializeOwned>(
+/// Decode a metadata entry from the provided buffer.
+pub fn decode_metadata<T: serde::de::DeserializeOwned>(
     cipher: Option<&encrypt::Cipher>,
     associated_data: &[u8],
     mut buffer: &mut [u8],
@@ -127,7 +127,7 @@ pub enum EncodeError {
 /// Encode the metadata into the given buffer.
 ///
 /// This data will be encrypted if the cipher is provided.
-pub fn encode_page_file_metadata<T: serde::Serialize>(
+pub fn encode_metadata<T: serde::Serialize>(
     cipher: Option<&encrypt::Cipher>,
     associated_data: &[u8],
     metadata: &T,
