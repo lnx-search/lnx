@@ -30,7 +30,6 @@
 //! Overall the total overhead of the file is roughly ~98MB (128KB + 32MB + 65MB.)
 //!
 
-pub mod allocation_table;
 pub mod encrypt;
 pub mod file_metadata;
 mod integrity;

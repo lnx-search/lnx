@@ -43,6 +43,7 @@ mockall = "0.13"
 smallvec = "1.13"
 rayon = "1.10.0"
 crossbeam-channel = "0.5"
+crossbeam-queue = "0.3"
 i2o2 = "0.2"
 glommio = "0.9.0"
 

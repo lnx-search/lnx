@@ -1,140 +1,101 @@
-use crate::PageId;
+use chacha20poly1305::aead::Key;
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
+
+use crate::PageFileId;
+use crate::layout::encrypt;
 use crate::layout::log::*;
 
-#[test]
-fn test_ensure_log_size() {
-    // 32 bytes for HMAC or SHA256
-    assert_eq!(size_of::<ArchivedLogEntry>() + 32, 64);
+fn sample_log_block(entry: LogEntry) -> LogBlock {
+    let mut block = LogBlock::default();
+    block.push_entry(entry, None).unwrap();
+    block
 }
 
 #[rstest::rstest]
 #[case::encode_op_write(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
+    sample_log_block(LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
         transaction_id: 1,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
         op: LogOp::Write,
-        padding: [0; 8],
-        },
+    }),
     None,
 )]
 #[case::encode_op_free(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
+    sample_log_block(LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
         transaction_id: 1,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
         op: LogOp::Free,
-        padding: [0; 8],
-        },
+        }),
     None,
 )]
-#[case::encode_op_commit(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
+#[case::encode_op_flush(
+    sample_log_block(LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
         transaction_id: 1,
-        op: LogOp::Commit,
-        padding: [0; 8],
-        },
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Flush,
+        }),
     None,
 )]
 #[case::encode_op_update_table_metadata(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
+    sample_log_block(LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
         transaction_id: 1,
-        op: LogOp::UpdateTableMetadata,
-        padding: [0; 8],
-        },
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Write,
+        }),
     None,
 )]
-fn test_encode_log(#[case] entry: LogEntry, #[case] hmac_key: Option<&[u8]>) {
-    let mut output = [0; LOG_ENTRY_SIZE];
-    encode_log_entry(&entry, &mut output, hmac_key)
+fn test_encode_log(#[case] block: LogBlock, #[case] cipher: Option<encrypt::Cipher>) {
+    let mut output = [0; 512];
+    encode_log_block(cipher.as_ref(), &block, &mut output)
         .expect("log entry should be encoded successfully");
 }
 
 #[rstest::rstest]
-#[case::buffer_too_small_sha256(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Write,
-        padding: [0; 8],
-        },
+#[case::buffer_too_small_crc32(32, None, EncodeLogBlockError::BufferWrongSize)]
+#[case::buffer_too_big_crc32(1025, None, EncodeLogBlockError::BufferWrongSize)]
+#[case::buffer_too_small_encrypt(
     32,
-    None,
-    EncodeLogEntryError::BufferWrongSize,
+    Some(cipher_1()),
+    EncodeLogBlockError::BufferWrongSize
 )]
-#[case::buffer_too_big_sha256(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Free,
-        padding: [0; 8],
-        },
-    128,
-    None,
-    EncodeLogEntryError::BufferWrongSize,
-)]
-#[case::buffer_too_small_hmac(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Write,
-        padding: [0; 8],
-        },
-    32,
-    Some(b"hello, world!".as_ref()),
-    EncodeLogEntryError::BufferWrongSize,
-)]
-#[case::buffer_too_big_hmac(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Free,
-        padding: [0; 8],
-        },
-    128,
-    Some(b"hello, world!".as_ref()),
-    EncodeLogEntryError::BufferWrongSize,
-)]
-#[case::buffer_too_small_empty_hmac_key(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Write,
-        padding: [0; 8],
-        },
-    32,
-    Some([].as_ref()),
-    EncodeLogEntryError::BufferWrongSize,
-)]
-#[case::buffer_too_big_empty_hmac_key(
-    LogEntry {
-        checkpoint: 0,
-        page_id: PageId(1),
-        transaction_id: 1,
-        op: LogOp::Free,
-        padding: [0; 8],
-    },
-    128,
-    Some([].as_ref()),
-    EncodeLogEntryError::BufferWrongSize,
+#[case::buffer_too_big_encrypt(
+    1025,
+    Some(cipher_1()),
+    EncodeLogBlockError::BufferWrongSize
 )]
 fn test_encode_log_errors(
-    #[case] entry: LogEntry,
     #[case] buffer_size: usize,
-    #[case] hmac_key: Option<&[u8]>,
-    #[case] expected_error: EncodeLogEntryError,
+    #[case] cipher: Option<encrypt::Cipher>,
+    #[case] expected_error: EncodeLogBlockError,
 ) {
+    let block = sample_log_block(LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
+        transaction_id: 1,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Write,
+    });
+
     let mut output = vec![0; buffer_size];
-    let error = encode_log_entry(&entry, &mut output[..], hmac_key)
-        .expect_err("log entry should reject data");
+    let error = encode_log_block(cipher.as_ref(), &block, &mut output)
+        .expect_err("log entry should fail to encode");
     assert_eq!(error.to_string(), expected_error.to_string());
+}
+
+fn cipher_1() -> encrypt::Cipher {
+    let key = Key::<XChaCha20Poly1305>::from_slice(b"F8E4FeD0098cF3Bf7968E1AC7Bbfacee");
+    XChaCha20Poly1305::new(key)
 }

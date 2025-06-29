@@ -1,83 +1,108 @@
-use rkyv::rancor;
+use chacha20poly1305::aead::Key;
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
-use crate::PageId;
-use crate::layout::file_metadata::Encryption;
+use crate::PageFileId;
+use crate::layout::encrypt;
 use crate::layout::log::*;
 
-static SAMPLE_LOG_ENTRY: LogEntry = LogEntry {
-    checkpoint: 0,
-    page_id: PageId(1),
-    transaction_id: 0,
-    op: LogOp::Write,
-    padding: [0; 8],
-};
+fn sample_log_block() -> LogBlock {
+    let mut block = LogBlock::default();
+    block
+        .push_entry(
+            LogEntry {
+                sequence_id: 1,
+                last_flush_sequence_id: 2,
+                transaction_id: 3,
+                transaction_n_entries: 4,
+                page_file_id: PageFileId(1),
+                op: LogOp::Write,
+            },
+            None,
+        )
+        .unwrap();
+    block
+}
 
-#[rstest::rstest]
-#[case::decode_with_sha256_verification(
-    &SAMPLE_LOG_ENTRY,
-    None,
-    Encryption::Disabled,
-)]
-#[case::decode_with_hmac_verification(
-    &SAMPLE_LOG_ENTRY,
-    Some(b"test".as_ref()),
-    Encryption::Enabled,
-)]
-#[should_panic]
-#[case::decode_with_hmac_verification(
-    &SAMPLE_LOG_ENTRY,
-    None,
-    Encryption::Enabled,
-)]
-fn test_log_decoding(
-    #[case] entry: &LogEntry,
-    #[case] hmac_key: Option<&[u8]>,
-    #[case] verification: Encryption,
-) {
-    let mut output = [0; LOG_ENTRY_SIZE];
-    encode_log_entry(entry, &mut output, hmac_key)
+#[test]
+fn test_log_decode_buffer_wrong_size() {
+    let block = sample_log_block();
+
+    let mut buffer = [0; 1024];
+    encode_log_block(None, &block, &mut buffer[..512])
         .expect("log entry should be encoded successfully");
 
-    let entry = decode_log_entry(verification, &output, hmac_key)
-        .expect("entry should be decoded successfully");
-    let entry = rkyv::deserialize::<LogEntry, rancor::Error>(entry).unwrap();
-    assert_eq!(entry, SAMPLE_LOG_ENTRY);
+    let err =
+        decode_log_block(None, &mut buffer).expect_err("entry should fail to decode");
+    assert_eq!(
+        err.to_string(),
+        DecodeLogBlockError::BufferWrongSize.to_string()
+    );
 }
 
 #[rstest::rstest]
-#[case::decode_with_sha256_verification_fail(
-    &SAMPLE_LOG_ENTRY,
+#[case::decode_with_crc32_verification(sample_log_block(), false)]
+#[case::decode_with_encryption(sample_log_block(), true)]
+fn test_log_decoding(#[case] entry: LogBlock, #[case] encrypt_enable: bool) {
+    let cipher = if encrypt_enable {
+        Some(cipher_1())
+    } else {
+        None
+    };
+
+    let mut buffer = [0; 512];
+    encode_log_block(cipher.as_ref(), &entry, &mut buffer)
+        .expect("log entry should be encoded successfully");
+
+    let entry = decode_log_block(cipher.as_ref(), &mut buffer)
+        .map_err(|e| {
+            eprintln!("{e}");
+            e
+        })
+        .expect("entry should be decoded successfully");
+    assert_eq!(entry.iter_pairs().count(), 1);
+}
+
+#[rstest::rstest]
+#[case::decode_with_crc32_verification_fail(
+    sample_log_block(),
     None,
     None,
     Some(b"overwrite".as_ref()),
-    Encryption::Disabled,
-    DecodeLogEntryError::VerificationFail,
+    DecodeLogBlockError::VerificationFail,
 )]
-#[case::decode_with_hmac_verification_fail(
-    &SAMPLE_LOG_ENTRY,
-    Some(b"test".as_ref()),
-    Some(b"other".as_ref()),
+#[case::decode_with_decryption_fail(
+    sample_log_block(),
+    Some(cipher_1()),
+    Some(cipher_2()),
     None,
-    Encryption::Enabled,
-    DecodeLogEntryError::VerificationFail,
+    DecodeLogBlockError::DecryptionFail
 )]
 fn test_log_decoding_errors(
-    #[case] entry: &LogEntry,
-    #[case] sign_hmac_key: Option<&[u8]>,
-    #[case] verify_hmac_key: Option<&[u8]>,
+    #[case] entry: LogBlock,
+    #[case] encode_cipher: Option<encrypt::Cipher>,
+    #[case] decode_cipher: Option<encrypt::Cipher>,
     #[case] overwrite_digest: Option<&[u8]>,
-    #[case] verification: Encryption,
-    #[case] expected_error: DecodeLogEntryError,
+    #[case] expected_error: DecodeLogBlockError,
 ) {
-    let mut output = [0; LOG_ENTRY_SIZE];
-    encode_log_entry(entry, &mut output, sign_hmac_key)
+    let mut buffer = [0; 512];
+    encode_log_block(encode_cipher.as_ref(), &entry, &mut buffer)
         .expect("log entry should be encoded successfully");
 
     if let Some(overwrite) = overwrite_digest {
-        output[..overwrite.len()].copy_from_slice(overwrite);
+        buffer[..overwrite.len()].copy_from_slice(overwrite);
     }
 
-    let err = decode_log_entry(verification, &output, verify_hmac_key)
+    let err = decode_log_block(decode_cipher.as_ref(), &mut buffer)
         .expect_err("entry should fail to decode");
     assert_eq!(err.to_string(), expected_error.to_string());
+}
+
+fn cipher_1() -> encrypt::Cipher {
+    let key = Key::<XChaCha20Poly1305>::from_slice(b"F8E4FeD0098cF3Bf7968E1AC7Bbfacee");
+    XChaCha20Poly1305::new(key)
+}
+
+fn cipher_2() -> encrypt::Cipher {
+    let key = Key::<XChaCha20Poly1305>::from_slice(b"8f4935bDBd0A771bA20fda47f44bf2bf");
+    XChaCha20Poly1305::new(key)
 }

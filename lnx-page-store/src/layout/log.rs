@@ -11,115 +11,216 @@
 //! The reliability of this log is achieved on the assumption that the
 //! disk sector size for atomic writes is some multiple of `512` bytes.
 
+use rkyv::api::root_position;
 use rkyv::rancor;
+use rkyv::ser::Positional;
 
 use super::file_metadata::Encryption;
-use super::integrity;
-use crate::PageId;
+use super::{encrypt, integrity};
+use crate::PageFileId;
+use crate::layout::encrypt::EncryptError;
+use crate::layout::page_metadata::{ArchivedPageMetadata, PageMetadata};
 
-/// The fixed size of a single log entry in bytes.
-pub const LOG_ENTRY_SIZE: usize = 64;
-/// The maximum number of log entries that can be in the file
-/// before a log rollup must take place
-pub const MAX_LOG_ENTRIES: usize = 524_288;
+/// The fixed size of a log block buffer in bytes.
+pub const LOG_BLOCK_SIZE: usize = 512;
 
-/// Try to decode a log entry from the provided set of bytes.
+/// Try to decode a [LogBlock] from the provided set of bytes.
 ///
-/// This will verify the integrity of the entry with either a HMAC
-/// check or SHA256 checksum check depending on if `hmac_key` is `None` or not.
-pub fn decode_log_entry<'buf>(
-    mode: Encryption,
-    encoded_entry: &'buf [u8],
-    hmac_key: Option<&[u8]>,
-) -> Result<&'buf rkyv::Archived<LogEntry>, DecodeLogEntryError> {
-    if encoded_entry.len() != LOG_ENTRY_SIZE {
-        return Err(DecodeLogEntryError::BufferWrongSize);
+/// The size of the buffer is expected to be 512 bytes.
+///
+/// This will decrypt the  buffer if `cipher` is provided or attempt to
+/// check the CRC32 checksum check depending on if not.
+pub fn decode_log_block<'buf>(
+    cipher: Option<&encrypt::Cipher>,
+    buffer: &'buf mut [u8],
+) -> Result<&'buf rkyv::Archived<LogBlock>, DecodeLogBlockError> {
+    if buffer.len() != LOG_BLOCK_SIZE {
+        return Err(DecodeLogBlockError::BufferWrongSize);
     }
 
-    let (verified, bytes) = integrity::verify(mode, encoded_entry, hmac_key);
+    let ctx_indices = [0..40, 40..512];
+    let [context, blk] = buffer.get_disjoint_mut(ctx_indices).unwrap();
 
-    if !verified {
-        return Err(DecodeLogEntryError::VerificationFail);
+    if let Some(cipher) = cipher {
+        encrypt::decrypt_in_place(cipher, blk, context)
+            .map_err(|_| DecodeLogBlockError::DecryptionFail)?;
+    } else {
+        let verified = integrity::verify(Encryption::Disabled, None, blk, context);
+        if !verified {
+            return Err(DecodeLogBlockError::VerificationFail);
+        }
     }
 
-    rkyv::access::<_, rancor::Error>(bytes).map_err(DecodeLogEntryError::Deserialize)
+    let blk_len = u64::from_le_bytes(blk[..8].try_into().unwrap());
+    let blk_data = &blk[8..8 + blk_len as usize];
+
+    rkyv::access::<_, rancor::Error>(blk_data).map_err(DecodeLogBlockError::Deserialize)
 }
 
 #[derive(Debug, thiserror::Error)]
 /// An error that prevented the system from decoding a log entry.
-pub enum DecodeLogEntryError {
+pub enum DecodeLogBlockError {
     #[error("buffer wrong size")]
-    /// The provided buffer is not [LOG_ENTRY_SIZE] in size.
+    /// The provided buffer is not [LOG_BLOCK_SIZE] in size.
     BufferWrongSize,
-    #[error("HMAC or SHA256 verification check failed for entry")]
-    /// The verification method specified by the [DecodeVerification] enum failed.
+    #[error("buffer decryption failed")]
+    /// The buffer could not be decrypted
+    DecryptionFail,
+    #[error("buffer verification failed")]
+    /// The buffer could not be verified for integrity
     VerificationFail,
     #[error("deserialize error: {0}")]
     /// The system could not parse and deserialize the log entry.
     Deserialize(rancor::Error),
 }
 
-/// Serializes and writes a [LogEntry] into the provided buffer.
+/// Serializes and writes a [LogBlock] into the provided buffer.
 ///
-/// If a `hmac_key` is not None, a hmac signature is calculated for each log entry.
+/// The size of the buffer is expected to be 512 bytes.
 ///
-/// The size of the log entry is always [LOG_ENTRY_SIZE] in size.
-pub fn encode_log_entry(
-    entry: &LogEntry,
+/// The size of the log entry is always [LOG_BLOCK_SIZE] in size.
+pub fn encode_log_block(
+    cipher: Option<&encrypt::Cipher>,
+    entry: &LogBlock,
     buffer: &mut [u8],
-    hmac_key: Option<&[u8]>,
-) -> Result<(), EncodeLogEntryError> {
+) -> Result<(), EncodeLogBlockError> {
     use rkyv::api::high;
     use rkyv::ser::writer::Buffer;
 
-    if buffer.len() != LOG_ENTRY_SIZE {
-        return Err(EncodeLogEntryError::BufferWrongSize);
+    if buffer.len() != LOG_BLOCK_SIZE {
+        return Err(EncodeLogBlockError::BufferWrongSize);
     }
 
-    let mut temp_buffer = [0; size_of::<ArchivedLogEntry>()];
-    high::to_bytes_in::<_, rancor::Error>(entry, Buffer::from(&mut temp_buffer))
-        .map_err(EncodeLogEntryError::Serialize)?;
+    // Buffer is split into [context, block_len, block_data].
+    let ctx_indices = [0..40, 40..512];
+    let blk_indices = [0..8, 8..464];
+    let [context, blk] = buffer.get_disjoint_mut(ctx_indices).unwrap();
+    let [blk_len, blk_data] = blk.get_disjoint_mut(blk_indices).unwrap();
 
-    integrity::copy_with_check_bytes(&temp_buffer, buffer, hmac_key);
+    let writer = high::to_bytes_in::<_, rancor::Error>(entry, Buffer::from(blk_data))
+        .map_err(EncodeLogBlockError::Serialize)?;
+    let n_bytes_written = writer.pos();
+    blk_len.copy_from_slice(&(n_bytes_written as u64).to_le_bytes());
+
+    eprintln!("{:?}", &blk[..60 + 8]);
+    eprintln!("{blk:?}");
+    if let Some(cipher) = cipher {
+        encrypt::encrypt_in_place(cipher, blk, context)
+            .map_err(EncodeLogBlockError::EncryptionFail)?;
+    } else {
+        integrity::write_check_bytes(None, blk, context);
+    }
 
     Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
 /// The log entry could not be encoded and written to the buffer.
-pub enum EncodeLogEntryError {
+pub enum EncodeLogBlockError {
     #[error("buffer wrong size")]
-    /// The provided buffer is not [LOG_ENTRY_SIZE] in size.
+    /// The provided buffer is not [LOG_BLOCK_SIZE] in size.
     BufferWrongSize,
     #[error("{0}")]
     /// Rkyv failed to serialize the entry.
     ///
     /// This should always be infallible, but we avoid panicking.
     Serialize(rancor::Error),
+    #[error("failed to encrypt data: {0}")]
+    /// The data could not be encrypted.
+    EncryptionFail(EncryptError),
+}
+
+#[derive(Debug, Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, rkyv(derive(Debug)))]
+/// The log block holds onto `N` [LogEntry]s and some number of
+/// page metadata entries.
+///
+/// The size of the block is up to `448` bytes but cannot go beyond.
+pub struct LogBlock {
+    #[rkyv(with = rkyv::with::AsBox)]
+    pairs: Vec<EntryPair>,
+}
+
+impl LogBlock {
+    /// The maximum number of bytes the block can grow to.
+    pub const MAX_BYTES_SIZE: usize = 448;
+
+    /// Attempts to push a log entry into the block.
+    ///
+    /// Returns `Err(entry)` if there is no space left in the block.
+    pub fn push_entry(
+        &mut self,
+        entry: LogEntry,
+        metadata: Option<PageMetadata>,
+    ) -> Result<(), (LogEntry, Option<PageMetadata>)> {
+        let mut capacity_required = size_of::<ArchivedEntryPair>();
+        if metadata.is_some() {
+            capacity_required += size_of::<ArchivedPageMetadata>();
+        }
+
+        if self.remaining_capacity() < capacity_required {
+            return Err((entry, metadata));
+        }
+
+        let metadata = metadata.map(Box::new);
+        self.pairs.push(EntryPair {
+            log: entry,
+            metadata,
+        });
+
+        Ok(())
+    }
+
+    /// Returns the remaining number of bytes the block can hold.
+    fn remaining_capacity(&self) -> usize {
+        let mut bytes_consumed = 0;
+        for pair in self.pairs.iter() {
+            bytes_consumed += size_of::<ArchivedEntryPair>();
+
+            if pair.metadata.is_some() {
+                bytes_consumed += size_of::<ArchivedPageMetadata>();
+            }
+        }
+        Self::MAX_BYTES_SIZE - bytes_consumed
+    }
+}
+
+impl ArchivedLogBlock {
+    /// Iterate over the log entry pairs in the block.
+    pub fn iter_pairs<'a>(&'a self) -> impl Iterator<Item = &'a ArchivedEntryPair> + 'a {
+        self.pairs.iter()
+    }
+}
+
+#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[cfg_attr(test, rkyv(derive(Debug)))]
+/// A pair of [LogEntry] and an optional page metadata entry.
+pub struct EntryPair {
+    /// The log entry itself.
+    pub log: LogEntry,
+    #[rkyv(with = rkyv::with::Niche)]
+    /// The page metadata tied to the entry if applicable.
+    pub metadata: Option<Box<PageMetadata>>,
 }
 
 #[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[cfg_attr(test, rkyv(derive(Debug)))]
-/// A single entry in the [PageOperationLog].
-///
-/// NOTE: Each entry must maintain a size that allows the system
-/// to keep an alignment of at least `512` bytes, this is required in order
-/// to perform atomic writes to disk without a partial write occurring.
-///
-/// We assume `512` is the disk sector size here.
+/// A single entry in the `PageOperationLog`.
 pub struct LogEntry {
-    /// The current checkpoint of the page allocation table.
-    pub checkpoint: u64,
+    /// The current sequence ID of the page allocation table.
+    pub sequence_id: u32,
+    /// The sequence ID marking where the last flush occurred.
+    pub last_flush_sequence_id: u32,
     /// The transaction ID that groups multiple operations together
     /// to form a single atomic transaction.
     pub transaction_id: u64,
-    /// The target page affected by the operation.
-    pub page_id: PageId,
+    /// The number of entries this transaction encompasses.
+    pub transaction_n_entries: u32,
+    /// The target page file affected by the operation.
+    pub page_file_id: PageFileId,
     /// The operation that was performed.
     pub op: LogOp,
-    /// Padding bytes to ensure the entry is 64B.
-    pub padding: [u8; 8],
 }
 
 #[repr(u32)]
@@ -131,8 +232,8 @@ pub enum LogOp {
     Write = 0x01,
     /// The page has been freed and can be reused.
     Free = 0x02,
-    /// The transaction has completed successfully.
-    Commit = 0x03,
+    /// The entry is used to update the flushed sequence ID.
+    Flush = 0x03,
     /// Update the metadata attached to the page in the table without
     /// updating the page itself.
     UpdateTableMetadata = 0x04,
@@ -143,8 +244,81 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ensure_log_entry_32_bytes() {
+    fn ensure_log_entry_40_bytes() {
         // WARNING! Changing this has side effects!
-        assert_eq!(size_of::<ArchivedLogEntry>(), 32);
+        assert_eq!(size_of::<ArchivedLogEntry>(), 40);
+    }
+
+    #[test]
+    fn ensure_log_pair_size() {
+        assert_eq!(size_of::<ArchivedEntryPair>(), 48);
+    }
+
+    #[test]
+    fn test_log_block_sizing_all_entries() {
+        let mut block = LogBlock::default();
+        for _ in 0..9 {
+            block
+                .push_entry(
+                    LogEntry {
+                        sequence_id: 0,
+                        last_flush_sequence_id: 0,
+                        transaction_id: 0,
+                        transaction_n_entries: 0,
+                        page_file_id: PageFileId(1),
+                        op: LogOp::Write,
+                    },
+                    None,
+                )
+                .unwrap();
+        }
+
+        block
+            .push_entry(
+                LogEntry {
+                    sequence_id: 0,
+                    last_flush_sequence_id: 0,
+                    transaction_id: 0,
+                    transaction_n_entries: 0,
+                    page_file_id: PageFileId(1),
+                    op: LogOp::Write,
+                },
+                None,
+            )
+            .expect_err("block should be full");
+    }
+
+    #[test]
+    fn test_log_block_sizing_all_with_metadata() {
+        let mut block = LogBlock::default();
+        for _ in 0..4 {
+            block
+                .push_entry(
+                    LogEntry {
+                        sequence_id: 0,
+                        last_flush_sequence_id: 0,
+                        transaction_id: 0,
+                        transaction_n_entries: 0,
+                        page_file_id: PageFileId(1),
+                        op: LogOp::Write,
+                    },
+                    Some(PageMetadata::empty()),
+                )
+                .unwrap();
+        }
+
+        block
+            .push_entry(
+                LogEntry {
+                    sequence_id: 0,
+                    last_flush_sequence_id: 0,
+                    transaction_id: 0,
+                    transaction_n_entries: 0,
+                    page_file_id: PageFileId(1),
+                    op: LogOp::Write,
+                },
+                Some(PageMetadata::empty()),
+            )
+            .expect_err("block should be full");
     }
 }

@@ -30,6 +30,8 @@ pub struct PageGroupId(pub(crate) u64);
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    serde_derive::Serialize,
+    serde_derive::Deserialize,
 )]
 #[rkyv(derive(Debug), compare(PartialEq))]
 /// A unique identifier for a file of pages.

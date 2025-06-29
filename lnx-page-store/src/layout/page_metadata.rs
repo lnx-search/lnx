@@ -13,13 +13,13 @@ const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
 #[rkyv(derive(Debug))]
 /// Metadata about the page and the ata stored within it when serialized on disk.
 pub struct PageMetadata {
-    /// The ID of the page.
-    pub(crate) id: PageId,
     /// The block this page contains data for.
     pub(crate) block: PageGroupId,
     /// The revision is a monotonic ID for each page within a block that
     /// tracks the number of observed updates to the block.
     pub(crate) revision: u64,
+    /// The ID of the page.
+    pub(crate) id: PageId,
     /// The length of the buffer within the page.
     pub(crate) data_len: u32,
     /// Context bytes used for decrypting the page data.
@@ -178,6 +178,7 @@ mod tests {
     #[test]
     fn ensure_metadata_size() {
         assert_eq!(size_of::<PageMetadata>(), 64);
-        assert_eq!(size_of::<PageMetadataX63Bock>(), 4032);
+        assert_eq!(size_of::<ArchivedPageMetadata>(), 64);
+        assert_eq!(size_of::<ArchivedPageMetadataX63Bock>(), 4032);
     }
 }
