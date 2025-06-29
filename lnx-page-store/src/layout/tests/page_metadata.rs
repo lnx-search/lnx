@@ -44,7 +44,7 @@ fn test_encode_pages_metadata(
         block.pages[*idx] = *page;
     }
 
-    encode_page_metadata_block(cipher.as_ref(), &block, &mut buffer)
+    encode_page_metadata_block(cipher.as_ref(), b"", &block, &mut buffer)
         .expect("page metadata encoding failed");
 }
 
@@ -72,19 +72,11 @@ fn test_encode_decode_pages_metadata(
         block.pages[*idx] = *page;
     }
 
-    encode_page_metadata_block(cipher.as_ref(), &block, &mut buffer)
+    encode_page_metadata_block(cipher.as_ref(), b"", &block, &mut buffer)
         .expect("page metadata encoding failed");
 
-    let decoded_block = decode_page_metadata_block(
-        if encrypt {
-            Encryption::Enabled
-        } else {
-            Encryption::Disabled
-        },
-        cipher.as_ref(),
-        &mut buffer,
-    )
-    .expect("page metadata decode");
+    let decoded_block = decode_page_metadata_block(cipher.as_ref(), b"", &mut buffer)
+        .expect("page metadata decode");
     assert_eq!(&*decoded_block, &block);
 }
 
@@ -97,7 +89,7 @@ fn test_encode_err_incorrect_buffer_size(#[case] encrypt: bool) {
     let cipher = if encrypt { Some(cipher_1()) } else { None };
     let block = PageMetadataX63Bock::empty();
 
-    let err = encode_page_metadata_block(cipher.as_ref(), &block, &mut buffer)
+    let err = encode_page_metadata_block(cipher.as_ref(), b"", &block, &mut buffer)
         .expect_err("page metadata encoding should fail");
     assert_eq!(err.to_string(), "provided buffer length is incorrect");
 }
@@ -110,57 +102,36 @@ fn test_decode_err_incorrect_buffer_size(#[case] encrypt: bool) {
 
     let cipher = if encrypt { Some(cipher_1()) } else { None };
     let block = PageMetadataX63Bock::empty();
-    encode_page_metadata_block(cipher.as_ref(), &block, &mut buffer).unwrap();
+    encode_page_metadata_block(cipher.as_ref(), b"", &block, &mut buffer).unwrap();
 
-    let err = decode_page_metadata_block(
-        if encrypt {
-            Encryption::Enabled
-        } else {
-            Encryption::Disabled
-        },
-        cipher.as_ref(),
-        &mut buffer[..2 << 10],
-    )
-    .expect_err("page metadata decode should fail");
+    let err = decode_page_metadata_block(cipher.as_ref(), b"", &mut buffer[..2 << 10])
+        .expect_err("page metadata decode should fail");
     assert_eq!(err.to_string(), "provided buffer length is incorrect");
 }
 
 #[rstest::rstest]
-#[case::encrypt_missing_cipher(
-    Encryption::Enabled,
-    Some(cipher_1()),
-    None,
-    DecodeError::MissingDecryptionCipher
-)]
 #[case::decrypt_non_encrypted_data(
-    Encryption::Enabled,
     None,
     Some(cipher_1()),
     DecodeError::DecryptionFailed
 )]
-#[case::encrypt_missmatch_keys(
-    Encryption::Enabled,
+#[case::dencrypt_missmatch_keys(
     Some(cipher_1()),
     Some(cipher_2()),
     DecodeError::DecryptionFailed
 )]
-#[case::checksum_missmatch(
-    Encryption::Disabled,
-    Some(cipher_1()),
-    None,
-    DecodeError::Corrupted
-)]
+#[case::checksum_missmatch(Some(cipher_1()), None, DecodeError::Corrupted)]
 fn test_decode_err_most_errors(
-    #[case] mode: Encryption,
     #[case] encode_cipher: Option<encrypt::Cipher>,
     #[case] decode_cipher: Option<encrypt::Cipher>,
     #[case] expected_error: DecodeError,
 ) {
     let mut buffer = vec![0; 4 << 10];
     let block = PageMetadataX63Bock::empty();
-    encode_page_metadata_block(encode_cipher.as_ref(), &block, &mut buffer).unwrap();
+    encode_page_metadata_block(encode_cipher.as_ref(), b"", &block, &mut buffer)
+        .unwrap();
 
-    let err = decode_page_metadata_block(mode, decode_cipher.as_ref(), &mut buffer)
+    let err = decode_page_metadata_block(decode_cipher.as_ref(), b"", &mut buffer)
         .expect_err("page metadata decode should fail");
     assert_eq!(err.to_string(), expected_error.to_string());
 }

@@ -11,7 +11,6 @@
 //! The reliability of this log is achieved on the assumption that the
 //! disk sector size for atomic writes is some multiple of `512` bytes.
 
-use rkyv::api::root_position;
 use rkyv::rancor;
 use rkyv::ser::Positional;
 
@@ -32,6 +31,7 @@ pub const LOG_BLOCK_SIZE: usize = 512;
 /// check the CRC32 checksum check depending on if not.
 pub fn decode_log_block<'buf>(
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     buffer: &'buf mut [u8],
 ) -> Result<&'buf rkyv::Archived<LogBlock>, DecodeLogBlockError> {
     if buffer.len() != LOG_BLOCK_SIZE {
@@ -42,7 +42,7 @@ pub fn decode_log_block<'buf>(
     let [context, blk] = buffer.get_disjoint_mut(ctx_indices).unwrap();
 
     if let Some(cipher) = cipher {
-        encrypt::decrypt_in_place(cipher, blk, context)
+        encrypt::decrypt_in_place(cipher, associated_data, blk, context)
             .map_err(|_| DecodeLogBlockError::DecryptionFail)?;
     } else {
         let verified = integrity::verify(Encryption::Disabled, None, blk, context);
@@ -81,6 +81,7 @@ pub enum DecodeLogBlockError {
 /// The size of the log entry is always [LOG_BLOCK_SIZE] in size.
 pub fn encode_log_block(
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     entry: &LogBlock,
     buffer: &mut [u8],
 ) -> Result<(), EncodeLogBlockError> {
@@ -105,7 +106,7 @@ pub fn encode_log_block(
     eprintln!("{:?}", &blk[..60 + 8]);
     eprintln!("{blk:?}");
     if let Some(cipher) = cipher {
-        encrypt::encrypt_in_place(cipher, blk, context)
+        encrypt::encrypt_in_place(cipher, associated_data, blk, context)
             .map_err(EncodeLogBlockError::EncryptionFail)?;
     } else {
         integrity::write_check_bytes(None, blk, context);

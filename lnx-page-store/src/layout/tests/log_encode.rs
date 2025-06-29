@@ -58,7 +58,7 @@ fn sample_log_block(entry: LogEntry) -> LogBlock {
 )]
 fn test_encode_log(#[case] block: LogBlock, #[case] cipher: Option<encrypt::Cipher>) {
     let mut output = [0; 512];
-    encode_log_block(cipher.as_ref(), &block, &mut output)
+    encode_log_block(cipher.as_ref(), b"", &block, &mut output)
         .expect("log entry should be encoded successfully");
 }
 
@@ -90,7 +90,7 @@ fn test_encode_log_errors(
     });
 
     let mut output = vec![0; buffer_size];
-    let error = encode_log_block(cipher.as_ref(), &block, &mut output)
+    let error = encode_log_block(cipher.as_ref(), b"", &block, &mut output)
         .expect_err("log entry should fail to encode");
     assert_eq!(error.to_string(), expected_error.to_string());
 }

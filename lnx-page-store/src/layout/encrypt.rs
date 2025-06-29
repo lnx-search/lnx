@@ -15,6 +15,7 @@ pub struct DecryptError;
 /// Returns an error if the buffer could not be decrypted.
 pub fn decrypt_in_place(
     cipher: &XChaCha20Poly1305,
+    associated_data: &[u8],
     encoded_bytes: &mut [u8],
     context: &[u8],
 ) -> Result<(), DecryptError> {
@@ -26,7 +27,7 @@ pub fn decrypt_in_place(
     let nonce = XNonce::from_slice(&context[16..CONTEXT_LEN]);
 
     cipher
-        .decrypt_in_place_detached(nonce, b"", encoded_bytes, tag)
+        .decrypt_in_place_detached(nonce, associated_data, encoded_bytes, tag)
         .map_err(|_| DecryptError)?;
 
     Ok(())
@@ -45,6 +46,7 @@ pub struct EncryptError(String);
 /// This context buffer contains the nonce and tag.
 pub fn encrypt_in_place(
     cipher: &XChaCha20Poly1305,
+    associated_data: &[u8],
     raw_bytes: &mut [u8],
     context: &mut [u8],
 ) -> Result<(), EncryptError> {
@@ -55,7 +57,7 @@ pub fn encrypt_in_place(
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
 
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, b"", raw_bytes)
+        .encrypt_in_place_detached(&nonce, associated_data, raw_bytes)
         .map_err(|e| EncryptError(e.to_string()))?;
 
     context[..16].copy_from_slice(tag.as_slice());
@@ -86,12 +88,12 @@ mod tests {
         let mut input_bytes = vec![1; data_len];
         let mut reserved_bytes = vec![1; reserved_len];
 
-        encrypt_in_place(&cipher, &mut input_bytes, &mut reserved_bytes)
+        encrypt_in_place(&cipher, b"", &mut input_bytes, &mut reserved_bytes)
             .expect("encode data");
         assert!(input_bytes.is_empty() || input_bytes != vec![1; data_len]);
         assert!(reserved_bytes.is_empty() || reserved_bytes != vec![0; reserved_len]);
 
-        decrypt_in_place(&cipher, &mut input_bytes, &reserved_bytes)
+        decrypt_in_place(&cipher, b"", &mut input_bytes, &reserved_bytes)
             .expect("decode data");
         assert_eq!(input_bytes, vec![1; data_len]);
     }
@@ -112,7 +114,7 @@ mod tests {
         let mut input_bytes = vec![1; data_len];
         let mut reserved_bytes = vec![1; reserved_len];
 
-        let err = encrypt_in_place(&cipher, &mut input_bytes, &mut reserved_bytes)
+        let err = encrypt_in_place(&cipher, b"", &mut input_bytes, &mut reserved_bytes)
             .expect_err("encode should error");
         assert_eq!(err.to_string(), expected_msg);
     }
@@ -122,7 +124,7 @@ mod tests {
         let key = XChaCha20Poly1305::generate_key(&mut OsRng);
         let cipher = XChaCha20Poly1305::new(&key);
 
-        let err = decrypt_in_place(&cipher, &mut [], &mut []).unwrap_err();
+        let err = decrypt_in_place(&cipher, b"", &mut [], &mut []).unwrap_err();
         assert_eq!(err.to_string(), DecryptError.to_string());
     }
 
@@ -134,12 +136,12 @@ mod tests {
         let mut input_bytes = vec![1; 128];
         let mut reserved_bytes = vec![1; 40];
 
-        encrypt_in_place(&cipher, &mut input_bytes, &mut reserved_bytes).unwrap();
+        encrypt_in_place(&cipher, b"", &mut input_bytes, &mut reserved_bytes).unwrap();
 
         let key = XChaCha20Poly1305::generate_key(&mut OsRng);
         let cipher = XChaCha20Poly1305::new(&key);
-        let err =
-            decrypt_in_place(&cipher, &mut input_bytes, &reserved_bytes).unwrap_err();
+        let err = decrypt_in_place(&cipher, b"", &mut input_bytes, &reserved_bytes)
+            .unwrap_err();
         assert_eq!(err.to_string(), DecryptError.to_string());
     }
 }

@@ -32,7 +32,7 @@
 
 pub mod encrypt;
 pub mod file_metadata;
-mod integrity;
+pub mod integrity;
 pub mod log;
 pub mod page_metadata;
 #[cfg(all(test, not(feature = "test-miri")))]

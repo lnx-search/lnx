@@ -79,6 +79,7 @@ pub enum DecodeError {
 /// Decode a page file metadata entry from the provided buffer.
 pub fn decode_page_file_metadata<T: serde::de::DeserializeOwned>(
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     mut buffer: &mut [u8],
 ) -> Result<T, DecodeError> {
     if !has_magic_bytes(buffer) {
@@ -99,7 +100,7 @@ pub fn decode_page_file_metadata<T: serde::de::DeserializeOwned>(
 
     if let Encryption::Enabled = encryption_hint {
         let cipher = cipher.ok_or(DecodeError::MissingDecryptionCipher)?;
-        encrypt::decrypt_in_place(cipher, buffer, context)
+        encrypt::decrypt_in_place(cipher, associated_data, buffer, context)
             .map_err(|_| DecodeError::DecryptionFailed)?;
     }
 
@@ -128,6 +129,7 @@ pub enum EncodeError {
 /// This data will be encrypted if the cipher is provided.
 pub fn encode_page_file_metadata<T: serde::Serialize>(
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     metadata: &T,
     mut buffer: &mut [u8],
 ) -> Result<(), EncodeError> {
@@ -156,7 +158,7 @@ pub fn encode_page_file_metadata<T: serde::Serialize>(
     buffer[size_of::<u32>()..size_of::<u32>() + data.len()].copy_from_slice(&data);
 
     if let Some(cipher) = cipher {
-        encrypt::encrypt_in_place(cipher, buffer, context)
+        encrypt::encrypt_in_place(cipher, associated_data, buffer, context)
             .map_err(EncodeError::EncryptionFailed)?;
     }
 

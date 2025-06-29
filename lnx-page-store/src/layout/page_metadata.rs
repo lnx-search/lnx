@@ -2,7 +2,6 @@ use rkyv::rancor;
 use rkyv::ser::writer::Buffer;
 
 use crate::layout::encrypt;
-use crate::layout::file_metadata::Encryption;
 use crate::{PageGroupId, PageId};
 
 const ENTRIES_PER_BLOCK: usize = 63;
@@ -84,6 +83,7 @@ pub enum EncodeError {
 /// The provided buffer should be 4KB in size.
 pub fn encode_page_metadata_block(
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     entries: &PageMetadataX63Bock,
     buffer: &mut [u8],
 ) -> Result<(), EncodeError> {
@@ -102,7 +102,7 @@ pub fn encode_page_metadata_block(
     buffer[..4].copy_from_slice(&checksum.to_le_bytes());
 
     if let Some(cipher) = cipher {
-        encrypt::encrypt_in_place(cipher, buffer, context)
+        encrypt::encrypt_in_place(cipher, associated_data, buffer, context)
             .map_err(|_| EncodeError::EncryptionFail)?;
     }
 
@@ -115,10 +115,6 @@ pub enum DecodeError {
     #[error("provided buffer length is incorrect")]
     /// The provided buffer is too small.
     IncorrectBufferSize,
-    #[error("decoder missing decryption cipher")]
-    /// The data is encrypted but the decoded was not provided
-    /// with a decryption cipher.
-    MissingDecryptionCipher,
     #[error("failed to decrypt data")]
     /// The data could not be decrypted.
     DecryptionFailed,
@@ -138,8 +134,8 @@ pub enum DecodeError {
 ///
 /// The provided buffer should be 4KB in size.
 pub fn decode_page_metadata_block(
-    mode: Encryption,
     cipher: Option<&encrypt::Cipher>,
+    associated_data: &[u8],
     buffer: &mut [u8],
 ) -> Result<Box<PageMetadataX63Bock>, DecodeError> {
     if buffer.len() != EXPECTED_BUFFER_SIZE {
@@ -150,9 +146,8 @@ pub fn decode_page_metadata_block(
         .get_disjoint_mut([0..40, 40..EXPECTED_BUFFER_SIZE])
         .unwrap();
 
-    if mode == Encryption::Enabled {
-        let cipher = cipher.ok_or(DecodeError::MissingDecryptionCipher)?;
-        encrypt::decrypt_in_place(cipher, buffer, context)
+    if let Some(cipher) = cipher {
+        encrypt::decrypt_in_place(cipher, associated_data, buffer, context)
             .map_err(|_| DecodeError::DecryptionFailed)?;
     }
 

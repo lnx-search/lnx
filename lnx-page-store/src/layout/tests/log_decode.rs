@@ -28,11 +28,11 @@ fn test_log_decode_buffer_wrong_size() {
     let block = sample_log_block();
 
     let mut buffer = [0; 1024];
-    encode_log_block(None, &block, &mut buffer[..512])
+    encode_log_block(None, b"", &block, &mut buffer[..512])
         .expect("log entry should be encoded successfully");
 
-    let err =
-        decode_log_block(None, &mut buffer).expect_err("entry should fail to decode");
+    let err = decode_log_block(None, b"", &mut buffer)
+        .expect_err("entry should fail to decode");
     assert_eq!(
         err.to_string(),
         DecodeLogBlockError::BufferWrongSize.to_string()
@@ -50,10 +50,10 @@ fn test_log_decoding(#[case] entry: LogBlock, #[case] encrypt_enable: bool) {
     };
 
     let mut buffer = [0; 512];
-    encode_log_block(cipher.as_ref(), &entry, &mut buffer)
+    encode_log_block(cipher.as_ref(), b"", &entry, &mut buffer)
         .expect("log entry should be encoded successfully");
 
-    let entry = decode_log_block(cipher.as_ref(), &mut buffer)
+    let entry = decode_log_block(cipher.as_ref(), b"", &mut buffer)
         .map_err(|e| {
             eprintln!("{e}");
             e
@@ -85,14 +85,14 @@ fn test_log_decoding_errors(
     #[case] expected_error: DecodeLogBlockError,
 ) {
     let mut buffer = [0; 512];
-    encode_log_block(encode_cipher.as_ref(), &entry, &mut buffer)
+    encode_log_block(encode_cipher.as_ref(), b"", &entry, &mut buffer)
         .expect("log entry should be encoded successfully");
 
     if let Some(overwrite) = overwrite_digest {
         buffer[..overwrite.len()].copy_from_slice(overwrite);
     }
 
-    let err = decode_log_block(decode_cipher.as_ref(), &mut buffer)
+    let err = decode_log_block(decode_cipher.as_ref(), b"", &mut buffer)
         .expect_err("entry should fail to decode");
     assert_eq!(err.to_string(), expected_error.to_string());
 }
