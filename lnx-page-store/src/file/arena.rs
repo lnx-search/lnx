@@ -6,7 +6,7 @@ use std::sync::Arc;
 use offset_allocator::{Allocation, Allocator};
 use parking_lot::Mutex;
 
-const PAGE_SIZE: usize = 4096;
+use super::ALLOC_PAGE_SIZE;
 
 #[derive(Clone)]
 /// The arena allocator produces sets of pages for use in reading and writing of
@@ -18,14 +18,15 @@ const PAGE_SIZE: usize = 4096;
 /// This arena can be cheaply cloned, it is guarded by a lock internally.
 pub struct ArenaAllocator {
     allocator: Arc<Mutex<Fragment>>,
+    size: usize,
 }
 
 impl ArenaAllocator {
-    /// Creates a new [ArenaAllocator] with capacity for a given `num_pages` with [PAGE_SIZE]
+    /// Creates a new [ArenaAllocator] with capacity for a given `num_pages` with [ALLOC_PAGE_SIZE]
     /// number of bytes each.
     pub fn new(num_pages: usize) -> Self {
         let mem = memmap2::MmapOptions::default()
-            .len(num_pages * PAGE_SIZE)
+            .len(num_pages * ALLOC_PAGE_SIZE)
             .map_anon()
             .expect("Failed to allocate memory");
 
@@ -36,6 +37,7 @@ impl ArenaAllocator {
 
         Self {
             allocator: Arc::new(Mutex::new(fragment)),
+            size: num_pages * ALLOC_PAGE_SIZE,
         }
     }
 
@@ -54,6 +56,17 @@ impl ArenaAllocator {
             len,
         })
     }
+
+    /// Returns the pointer to the memory block the arena allocates on.
+    pub fn mem_ptr(&self) -> *mut u8 {
+        let mut lock = self.allocator.lock();
+        lock.mem.as_mut_ptr()
+    }
+
+    /// Returns the total size of the memory block the arena allocates on.
+    pub fn mem_size(&self) -> usize {
+        self.size
+    }
 }
 
 struct Fragment {
@@ -67,9 +80,9 @@ impl Fragment {
         let ptr = unsafe {
             self.mem
                 .as_mut_ptr()
-                .add((allocation.offset as usize) * PAGE_SIZE)
+                .add((allocation.offset as usize) * ALLOC_PAGE_SIZE)
         };
-        Some((allocation, ptr, num_pages * PAGE_SIZE))
+        Some((allocation, ptr, num_pages * ALLOC_PAGE_SIZE))
     }
 
     fn free(&mut self, allocation: Allocation) {
@@ -108,6 +121,16 @@ impl ArenaBuffer {
                 shared
             },
         }
+    }
+
+    /// Returns the buffer as an immutable slice.
+    pub fn as_slice(&self) -> &[u8] {
+        self
+    }
+
+    /// Returns the buffer as a mutable slice.
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        &mut *self
     }
 }
 

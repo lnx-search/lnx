@@ -1,14 +1,23 @@
 //! The operations log tracks changes to pages in the data files.
 
+mod file;
+
 use std::collections::VecDeque;
 
 use parking_lot::RwLock;
+
+use crate::layout::file_metadata::Encryption;
 
 #[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
 /// The file metadata header used to identify the file and the type.
 pub struct MetadataHeader {
     /// The unique ID of the log file.
+    ///
+    /// NOTE: This ID changes every time the WAL is flushed, although the disk
+    /// allocation stays the same, the file itself is seen as 'new'.
     pub log_file_id: u64,
+    /// Signals if the data in the log is encrypted or not.
+    pub encryption: Encryption,
 }
 
 /// The op log writer acts as a WAL for page metadata changes.
