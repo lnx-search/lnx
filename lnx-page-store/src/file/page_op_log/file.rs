@@ -7,7 +7,7 @@ use i2o2::opcode::FSyncMode;
 use crate::file::buffer::DmaBuffer;
 use crate::file::ctx::associated_date;
 use crate::file::utils::{align_down, align_up};
-use crate::file::{DISK_ALIGN, DynamicGuard, ctx};
+use crate::file::{DISK_ALIGN, DynamicGuard, ctx, ring};
 use crate::layout::log;
 use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;
@@ -29,9 +29,7 @@ pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
     scheduler_handle: i2o2::I2o2Handle<DynamicGuard>,
 
-    file_id: u64,
-    file_ring_id: u32,
-    file: std::fs::File,
+    file: ring::RingFile,
     closed: bool,
 
     log_offset: u64,
@@ -117,26 +115,7 @@ impl LogFileWriter {
         if let Some(iop) = self.inflight_iop.take() {
             complete_iop(iop).await?;
         }
-
-        let op = i2o2::opcode::Fsync::new(
-            i2o2::types::Fixed(self.file_ring_id),
-            FSyncMode::Data,
-        );
-
-        let reply = unsafe {
-            self.scheduler_handle
-                .submit_async(op, None)
-                .await
-                .map_err(io::Error::other)?
-        };
-
-        let result = reply
-            .await
-            .map_err(|_| io::Error::other("io scheduler panicked"))?;
-
-        if result < 0 {
-            return Err(io::Error::from_raw_os_error(-result));
-        }
+        self.file.fdatasync().await?;
 
         Ok(self.current_pos)
     }
@@ -145,7 +124,7 @@ impl LogFileWriter {
         let buffer = &mut self.block_buffer[self.block_offset..][..log::LOG_BLOCK_SIZE];
         log::encode_log_block(
             self.ctx.cipher(),
-            &associated_date(self.file_id, self.current_pos),
+            &associated_date(self.file.id(), self.current_pos),
             &self.wip_block,
             buffer,
         )
@@ -161,18 +140,16 @@ impl LogFileWriter {
         let aligned_len = align_up(delta_len, DISK_ALIGN);
         let buffer = &self.block_buffer[self.block_buffer_write_pos..][..aligned_len];
         let expected_write_size = buffer.len();
+        let write_offset = self.current_pos;
+
+        let buffer_ptr = buffer.as_ptr();
+        let buffer_len = buffer.len();
 
         // We advance the write pos cursor while still maintaining alignment.
         // We can do this because future writes will replay the unaligned chunk
         // of the buffer until it is long enough to be aligned.
         self.block_buffer_write_pos += align_down(delta_len, DISK_ALIGN);
 
-        let op = i2o2::opcode::Write::new(
-            i2o2::types::Fixed(self.file_ring_id),
-            buffer.as_ptr(),
-            buffer.len(),
-            self.current_pos,
-        );
         // Advance the file cursor, for the same reason as the block buffer pos
         // we only advance the cursor by aligned steps.
         self.current_pos += align_down(delta_len, DISK_ALIGN) as u64;
@@ -188,10 +165,9 @@ impl LogFileWriter {
         //         is guaranteed to live at least as long as the ring requires as it
         //         is passed to our ring guard.
         let reply = unsafe {
-            self.scheduler_handle
-                .submit_async(op, Some(guard))
-                .await
-                .map_err(io::Error::other)?
+            self.file
+                .submit_write(buffer_ptr, buffer_len, write_offset, Some(guard))
+                .await?
         };
 
         let iop = InflightIop {
