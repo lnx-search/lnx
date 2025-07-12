@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicUsize;
+
 use crate::file::arena::ArenaAllocator;
 use crate::file::buffer;
 use crate::layout::encrypt;
@@ -27,7 +29,11 @@ impl FileContext {
             )
         };
 
-        todo!()
+        if let Some(alloc) = self.arena_allocator.alloc(N) {
+            buffer::DmaBuffer::from_arena(alloc)
+        } else {
+            buffer::DmaBuffer::alloc_sys(N / super::ALLOC_PAGE_SIZE)
+        }
     }
 }
 

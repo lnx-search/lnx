@@ -14,6 +14,17 @@ use crate::layout::page_metadata::PageMetadata;
 
 const BUFFER_SIZE: usize = 128 << 10;
 
+/// The [LogFileWriter] acts like a WAL for operations occurring on the page store,
+/// it only logs the metadata operations however, so any data writes should be safely
+/// persisted before writing to this log.
+///
+/// The writer will internally buffer logs into blocks forming 512b chunks, which are then
+/// buffered in memory before being flushed to disk.  The data is written in a way that
+/// prevents torn-writes.
+///
+/// The file has a close-on-error semantic, meaning when an error occurs the writer
+/// will be closed and no new operations will be available.
+/// This is done in order to prevent accidental corruption of phantom data.
 pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
     scheduler_handle: i2o2::I2o2Handle<DynamicGuard>,
