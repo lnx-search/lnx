@@ -6,6 +6,9 @@ use i2o2::opcode::FSyncMode;
 
 use super::DynamicGuard;
 
+
+
+
 /// A [RingFile] is a DIRECT IO file tied to a specific [i2o2::I2o2Scheduler] ring.
 pub struct RingFile {
     id: u64,
@@ -73,6 +76,12 @@ impl RingFile {
     pub async fn fdatasync(&self) {
         if let Err(error) = self.fdatasync_inner().await {
             // We cannot rely on tracing logging displaying the message before the abort.
+            // We also can _never_ retry this operation and assume everything will then be okay,
+            // hence the hard abort here.
+            // See Postgres' paper trail: https://wiki.postgresql.org/wiki/Fsync_Errors
+            // The big one we care about is Linux, but they all share similar behaviour which
+            // means it is absolutely incorrect to assume that issuing another call to fsync()
+            // after the first error.
             eprintln!("FATAL (file_id:{}): {error}", self.id);
             eprintln!("FATAL (file_id:{}): issuing fdatasync iop failed", self.id);
             eprintln!(

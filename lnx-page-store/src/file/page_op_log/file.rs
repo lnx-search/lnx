@@ -2,8 +2,6 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 use std::{io, mem};
 
-use i2o2::opcode::FSyncMode;
-
 use crate::file::buffer::DmaBuffer;
 use crate::file::ctx::associated_date;
 use crate::file::utils::{align_down, align_up};
