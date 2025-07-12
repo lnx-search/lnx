@@ -27,7 +27,6 @@ const BUFFER_SIZE: usize = 128 << 10;
 /// This is done in order to prevent accidental corruption of phantom data.
 pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
-    scheduler_handle: i2o2::I2o2Handle<DynamicGuard>,
 
     file: ring::RingFile,
     closed: bool,
@@ -52,6 +51,32 @@ pub struct LogFileWriter {
 }
 
 impl LogFileWriter {
+    /// Create a new [LogFileWriter] using the provided file context, file and offset.
+    pub fn new(
+        ctx: Arc<ctx::FileContext>,
+        file: ring::RingFile,
+        log_offset: u64,
+    ) -> Self {
+        let buffer = ctx.alloc::<BUFFER_SIZE>();
+
+        Self {
+            ctx,
+
+            file,
+            closed: false,
+
+            log_offset,
+            current_pos: 0,
+
+            wip_block: log::LogBlock::default(),
+            block_buffer: buffer,
+            block_offset: 0,
+            block_buffer_write_pos: 0,
+
+            inflight_iop: None,
+        }
+    }
+
     /// Write a set of blocks to the log file at the current position.
     ///
     /// WARNING: This does not strictly flush data to disk! You must call `sync()` separately
@@ -115,7 +140,7 @@ impl LogFileWriter {
         if let Some(iop) = self.inflight_iop.take() {
             complete_iop(iop).await?;
         }
-        self.file.fdatasync().await?;
+        self.file.fdatasync().await;
 
         Ok(self.current_pos)
     }
