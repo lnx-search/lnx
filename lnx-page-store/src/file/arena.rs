@@ -1,6 +1,4 @@
-use std::fmt::{Debug, Formatter};
 use std::mem;
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use offset_allocator::{Allocation, Allocator};
@@ -107,7 +105,7 @@ impl ArenaBuffer {
     /// a copy. This can be used to ensure the allocation
     /// lives longer than this buffer which is useful
     /// in situations like io_uring.
-    pub fn share_guard(&mut self) -> Arc<AllocationGuard> {
+    pub(super) fn share_guard(&mut self) -> Arc<AllocationGuard> {
         let guard = mem::replace(&mut self.guard, SingleOrShared::None);
         match guard {
             SingleOrShared::None => unreachable!("variant should never bit hit"),
@@ -123,46 +121,24 @@ impl ArenaBuffer {
         }
     }
 
-    /// Returns the buffer as an immutable slice.
-    pub fn as_slice(&self) -> &[u8] {
-        self
+    /// Returns mutable buffer pointer.
+    pub(super) fn as_mut_ptr(&self) -> *mut u8 {
+        self.ptr
     }
 
-    /// Returns the buffer as a mutable slice.
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        &mut *self
+    /// Returns buffer pointer.
+    pub(super) fn as_ptr(&self) -> *const u8 {
+        self.ptr
+    }
+
+    /// Returns the size of the allocation.
+    pub(super) fn alloc_size(&self) -> usize {
+        self.len
     }
 }
 
 unsafe impl Send for ArenaBuffer {}
 unsafe impl Sync for ArenaBuffer {}
-
-impl Debug for ArenaBuffer {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let slice: &[u8] = self.as_ref();
-        write!(f, "{slice:?}")
-    }
-}
-
-impl AsRef<[u8]> for ArenaBuffer {
-    fn as_ref(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-}
-
-impl Deref for ArenaBuffer {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-}
-
-impl DerefMut for ArenaBuffer {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-}
 
 /// The allocation guard holds the lifetime of the allocation,
 /// once dropped it will return the memory back to the arena.

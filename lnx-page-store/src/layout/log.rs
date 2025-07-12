@@ -94,7 +94,7 @@ pub fn encode_log_block(
 
     // Buffer is split into [context, block_len, block_data].
     let ctx_indices = [0..40, 40..512];
-    let blk_indices = [0..8, 8..464];
+    let blk_indices = [0..8, 8..456];
     let [context, blk] = buffer.get_disjoint_mut(ctx_indices).unwrap();
     let [blk_len, blk_data] = blk.get_disjoint_mut(blk_indices).unwrap();
 
@@ -168,6 +168,11 @@ impl LogBlock {
         });
 
         Ok(())
+    }
+
+    /// Reset the block back to its empty form.
+    pub fn reset(&mut self) {
+        self.pairs.clear();
     }
 
     /// Returns the remaining number of bytes the block can hold.
