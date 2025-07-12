@@ -1,10 +1,11 @@
-use std::mem;
+use std::ptr;
 use std::sync::Arc;
 
 use offset_allocator::{Allocation, Allocator};
 use parking_lot::Mutex;
 
 use super::ALLOC_PAGE_SIZE;
+use super::utils::SingleOrShared;
 
 #[derive(Clone)]
 /// The arena allocator produces sets of pages for use in reading and writing of
@@ -73,12 +74,17 @@ struct Fragment {
 }
 
 impl Fragment {
-    fn alloc(&mut self, num_pages: usize) -> Option<(Allocation, *mut u8, usize)> {
+    fn alloc(
+        &mut self,
+        num_pages: usize,
+    ) -> Option<(Allocation, ptr::NonNull<u8>, usize)> {
         let allocation = self.allocator.allocate(num_pages as u32)?;
         let ptr = unsafe {
-            self.mem
+            let ptr = self
+                .mem
                 .as_mut_ptr()
-                .add((allocation.offset as usize) * ALLOC_PAGE_SIZE)
+                .add((allocation.offset as usize) * ALLOC_PAGE_SIZE);
+            ptr::NonNull::new_unchecked(ptr)
         };
         Some((allocation, ptr, num_pages * ALLOC_PAGE_SIZE))
     }
@@ -96,7 +102,7 @@ impl Fragment {
 /// leak this buffer as it can severely impact performance.
 pub struct ArenaBuffer {
     guard: SingleOrShared<AllocationGuard>,
-    ptr: *mut u8,
+    ptr: ptr::NonNull<u8>,
     len: usize,
 }
 
@@ -106,33 +112,21 @@ impl ArenaBuffer {
     /// lives longer than this buffer which is useful
     /// in situations like io_uring.
     pub(super) fn share_guard(&mut self) -> Arc<AllocationGuard> {
-        let guard = mem::replace(&mut self.guard, SingleOrShared::None);
-        match guard {
-            SingleOrShared::None => unreachable!("variant should never bit hit"),
-            SingleOrShared::Single(single) => {
-                let shared = Arc::new(single);
-                self.guard = SingleOrShared::Shared(shared.clone());
-                shared
-            },
-            SingleOrShared::Shared(shared) => {
-                self.guard = SingleOrShared::Shared(shared.clone());
-                shared
-            },
-        }
+        self.guard.share()
     }
 
     /// Returns mutable buffer pointer.
     pub(super) fn as_mut_ptr(&self) -> *mut u8 {
-        self.ptr
+        self.ptr.as_ptr()
     }
 
     /// Returns buffer pointer.
     pub(super) fn as_ptr(&self) -> *const u8 {
-        self.ptr
+        self.ptr.as_ptr()
     }
 
     /// Returns the size of the allocation.
-    pub(super) fn alloc_size(&self) -> usize {
+    pub(super) fn capacity(&self) -> usize {
         self.len
     }
 }
@@ -152,10 +146,4 @@ impl Drop for AllocationGuard {
         let mut fragment = self.allocator.lock();
         fragment.free(self.allocation);
     }
-}
-
-enum SingleOrShared<T> {
-    None,
-    Single(T),
-    Shared(Arc<T>),
 }
