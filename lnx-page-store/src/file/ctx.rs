@@ -12,6 +12,27 @@ pub struct FileContext {
 }
 
 impl FileContext {
+    #[cfg(test)]
+    /// Create a new file context for testing.
+    pub fn for_test(encryption: bool) -> Self {
+        use chacha20poly1305::aead::Key;
+        use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
+
+        let cipher = if encryption {
+            let key = Key::<XChaCha20Poly1305>::from_slice(
+                b"F8E4FeD0098cF3Bf7968E1AC7Bbfacee",
+            );
+            Some(encrypt::Cipher::new(key))
+        } else {
+            None
+        };
+
+        Self {
+            cipher,
+            arena_allocator: ArenaAllocator::new(4),
+        }
+    }
+
     /// Returns the encryption cipher if enabled.
     pub fn cipher(&self) -> Option<&encrypt::Cipher> {
         self.cipher.as_ref()

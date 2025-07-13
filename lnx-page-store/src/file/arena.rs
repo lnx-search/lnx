@@ -147,3 +147,84 @@ impl Drop for AllocationGuard {
         fragment.free(self.allocation);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::alloc::alloc;
+
+    use super::*;
+
+    #[rstest::rstest]
+    #[case::zero_pages(0)]
+    #[case::one_page(1)]
+    #[case::many_pages(6)]
+    fn test_arena_creation(#[case] num_pages: usize) {
+        let arena = ArenaAllocator::new(num_pages);
+        assert_eq!(arena.mem_size(), 4096 * num_pages);
+    }
+
+    #[rstest::rstest]
+    #[case::zero_pages(0)]
+    #[case::one_page(1)]
+    #[case::many_pages(6)]
+    #[case::all_pages(10)]
+    #[should_panic]
+    #[case::too_many_pages(11)]
+    fn test_single_arena_alloc(#[case] num_pages: usize) {
+        let arena = ArenaAllocator::new(10);
+        let _alloc = arena.alloc(num_pages).expect("Failed to allocate memory");
+    }
+
+    #[test]
+    fn test_many_arena_alloc() {
+        let arena = ArenaAllocator::new(10);
+
+        let alloc1 = arena.alloc(2).expect("Failed to allocate memory");
+        assert_eq!(alloc1.capacity(), 4096 * 2);
+        let alloc2 = arena.alloc(8).expect("Failed to allocate memory");
+        assert_eq!(alloc2.capacity(), 4096 * 8);
+
+        drop(alloc2);
+
+        let _alloc3 = arena.alloc(2).expect("Failed to allocate memory");
+        let _alloc4 = arena.alloc(2).expect("Failed to allocate memory");
+
+        let result = arena.alloc(5);
+        assert!(result.is_none());
+
+        let _alloc5 = arena.alloc(4).expect("Failed to allocate memory");
+        drop(alloc1);
+
+        let _alloc6 = arena.alloc(2).expect("Failed to allocate memory");
+    }
+
+    #[test]
+    fn test_allocation_ptr_behaviour() {
+        let arena = ArenaAllocator::new(10);
+
+        let alloc1 = arena.alloc(2).unwrap();
+        assert!(ptr::addr_eq(arena.mem_ptr(), alloc1.as_mut_ptr()));
+
+        let alloc2 = arena.alloc(2).unwrap();
+
+        let start_ptr = arena.mem_ptr();
+        unsafe { assert!(ptr::addr_eq(start_ptr.add(4096 * 2), alloc2.as_ptr())) }
+    }
+
+    #[test]
+    fn test_defer_free() {
+        let arena = ArenaAllocator::new(10);
+
+        let mut alloc1 = arena.alloc(10).unwrap();
+        let guard = alloc1.share_guard();
+
+        let result = arena.alloc(1);
+        assert!(result.is_none());
+
+        drop(alloc1);
+        drop(guard);
+
+        let result = arena.alloc(1);
+        assert!(result.is_some());
+    }
+}
