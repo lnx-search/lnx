@@ -5,7 +5,7 @@ use std::{io, mem};
 use crate::file::buffer::DmaBuffer;
 use crate::file::ctx::associated_date;
 use crate::file::utils::{align_down, align_up};
-use crate::file::{DISK_ALIGN, DynamicGuard, ctx, ring};
+use crate::file::{DISK_ALIGN, DynamicGuard, ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;
@@ -26,7 +26,7 @@ const BUFFER_SIZE: usize = 128 << 10;
 pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
 
-    file: ring::RingFile,
+    file: scheduler::RingFile,
     closed: bool,
 
     log_offset: u64,
@@ -52,7 +52,7 @@ impl LogFileWriter {
     /// Create a new [LogFileWriter] using the provided file context, file and offset.
     pub fn new(
         ctx: Arc<ctx::FileContext>,
-        file: ring::RingFile,
+        file: scheduler::RingFile,
         log_offset: u64,
     ) -> Self {
         let buffer = ctx.alloc::<BUFFER_SIZE>();

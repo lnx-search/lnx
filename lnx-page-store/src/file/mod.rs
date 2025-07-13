@@ -7,7 +7,7 @@ mod ctx;
 mod page_data;
 mod page_metadata;
 mod page_op_log;
-mod ring;
+mod scheduler;
 mod utils;
 
 pub const ALLOC_PAGE_SIZE: usize = 4096;

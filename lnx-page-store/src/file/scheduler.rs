@@ -1,20 +1,74 @@
 use std::io;
 use std::io::ErrorKind;
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use i2o2::opcode::FSyncMode;
 
 use super::DynamicGuard;
 
+pub type FileId = u64;
 
+const MAX_NUM_REGISTERED_FILES: u32 = 10_000;
 
-
-/// A [RingFile] is a DIRECT IO file tied to a specific [i2o2::I2o2Scheduler] ring.
-pub struct RingFile {
-    id: u64,
-    ring_id: u32,
-    _inner: Arc<std::fs::File>,
+#[derive(Clone)]
+/// The [IoScheduler] is a collection of [i2o2::I2o2Scheduler]s running together.
+///
+/// The scheduler allows any IOP to be issued to any one of the i2o2 schedulers.
+pub(super) struct IoScheduler {
     handle: i2o2::I2o2Handle<DynamicGuard>,
+    runtime_handle: Arc<std::thread::JoinHandle<io::Result<()>>>,
+}
+
+impl IoScheduler {
+    #[cfg(test)]
+    /// Creates a new [IoScheduler] for testing environments.
+    pub(super) fn for_test() -> Self {
+        Self::create().unwrap()
+    }
+
+    /// Creates a new [IoScheduler] with a given number of workers.
+    pub(super) fn create() -> io::Result<Self> {
+        let (thread_handle, handle) = i2o2::builder()
+            .with_queue_size(256)
+            // TOOD: Enable automatically: .with_coop_task_run(true)
+            .with_num_registered_files(MAX_NUM_REGISTERED_FILES)
+            .try_spawn()?;
+
+        Ok(Self {
+            handle,
+            runtime_handle: Arc::new(thread_handle),
+        })
+    }
+
+    /// Open a new [RingFile] located at the given path.
+    pub(super) async fn make_ring_file(
+        &self,
+        id: FileId,
+        file: std::fs::File,
+    ) -> io::Result<RingFile> {
+        let file = Arc::new(file);
+        let ring_id = self
+            .handle
+            .register_file_async(file.as_raw_fd(), Some(file.clone()))
+            .await
+            .map_err(io::Error::other)?;
+        Ok(RingFile {
+            id,
+            ring_id,
+            handle: self.handle.clone(),
+            _inner: file,
+            closed: false,
+        })
+    }
+}
+
+/// A [RingFile] is a DIRECT IO file.
+pub struct RingFile {
+    id: FileId,
+    ring_id: u32,
+    handle: i2o2::I2o2Handle<DynamicGuard>,
+    _inner: Arc<std::fs::File>,
     closed: bool,
 }
 
@@ -23,7 +77,7 @@ impl RingFile {
     /// Returns the unique identified of the file.
     ///
     /// This is the resulting name of the file.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> FileId {
         self.id
     }
 
