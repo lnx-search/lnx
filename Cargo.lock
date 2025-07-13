@@ -1800,6 +1800,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "stable_deref_trait",
+ "tempfile",
  "thiserror 2.0.3",
  "tokio",
  "tracing",

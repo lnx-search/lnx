@@ -35,6 +35,7 @@ hmac = { workspace = true }
 [dev-dependencies]
 rstest = { workspace = true }
 crc32fast = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 # Enables huge page allocation tests within the cache.

@@ -203,3 +203,69 @@ impl Drop for RingFile {
         }
     }
 }
+
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_scheduler_ring_file_create() {
+        let scheduler = IoScheduler::create()
+            .expect("create scheduler failed");
+
+        let file = tempfile::tempfile().unwrap();
+        let ring_file = scheduler
+            .make_ring_file(0, file)
+            .await
+            .expect("make ring file failed");
+        assert_eq!(ring_file.id(), 0);
+        assert_eq!(ring_file.ring_id, 0);
+
+        drop(ring_file);
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+    
+    #[tokio::test]
+    async fn test_scheduler_ring_file_graceful_close() {
+        let scheduler = IoScheduler::create()
+            .expect("create scheduler failed");
+
+        let file = tempfile::tempfile().unwrap();
+        let mut ring_file = scheduler
+            .make_ring_file(0, file)
+            .await
+            .expect("make ring file failed");
+
+        assert!(!ring_file.is_closed());
+
+        ring_file.close().await.expect("close failed");
+        assert!(ring_file.is_closed());
+
+        let result = ring_file.ensure_open();
+        assert!(matches!(result, Err(err) if err.kind() == ErrorKind::BrokenPipe));
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_ring_file_write() {
+        let scheduler = IoScheduler::create()
+            .expect("create scheduler failed");
+
+        let file = tempfile::tempfile().unwrap();
+        let ring_file = scheduler
+            .make_ring_file(0, file)
+            .await
+            .expect("make ring file failed");
+
+        let data = vec![1u8; 1024];
+        let reply = unsafe {
+            ring_file
+                .submit_write(data.as_ptr(), data.len(), 0, None).await
+                .expect("submit write failed")
+        };
+
+        let result = reply.await.expect("write reply failed");
+        assert_eq!(result, 1024);
+
+        ring_file.fdatasync().await;
+    }
+}
