@@ -63,7 +63,7 @@ impl FileContext {
 /// This method is used on all files and is used to prevent replay attacks
 /// and a bad actor gaining information about the system by taking and swapping
 /// around data in the files.
-pub fn associated_date(file_id: u64, start_pos: u64) -> [u8; 16] {
+pub fn associated_data(file_id: u64, start_pos: u64) -> [u8; 16] {
     let mut buffer = [0; 16];
     buffer[0..8].copy_from_slice(&file_id.to_le_bytes());
     buffer[8..16].copy_from_slice(&start_pos.to_le_bytes());
@@ -73,5 +73,8 @@ pub fn associated_date(file_id: u64, start_pos: u64) -> [u8; 16] {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn foo() {}
+    fn test_associated_data() {
+        let data = super::associated_data(1, 4);
+        assert_eq!(data, [1, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
+    }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::{io, mem};
 
 use crate::file::buffer::DmaBuffer;
-use crate::file::ctx::associated_date;
+use crate::file::ctx::associated_data;
 use crate::file::utils::{align_down, align_up};
 use crate::file::{DISK_ALIGN, DynamicGuard, ctx, scheduler};
 use crate::layout::log;
@@ -147,7 +147,7 @@ impl LogFileWriter {
         let buffer = &mut self.block_buffer[self.block_offset..][..log::LOG_BLOCK_SIZE];
         log::encode_log_block(
             self.ctx.cipher(),
-            &associated_date(self.file.id(), self.current_pos),
+            &associated_data(self.file.id(), self.current_pos),
             &self.wip_block,
             buffer,
         )
