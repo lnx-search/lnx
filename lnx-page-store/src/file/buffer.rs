@@ -122,10 +122,6 @@ impl SysBuffer {
     fn as_mut_ptr(&mut self) -> *mut u8 {
         self.data.as_ptr()
     }
-
-    fn alloc_size(&self) -> usize {
-        self.size
-    }
 }
 
 struct SysBufferDropGuard {
@@ -141,5 +137,93 @@ impl Drop for SysBufferDropGuard {
         unsafe {
             alloc::dealloc(self.data.as_ptr(), self.layout);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case::alloc_zero(0)]
+    #[case::alloc_one(1)]
+    #[case::alloc_many(5)]
+    fn test_sys_alloc(#[case] num_pages: usize) {
+        let buf = DmaBuffer::alloc_sys(num_pages);
+        assert_eq!(buf.capacity(), num_pages * ALLOC_PAGE_SIZE);
+        assert_eq!(buf.len(), num_pages * ALLOC_PAGE_SIZE);
+    }
+
+    #[test]
+    fn test_dma_sys_alloc_write() {
+        let mut buf = DmaBuffer::alloc_sys(1);
+        buf[0..4].copy_from_slice(&[1, 2, 3, 4]);
+        assert_eq!(buf[0..4], [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_dma_buffer_empty() {
+        let buf = DmaBuffer::alloc_empty();
+        assert_eq!(buf.capacity(), 0);
+        assert_eq!(buf.as_ref(), &[0; 0]);
+    }
+
+    #[test]
+    fn test_sys_alloc_empty_buf() {
+        let buf = DmaBuffer::alloc_sys(0);
+        assert_eq!(buf.capacity(), 0);
+        assert_eq!(buf.as_ref(), &[0; 0]);
+    }
+
+    #[test]
+    fn test_sys_alloc_zeroed() {
+        let buf = DmaBuffer::alloc_sys(1);
+        assert_eq!(buf.capacity(), 4096);
+        assert_eq!(buf.as_ref(), &[0; 4096]);
+    }
+
+    #[test]
+    fn test_sys_alloc_defer_free() {
+        let mut buf = DmaBuffer::alloc_sys(10);
+        let guard = buf.share_guard();
+
+        let len = buf.len();
+        let ptr = buf.as_ptr();
+        drop(buf);
+
+        // In miri we trust
+        let read = unsafe { slice::from_raw_parts(ptr, len) };
+        assert!(read.iter().all(|b| *b == 0));
+
+        drop(guard);
+    }
+
+    #[test]
+    fn test_dma_buffer_from_arena() {
+        let arena = crate::file::arena::ArenaAllocator::new(1);
+        let alloc = arena.alloc(1).unwrap();
+        let mut buf = DmaBuffer::from_arena(alloc);
+        assert_eq!(buf.capacity(), 4096);
+        assert_eq!(buf.as_ref(), &[0; 4096]);
+
+        buf[0..4].copy_from_slice(&[1, 2, 3, 4]);
+        assert_eq!(buf[0..4], [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_dma_buffer_arena_share_guard() {
+        let arena = crate::file::arena::ArenaAllocator::new(1);
+        let alloc = arena.alloc(1).unwrap();
+        let mut buf = DmaBuffer::from_arena(alloc);
+
+        let guard = buf.share_guard();
+        drop(buf);
+
+        let result = arena.alloc(1);
+        assert!(result.is_none());
+
+        drop(guard);
+        let result = arena.alloc(1);
+        assert!(result.is_some());
     }
 }
