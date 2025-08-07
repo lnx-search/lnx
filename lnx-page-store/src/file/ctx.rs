@@ -70,7 +70,7 @@ pub fn associated_data(file_id: u64, start_pos: u64) -> [u8; 16] {
     buffer
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     #[test]
     fn test_associated_data() {

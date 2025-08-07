@@ -41,7 +41,7 @@ pub(super) fn align_down(value: usize, align: usize) -> usize {
     (value / align) * align
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
 
@@ -60,5 +60,21 @@ mod tests {
         assert_eq!(align_down(1, 4), 0);
         assert_eq!(align_down(4, 4), 4);
         assert_eq!(align_down(5, 4), 4);
+    }
+
+    #[test]
+    fn test_single_or_shared() {
+        let mut single = SingleOrShared::Single(123);
+        let shared1 = single.share();
+        let shared2 = single.share();
+        assert!(matches!(single, SingleOrShared::Shared(_)));
+        assert_eq!(shared1, shared2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_single_or_shared_none_variant_panics() {
+        let mut single: SingleOrShared<()> = SingleOrShared::None;
+        single.share();
     }
 }

@@ -69,6 +69,7 @@ pub struct RingFile {
     ring_id: u32,
     handle: i2o2::I2o2Handle<DynamicGuard>,
     _inner: Arc<std::fs::File>,
+    io_error_lockout: bool,
     closed: bool,
 }
 
@@ -108,7 +109,7 @@ impl RingFile {
         offset: u64,
         maybe_guard: Option<DynamicGuard>,
     ) -> io::Result<i2o2::ReplyReceiver> {
-        self.ensure_open()?;
+        self.ensure_safe_state()?;
 
         let op =
             i2o2::opcode::Write::new(i2o2::types::Fixed(self.ring_id), ptr, len, offset);
@@ -127,7 +128,7 @@ impl RingFile {
     }
 
     /// Performs the equivalent of a `fdatasync(1)`.
-    pub async fn fdatasync(&self) {
+    pub async fn fdatasync(&mut self) {
         if let Err(error) = self.fdatasync_inner().await {
             // We cannot rely on tracing logging displaying the message before the abort.
             // We also can _never_ retry this operation and assume everything will then be okay,
@@ -154,7 +155,7 @@ impl RingFile {
     }
 
     async fn fdatasync_inner(&self) -> io::Result<()> {
-        self.ensure_open()?;
+        self.ensure_safe_state()?;
 
         let op =
             i2o2::opcode::Fsync::new(i2o2::types::Fixed(self.ring_id), FSyncMode::Data);
@@ -177,9 +178,11 @@ impl RingFile {
         }
     }
 
-    fn ensure_open(&self) -> io::Result<()> {
+    fn ensure_safe_state(&self) -> io::Result<()> {
         if self.closed {
             Err(io::Error::new(ErrorKind::BrokenPipe, "file closed"))
+        } else if self.io_error_lockout {
+            Err(io::Error::new(ErrorKind::))
         } else {
             Ok(())
         }
@@ -241,7 +244,7 @@ mod tests {
         ring_file.close().await.expect("close failed");
         assert!(ring_file.is_closed());
 
-        let result = ring_file.ensure_open();
+        let result = ring_file.ensure_safe_state();
         assert!(matches!(result, Err(err) if err.kind() == ErrorKind::BrokenPipe));
     }
 

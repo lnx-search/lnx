@@ -1,6 +1,8 @@
 //! The operations log tracks changes to pages in the data files.
 
 mod file;
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests;
 
 use std::collections::VecDeque;
 
