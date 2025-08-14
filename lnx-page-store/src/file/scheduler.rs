@@ -58,6 +58,7 @@ impl IoScheduler {
             ring_id,
             handle: self.handle.clone(),
             _inner: file,
+            io_error_lockout: false,
             closed: false,
         })
     }
@@ -128,29 +129,12 @@ impl RingFile {
     }
 
     /// Performs the equivalent of a `fdatasync(1)`.
-    pub async fn fdatasync(&mut self) {
+    pub async fn fdatasync(&mut self) -> io::Result<()> {
         if let Err(error) = self.fdatasync_inner().await {
-            // We cannot rely on tracing logging displaying the message before the abort.
-            // We also can _never_ retry this operation and assume everything will then be okay,
-            // hence the hard abort here.
-            // See Postgres' paper trail: https://wiki.postgresql.org/wiki/Fsync_Errors
-            // The big one we care about is Linux, but they all share similar behaviour which
-            // means it is absolutely incorrect to assume that issuing another call to fsync()
-            // after the first error.
-            eprintln!("FATAL (file_id:{}): {error}", self.id);
-            eprintln!("FATAL (file_id:{}): issuing fdatasync iop failed", self.id);
-            eprintln!(
-                "FATAL (file_id:{}): under normal conditions a fdatasync call should never fail, \
-                 this likely means the underlying storage has failed",
-                self.id
-            );
-            eprintln!(
-                "FATAL (file_id:{}): system will abort in order to ensure data integrity, \
-                recovery will be required upon startup",
-                self.id
-            );
-
-            std::process::abort();
+            self.io_error_lockout = true;
+            Err(error)
+        } else {
+            Ok(())
         }
     }
 
@@ -182,7 +166,7 @@ impl RingFile {
         if self.closed {
             Err(io::Error::new(ErrorKind::BrokenPipe, "file closed"))
         } else if self.io_error_lockout {
-            Err(io::Error::new(ErrorKind::))
+            Err(io::Error::new(ErrorKind::ReadOnlyFilesystem, "file has become readonly due to a prior IO Error"))
         } else {
             Ok(())
         }
@@ -254,7 +238,7 @@ mod tests {
             .expect("create scheduler failed");
 
         let file = tempfile::tempfile().unwrap();
-        let ring_file = scheduler
+        let mut ring_file = scheduler
             .make_ring_file(0, file)
             .await
             .expect("make ring file failed");
