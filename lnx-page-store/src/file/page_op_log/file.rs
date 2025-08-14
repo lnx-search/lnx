@@ -84,9 +84,22 @@ impl LogFileWriter {
         entry: LogEntry,
         metadata: Option<PageMetadata>,
     ) -> io::Result<()> {
+        self.ensure_file_writeable()?;
         let result = self.write_log_inner(entry, metadata).await;
         if result.is_err() {
-            self.closed = true;
+            self.try_close_file().await;
+        }
+        result
+    }
+
+    /// Flush the buffered log data to disk and ensure it is safely persisted.
+    ///
+    /// Returns the position the file is flushed up to.
+    pub async fn sync(&mut self) -> io::Result<u64> {
+        self.ensure_file_writeable()?;
+        let result = self.sync_inner().await;
+        if result.is_err() {
+            self.try_close_file().await;
         }
         result
     }
@@ -96,8 +109,6 @@ impl LogFileWriter {
         entry: LogEntry,
         metadata: Option<PageMetadata>,
     ) -> io::Result<()> {
-        self.ensure_not_closed()?;
-
         let (entry, metadata) = match self.wip_block.push_entry(entry, metadata) {
             Ok(()) => return Ok(()),
             Err(pair) => pair,
@@ -117,20 +128,7 @@ impl LogFileWriter {
         Ok(())
     }
 
-    /// Flush the buffered log data to disk and ensure it is safely persisted.
-    ///
-    /// Returns the position the file is flushed up to.
-    pub async fn sync(&mut self) -> io::Result<u64> {
-        let result = self.sync_inner().await;
-        if result.is_err() {
-            self.closed = true;
-        }
-        result
-    }
-
     pub(self) async fn sync_inner(&mut self) -> io::Result<u64> {
-        self.ensure_not_closed()?;
-
         // Flush any intermediate buffers.
         self.flush_log_block_to_mem()?;
         self.write_buffer().await?;
@@ -138,7 +136,7 @@ impl LogFileWriter {
         if let Some(iop) = self.inflight_iop.take() {
             complete_iop(iop).await?;
         }
-        self.file.fdatasync().await;
+        self.file.fdatasync().await?;
 
         Ok(self.current_pos)
     }
@@ -208,12 +206,15 @@ impl LogFileWriter {
         Ok(())
     }
 
-    fn ensure_not_closed(&mut self) -> io::Result<()> {
-        if self.closed {
-            Err(io::Error::other("log file writer closed"))
-        } else {
-            Ok(())
+    /// Try to close the file, or log the error.
+    async fn try_close_file(&mut self) {
+        if let Err(e) = self.file.close().await {
+            tracing::error!(error = %e, "failed to close file while handling error");
         }
+    }
+
+    fn ensure_file_writeable(&mut self) -> io::Result<()> {
+        self.file.ensure_safe_state()
     }
 
     fn take_memory_buffer(&mut self) -> DmaBuffer {
