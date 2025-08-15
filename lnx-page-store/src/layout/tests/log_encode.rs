@@ -4,11 +4,17 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use crate::PageFileId;
 use crate::layout::encrypt;
 use crate::layout::log::*;
+use crate::layout::page_metadata::PageMetadata;
 
 fn sample_log_block(entry: LogEntry) -> LogBlock {
     let mut block = LogBlock::default();
     block.push_entry(entry, None).unwrap();
     block
+}
+
+fn cipher_1() -> encrypt::Cipher {
+    let key = Key::<XChaCha20Poly1305>::from_slice(b"F8E4FeD0098cF3Bf7968E1AC7Bbfacee");
+    XChaCha20Poly1305::new(key)
 }
 
 #[rstest::rstest]
@@ -95,7 +101,103 @@ fn test_encode_log_errors(
     assert_eq!(error.to_string(), expected_error.to_string());
 }
 
-fn cipher_1() -> encrypt::Cipher {
-    let key = Key::<XChaCha20Poly1305>::from_slice(b"F8E4FeD0098cF3Bf7968E1AC7Bbfacee");
-    XChaCha20Poly1305::new(key)
+#[test]
+fn test_encode_block_full() {
+    let entry = LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
+        transaction_id: 0,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Write,
+    };
+
+    let mut block = LogBlock::default();
+    for _ in 0..7 {
+        block.push_entry(entry, None).unwrap();
+    }
+    block
+        .push_entry(entry, Some(PageMetadata::empty()))
+        .unwrap();
+    assert_eq!(block.remaining_capacity(), 0);
+
+    let mut output = [0; 512];
+    encode_log_block(None, b"", &block, &mut output)
+        .expect("log block should be encoded successfully");
+}
+
+#[rstest::rstest]
+#[case::yes_encryption_blocks_1(true, 1)]
+#[case::yes_encryption_blocks_2(true, 2)]
+#[case::yes_encryption_blocks_4(true, 4)]
+#[case::yes_encryption_blocks_5(true, 5)]
+#[case::yes_encryption_blocks_9(true, 9)]
+#[should_panic(expected = "log entry should not be full")]
+#[case::yes_encryption_blocks_11(true, 11)]
+#[case::no_encryption_blocks_1(false, 1)]
+#[case::no_encryption_blocks_2(false, 2)]
+#[case::no_encryption_blocks_4(false, 4)]
+#[case::no_encryption_blocks_5(false, 5)]
+#[case::no_encryption_blocks_9(false, 9)]
+#[should_panic(expected = "log entry should not be full")]
+#[case::no_encryption_blocks_11(false, 11)]
+fn test_encode_block_without_metadata(
+    #[case] encryption: bool,
+    #[case] n_blocks: usize,
+) {
+    let mut block = LogBlock::default();
+    for _ in 0..n_blocks {
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Write,
+        };
+        block
+            .push_entry(entry, None)
+            .expect("log entry should not be full");
+    }
+
+    let cipher = if encryption { Some(cipher_1()) } else { None };
+    let mut output = [0; 512];
+    encode_log_block(cipher.as_ref(), b"", &block, &mut output)
+        .expect("log block should be encoded successfully");
+}
+
+#[rstest::rstest]
+#[case::yes_encryption_blocks_1(true, 1)]
+#[case::yes_encryption_blocks_2(true, 2)]
+#[case::yes_encryption_blocks_4(true, 4)]
+#[should_panic(expected = "log entry should not be full")]
+#[case::yes_encryption_blocks_5(true, 5)]
+#[case::no_encryption_blocks_1(false, 1)]
+#[case::no_encryption_blocks_2(false, 2)]
+#[case::no_encryption_blocks_4(false, 4)]
+#[should_panic(expected = "log entry should not be full")]
+#[case::no_encryption_blocks_5(false, 5)]
+fn test_encode_block_with_metadata(#[case] encryption: bool, #[case] n_blocks: usize) {
+    let mut block = LogBlock::default();
+    for _ in 0..n_blocks {
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Write,
+        };
+
+        let metadata = PageMetadata::empty();
+
+        block
+            .push_entry(entry, Some(metadata))
+            .expect("log entry should not be full");
+    }
+
+    let cipher = if encryption { Some(cipher_1()) } else { None };
+    let mut output = [0; 512];
+    encode_log_block(cipher.as_ref(), b"", &block, &mut output)
+        .expect("log block should be encoded successfully");
 }
