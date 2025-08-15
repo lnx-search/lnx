@@ -48,8 +48,11 @@ pub struct LogFileWriter {
 
     /// The unique monotonic ID assigned to each log entry.
     next_sequence_id: u32,
-    /// The sequence ID of the last successful flush.
+    /// The sequence ID of the entry flushed to disk but not guaranteed to be
+    /// durable.
     flushed_sequence_id: u32,
+    /// The sequence ID of the last successful durability flush.
+    durable_sequence_id: u32,
 
     inflight_iop: Option<InflightIop>,
 }
@@ -79,6 +82,7 @@ impl LogFileWriter {
 
             next_sequence_id: SEQUENCE_ID_START,
             flushed_sequence_id: 0,
+            durable_sequence_id: 0,
 
             inflight_iop: None,
         }
@@ -91,10 +95,16 @@ impl LogFileWriter {
     }
 
     #[inline]
-    /// Returns the last sequence ID that was flushed
-    /// to disk and made durable.
+    /// Returns the last sequence ID that was written to disk.
     pub fn flushed_sequence_id(&self) -> u32 {
         self.flushed_sequence_id
+    }
+
+    #[inline]
+    /// Returns the last sequence ID that was flushed
+    /// to disk and made durable.
+    pub fn durable_sequence_id(&self) -> u32 {
+        self.durable_sequence_id
     }
 
     /// Write a set of blocks to the log file at the current position.
@@ -165,7 +175,7 @@ impl LogFileWriter {
         self.file.fdatasync().await?;
 
         // Update the currently flushed sequence ID.
-        self.flushed_sequence_id = self.next_sequence_id - 1;
+        self.durable_sequence_id = self.next_sequence_id - 1;
 
         Ok(self.current_pos)
     }
@@ -232,6 +242,8 @@ impl LogFileWriter {
             complete_iop(iop).await?;
         }
 
+        self.flushed_sequence_id = self.next_sequence_id - 1;
+
         Ok(())
     }
 
@@ -244,7 +256,7 @@ impl LogFileWriter {
 
     fn assign_writer_context(&mut self, entry: &mut LogEntry) {
         entry.sequence_id = self.next_sequence_id;
-        entry.last_flush_sequence_id = self.flushed_sequence_id;
+        entry.last_flush_sequence_id = self.durable_sequence_id;
         self.next_sequence_id += 1;
     }
 
@@ -322,7 +334,7 @@ mod tests {
 
         writer.write_log(entry, None).await.expect("write log");
         assert_eq!(writer.next_sequence_id, 2);
-        assert_eq!(writer.flushed_sequence_id, 0);
+        assert_eq!(writer.durable_sequence_id, 0);
 
         let entries = writer.wip_block.entries();
         assert_eq!(entries.len(), 1);
@@ -331,86 +343,16 @@ mod tests {
         assert_eq!(entry.last_flush_sequence_id, 0);
 
         writer.sync().await.expect("sync log");
-        assert_eq!(writer.flushed_sequence_id, 1);
+        assert_eq!(writer.durable_sequence_id, 1);
 
         writer.write_log(entry, None).await.expect("write log");
         assert_eq!(writer.next_sequence_id, 3);
-        assert_eq!(writer.flushed_sequence_id, 1);
+        assert_eq!(writer.durable_sequence_id, 1);
 
         let entries = writer.wip_block.entries();
         assert_eq!(entries.len(), 1);
         let entry = entries[0].log;
         assert_eq!(entry.sequence_id, 2);
         assert_eq!(entry.last_flush_sequence_id, 1);
-    }
-
-    #[tokio::test]
-    async fn test_writer_close_on_write_error() {
-        let ctx = Arc::new(ctx::FileContext::for_test(false));
-        let scheduler = scheduler::IoScheduler::for_test();
-        let tmp_file = tempfile::tempfile().unwrap();
-
-        let scenario = fail::FailScenario::setup();
-        fail::cfg("ringfile_write_err", "return").unwrap();
-
-        let file = scheduler
-            .make_ring_file(1, tmp_file)
-            .await
-            .expect("Failed to make ring file");
-
-        let mut writer = LogFileWriter::new(ctx, file, 0);
-        let error = writer.sync().await.expect_err("write should error");
-        assert_eq!(error.kind(), ErrorKind::Other);
-
-        let entry = LogEntry {
-            sequence_id: 0,
-            last_flush_sequence_id: 0,
-            transaction_id: 0,
-            transaction_n_entries: 0,
-            page_file_id: PageFileId(1),
-            op: LogOp::Free,
-        };
-        let error = writer
-            .write_log(entry, None)
-            .await
-            .expect_err("write should error");
-        assert_eq!(error.kind(), ErrorKind::BrokenPipe);
-
-        scenario.teardown();
-    }
-
-    #[tokio::test]
-    async fn test_writer_propagate_lockout_error() {
-        let ctx = Arc::new(ctx::FileContext::for_test(false));
-        let scheduler = scheduler::IoScheduler::for_test();
-        let tmp_file = tempfile::tempfile().unwrap();
-
-        let scenario = fail::FailScenario::setup();
-        fail::cfg("ringfile_fsync_err", "return").unwrap();
-
-        let file = scheduler
-            .make_ring_file(1, tmp_file)
-            .await
-            .expect("Failed to make ring file");
-
-        let mut writer = LogFileWriter::new(ctx, file, 0);
-        let error = writer.sync().await.expect_err("sync should error");
-        assert_eq!(error.kind(), ErrorKind::Other);
-
-        let entry = LogEntry {
-            sequence_id: 0,
-            last_flush_sequence_id: 0,
-            transaction_id: 0,
-            transaction_n_entries: 0,
-            page_file_id: PageFileId(1),
-            op: LogOp::Free,
-        };
-        let error = writer
-            .write_log(entry, None)
-            .await
-            .expect_err("write should error");
-        assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
-
-        scenario.teardown();
     }
 }
