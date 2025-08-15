@@ -4,6 +4,7 @@ use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use i2o2::opcode::FSyncMode;
+use rkyv::rancor::fail;
 
 use super::DynamicGuard;
 
@@ -92,11 +93,17 @@ impl RingFile {
     #[inline]
     /// Returns whether the file is locked out due to a prior IO error.
     pub fn is_locked_out(&self) -> bool {
-        self.is_locked_out()
+        self.io_error_lockout
     }
 
     /// Closes the ring file and unregisters it from the ring.
     pub async fn close(&mut self) -> io::Result<()> {
+        #[cfg(test)]
+        fail::fail_point!("ringfile_close_err", |_| Err(io::Error::new(
+            ErrorKind::BrokenPipe,
+            "close err"
+        )));
+
         self.handle
             .unregister_file_async(self.ring_id)
             .await
@@ -117,6 +124,9 @@ impl RingFile {
         maybe_guard: Option<DynamicGuard>,
     ) -> io::Result<i2o2::ReplyReceiver> {
         self.ensure_safe_state()?;
+
+        #[cfg(test)]
+        fail::fail_point!("ringfile_write_err", |_| Err(io::Error::other("write err")));
 
         let op =
             i2o2::opcode::Write::new(i2o2::types::Fixed(self.ring_id), ptr, len, offset);
@@ -147,6 +157,9 @@ impl RingFile {
     async fn fdatasync_inner(&self) -> io::Result<()> {
         self.ensure_safe_state()?;
 
+        #[cfg(test)]
+        fail::fail_point!("ringfile_fsync_err", |_| Err(io::Error::other("fsync err")));
+
         let op =
             i2o2::opcode::Fsync::new(i2o2::types::Fixed(self.ring_id), FSyncMode::Data);
 
@@ -170,13 +183,13 @@ impl RingFile {
 
     /// Returns an IO error if the file is closed or locked out.
     pub fn ensure_safe_state(&self) -> io::Result<()> {
-        if self.closed {
-            Err(io::Error::new(ErrorKind::BrokenPipe, "file closed"))
-        } else if self.io_error_lockout {
+        if self.io_error_lockout {
             Err(io::Error::new(
                 ErrorKind::ReadOnlyFilesystem,
                 "file has become readonly due to a prior IO Error",
             ))
+        } else if self.closed {
+            Err(io::Error::new(ErrorKind::BrokenPipe, "file closed"))
         } else {
             Ok(())
         }
@@ -203,10 +216,12 @@ impl Drop for RingFile {
 
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
+    use std::ptr;
+
     use super::*;
 
     #[tokio::test]
-    async fn test_scheduler_ring_file_create() {
+    async fn test_ring_file_create() {
         let scheduler = IoScheduler::create().expect("create scheduler failed");
 
         let file = tempfile::tempfile().unwrap();
@@ -222,7 +237,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scheduler_ring_file_graceful_close() {
+    async fn test_ring_file_graceful_close() {
         let scheduler = IoScheduler::create().expect("create scheduler failed");
 
         let file = tempfile::tempfile().unwrap();
@@ -241,7 +256,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_scheduler_ring_file_write() {
+    async fn test_ring_file_write() {
         let scheduler = IoScheduler::create().expect("create scheduler failed");
 
         let file = tempfile::tempfile().unwrap();
@@ -262,5 +277,38 @@ mod tests {
         assert_eq!(result, 1024);
 
         ring_file.fdatasync().await.expect("fdatasync failed");
+    }
+
+    #[tokio::test]
+    async fn test_ring_file_fsync_lockout() {
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ringfile_fsync_err", "return").unwrap();
+
+        let scheduler = IoScheduler::create().expect("create scheduler failed");
+
+        let file = tempfile::tempfile().unwrap();
+        let mut ring_file = scheduler
+            .make_ring_file(0, file)
+            .await
+            .expect("make ring file failed");
+
+        let error = ring_file
+            .fdatasync()
+            .await
+            .expect_err("fdatasync should fail");
+        assert_eq!(error.kind(), ErrorKind::Other);
+
+        assert!(ring_file.is_locked_out());
+
+        // I pinky promise this point isn't touched.
+        let error = unsafe {
+            ring_file
+                .submit_write(ptr::null(), 0, 0, None)
+                .await
+                .expect_err("fdatasync should fail")
+        };
+        assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
+
+        scenario.teardown();
     }
 }

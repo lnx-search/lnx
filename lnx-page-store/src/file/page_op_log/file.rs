@@ -295,8 +295,8 @@ struct InflightIop {
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
+    use crate::PageFileId;
     use crate::layout::log::LogOp;
-    use crate::{PageFileId, PageId};
 
     #[tokio::test]
     async fn test_writer_sequence_id() {
@@ -342,5 +342,75 @@ mod tests {
         let entry = entries[0].log;
         assert_eq!(entry.sequence_id, 2);
         assert_eq!(entry.last_flush_sequence_id, 1);
+    }
+
+    #[tokio::test]
+    async fn test_writer_close_on_write_error() {
+        let ctx = Arc::new(ctx::FileContext::for_test(false));
+        let scheduler = scheduler::IoScheduler::for_test();
+        let tmp_file = tempfile::tempfile().unwrap();
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ringfile_write_err", "return").unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let mut writer = LogFileWriter::new(ctx, file, 0);
+        let error = writer.sync().await.expect_err("write should error");
+        assert_eq!(error.kind(), ErrorKind::Other);
+
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Free,
+        };
+        let error = writer
+            .write_log(entry, None)
+            .await
+            .expect_err("write should error");
+        assert_eq!(error.kind(), ErrorKind::BrokenPipe);
+
+        scenario.teardown();
+    }
+
+    #[tokio::test]
+    async fn test_writer_propagate_lockout_error() {
+        let ctx = Arc::new(ctx::FileContext::for_test(false));
+        let scheduler = scheduler::IoScheduler::for_test();
+        let tmp_file = tempfile::tempfile().unwrap();
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ringfile_fsync_err", "return").unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let mut writer = LogFileWriter::new(ctx, file, 0);
+        let error = writer.sync().await.expect_err("sync should error");
+        assert_eq!(error.kind(), ErrorKind::Other);
+
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Free,
+        };
+        let error = writer
+            .write_log(entry, None)
+            .await
+            .expect_err("write should error");
+        assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
+
+        scenario.teardown();
     }
 }
