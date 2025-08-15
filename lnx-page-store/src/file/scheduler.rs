@@ -261,6 +261,6 @@ mod tests {
         let result = reply.await.expect("write reply failed");
         assert_eq!(result, 1024);
 
-        ring_file.fdatasync().await;
+        ring_file.fdatasync().await.expect("fdatasync failed");
     }
 }

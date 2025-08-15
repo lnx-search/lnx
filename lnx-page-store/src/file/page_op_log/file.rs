@@ -11,6 +11,7 @@ use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;
 
 const BUFFER_SIZE: usize = 128 << 10;
+const SEQUENCE_ID_START: u32 = 1;
 
 /// The [LogFileWriter] acts like a WAL for operations occurring on the page store,
 /// it only logs the metadata operations however, so any data writes should be safely
@@ -45,6 +46,11 @@ pub struct LogFileWriter {
     /// The position in the buffer that has been submitted for writing to disk.
     block_buffer_write_pos: usize,
 
+    /// The unique monotonic ID assigned to each log entry.
+    next_sequence_id: u32,
+    /// The sequence ID of the last successful flush.
+    flushed_sequence_id: u32,
+
     inflight_iop: Option<InflightIop>,
 }
 
@@ -71,11 +77,29 @@ impl LogFileWriter {
             block_offset: 0,
             block_buffer_write_pos: 0,
 
+            next_sequence_id: SEQUENCE_ID_START,
+            flushed_sequence_id: 0,
+
             inflight_iop: None,
         }
     }
 
+    #[inline]
+    /// Returns the sequence ID the writer is sitting at.
+    pub fn current_sequence_id(&self) -> u32 {
+        self.next_sequence_id - 1
+    }
+
+    #[inline]
+    /// Returns the last sequence ID that was flushed
+    /// to disk and made durable.
+    pub fn flushed_sequence_id(&self) -> u32 {
+        self.flushed_sequence_id
+    }
+
     /// Write a set of blocks to the log file at the current position.
+    ///
+    /// The `sequence_id` and `last_flush_sequence_id` fields will be overwritten.
     ///
     /// WARNING: This does not strictly flush data to disk! You must call `sync()` separately
     /// to persist the data safely.
@@ -106,9 +130,11 @@ impl LogFileWriter {
 
     pub(self) async fn write_log_inner(
         &mut self,
-        entry: LogEntry,
+        mut entry: LogEntry,
         metadata: Option<PageMetadata>,
     ) -> io::Result<()> {
+        self.assign_writer_context(&mut entry);
+
         let (entry, metadata) = match self.wip_block.push_entry(entry, metadata) {
             Ok(()) => return Ok(()),
             Err(pair) => pair,
@@ -137,6 +163,9 @@ impl LogFileWriter {
             complete_iop(iop).await?;
         }
         self.file.fdatasync().await?;
+
+        // Update the currently flushed sequence ID.
+        self.flushed_sequence_id = self.next_sequence_id - 1;
 
         Ok(self.current_pos)
     }
@@ -213,6 +242,12 @@ impl LogFileWriter {
         }
     }
 
+    fn assign_writer_context(&mut self, entry: &mut LogEntry) {
+        entry.sequence_id = self.next_sequence_id;
+        entry.last_flush_sequence_id = self.flushed_sequence_id;
+        self.next_sequence_id += 1;
+    }
+
     fn ensure_file_writeable(&mut self) -> io::Result<()> {
         self.file.ensure_safe_state()
     }
@@ -255,4 +290,57 @@ async fn complete_iop(iop: InflightIop) -> io::Result<()> {
 struct InflightIop {
     reply: i2o2::ReplyReceiver,
     expected_write_size: usize,
+}
+
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests {
+    use super::*;
+    use crate::layout::log::LogOp;
+    use crate::{PageFileId, PageId};
+
+    #[tokio::test]
+    async fn test_writer_sequence_id() {
+        let ctx = Arc::new(ctx::FileContext::for_test(false));
+        let scheduler = scheduler::IoScheduler::for_test();
+        let tmp_file = tempfile::tempfile().unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let mut writer = LogFileWriter::new(ctx, file, 0);
+
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Free,
+        };
+
+        writer.write_log(entry, None).await.expect("write log");
+        assert_eq!(writer.next_sequence_id, 2);
+        assert_eq!(writer.flushed_sequence_id, 0);
+
+        let entries = writer.wip_block.entries();
+        assert_eq!(entries.len(), 1);
+        let entry = entries[0].log;
+        assert_eq!(entry.sequence_id, 1);
+        assert_eq!(entry.last_flush_sequence_id, 0);
+
+        writer.sync().await.expect("sync log");
+        assert_eq!(writer.flushed_sequence_id, 1);
+
+        writer.write_log(entry, None).await.expect("write log");
+        assert_eq!(writer.next_sequence_id, 3);
+        assert_eq!(writer.flushed_sequence_id, 1);
+
+        let entries = writer.wip_block.entries();
+        assert_eq!(entries.len(), 1);
+        let entry = entries[0].log;
+        assert_eq!(entry.sequence_id, 2);
+        assert_eq!(entry.last_flush_sequence_id, 1);
+    }
 }

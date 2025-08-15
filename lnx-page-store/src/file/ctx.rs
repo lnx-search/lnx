@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicUsize;
-
 use crate::file::arena::ArenaAllocator;
 use crate::file::buffer;
 use crate::layout::encrypt;

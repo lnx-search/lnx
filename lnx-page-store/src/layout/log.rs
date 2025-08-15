@@ -187,6 +187,11 @@ impl LogBlock {
         }
         Self::MAX_BYTES_SIZE - bytes_consumed
     }
+
+    #[cfg(test)]
+    pub(crate) fn entries(&self) -> &[EntryPair] {
+        &self.pairs
+    }
 }
 
 impl ArchivedLogBlock {
