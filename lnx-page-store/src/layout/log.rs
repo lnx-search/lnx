@@ -94,7 +94,7 @@ pub fn encode_log_block(
 
     // Buffer is split into [context, block_len, block_data].
     let ctx_indices = [0..40, 40..512];
-    let blk_indices = [0..8, 8..456];
+    let blk_indices = [0..8, 8..472];
     let [context, blk] = buffer.get_disjoint_mut(ctx_indices).unwrap();
     let [blk_len, blk_data] = blk.get_disjoint_mut(blk_indices).unwrap();
 
@@ -176,7 +176,7 @@ impl LogBlock {
     }
 
     /// Returns the remaining number of bytes the block can hold.
-    fn remaining_capacity(&self) -> usize {
+    pub(crate) fn remaining_capacity(&self) -> usize {
         let mut bytes_consumed = 0;
         for pair in self.pairs.iter() {
             bytes_consumed += size_of::<ArchivedEntryPair>();
@@ -207,7 +207,7 @@ pub struct EntryPair {
     pub metadata: Option<Box<PageMetadata>>,
 }
 
-#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[cfg_attr(test, rkyv(derive(Debug)))]
 /// A single entry in the `PageOperationLog`.
@@ -228,7 +228,7 @@ pub struct LogEntry {
 }
 
 #[repr(u32)]
-#[derive(Debug, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
 #[cfg_attr(test, rkyv(derive(Debug)))]
 pub enum LogOp {
