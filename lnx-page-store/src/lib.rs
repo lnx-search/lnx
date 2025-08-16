@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "bench-lib-unstable", feature(test))]
+
 mod cache;
 mod file;
 mod layout;

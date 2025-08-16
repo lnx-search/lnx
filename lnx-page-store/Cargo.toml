@@ -33,6 +33,7 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 rstest = { workspace = true }
 crc32fast = { workspace = true }
 tempfile = { workspace = true }
@@ -44,3 +45,5 @@ i2o2 = { workspace = true, features = ["fail"] }
 test-huge-pages = []
 # Enable miri tests (and disables the rest.)
 test-miri = []
+# INTERNAL ONLY: used for enabling benchmarks
+bench-lib-unstable = []

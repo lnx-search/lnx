@@ -1,5 +1,7 @@
 //! The operations log tracks changes to pages in the data files.
 
+#[cfg(all(test, not(feature = "test-miri"), feature = "bench-lib-unstable"))]
+pub mod benches;
 mod file;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
