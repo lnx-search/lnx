@@ -148,13 +148,13 @@ async fn test_log_writer_entries_and_metadata(
 }
 
 #[tokio::test]
-async fn test_writer_close_on_write_error() {
+async fn test_writer_no_close_on_write_error() {
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();
 
     let scenario = fail::FailScenario::setup();
-    fail::cfg("ringfile_write_err", "return").unwrap();
+    fail::cfg("ringfile::submit_write", "return").unwrap();
 
     let file = scheduler
         .make_ring_file(1, tmp_file)
@@ -173,11 +173,10 @@ async fn test_writer_close_on_write_error() {
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
-    let error = writer
+    writer
         .write_log(entry, None)
         .await
-        .expect_err("write should error");
-    assert_eq!(error.kind(), ErrorKind::BrokenPipe);
+        .expect("write should not error");
 
     scenario.teardown();
 }
@@ -189,7 +188,7 @@ async fn test_writer_propagate_lockout_error() {
     let tmp_file = tempfile::tempfile().unwrap();
 
     let scenario = fail::FailScenario::setup();
-    fail::cfg("ringfile_fsync_err", "return").unwrap();
+    fail::cfg("ringfile::fdatasync", "return").unwrap();
 
     let file = scheduler
         .make_ring_file(1, tmp_file)
@@ -237,7 +236,7 @@ async fn test_writer_flush_mem_buffer_i2o2_error() {
         .expect_err("write should error");
     assert_eq!(error.kind(), ErrorKind::OutOfMemory);
 
-    assert!(writer.is_closed());
+    assert!(!writer.is_closed());
     assert!(!writer.is_locked_out());
 
     scenario.teardown();
@@ -273,7 +272,7 @@ async fn test_writer_storage_full() {
         .expect_err("sync should error as data is flushed to disk");
     assert_eq!(error.kind(), ErrorKind::StorageFull);
 
-    assert!(writer.is_closed());
+    assert!(!writer.is_closed());
 
     // The file won't be locked out because the error will occur as the system
     // goes to flush the memory buffer, so we don't get to fsync at all here.

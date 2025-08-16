@@ -40,11 +40,8 @@ a certain condition, we normally mirror Postgres.
 
 This means that there are few specific behaviours:
 
-- An error on `fsync` calls is a hard abort on the process, a set of STDERR logs will be emitted
-  before shutdown, but the system will perform an abort and not exit gracefully. This is because
-  `fsync` errors are not retryable, and we risk data loss if we allow the user to continue interacting
-  with the store without first recovering, and that is hard to enforce with the current design without
-  aborting.
+- An error on `fsync` calls forces the file into a read-only mode and the system will enter a recovery mode,
+  otherwise we risk data loss if we allow the user to continue interacting with the store without first recovering.
 - During recovery, in the very rare edge case that a fsync call failed and an error is returned to the user,
   but the contents of the WAL still ended up on stable storage, it is possible for store to apply the operations
   of WAL entries that were part of a transaction that was reported to the user as failed.

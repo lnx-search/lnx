@@ -126,7 +126,9 @@ impl RingFile {
         self.ensure_safe_state()?;
 
         #[cfg(test)]
-        fail::fail_point!("ringfile_write_err", |_| Err(io::Error::other("write err")));
+        fail::fail_point!("ringfile::submit_write", |_| Err(io::Error::other(
+            "write err"
+        )));
 
         let op =
             i2o2::opcode::Write::new(i2o2::types::Fixed(self.ring_id), ptr, len, offset);
@@ -158,7 +160,9 @@ impl RingFile {
         self.ensure_safe_state()?;
 
         #[cfg(test)]
-        fail::fail_point!("ringfile_fsync_err", |_| Err(io::Error::other("fsync err")));
+        fail::fail_point!("ringfile::fdatasync", |_| Err(io::Error::other(
+            "fsync err"
+        )));
 
         let op =
             i2o2::opcode::Fsync::new(i2o2::types::Fixed(self.ring_id), FSyncMode::Data);
@@ -282,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn test_ring_file_fsync_lockout() {
         let scenario = fail::FailScenario::setup();
-        fail::cfg("ringfile_fsync_err", "return").unwrap();
+        fail::cfg("ringfile::fdatasync", "return").unwrap();
 
         let scheduler = IoScheduler::create().expect("create scheduler failed");
 

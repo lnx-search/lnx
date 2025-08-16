@@ -129,7 +129,7 @@ impl LogFileWriter {
         self.ensure_file_writeable()?;
         let result = self.write_log_inner(entry, metadata).await;
         if result.is_err() {
-            self.try_close_file().await;
+            self.reset_to_last_flush();
         }
         result
     }
@@ -141,7 +141,7 @@ impl LogFileWriter {
         self.ensure_file_writeable()?;
         let result = self.sync_inner().await;
         if result.is_err() {
-            self.try_close_file().await;
+            self.reset_to_last_flush();
         }
         result
     }
@@ -208,7 +208,7 @@ impl LogFileWriter {
         let aligned_len = align_up(delta_len, DISK_ALIGN);
         let buffer = &self.block_buffer[self.block_buffer_write_pos..][..aligned_len];
         let expected_write_size = buffer.len();
-        let write_offset = self.current_pos;
+        let write_offset = self.log_offset + self.current_pos;
 
         let buffer_ptr = buffer.as_ptr();
         let buffer_len = buffer.len();
@@ -255,13 +255,6 @@ impl LogFileWriter {
         Ok(())
     }
 
-    /// Try to close the file, or log the error.
-    async fn try_close_file(&mut self) {
-        if let Err(e) = self.file.close().await {
-            tracing::error!(error = %e, "failed to close file while handling error");
-        }
-    }
-
     fn assign_writer_context(&mut self, entry: &mut LogEntry) {
         entry.sequence_id = self.next_sequence_id;
         entry.last_flush_sequence_id = self.durable_sequence_id;
@@ -278,6 +271,15 @@ impl LogFileWriter {
         self.block_buffer_write_pos = 0;
         self.block_offset = 0;
         block_buffer
+    }
+
+    /// Reset the current log block, memory buffer and cursors
+    /// to start from the last successful flush position
+    fn reset_to_last_flush(&mut self) {
+        self.wip_block.reset();
+        let _ = self.take_memory_buffer();
+        self.durable_sequence_id = self.flushed_sequence_id;
+        self.next_sequence_id = self.flushed_sequence_id + 1;
     }
 }
 
@@ -362,5 +364,51 @@ mod tests {
         let entry = entries[0].log;
         assert_eq!(entry.sequence_id, 2);
         assert_eq!(entry.last_flush_sequence_id, 1);
+    }
+
+    #[tokio::test]
+    async fn test_writer_reset_on_error() {
+        let ctx = Arc::new(ctx::FileContext::for_test(false));
+        let scheduler = scheduler::IoScheduler::for_test();
+        let tmp_file = tempfile::tempfile().unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let mut writer = LogFileWriter::new(ctx, file, 0);
+
+        let entry = LogEntry {
+            sequence_id: 0,
+            last_flush_sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_file_id: PageFileId(1),
+            op: LogOp::Free,
+        };
+        writer.write_log(entry, None).await.expect("write log");
+        writer.sync().await.expect("sync log");
+        assert_eq!(writer.next_sequence_id, 2);
+        assert_eq!(writer.flushed_sequence_id, 1);
+        assert_eq!(writer.durable_sequence_id, 1);
+
+        writer.write_log(entry, None).await.expect("write log");
+        assert_eq!(writer.next_sequence_id, 3);
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ringfile::submit_write", "return(-4)").unwrap();
+        tokio::task::yield_now().await;
+
+        writer
+            .write_log(entry, None)
+            .await
+            .expect("write log should not error because it is memory buffered");
+        writer.sync().await.expect_err("sync log should error");
+        assert_eq!(writer.next_sequence_id, 2);
+        assert_eq!(writer.flushed_sequence_id, 1);
+        assert_eq!(writer.durable_sequence_id, 1);
+
+        scenario.teardown();
     }
 }
