@@ -26,9 +26,7 @@ const SEQUENCE_ID_START: u32 = 1;
 /// This is done in order to prevent accidental corruption of phantom data.
 pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
-
     file: scheduler::RingFile,
-    closed: bool,
 
     log_offset: u64,
     current_pos: u64,
@@ -68,9 +66,7 @@ impl LogFileWriter {
 
         Self {
             ctx,
-
             file,
-            closed: false,
 
             log_offset,
             current_pos: 0,
@@ -86,6 +82,18 @@ impl LogFileWriter {
 
             inflight_iop: None,
         }
+    }
+
+    #[inline]
+    /// Returns whether the file is closed.
+    pub fn is_closed(&self) -> bool {
+        self.file.is_closed()
+    }
+
+    #[inline]
+    /// Returns whether the file is locked out due to a prior error.
+    pub fn is_locked_out(&self) -> bool {
+        self.file.is_locked_out()
     }
 
     #[inline]

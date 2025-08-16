@@ -1,3 +1,4 @@
+use std::io;
 use std::io::ErrorKind;
 use std::sync::Arc;
 
@@ -214,4 +215,86 @@ async fn test_writer_propagate_lockout_error() {
     assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
 
     scenario.teardown();
+}
+
+#[tokio::test]
+async fn test_writer_flush_mem_buffer_i2o2_error() {
+    let ctx = Arc::new(ctx::FileContext::for_test(false));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let tmp_file = tempfile::tempfile().unwrap();
+
+    let scenario = fail::FailScenario::setup();
+    fail::cfg("i2o2::fail::try_get_result", "return(-12)").unwrap();
+
+    let file = scheduler
+        .make_ring_file(1, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+    let mut writer = LogFileWriter::new(ctx, file, 0);
+
+    let error = fill_buffer(&mut writer)
+        .await
+        .expect_err("write should error");
+    assert_eq!(error.kind(), ErrorKind::OutOfMemory);
+
+    assert!(writer.is_closed());
+    assert!(!writer.is_locked_out());
+
+    scenario.teardown();
+}
+
+#[tokio::test]
+async fn test_writer_storage_full() {
+    let ctx = Arc::new(ctx::FileContext::for_test(false));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let tmp_file = tempfile::tempfile().unwrap();
+
+    let scenario = fail::FailScenario::setup();
+    fail::cfg("i2o2::fail::try_get_result", "return(20)").unwrap();
+
+    let file = scheduler
+        .make_ring_file(1, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+    let mut writer = LogFileWriter::new(ctx, file, 0);
+
+    let entry = LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
+        transaction_id: 0,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Free,
+    };
+    writer.write_log(entry, None).await.unwrap();
+    let error = writer
+        .sync()
+        .await
+        .expect_err("sync should error as data is flushed to disk");
+    assert_eq!(error.kind(), ErrorKind::StorageFull);
+
+    assert!(writer.is_closed());
+
+    // The file won't be locked out because the error will occur as the system
+    // goes to flush the memory buffer, so we don't get to fsync at all here.
+    assert!(!writer.is_locked_out());
+
+    scenario.teardown();
+}
+
+async fn fill_buffer(writer: &mut LogFileWriter) -> io::Result<()> {
+    let entry = LogEntry {
+        sequence_id: 0,
+        last_flush_sequence_id: 0,
+        transaction_id: 0,
+        transaction_n_entries: 0,
+        page_file_id: PageFileId(1),
+        op: LogOp::Free,
+    };
+
+    for _ in 0..5_000 {
+        writer.write_log(entry, None).await?;
+    }
+
+    Ok(())
 }

@@ -1363,12 +1363,13 @@ dependencies = [
 
 [[package]]
 name = "i2o2"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01c976d3fced6d88bb9acea4ddc8ef13a063eeb2245024ff613e8b2d077a8cf0"
+checksum = "105e4734b79adcd53eaf3ce55e35cada4f32c6b8d430eab2ee590fca7e0efc9c"
 dependencies = [
  "axboe-liburing",
  "crossbeam-queue",
+ "fail",
  "futures-executor",
  "libc",
  "parking_lot",
