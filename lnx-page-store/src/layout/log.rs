@@ -4,10 +4,6 @@
 //! This enables the system to perform bulk transactions while still
 //! maintaining an atomic behaviour.
 //!
-//! However, unlike a WAL, this log has a hard limit on the number of
-//! operations that can be present before the system must rollup and
-//! update the allocation table at the head of the file.
-//!
 //! The reliability of this log is achieved on the assumption that the
 //! disk sector size for atomic writes is some multiple of `512` bytes.
 
