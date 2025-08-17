@@ -91,6 +91,12 @@ impl LogFileWriter {
     }
 
     #[inline]
+    /// Returns writer file ID.
+    pub fn id(&self) -> u64 {
+        self.file.id()
+    }
+
+    #[inline]
     /// Returns whether the file is closed.
     pub fn is_closed(&self) -> bool {
         self.file.is_closed()

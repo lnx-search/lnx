@@ -7,9 +7,9 @@ mod tests;
 mod writer;
 
 use std::collections::VecDeque;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{io, mem};
 
 use parking_lot::{Mutex, RwLock};
 
@@ -98,7 +98,9 @@ impl OpLogWriter {
 
         if writer.position() >= self.config.max_file_size {
             let new_writer = self.rotate_log_writer().await?;
-            *writer = new_writer;
+            tracing::info!(new_writer_id = new_writer.id(), "rotating log file writer");
+            let completed_writer_file =
+                mem::replace(&mut *writer, new_writer).into_ring_file();
         }
 
         for (entry, metadata) in entries {
@@ -111,11 +113,19 @@ impl OpLogWriter {
     }
 
     /// Close any open log writers.
-    pub async fn close(&self) -> io::Result<()> {
+    pub async fn close(&self) {
         let mut writer = self.active_writer.lock().await;
-        writer.close().await?;
+        if let Err(err) = writer.close().await {
+            tracing::error!(error = ?err, "failed to close writer");
+        }
 
-        todo!()
+        let files = self.files.lock().drain(..).collect::<Vec<_>>();
+
+        for mut writer in files {
+            if let Err(err) = writer.close().await {
+                tracing::error!(error = ?err, "failed to close spare writer");
+            }
+        }
     }
 
     /// Gets the next spare [writer::LogFileWriter] if there is one available
@@ -189,7 +199,7 @@ async fn initialise_log_file(
         &header,
         &mut header_bytes,
     )
-    .map_err(|e| io::Error::other(e))?;
+    .map_err(io::Error::other)?;
 
     ring_file.write_buffer(header_bytes, 0).await?;
     ring_file.fdatasync().await?;
