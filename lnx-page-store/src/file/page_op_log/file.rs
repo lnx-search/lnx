@@ -73,7 +73,7 @@ impl LogFileWriter {
 
             wip_block: log::LogBlock::default(),
             block_buffer: buffer,
-            block_offset: 0,
+            block_offset: log::LOG_BLOCK_SIZE,
             block_buffer_write_pos: 0,
 
             next_sequence_id: SEQUENCE_ID_START,
@@ -160,12 +160,15 @@ impl LogFileWriter {
 
         self.flush_log_block_to_mem()?;
 
+        // When the block is full, we can reset it as the alignment will be maintained.
+        self.wip_block.reset();
+        self.block_offset += log::LOG_BLOCK_SIZE;
+
         let result = self.wip_block.push_entry(entry, metadata);
         assert!(result.is_ok(), "block should never be full after reset");
 
-        // We advance the offset by the full
-        self.block_offset += log::LOG_BLOCK_SIZE;
         if self.block_offset >= self.block_buffer.len() {
+            tracing::trace!("memory buffer capacity reached, flushing...");
             self.write_buffer().await?;
         }
 
@@ -178,6 +181,7 @@ impl LogFileWriter {
         self.write_buffer().await?;
 
         if let Some(iop) = self.inflight_iop.take() {
+            tracing::trace!("waiting for inflight IOP to complete");
             complete_iop(iop).await?;
         }
         self.file.fdatasync().await?;
@@ -197,7 +201,7 @@ impl LogFileWriter {
             buffer,
         )
         .map_err(io::Error::other)?;
-        self.wip_block.reset();
+
         Ok(())
     }
 
@@ -212,6 +216,12 @@ impl LogFileWriter {
 
         let buffer_ptr = buffer.as_ptr();
         let buffer_len = buffer.len();
+
+        tracing::debug!(
+            offset = write_offset,
+            len = buffer_len,
+            "flushing memory buffer to disk"
+        );
 
         // We advance the write pos cursor while still maintaining alignment.
         // We can do this because future writes will replay the unaligned chunk
@@ -276,6 +286,7 @@ impl LogFileWriter {
     /// Reset the current log block, memory buffer and cursors
     /// to start from the last successful flush position
     fn reset_to_last_flush(&mut self) {
+        tracing::info!("resetting log writer to last flush checkpoint");
         self.wip_block.reset();
         let _ = self.take_memory_buffer();
         self.durable_sequence_id = self.flushed_sequence_id;
@@ -360,8 +371,8 @@ mod tests {
         assert_eq!(writer.durable_sequence_id, 1);
 
         let entries = writer.wip_block.entries();
-        assert_eq!(entries.len(), 1);
-        let entry = entries[0].log;
+        assert_eq!(entries.len(), 2);
+        let entry = entries[1].log;
         assert_eq!(entry.sequence_id, 2);
         assert_eq!(entry.last_flush_sequence_id, 1);
     }

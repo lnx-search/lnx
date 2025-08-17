@@ -52,6 +52,7 @@ mod tests {
         assert_eq!(align_up(2, 4), 4);
         assert_eq!(align_up(3, 4), 4);
         assert_eq!(align_up(4, 4), 4);
+        assert_eq!(align_up(4096, 4096), 4096);
     }
 
     #[test]

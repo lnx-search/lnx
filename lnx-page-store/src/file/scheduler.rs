@@ -143,6 +143,8 @@ impl RingFile {
                 .map_err(io::Error::other)?
         };
 
+        tracing::trace!(offset = offset, len = len, "submitted write IOP");
+
         Ok(reply)
     }
 
@@ -150,8 +152,10 @@ impl RingFile {
     pub async fn fdatasync(&mut self) -> io::Result<()> {
         if let Err(error) = self.fdatasync_inner().await {
             self.io_error_lockout = true;
+            tracing::debug!(error = ?error, "fsync failed");
             Err(error)
         } else {
+            tracing::trace!("fsync completed");
             Ok(())
         }
     }

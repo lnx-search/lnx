@@ -218,6 +218,8 @@ async fn test_writer_propagate_lockout_error() {
 
 #[tokio::test]
 async fn test_writer_flush_mem_buffer_i2o2_error() {
+    let _ = tracing_subscriber::fmt::try_init();
+
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();

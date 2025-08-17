@@ -37,6 +37,7 @@ anyhow = { workspace = true }
 rstest = { workspace = true }
 crc32fast = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 fail = { workspace = true, features = ["failpoints"] }
 i2o2 = { workspace = true, features = ["fail"] }
 
