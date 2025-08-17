@@ -185,11 +185,6 @@ impl LogBlock {
     }
 
     #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.pairs.len() == 0
-    }
-
-    #[inline]
     pub(crate) fn num_entries(&self) -> usize {
         self.pairs.len()
     }
