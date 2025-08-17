@@ -120,6 +120,13 @@ impl RingFile {
     ///
     /// This does not wait for completion of the op, instead a [i2o2::ReplyReceiver]
     /// is returned which can be awaited at a later stage.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must not be null and `len` must be within the valid bounds of the pointer.
+    ///
+    /// You must also ensure the pointer lives at least as long as the i2o2 scheduler
+    /// requires, this can be done using the guard.
     pub async unsafe fn submit_write(
         &self,
         ptr: *const u8,
@@ -147,7 +154,59 @@ impl RingFile {
                 .map_err(io::Error::other)?
         };
 
-        tracing::trace!(offset = offset, len = len, "submitted write IOP");
+        tracing::trace!(
+            file_id = self.id(),
+            offset = offset,
+            len = len,
+            "submitted write IOP",
+        );
+
+        Ok(reply)
+    }
+
+    /// Submits a buffer to read an amount of bytes from the file.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must not be null and `len` must be within the valid bounds of the pointer.
+    ///
+    /// You must ensure the pointer lives at least as long as the i2o2 scheduler
+    /// requires, this can be done using the guard.
+    pub async unsafe fn submit_read(
+        &self,
+        ptr: *mut u8,
+        len: usize,
+        offset: u64,
+        maybe_guard: Option<DynamicGuard>,
+    ) -> io::Result<i2o2::ReplyReceiver> {
+        if self.closed {
+            return Err(io::Error::new(ErrorKind::BrokenPipe, "file closed"));
+        }
+
+        #[cfg(test)]
+        fail::fail_point!("ringfile::submit_read", |_| Err(io::Error::other(
+            "read err"
+        )));
+
+        let op =
+            i2o2::opcode::Read::new(i2o2::types::Fixed(self.ring_id), ptr, len, offset);
+
+        // SAFETY: our op is safe to send across the thread boundaries and the buffer
+        //         is guaranteed to live at least as long as the ring requires as it
+        //         is passed to our ring guard.
+        let reply = unsafe {
+            self.handle
+                .submit_async(op, maybe_guard)
+                .await
+                .map_err(io::Error::other)?
+        };
+
+        tracing::trace!(
+            file_id = self.id(),
+            offset = offset,
+            len = len,
+            "submitted read IOP",
+        );
 
         Ok(reply)
     }
@@ -188,10 +247,10 @@ impl RingFile {
     pub async fn fdatasync(&mut self) -> io::Result<()> {
         if let Err(error) = self.fdatasync_inner().await {
             self.io_error_lockout = true;
-            tracing::debug!(error = ?error, "fsync failed");
+            tracing::error!(file_id = self.id(), error = ?error, "fsync failed");
             Err(error)
         } else {
-            tracing::trace!("fsync completed");
+            tracing::trace!(file_id = self.id(), "fsync completed");
             Ok(())
         }
     }
@@ -243,7 +302,7 @@ impl RingFile {
 impl Drop for RingFile {
     fn drop(&mut self) {
         if !self.is_closed() {
-            tracing::warn!(file_id = self.id, "ring file was not explicitly closed");
+            tracing::warn!(file_id = self.id(), "ring file was not explicitly closed");
 
             let handle = self.handle.clone();
             let ring_id = self.ring_id;
