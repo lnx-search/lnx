@@ -72,6 +72,8 @@ pub(super) fn create_file(
 
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
+    use std::io::ErrorKind;
+
     use super::*;
 
     #[test]
@@ -106,5 +108,19 @@ mod tests {
     fn test_single_or_shared_none_variant_panics() {
         let mut single: SingleOrShared<()> = SingleOrShared::None;
         single.share();
+    }
+
+    #[test]
+    fn test_create_file_helper() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let fp = dir.path().join("test1");
+        create_file(&fp, true).expect("create file that doesn't exist should work");
+
+        let error = create_file(&fp, false)
+            .expect_err("allow existing should prevent file being created");
+        assert_eq!(error.kind(), ErrorKind::AlreadyExists);
+
+        create_file(&fp, true).expect("file should be over written");
     }
 }
