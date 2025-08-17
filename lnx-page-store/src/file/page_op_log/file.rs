@@ -62,6 +62,12 @@ impl LogFileWriter {
         file: scheduler::RingFile,
         log_offset: u64,
     ) -> Self {
+        assert_eq!(
+            log_offset as usize % DISK_ALIGN,
+            0,
+            "log offset must be a multiple of the disk alignment"
+        );
+
         let buffer = ctx.alloc::<BUFFER_SIZE>();
 
         Self {
