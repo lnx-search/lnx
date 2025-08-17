@@ -209,5 +209,19 @@ async fn initialise_log_file(
 }
 
 fn log_file_name(file_id: u64) -> String {
-    format!("{file_id:0<10}.log.lnx")
+    format!("{file_id:010}.log.lnx")
+}
+
+#[cfg(all(test, not(feature = "test-miri")))]
+mod test_misc {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case(1, "0000000001.log.lnx")]
+    #[case(8765, "0000008765.log.lnx")]
+    #[case(12345678910, "12345678910.log.lnx")]
+    fn test_log_file_name(#[case] file_id: u64, #[case] expected_str: &str) {
+        let name = log_file_name(file_id);
+        assert_eq!(name, expected_str);
+    }
 }
