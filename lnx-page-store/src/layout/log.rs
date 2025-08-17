@@ -201,9 +201,16 @@ impl LogBlock {
 }
 
 impl ArchivedLogBlock {
+    #[inline]
     /// Iterate over the log entry pairs in the block.
     pub fn iter_pairs<'a>(&'a self) -> impl Iterator<Item = &'a ArchivedEntryPair> + 'a {
         self.pairs.iter()
+    }
+
+    #[inline]
+    /// Returns the number of entries in the block.
+    pub fn num_entries(&self) -> usize {
+        self.pairs.len()
     }
 }
 

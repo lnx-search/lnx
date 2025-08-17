@@ -193,16 +193,26 @@ impl LogFileWriter {
     }
 
     fn flush_log_block_to_mem(&mut self) -> io::Result<()> {
-        let buffer = &mut self.block_buffer[self.block_offset..][..log::LOG_BLOCK_SIZE];
+        let absolute_position_on_disk = self.get_absolute_block_position();
+
+        let buffer_start = self.block_offset - log::LOG_BLOCK_SIZE;
+        let buffer = &mut self.block_buffer[buffer_start..][..log::LOG_BLOCK_SIZE];
         log::encode_log_block(
             self.ctx.cipher(),
-            &associated_data(self.file.id(), self.current_pos),
+            &associated_data(self.file.id(), absolute_position_on_disk),
             &self.wip_block,
             buffer,
         )
         .map_err(io::Error::other)?;
 
         Ok(())
+    }
+
+    /// Works out the absolute position of the block at it will be in the file.
+    fn get_absolute_block_position(&self) -> u64 {
+        self.log_offset
+            + self.current_pos
+            + (self.block_offset - log::LOG_BLOCK_SIZE) as u64
     }
 
     /// Submit the current memory buffer to the IO scheduler for writing
