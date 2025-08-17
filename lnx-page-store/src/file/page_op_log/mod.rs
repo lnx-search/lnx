@@ -2,6 +2,7 @@
 
 #[cfg(all(test, not(feature = "test-miri"), feature = "bench-lib-unstable"))]
 mod benches;
+mod reader;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 mod writer;
