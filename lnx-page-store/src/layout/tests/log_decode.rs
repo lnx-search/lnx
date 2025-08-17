@@ -59,7 +59,7 @@ fn test_log_decoding(#[case] entry: LogBlock, #[case] encrypt_enable: bool) {
             e
         })
         .expect("entry should be decoded successfully");
-    assert_eq!(entry.iter_pairs().count(), 1);
+    assert_eq!(entry.num_entries(), 1);
 }
 
 #[rstest::rstest]

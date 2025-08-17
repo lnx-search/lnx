@@ -25,11 +25,11 @@ pub const LOG_BLOCK_SIZE: usize = 512;
 ///
 /// This will decrypt the  buffer if `cipher` is provided or attempt to
 /// check the CRC32 checksum check depending on if not.
-pub fn decode_log_block<'buf>(
+pub fn decode_log_block(
     cipher: Option<&encrypt::Cipher>,
     associated_data: &[u8],
-    buffer: &'buf mut [u8],
-) -> Result<&'buf rkyv::Archived<LogBlock>, DecodeLogBlockError> {
+    buffer: &mut [u8],
+) -> Result<LogBlock, DecodeLogBlockError> {
     if buffer.len() != LOG_BLOCK_SIZE {
         return Err(DecodeLogBlockError::BufferWrongSize);
     }
@@ -50,7 +50,10 @@ pub fn decode_log_block<'buf>(
     let blk_len = u64::from_le_bytes(blk[..8].try_into().unwrap());
     let blk_data = &blk[8..8 + blk_len as usize];
 
-    rkyv::access::<_, rancor::Error>(blk_data).map_err(DecodeLogBlockError::Deserialize)
+    let view: &rkyv::Archived<LogBlock> = rkyv::access::<_, rancor::Error>(blk_data)
+        .map_err(DecodeLogBlockError::Deserialize)?;
+
+    rkyv::deserialize(view).map_err(DecodeLogBlockError::Deserialize)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -189,23 +192,9 @@ impl LogBlock {
         self.pairs.len()
     }
 
-    #[cfg(test)]
+    #[inline]
     pub(crate) fn entries(&self) -> &[EntryPair] {
         &self.pairs
-    }
-}
-
-impl ArchivedLogBlock {
-    #[inline]
-    /// Iterate over the log entry pairs in the block.
-    pub fn iter_pairs<'a>(&'a self) -> impl Iterator<Item = &'a ArchivedEntryPair> + 'a {
-        self.pairs.iter()
-    }
-
-    #[inline]
-    /// Returns the number of entries in the block.
-    pub fn num_entries(&self) -> usize {
-        self.pairs.len()
     }
 }
 

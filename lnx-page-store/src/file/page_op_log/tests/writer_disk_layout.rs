@@ -37,14 +37,12 @@ async fn test_single_entry_write_layout() {
     assert_eq!(content.len(), DISK_ALIGN);
 
     let expected_buffer = &mut content[..log::LOG_BLOCK_SIZE];
-    let block: &rkyv::Archived<log::LogBlock> =
-        log::decode_log_block(None, b"", expected_buffer)
-            .expect("block should be decodable");
+    let block = log::decode_log_block(None, b"", expected_buffer)
+        .expect("block should be decodable");
     assert_eq!(block.num_entries(), 1);
 
-    let mut iter = block.iter_pairs();
-    let pair = iter.next().unwrap();
-    assert_eq!(pair.log, entry);
+    let entries = block.entries();
+    assert_eq!(entries[0].log, entry);
 }
 
 #[tokio::test]
@@ -78,14 +76,12 @@ async fn test_non_zero_log_offset() {
     assert_eq!(content.len(), DISK_ALIGN * 2);
 
     let expected_buffer = &mut content[4096..4096 + log::LOG_BLOCK_SIZE];
-    let block: &rkyv::Archived<log::LogBlock> =
-        log::decode_log_block(None, b"", expected_buffer)
-            .expect("block should be decodable");
+    let block = log::decode_log_block(None, b"", expected_buffer)
+        .expect("block should be decodable");
     assert_eq!(block.num_entries(), 1);
 
-    let mut iter = block.iter_pairs();
-    let pair = iter.next().unwrap();
-    assert_eq!(pair.log, entry);
+    let entries = block.entries();
+    assert_eq!(entries[0].log, entry);
 }
 
 #[tokio::test]
@@ -126,17 +122,16 @@ async fn test_multiple_block_write_layout() {
     ];
     let [buffer1, buffer2] = content.get_disjoint_mut(indices).unwrap();
 
-    let block1: &rkyv::Archived<log::LogBlock> =
+    let block1 =
         log::decode_log_block(None, b"", buffer1).expect("block should be decodable");
-    let block2: &rkyv::Archived<log::LogBlock> =
+    let block2 =
         log::decode_log_block(None, b"", buffer2).expect("block should be decodable");
     assert_eq!(block1.num_entries(), 9);
     assert_eq!(block2.num_entries(), 6);
 
-    let mut iter = block1.iter_pairs();
-    let pair = iter.next().unwrap();
+    let entries = block1.entries();
     assert_eq!(
-        pair.log,
+        entries[0].log,
         LogEntry {
             sequence_id: 1,
             last_flush_sequence_id: 0,
@@ -147,10 +142,9 @@ async fn test_multiple_block_write_layout() {
         }
     );
 
-    let mut iter = block2.iter_pairs();
-    let pair = iter.next().unwrap();
+    let entries = block2.entries();
     assert_eq!(
-        pair.log,
+        entries[0].log,
         LogEntry {
             sequence_id: 10,
             last_flush_sequence_id: 0,
@@ -200,14 +194,13 @@ async fn test_multiple_pages_write_layout() {
         let buffer_start = block_id * log::LOG_BLOCK_SIZE;
         let buffer = &mut content[buffer_start..][..log::LOG_BLOCK_SIZE];
 
-        let block: &rkyv::Archived<log::LogBlock> =
+        let block =
             log::decode_log_block(None, b"", buffer).expect("block should be decodable");
         assert_eq!(block.num_entries(), 9);
 
-        let mut iter = block.iter_pairs();
-        let pair = iter.next().unwrap();
+        let entries = block.entries();
         assert_eq!(
-            pair.log,
+            entries[0].log,
             LogEntry {
                 sequence_id: ((block_id * 9) + 1) as u32,
                 last_flush_sequence_id: 0,
