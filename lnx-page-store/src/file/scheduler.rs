@@ -4,7 +4,6 @@ use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use i2o2::opcode::FSyncMode;
-use rkyv::rancor::fail;
 
 use super::DynamicGuard;
 
@@ -330,6 +329,7 @@ impl Drop for RingFile {
 
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
+    use std::io::Write;
     use std::ptr;
 
     use super::*;
@@ -424,5 +424,52 @@ mod tests {
         assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
 
         scenario.teardown();
+    }
+
+    #[rstest::rstest]
+    #[case::no_offset_read_zero(0, 0)]
+    #[case::no_offset_read_small(200, 0)]
+    #[case::no_offset_read_large(128 << 10, 0)]
+    #[case::offset_read_zero(0, 2)]
+    #[case::offset_read_small(200, 2)]
+    #[case::offset_read_large(128 << 10, 2)]
+    #[tokio::test]
+    async fn test_read(#[case] read_len: usize, #[case] offset: u64) {
+        let scheduler = IoScheduler::for_test();
+        let mut tmp_file = tempfile::tempfile().unwrap();
+
+        let mut data_buffer = vec![1; 256 << 10];
+        data_buffer[0] = 4;
+        data_buffer[1] = 3;
+        data_buffer[2] = 2;
+        tmp_file.write_all(&data_buffer).unwrap();
+        tmp_file.sync_all().unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let mut read_buffer = vec![0; read_len];
+
+        // SAFETY: For testing purposes we don't really care about the cancellation.
+        let reply = unsafe {
+            file.submit_read(read_buffer.as_mut_ptr(), read_len, offset, None)
+                .await
+                .expect("submit read failed")
+        };
+
+        let reply = reply.await.expect("scheduler cancelled IOP");
+        if reply < 0 {
+            panic!("read errored: {}", io::Error::from_raw_os_error(-reply));
+        }
+
+        assert_eq!(reply as usize, read_len);
+
+        assert_eq!(
+            &read_buffer,
+            &data_buffer[offset as usize..][..read_len],
+            "read buffer does not match",
+        );
     }
 }
