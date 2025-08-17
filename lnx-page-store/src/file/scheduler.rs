@@ -237,13 +237,8 @@ impl RingFile {
             .await?
         };
 
-        let result = reply.await.map_err(|e| {
-            io::Error::other(format!("IOP cancelled while writing header: {e}"))
-        })?;
-
-        if result < 0 {
-            Err(io::Error::from_raw_os_error(-result))
-        } else if result as usize != data_len {
+        let result = get_reply_or_err(reply).await? as usize;
+        if result != data_len {
             Err(io::Error::new(
                 ErrorKind::StorageFull,
                 "storage failed to allocate",
@@ -282,16 +277,8 @@ impl RingFile {
                 .await
                 .map_err(io::Error::other)?
         };
-
-        let result = reply
-            .await
-            .map_err(|_| io::Error::other("io scheduler panicked"))?;
-
-        if result < 0 {
-            Err(io::Error::from_raw_os_error(-result))
-        } else {
-            Ok(())
-        }
+        get_reply_or_err(reply).await?;
+        Ok(())
     }
 
     /// Returns an IO error if the file is closed or locked out.
@@ -327,6 +314,21 @@ impl Drop for RingFile {
     }
 }
 
+async fn get_reply_or_err(reply: i2o2::ReplyReceiver) -> io::Result<i32> {
+    let result = reply.await.map_err(|e| {
+        io::Error::new(
+            ErrorKind::Interrupted,
+            format!("IOP cancelled while writing header: {e}"),
+        )
+    })?;
+
+    if result < 0 {
+        Err(io::Error::from_raw_os_error(-result))
+    } else {
+        Ok(result)
+    }
+}
+
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use std::io::Write;
@@ -336,13 +338,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ring_file_create() {
-        let scheduler = IoScheduler::create().expect("create scheduler failed");
-
-        let file = tempfile::tempfile().unwrap();
-        let ring_file = scheduler
-            .make_ring_file(0, file)
-            .await
-            .expect("make ring file failed");
+        let ring_file = make_tmp_ring_rile().await;
         assert_eq!(ring_file.id(), 0);
         assert_eq!(ring_file.ring_id, 0);
 
@@ -352,14 +348,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ring_file_graceful_close() {
-        let scheduler = IoScheduler::create().expect("create scheduler failed");
-
-        let file = tempfile::tempfile().unwrap();
-        let mut ring_file = scheduler
-            .make_ring_file(0, file)
-            .await
-            .expect("make ring file failed");
-
+        let mut ring_file = make_tmp_ring_rile().await;
         assert!(!ring_file.is_closed());
 
         ring_file.close().await.expect("close failed");
@@ -371,13 +360,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ring_file_write() {
-        let scheduler = IoScheduler::create().expect("create scheduler failed");
-
-        let file = tempfile::tempfile().unwrap();
-        let mut ring_file = scheduler
-            .make_ring_file(0, file)
-            .await
-            .expect("make ring file failed");
+        let mut ring_file = make_tmp_ring_rile().await;
 
         let data = vec![1u8; 1024];
         let reply = unsafe {
@@ -398,13 +381,7 @@ mod tests {
         let scenario = fail::FailScenario::setup();
         fail::cfg("ringfile::fdatasync", "return").unwrap();
 
-        let scheduler = IoScheduler::create().expect("create scheduler failed");
-
-        let file = tempfile::tempfile().unwrap();
-        let mut ring_file = scheduler
-            .make_ring_file(0, file)
-            .await
-            .expect("make ring file failed");
+        let mut ring_file = make_tmp_ring_rile().await;
 
         let error = ring_file
             .fdatasync()
@@ -414,16 +391,144 @@ mod tests {
 
         assert!(ring_file.is_locked_out());
 
-        // I pinky promise this point isn't touched.
+        // I pinky promise this pointer isn't touched.
         let error = unsafe {
             ring_file
                 .submit_write(ptr::null(), 0, 0, None)
                 .await
-                .expect_err("fdatasync should fail")
+                .expect_err("submit write should fail")
         };
         assert_eq!(error.kind(), ErrorKind::ReadOnlyFilesystem);
 
         scenario.teardown();
+    }
+
+    #[tokio::test]
+    async fn test_ring_file_fsync_lockout_on_i2o2_error() {
+        let mut ring_file = make_tmp_ring_rile().await;
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("i2o2::fail::poll_reply_future", "return(-12)").unwrap();
+
+        let error = ring_file
+            .fdatasync()
+            .await
+            .expect_err("fdatasync should fail");
+        assert_eq!(error.kind(), ErrorKind::OutOfMemory);
+        assert!(ring_file.is_locked_out());
+
+        scenario.teardown();
+    }
+
+    #[tokio::test]
+    async fn test_ring_file_handle_i2o2_cancel() {
+        let mut ring_file = make_tmp_ring_rile().await;
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("i2o2::fail::poll_reply_future", "return(cancelled)").unwrap();
+
+        let reply = unsafe {
+            ring_file
+                .submit_write(b"".as_ptr(), 0, 0, None)
+                .await
+                .expect("submit write should succeed")
+        };
+        let error = get_reply_or_err(reply)
+            .await
+            .expect_err("write should return cancelled err");
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
+
+        let error = ring_file
+            .write_buffer(Vec::new(), 0)
+            .await
+            .expect_err("write should fail");
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
+
+        let mut read_buffer = Vec::with_capacity(5);
+        let reply = unsafe {
+            ring_file
+                .submit_read(read_buffer.as_mut_ptr(), 5, 0, None)
+                .await
+                .expect("submit read should succeed")
+        };
+        let error = get_reply_or_err(reply)
+            .await
+            .expect_err("write should return cancelled err");
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
+
+        let error = ring_file
+            .fdatasync()
+            .await
+            .expect_err("fdatasync should fail");
+        assert_eq!(error.kind(), ErrorKind::Interrupted);
+        assert!(ring_file.is_locked_out());
+
+        scenario.teardown();
+    }
+
+    #[tokio::test]
+    async fn test_write_buffer_out_of_storage_error() {
+        let ring_file = make_tmp_ring_rile().await;
+
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("i2o2::fail::poll_reply_future", "return(12)").unwrap();
+
+        let buffer = b"Hello, World!".to_vec();
+        let error = ring_file
+            .write_buffer(buffer, 0)
+            .await
+            .expect_err("write should fail");
+        assert_eq!(error.kind(), ErrorKind::StorageFull);
+
+        scenario.teardown();
+    }
+
+    #[rstest::rstest]
+    #[case::empty_file(0)]
+    #[case::filled_file(200)]
+    #[tokio::test]
+    async fn test_ring_file_get_len(#[case] expected_len: u64) {
+        let scheduler = IoScheduler::for_test();
+        let tmp_file = tempfile::tempfile().unwrap();
+        tmp_file.set_len(expected_len).unwrap();
+
+        let file = scheduler
+            .make_ring_file(1, tmp_file)
+            .await
+            .expect("Failed to make ring file");
+
+        let len = file.get_len().await.expect("get len failed");
+        assert_eq!(len, expected_len);
+    }
+
+    #[rstest::rstest]
+    #[case::no_offset_write_zero(0, 0)]
+    #[case::no_offset_write_unaligned(200, 0)]
+    #[case::no_offset_write_aligned(4096, 0)]
+    #[case::offset_write_unaligned(200, 5)]
+    #[case::offset_write_aligned(4096, 5)]
+    #[tokio::test]
+    async fn test_ring_file_buffer_write(
+        #[case] write_size: usize,
+        #[case] offset: u64,
+    ) {
+        use std::os::unix::fs::FileExt;
+
+        let ring_file = make_tmp_ring_rile().await;
+
+        let data_buffer = vec![1; write_size];
+        ring_file
+            .write_buffer(data_buffer.clone(), offset)
+            .await
+            .expect("write buffer failed");
+
+        let file = ring_file.inner.clone();
+        let mut data_written = vec![0; write_size + offset as usize];
+        let n_read = file.read_at(&mut data_written, 0).unwrap();
+        assert_eq!(n_read, data_written.len());
+
+        assert_eq!(&data_written[..offset as usize], vec![0; offset as usize]);
+        assert_eq!(&data_written[offset as usize..], data_buffer);
     }
 
     #[rstest::rstest]
@@ -434,7 +539,7 @@ mod tests {
     #[case::offset_read_small(200, 2)]
     #[case::offset_read_large(128 << 10, 2)]
     #[tokio::test]
-    async fn test_read(#[case] read_len: usize, #[case] offset: u64) {
+    async fn test_ring_file_read(#[case] read_len: usize, #[case] offset: u64) {
         let scheduler = IoScheduler::for_test();
         let mut tmp_file = tempfile::tempfile().unwrap();
 
@@ -458,7 +563,6 @@ mod tests {
                 .await
                 .expect("submit read failed")
         };
-
         let reply = reply.await.expect("scheduler cancelled IOP");
         if reply < 0 {
             panic!("read errored: {}", io::Error::from_raw_os_error(-reply));
@@ -471,5 +575,14 @@ mod tests {
             &data_buffer[offset as usize..][..read_len],
             "read buffer does not match",
         );
+    }
+
+    async fn make_tmp_ring_rile() -> RingFile {
+        let scheduler = IoScheduler::create().expect("create scheduler failed");
+        let file = tempfile::tempfile().unwrap();
+        scheduler
+            .make_ring_file(0, file)
+            .await
+            .expect("make ring file failed")
     }
 }
