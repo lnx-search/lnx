@@ -3,6 +3,9 @@ use super::encrypt;
 /// The magic bytes prefix of page files.
 static MAGIC_BYTES: &[u8] = b"__LNX_DATAFILE__";
 
+/// The fixed-size of the header and expected size of provided buffers.
+pub const HEADER_SIZE: usize = 8 << 10;
+
 #[repr(u32)]
 #[derive(
     Debug, Copy, Clone, Eq, PartialEq, serde_derive::Serialize, serde_derive::Deserialize,
@@ -133,7 +136,7 @@ pub fn encode_metadata<T: serde::Serialize>(
     metadata: &T,
     mut buffer: &mut [u8],
 ) -> Result<(), EncodeError> {
-    if buffer.len() != (8 << 10) {
+    if buffer.len() != HEADER_SIZE {
         return Err(EncodeError::IncorrectBufferSize);
     }
 

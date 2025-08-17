@@ -1797,8 +1797,8 @@ dependencies = [
  "chacha20poly1305",
  "crc32fast",
  "crossbeam-channel",
- "crossbeam-queue",
  "fail",
+ "fastrand 2.3.0",
  "hmac",
  "humansize",
  "i2o2",
@@ -1819,6 +1819,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "ulid",
 ]
 
 [[package]]

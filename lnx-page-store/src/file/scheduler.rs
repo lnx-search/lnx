@@ -98,8 +98,12 @@ impl RingFile {
 
     /// Closes the ring file and unregisters it from the ring.
     pub async fn close(&mut self) -> io::Result<()> {
+        if self.is_closed() {
+            return Ok(());
+        }
+
         #[cfg(test)]
-        fail::fail_point!("ringfile_close_err", |_| Err(io::Error::new(
+        fail::fail_point!("ringfile::close", |_| Err(io::Error::new(
             ErrorKind::BrokenPipe,
             "close err"
         )));
@@ -146,6 +150,38 @@ impl RingFile {
         tracing::trace!(offset = offset, len = len, "submitted write IOP");
 
         Ok(reply)
+    }
+
+    /// Write an owned buffer to the file at a given offset.
+    pub async fn write_buffer(&self, buffer: Vec<u8>, offset: u64) -> io::Result<()> {
+        let data_ptr = buffer.as_ptr();
+        let data_len = buffer.len();
+
+        // SAFETY: We bundle the header bytes ownership with the pointers and give it to the scheduler.
+        let reply = unsafe {
+            self.submit_write(
+                data_ptr,
+                data_len,
+                offset,
+                Some(Arc::new(buffer) as DynamicGuard),
+            )
+            .await?
+        };
+
+        let result = reply.await.map_err(|e| {
+            io::Error::other(format!("IOP cancelled while writing header: {e}"))
+        })?;
+
+        if result < 0 {
+            Err(io::Error::from_raw_os_error(-result))
+        } else if result as usize != data_len {
+            Err(io::Error::new(
+                ErrorKind::StorageFull,
+                "storage failed to allocate",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Performs the equivalent of a `fdatasync(1)`.

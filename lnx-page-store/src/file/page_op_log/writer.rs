@@ -121,6 +121,20 @@ impl LogFileWriter {
         self.durable_sequence_id
     }
 
+    #[inline]
+    /// Returns the position of the writer cursor.
+    ///
+    /// NOTE: This is not strictly tied to the file cursor, instead it is
+    ///       the absolute position of the next block as if it is about to be written.
+    pub fn position(&self) -> u64 {
+        self.get_absolute_block_position()
+    }
+
+    /// Consume the writer and return the inner ring file.
+    pub fn into_ring_file(self) -> scheduler::RingFile {
+        self.file
+    }
+
     /// Write a set of blocks to the log file at the current position.
     ///
     /// The `sequence_id` and `last_flush_sequence_id` fields will be overwritten.
@@ -143,13 +157,18 @@ impl LogFileWriter {
     /// Flush the buffered log data to disk and ensure it is safely persisted.
     ///
     /// Returns the position the file is flushed up to.
-    pub async fn sync(&mut self) -> io::Result<u64> {
+    pub async fn sync(&mut self) -> io::Result<()> {
         self.ensure_file_writeable()?;
         let result = self.sync_inner().await;
         if result.is_err() {
             self.reset_to_last_flush();
         }
         result
+    }
+
+    /// Close the writer file.
+    pub async fn close(&mut self) -> io::Result<()> {
+        self.file.close().await
     }
 
     pub(self) async fn write_log_inner(
@@ -181,7 +200,7 @@ impl LogFileWriter {
         Ok(())
     }
 
-    pub(self) async fn sync_inner(&mut self) -> io::Result<u64> {
+    pub(self) async fn sync_inner(&mut self) -> io::Result<()> {
         // Flush any intermediate buffers.
         self.flush_log_block_to_mem()?;
         self.write_buffer().await?;
@@ -195,7 +214,7 @@ impl LogFileWriter {
         // Update the currently flushed sequence ID.
         self.durable_sequence_id = self.next_sequence_id - 1;
 
-        Ok(self.current_pos)
+        Ok(())
     }
 
     fn flush_log_block_to_mem(&mut self) -> io::Result<()> {

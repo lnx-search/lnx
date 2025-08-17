@@ -1,6 +1,7 @@
 use crate::file::arena::ArenaAllocator;
 use crate::file::buffer;
 use crate::layout::encrypt;
+use crate::layout::file_metadata::Encryption;
 
 /// The file context contains general settings and information
 /// for the file reader and writers of any type to use.
@@ -31,9 +32,20 @@ impl FileContext {
         }
     }
 
+    #[inline]
     /// Returns the encryption cipher if enabled.
     pub fn cipher(&self) -> Option<&encrypt::Cipher> {
         self.cipher.as_ref()
+    }
+
+    #[inline]
+    /// Get the [Encryption] status for the given context.
+    pub fn get_encryption_status(&self) -> Encryption {
+        if self.cipher.is_none() {
+            Encryption::Disabled
+        } else {
+            Encryption::Enabled
+        }
     }
 
     /// Allocates a new DMA buffer of a given number of a given size.

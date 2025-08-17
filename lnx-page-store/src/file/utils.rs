@@ -1,5 +1,6 @@
-use std::mem;
+use std::path::Path;
 use std::sync::Arc;
+use std::{io, mem};
 
 /// A helper type for having a single value on the stack of a heap allocated
 /// value in an Arc.
@@ -39,6 +40,34 @@ pub(super) fn align_up(value: usize, align: usize) -> usize {
 
 pub(super) fn align_down(value: usize, align: usize) -> usize {
     (value / align) * align
+}
+
+pub(super) fn create_file(
+    path: &Path,
+    allow_existing: bool,
+) -> io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    options.read(true);
+
+    if allow_existing {
+        options.create(true);
+    } else {
+        options.create_new(true);
+    }
+
+    let file = options.open(path)?;
+
+    #[cfg(unix)]
+    {
+        let parent = path.parent().unwrap();
+        std::fs::OpenOptions::new()
+            .read(true)
+            .open(&parent)?
+            .sync_all()?;
+    }
+
+    Ok(file)
 }
 
 #[cfg(all(test, not(feature = "test-miri")))]

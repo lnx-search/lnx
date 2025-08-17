@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use crate::PageFileId;
 use crate::file::ctx::associated_data;
-use crate::file::page_op_log::file::LogFileWriter;
+use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{DISK_ALIGN, ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};

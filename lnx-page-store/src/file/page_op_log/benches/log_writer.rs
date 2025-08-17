@@ -3,7 +3,7 @@ extern crate test;
 use std::sync::Arc;
 
 use crate::PageFileId;
-use crate::file::page_op_log::file::LogFileWriter;
+use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{ctx, scheduler};
 use crate::layout::log::{LogEntry, LogOp};
 
