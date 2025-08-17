@@ -289,7 +289,7 @@ impl LogFileWriter {
         let new_buffer = self.ctx.alloc::<BUFFER_SIZE>();
         let block_buffer = mem::replace(&mut self.block_buffer, new_buffer);
         self.block_buffer_write_pos = 0;
-        self.block_offset = 0;
+        self.block_offset = log::LOG_BLOCK_SIZE;
         block_buffer
     }
 

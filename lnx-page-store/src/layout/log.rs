@@ -227,7 +227,7 @@ pub struct EntryPair {
 
 #[derive(Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
-#[cfg_attr(test, rkyv(derive(Debug)))]
+#[cfg_attr(test, rkyv(derive(Debug), compare(PartialEq)))]
 /// A single entry in the `PageOperationLog`.
 pub struct LogEntry {
     /// The current sequence ID of the page allocation table.
@@ -248,7 +248,7 @@ pub struct LogEntry {
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 #[cfg_attr(test, derive(Eq, PartialEq))]
-#[cfg_attr(test, rkyv(derive(Debug)))]
+#[cfg_attr(test, rkyv(derive(Debug), compare(PartialEq)))]
 pub enum LogOp {
     /// A new write performed on the page.
     Write = 0x01,
