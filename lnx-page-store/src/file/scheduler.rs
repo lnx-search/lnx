@@ -58,7 +58,7 @@ impl IoScheduler {
             id,
             ring_id,
             handle: self.handle.clone(),
-            _inner: file,
+            inner: file,
             io_error_lockout: false,
             closed: false,
         })
@@ -70,7 +70,7 @@ pub struct RingFile {
     id: FileId,
     ring_id: u32,
     handle: i2o2::I2o2Handle<DynamicGuard>,
-    _inner: Arc<std::fs::File>,
+    inner: Arc<std::fs::File>,
     io_error_lockout: bool,
     closed: bool,
 }
@@ -94,6 +94,17 @@ impl RingFile {
     /// Returns whether the file is locked out due to a prior IO error.
     pub fn is_locked_out(&self) -> bool {
         self.io_error_lockout
+    }
+
+    /// Get the file length reported.
+    pub async fn get_len(&self) -> io::Result<u64> {
+        let file = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let metadata = file.metadata()?;
+            Ok(metadata.len())
+        })
+        .await
+        .expect("spawn worker thread")
     }
 
     /// Closes the ring file and unregisters it from the ring.
