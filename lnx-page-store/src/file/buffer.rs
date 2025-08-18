@@ -10,6 +10,17 @@ use super::utils::SingleOrShared;
 
 const MIN_ALIGN: usize = 4096;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+/// The type of memory that backs the buffer.
+pub enum BufferKind {
+    /// An empty buffer.
+    Empty,
+    /// Arena backed memory.
+    Arena,
+    /// System backed memory.
+    System,
+}
+
 /// A memory buffer that meets the minimum required alignment
 /// requirements of DMA `O_DIRECT` operations.
 pub struct DmaBuffer {
@@ -57,6 +68,15 @@ impl DmaBuffer {
     /// Returns the capacity of the buffer.
     pub fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    /// Returns the backing memory type of the buffer.
+    pub fn kind(&self) -> BufferKind {
+        match &self.inner {
+            Alloc::Empty => BufferKind::Empty,
+            Alloc::Sys(_) => BufferKind::System,
+            Alloc::Arena(_) => BufferKind::Arena,
+        }
     }
 }
 
