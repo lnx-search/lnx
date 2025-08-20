@@ -53,7 +53,6 @@ fn make_sample_file(
     num_blocks: usize,
     offset: u64,
 ) -> io::Result<()> {
-    dbg!(num_blocks);
     file.set_len(offset)?;
     file.seek(io::SeekFrom::Start(offset))?;
 
