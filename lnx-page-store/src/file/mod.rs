@@ -8,6 +8,9 @@ mod page_data;
 mod page_metadata;
 mod page_op_log;
 mod scheduler;
+mod stream_reader;
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests;
 mod utils;
 
 pub const ALLOC_PAGE_SIZE: usize = 4096;

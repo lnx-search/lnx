@@ -1,5 +1,6 @@
-use std::io;
+use std::io::ErrorKind;
 use std::sync::Arc;
+use std::{cmp, io};
 
 use crate::file::buffer::DmaBuffer;
 use crate::file::ctx::associated_data;
@@ -32,6 +33,7 @@ pub struct LogFileReader {
     current_absolute_pos: u64,
     file_cursor: u64,
     file_len: u64,
+    eof: bool,
 }
 
 impl LogFileReader {
@@ -61,6 +63,7 @@ impl LogFileReader {
             current_absolute_pos: log_offset,
             file_cursor: log_offset,
             file_len: 0,
+            eof: false,
         }
     }
 
@@ -73,7 +76,7 @@ impl LogFileReader {
         }
 
         if self.buffer_cursor >= self.buffer_size {
-            if self.file_cursor >= self.file_len {
+            if self.file_cursor >= self.file_len || self.eof {
                 return Ok(None);
             }
             self.read_buffer().await?;
@@ -96,12 +99,14 @@ impl LogFileReader {
     }
 
     async fn read_buffer(&mut self) -> io::Result<()> {
-        let read_len = self.read_buffer.len();
-        let mut bytes_read = 0;
+        let bytes_remaining_on_file = self.file_len - self.file_cursor;
+        let read_len =
+            cmp::min(self.read_buffer.len(), bytes_remaining_on_file as usize);
 
         // This should basically never iterate more than once, and should maintain
         // alignment, but we handle this situation anyway.
-        while bytes_read != read_len {
+        let mut bytes_read = 0;
+        while bytes_read < read_len {
             let guard = self.read_buffer.share_guard();
             let read_ptr = self.read_buffer.as_mut_ptr();
             let read_n = align_up(read_len - bytes_read, DISK_ALIGN);
@@ -121,7 +126,10 @@ impl LogFileReader {
             }
 
             bytes_read += result as usize;
-            self.file_cursor += align_down(result as usize, DISK_ALIGN) as u64;
+
+            let advance_by = align_down(result as usize, DISK_ALIGN) as u64;
+            self.file_cursor += advance_by;
+            self.eof = advance_by == 0;
         }
 
         self.buffer_cursor = 0;

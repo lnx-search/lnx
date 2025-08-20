@@ -12,10 +12,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::{io, mem};
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 
 use crate::file::ctx::associated_data;
-use crate::file::{DynamicGuard, ctx, scheduler, utils};
+use crate::file::{ctx, scheduler, utils};
 use crate::layout::file_metadata::{self, Encryption};
 use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;

@@ -39,18 +39,10 @@ async fn test_writer_auto_flush() {
 }
 
 #[rstest::rstest]
-#[case::no_encryption_1_entries(false, 1)]
-#[case::no_encryption_4_entries(false, 4)]
-#[case::no_encryption_8_entries(false, 8)]
-#[case::no_encryption_32_entries(false, 32)]
-#[case::yes_encryption_1_entries(false, 1)]
-#[case::yes_encryption_4_entries(false, 4)]
-#[case::yes_encryption_8_entries(false, 8)]
-#[case::yes_encryption_32_entries(false, 32)]
 #[tokio::test]
 async fn test_log_writer_all_entries(
-    #[case] encryption: bool,
-    #[case] number_of_entries: usize,
+    #[values(true, false)] encryption: bool,
+    #[values(1, 4, 8, 32)] number_of_entries: usize,
 ) {
     let ctx = Arc::new(ctx::FileContext::for_test(encryption));
     let scheduler = scheduler::IoScheduler::for_test();

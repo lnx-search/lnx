@@ -10,10 +10,10 @@ use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
 
 #[rstest]
-#[case::without_offset(0)]
-#[case::with_offset(4096)]
 #[tokio::test]
-async fn test_single_block_correct_associated_data_tagging(#[case] log_offset: u64) {
+async fn test_single_block_correct_associated_data_tagging(
+    #[values(0, 4096)] log_offset: u64,
+) {
     const FILE_ID: u64 = 1;
 
     let _ = tracing_subscriber::fmt::try_init();
@@ -51,10 +51,10 @@ async fn test_single_block_correct_associated_data_tagging(#[case] log_offset: u
 }
 
 #[rstest]
-#[case::without_offset(0)]
-#[case::with_offset(4096)]
 #[tokio::test]
-async fn test_multi_block_correct_associated_data_tagging(#[case] log_offset: u64) {
+async fn test_multi_block_correct_associated_data_tagging(
+    #[values(0, 4096)] log_offset: u64,
+) {
     const FILE_ID: u64 = 1;
 
     let _ = tracing_subscriber::fmt::try_init();
