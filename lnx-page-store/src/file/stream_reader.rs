@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::ErrorKind;
 use std::sync::Arc;
 use std::{cmp, io};
@@ -89,6 +88,24 @@ pub struct StreamReader {
 }
 
 impl StreamReader {
+    #[inline]
+    /// Returns a reference to the inner file.
+    pub fn file(&self) -> &scheduler::RingFile {
+        &self.file
+    }
+
+    #[inline]
+    /// Returns the unique ID assigned to the file.
+    pub fn file_id(&self) -> scheduler::FileId {
+        self.file.id()
+    }
+
+    #[inline]
+    /// Returns the position the reader is at in the file.
+    pub fn position(&self) -> u64 {
+        self.file_cursor + self.read_buffer_cursor as u64
+    }
+
     /// Read bytes from the reader into the buffer or return [ErrorKind::UnexpectedEof]
     /// if the buffer can not be filled entirely.
     pub async fn read_exact(&mut self, buffer: &mut [u8]) -> io::Result<()> {
