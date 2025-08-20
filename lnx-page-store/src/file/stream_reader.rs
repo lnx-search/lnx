@@ -67,6 +67,8 @@ impl StreamReaderBuilder {
             file_len_init: false,
             file_cursor: self.offset,
 
+            position: self.offset,
+
             read_buffer,
             read_buffer_cursor: 0,
             read_buffer_init_end: 0,
@@ -81,6 +83,8 @@ pub struct StreamReader {
     file_len: u64,
     file_len_init: bool,
     file_cursor: u64,
+
+    position: u64,
 
     read_buffer: DmaBuffer,
     read_buffer_cursor: usize,
@@ -103,7 +107,7 @@ impl StreamReader {
     #[inline]
     /// Returns the position the reader is at in the file.
     pub fn position(&self) -> u64 {
-        self.file_cursor + self.read_buffer_cursor as u64
+        self.position
     }
 
     /// Read bytes from the reader into the buffer or return [ErrorKind::UnexpectedEof]
@@ -137,12 +141,15 @@ impl StreamReader {
             output_cursor += n;
 
             if read_n == 0 {
+                self.position += output.len() as u64;
                 return Ok(output.len());
             }
 
             // EOF
             if self.file_cursor >= self.file_len {
-                return Ok(output.len() - read_n);
+                let n = output.len() - read_n;
+                self.position += n as u64;
+                return Ok(n);
             }
 
             self.fill_buffer().await?;

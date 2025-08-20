@@ -36,9 +36,6 @@ async fn test_log_reader(
     while let Some(block) = reader.next_block().await.expect("Failed to read block") {
         blocks.push(block);
     }
-    if num_blocks == 18 {
-        dbg!(&blocks[19], &blocks[18], &blocks[17]);
-    }
     assert_eq!(blocks.len(), num_blocks);
 
     for (block_id, block) in blocks.into_iter().enumerate() {

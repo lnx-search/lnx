@@ -52,7 +52,6 @@ impl LogFileReader {
     /// Returns `Ok(None)` once at EOF.
     pub async fn next_block(&mut self) -> Result<Option<log::LogBlock>, LogDecodeError> {
         let position = self.reader.position();
-
         let result = self.reader.read_exact(&mut self.scratch_space).await;
 
         match result {
