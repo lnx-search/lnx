@@ -14,7 +14,7 @@ use crate::{PageGroupId, PageId};
 
 const SAMPLE_PAGE_METADATA: PageMetadata = PageMetadata {
     id: PageId(1),
-    block: PageGroupId(1),
+    group: PageGroupId(1),
     revision: 123,
     data_len: 124124,
     context: [1; 40],

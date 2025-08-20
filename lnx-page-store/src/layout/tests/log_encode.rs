@@ -113,13 +113,13 @@ fn test_encode_block_full() {
     };
 
     let mut block = LogBlock::default();
-    for _ in 0..7 {
+    for _ in 0..8 {
         block.push_entry(entry, None).unwrap();
     }
     block
         .push_entry(entry, Some(PageMetadata::empty()))
         .unwrap();
-    assert_eq!(block.remaining_capacity(), 0);
+    assert_eq!(block.remaining_capacity(), 24);
 
     let mut output = [0; 512];
     encode_log_block(None, b"", &block, &mut output)
@@ -131,16 +131,16 @@ fn test_encode_block_full() {
 #[case::yes_encryption_blocks_2(true, 2)]
 #[case::yes_encryption_blocks_4(true, 4)]
 #[case::yes_encryption_blocks_5(true, 5)]
-#[case::yes_encryption_blocks_9(true, 9)]
+#[case::yes_encryption_blocks_9(true, 11)]
 #[should_panic(expected = "log entry should not be full")]
-#[case::yes_encryption_blocks_11(true, 11)]
+#[case::yes_encryption_blocks_11(true, 12)]
 #[case::no_encryption_blocks_1(false, 1)]
 #[case::no_encryption_blocks_2(false, 2)]
 #[case::no_encryption_blocks_4(false, 4)]
 #[case::no_encryption_blocks_5(false, 5)]
-#[case::no_encryption_blocks_9(false, 9)]
+#[case::no_encryption_blocks_9(false, 11)]
 #[should_panic(expected = "log entry should not be full")]
-#[case::no_encryption_blocks_11(false, 11)]
+#[case::no_encryption_blocks_11(false, 12)]
 fn test_encode_block_without_metadata(
     #[case] encryption: bool,
     #[case] n_blocks: usize,

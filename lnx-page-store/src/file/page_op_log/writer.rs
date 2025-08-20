@@ -92,7 +92,7 @@ impl LogFileWriter {
 
     #[inline]
     /// Returns writer file ID.
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> scheduler::FileId {
         self.file.id()
     }
 

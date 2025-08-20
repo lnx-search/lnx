@@ -19,6 +19,9 @@ use crate::file::{ctx, scheduler, utils};
 use crate::layout::file_metadata::{self, Encryption};
 use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;
+pub use self::reader::{LogDecodeError, LogFileReader};
+
+// TODO: Move writer bit into the writer file, probably cleaner
 
 #[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
 /// The file metadata header used to identify the file and the type.
@@ -27,7 +30,7 @@ pub struct MetadataHeader {
     ///
     /// NOTE: This ID changes every time the WAL is flushed, although the disk
     /// allocation stays the same, the file itself is seen as 'new'.
-    pub log_file_id: u64,
+    pub log_file_id: u32,
     /// Signals if the data in the log is encrypted or not.
     pub encryption: Encryption,
 }
@@ -167,7 +170,7 @@ impl OpLogWriter {
     /// the generated ID.
     async fn open_new_file(&self) -> io::Result<scheduler::RingFile> {
         loop {
-            let file_id = fastrand::u32(1000..) as u64;
+            let file_id = fastrand::u32(1000..);
             let file_path = self.config.log_file_directory.join(log_file_name(file_id));
 
             let result = tokio::task::spawn_blocking(move || {
@@ -208,7 +211,7 @@ async fn initialise_log_file(
     Ok(())
 }
 
-fn log_file_name(file_id: u64) -> String {
+fn log_file_name(file_id: u32) -> String {
     format!("{file_id:010}.log.lnx")
 }
 
@@ -219,8 +222,8 @@ mod test_misc {
     #[rstest::rstest]
     #[case(1, "0000000001.log.lnx")]
     #[case(8765, "0000008765.log.lnx")]
-    #[case(12345678910, "12345678910.log.lnx")]
-    fn test_log_file_name(#[case] file_id: u64, #[case] expected_str: &str) {
+    #[case(123456789, "0123456789.log.lnx")]
+    fn test_log_file_name(#[case] file_id: u32, #[case] expected_str: &str) {
         let name = log_file_name(file_id);
         assert_eq!(name, expected_str);
     }

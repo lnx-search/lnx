@@ -126,8 +126,8 @@ async fn test_multiple_block_write_layout() {
         log::decode_log_block(None, b"", buffer1).expect("block should be decodable");
     let block2 =
         log::decode_log_block(None, b"", buffer2).expect("block should be decodable");
-    assert_eq!(block1.num_entries(), 9);
-    assert_eq!(block2.num_entries(), 6);
+    assert_eq!(block1.num_entries(), 11);
+    assert_eq!(block2.num_entries(), 4);
 
     let entries = block1.entries();
     assert_eq!(
@@ -146,7 +146,7 @@ async fn test_multiple_block_write_layout() {
     assert_eq!(
         entries[0].log,
         LogEntry {
-            sequence_id: 10,
+            sequence_id: 12,
             last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
@@ -174,7 +174,7 @@ async fn test_multiple_pages_write_layout() {
 
     let mut writer = LogFileWriter::new(ctx, file, 0);
 
-    for _ in 0..NUM_BLOCKS * 9 {
+    for _ in 0..NUM_BLOCKS * 11 {
         let entry = LogEntry {
             sequence_id: 1,
             last_flush_sequence_id: 0,
@@ -196,13 +196,13 @@ async fn test_multiple_pages_write_layout() {
 
         let block =
             log::decode_log_block(None, b"", buffer).expect("block should be decodable");
-        assert_eq!(block.num_entries(), 9);
+        assert_eq!(block.num_entries(), 11);
 
         let entries = block.entries();
         assert_eq!(
             entries[0].log,
             LogEntry {
-                sequence_id: ((block_id * 9) + 1) as u32,
+                sequence_id: ((block_id * 11) + 1) as u32,
                 last_flush_sequence_id: 0,
                 transaction_id: 6,
                 transaction_n_entries: 7,

@@ -5,7 +5,7 @@ mod arena;
 mod buffer;
 mod ctx;
 mod page_data;
-mod page_metadata;
+mod page_table;
 mod page_op_log;
 mod scheduler;
 mod stream_reader;

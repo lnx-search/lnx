@@ -9,7 +9,7 @@ use crate::file::{ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
 
-const FILE_ID: u64 = 1;
+const FILE_ID: u32 = 1;
 
 #[rstest::rstest]
 #[trace]

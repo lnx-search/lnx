@@ -7,7 +7,7 @@ use i2o2::opcode::FSyncMode;
 
 use super::DynamicGuard;
 
-pub type FileId = u64;
+pub type FileId = u32;
 
 const MAX_NUM_REGISTERED_FILES: u32 = 10_000;
 

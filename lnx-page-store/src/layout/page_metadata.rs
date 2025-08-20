@@ -13,7 +13,7 @@ const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
 /// Metadata about the page and the ata stored within it when serialized on disk.
 pub struct PageMetadata {
     /// The block this page contains data for.
-    pub(crate) block: PageGroupId,
+    pub(crate) group: PageGroupId,
     /// The revision is a monotonic ID for each page within a block that
     /// tracks the number of observed updates to the block.
     pub(crate) revision: u64,
@@ -34,7 +34,7 @@ impl PageMetadata {
     pub(crate) const fn empty() -> Self {
         Self {
             id: PageId(u32::MAX),
-            block: PageGroupId(u64::MAX),
+            group: PageGroupId(u64::MAX),
             revision: 0,
             data_len: 0,
             context: [0; 40],

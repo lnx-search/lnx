@@ -61,7 +61,7 @@ async fn test_log_writer_all_entries(
             last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
-            page_file_id: PageFileId(id as u64),
+            page_file_id: PageFileId(id as u32),
             op: LogOp::Free,
         };
         writer.write_log(entry, None).await.expect("write log");
@@ -111,7 +111,7 @@ async fn test_log_writer_entries_and_metadata(
             last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
-            page_file_id: PageFileId(id as u64),
+            page_file_id: PageFileId(id as u32),
             op: LogOp::Free,
         };
 
@@ -285,7 +285,7 @@ async fn fill_buffer(writer: &mut LogFileWriter) -> io::Result<()> {
         op: LogOp::Free,
     };
 
-    for _ in 0..5_000 {
+    for _ in 0..8_000 {
         writer.write_log(entry, None).await?;
     }
 

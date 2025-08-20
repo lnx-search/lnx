@@ -252,18 +252,18 @@ mod tests {
     #[test]
     fn ensure_log_entry_40_bytes() {
         // WARNING! Changing this has side effects!
-        assert_eq!(size_of::<ArchivedLogEntry>(), 40);
+        assert_eq!(size_of::<ArchivedLogEntry>(), 32);
     }
 
     #[test]
     fn ensure_log_pair_size() {
-        assert_eq!(size_of::<ArchivedEntryPair>(), 48);
+        assert_eq!(size_of::<ArchivedEntryPair>(), 40);
     }
 
     #[test]
     fn test_log_block_sizing_all_entries() {
         let mut block = LogBlock::default();
-        for _ in 0..9 {
+        for _ in 0..11 {
             block
                 .push_entry(
                     LogEntry {

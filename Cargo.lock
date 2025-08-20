@@ -1805,6 +1805,7 @@ dependencies = [
  "memmap2",
  "moka",
  "offset-allocator",
+ "papaya",
  "parking_lot",
  "rkyv",
  "rstest",
@@ -2228,6 +2229,16 @@ version = "0.7.0"
 source = "git+https://github.com/ChillFish8/tantivy.git?branch=lnx-dev#65324ec138b958e6875cb0519b8307362b997383"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "papaya"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f92dd0b07c53a0a0c764db2ace8c541dc47320dad97c2200c2a637ab9dd2328f"
+dependencies = [
+ "equivalent",
+ "seize",
 ]
 
 [[package]]
@@ -2867,6 +2878,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "seize"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4b8d813387d566f627f3ea1b914c068aac94c40ae27ec43f5f33bde65abefe7"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "semver"

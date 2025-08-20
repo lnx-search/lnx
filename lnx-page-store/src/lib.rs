@@ -37,7 +37,7 @@ pub struct PageGroupId(pub(crate) u64);
 )]
 #[rkyv(derive(Debug), compare(PartialEq))]
 /// A unique identifier for a file of pages.
-pub struct PageFileId(pub(crate) u64);
+pub struct PageFileId(pub(crate) u32);
 
 #[repr(transparent)]
 #[derive(

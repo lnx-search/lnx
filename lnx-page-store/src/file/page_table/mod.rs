@@ -2,6 +2,11 @@
 //!
 //! This file is not modified on every op, instead it is updated when the op log is rolled up.
 
+#[cfg(all(test, not(feature = "test-miri")))]
+mod tests;
+mod dirty_marker;
+
+use crate::file::page_table::dirty_marker::DirtyMarkerTable;
 use crate::PageFileId;
 use crate::layout::file_metadata::Encryption;
 
@@ -18,4 +23,18 @@ pub struct MetadataHeader {
     pub num_pages: usize,
     /// Signals if the data in the log is encrypted or not.
     pub encryption: Encryption,
+}
+
+
+/// The global page table, this holds the in memory state of all
+/// currently allocated pages.
+pub struct GlobalPageTable {
+    groups_to_page_file: papaya::HashMap<u64, ()>,
+    dirty_marker_table: DirtyMarkerTable,
+}
+
+
+pub struct LocalPageTable {
+    id: PageFileId,
+    pages: Vec<()>
 }
