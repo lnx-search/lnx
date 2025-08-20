@@ -11,44 +11,44 @@ use crate::layout::log::{LogEntry, LogOp};
 
 const FILE_ID: u64 = 1;
 
-// #[rstest::rstest]
-// #[trace]
-// #[tokio::test]
-// async fn test_log_reader(
-//     #[values(true, false)] encryption: bool,
-//     #[values(0, 4096)] offset: u64,
-//     #[values(0, 5, 18)] num_blocks: usize,
-// ) {
-//     let ctx = Arc::new(ctx::FileContext::for_test(encryption));
-//     let scheduler = scheduler::IoScheduler::for_test();
-//     let mut tmp_file = tempfile::tempfile().unwrap();
-//
-//     make_sample_file(&ctx, &mut tmp_file, num_blocks, offset).unwrap();
-//
-//     let file = scheduler
-//         .make_ring_file(FILE_ID, tmp_file)
-//         .await
-//         .expect("Failed to make ring file");
-//
-//     let mut reader = LogFileReader::new(ctx, file, offset);
-//
-//     let mut blocks = Vec::new();
-//     while let Some(block) = reader.next_block().await.expect("Failed to read block") {
-//         blocks.push(block);
-//     }
-//     if num_blocks == 18 {
-//         dbg!(&blocks[19], &blocks[18], &blocks[17]);
-//     }
-//     assert_eq!(blocks.len(), num_blocks);
-//
-//     for (block_id, block) in blocks.into_iter().enumerate() {
-//         assert_eq!(block.num_entries(), 7);
-//         let expected_first_sequence_id = block_id * 7;
-//
-//         let entry = &block.entries()[0];
-//         assert_eq!(entry.log.sequence_id, expected_first_sequence_id as u32);
-//     }
-// }
+#[rstest::rstest]
+#[trace]
+#[tokio::test]
+async fn test_log_reader(
+    #[values(true, false)] encryption: bool,
+    #[values(0, 4096)] offset: u64,
+    #[values(0, 5, 18)] num_blocks: usize,
+) {
+    let ctx = Arc::new(ctx::FileContext::for_test(encryption));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let mut tmp_file = tempfile::tempfile().unwrap();
+
+    make_sample_file(&ctx, &mut tmp_file, num_blocks, offset).unwrap();
+
+    let file = scheduler
+        .make_ring_file(FILE_ID, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+
+    let mut reader = LogFileReader::new(ctx, file, offset);
+
+    let mut blocks = Vec::new();
+    while let Some(block) = reader.next_block().await.expect("Failed to read block") {
+        blocks.push(block);
+    }
+    if num_blocks == 18 {
+        dbg!(&blocks[19], &blocks[18], &blocks[17]);
+    }
+    assert_eq!(blocks.len(), num_blocks);
+
+    for (block_id, block) in blocks.into_iter().enumerate() {
+        assert_eq!(block.num_entries(), 7);
+        let expected_first_sequence_id = block_id * 7;
+
+        let entry = &block.entries()[0];
+        assert_eq!(entry.log.sequence_id, expected_first_sequence_id as u32);
+    }
+}
 
 fn make_sample_file(
     ctx: &ctx::FileContext,
