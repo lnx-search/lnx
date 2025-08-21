@@ -12,9 +12,9 @@ use rkyv::ser::Positional;
 
 use super::file_metadata::Encryption;
 use super::{encrypt, integrity};
-use crate::PageFileId;
 use crate::layout::encrypt::EncryptError;
 use crate::layout::page_metadata::{ArchivedPageMetadata, PageMetadata};
+use crate::{PageFileId, PageId};
 
 /// The fixed size of a log block buffer in bytes.
 pub const LOG_BLOCK_SIZE: usize = 512;
@@ -188,6 +188,11 @@ impl LogBlock {
     }
 
     #[inline]
+    pub(crate) fn last_page_id(&self) -> Option<PageId> {
+        self.entries().last().map(|pair| pair.log.page_id)
+    }
+
+    #[inline]
     pub(crate) fn num_entries(&self) -> usize {
         self.pairs.len()
     }
@@ -214,17 +219,17 @@ pub struct EntryPair {
 #[cfg_attr(test, rkyv(derive(Debug), compare(PartialEq)))]
 /// A single entry in the `PageOperationLog`.
 pub struct LogEntry {
-    /// The current sequence ID of the page allocation table.
-    pub sequence_id: u32,
-    /// The sequence ID marking where the last flush occurred.
-    pub last_flush_sequence_id: u32,
     /// The transaction ID that groups multiple operations together
     /// to form a single atomic transaction.
     pub transaction_id: u64,
     /// The number of entries this transaction encompasses.
     pub transaction_n_entries: u32,
+    /// The current sequence ID of the page allocation table.
+    pub sequence_id: u32,
     /// The target page file affected by the operation.
     pub page_file_id: PageFileId,
+    /// The page being affected by the log op.
+    pub page_id: PageId,
     /// The operation that was performed.
     pub op: LogOp,
 }
@@ -268,9 +273,9 @@ mod tests {
                 .push_entry(
                     LogEntry {
                         sequence_id: 0,
-                        last_flush_sequence_id: 0,
                         transaction_id: 0,
                         transaction_n_entries: 0,
+                        page_id: PageId(0),
                         page_file_id: PageFileId(1),
                         op: LogOp::Write,
                     },
@@ -283,9 +288,9 @@ mod tests {
             .push_entry(
                 LogEntry {
                     sequence_id: 0,
-                    last_flush_sequence_id: 0,
                     transaction_id: 0,
                     transaction_n_entries: 0,
+                    page_id: PageId(0),
                     page_file_id: PageFileId(1),
                     op: LogOp::Write,
                 },
@@ -302,9 +307,9 @@ mod tests {
                 .push_entry(
                     LogEntry {
                         sequence_id: 0,
-                        last_flush_sequence_id: 0,
                         transaction_id: 0,
                         transaction_n_entries: 0,
+                        page_id: PageId(0),
                         page_file_id: PageFileId(1),
                         op: LogOp::Write,
                     },
@@ -317,9 +322,9 @@ mod tests {
             .push_entry(
                 LogEntry {
                     sequence_id: 0,
-                    last_flush_sequence_id: 0,
                     transaction_id: 0,
                     transaction_n_entries: 0,
+                    page_id: PageId(0),
                     page_file_id: PageFileId(1),
                     op: LogOp::Write,
                 },

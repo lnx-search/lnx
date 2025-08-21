@@ -2,6 +2,7 @@ use std::io::ErrorKind;
 use std::sync::Arc;
 use std::{io, mem};
 
+use crate::PageId;
 use crate::file::buffer::DmaBuffer;
 use crate::file::utils::{align_down, align_up};
 use crate::file::{DISK_ALIGN, DynamicGuard, ctx, scheduler};
@@ -51,6 +52,9 @@ pub struct LogFileWriter {
     /// The sequence ID of the last successful durability flush.
     durable_sequence_id: u32,
 
+    /// The [PageId] that was last modified.
+    last_written_page_id: PageId,
+
     inflight_iop: Option<InflightIop>,
 }
 
@@ -84,6 +88,8 @@ impl LogFileWriter {
             next_sequence_id: SEQUENCE_ID_START,
             flushed_sequence_id: 0,
             durable_sequence_id: 0,
+
+            last_written_page_id: PageId(0),
 
             inflight_iop: None,
         }
@@ -223,17 +229,26 @@ impl LogFileWriter {
     }
 
     fn flush_log_block_to_mem(&mut self) -> io::Result<()> {
+        println!("writing block page ID: {:?}", self.last_written_page_id);
         let absolute_position_on_disk = self.get_absolute_block_position();
 
         let buffer_start = self.block_offset - log::LOG_BLOCK_SIZE;
         let buffer = &mut self.block_buffer[buffer_start..][..log::LOG_BLOCK_SIZE];
         log::encode_log_block(
             self.ctx.cipher(),
-            &super::associated_data(self.file.id(), absolute_position_on_disk),
+            &super::op_log_associated_data(
+                self.file.id(),
+                self.last_written_page_id,
+                absolute_position_on_disk,
+            ),
             &self.wip_block,
             buffer,
         )
         .map_err(io::Error::other)?;
+
+        if let Some(page_id) = self.wip_block.last_page_id() {
+            self.last_written_page_id = page_id;
+        }
 
         Ok(())
     }
@@ -307,7 +322,6 @@ impl LogFileWriter {
 
     fn assign_writer_context(&mut self, entry: &mut LogEntry) {
         entry.sequence_id = self.next_sequence_id;
-        entry.last_flush_sequence_id = self.durable_sequence_id;
         self.next_sequence_id += 1;
     }
 
@@ -368,8 +382,8 @@ struct InflightIop {
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests {
     use super::*;
-    use crate::PageFileId;
     use crate::layout::log::LogOp;
+    use crate::{PageFileId, PageId};
 
     #[tokio::test]
     async fn test_writer_sequence_id() {
@@ -386,9 +400,9 @@ mod tests {
 
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(5),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         };
@@ -401,7 +415,6 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let entry = entries[0].log;
         assert_eq!(entry.sequence_id, 1);
-        assert_eq!(entry.last_flush_sequence_id, 0);
 
         writer.sync().await.expect("sync log");
         assert_eq!(writer.durable_sequence_id, 1);
@@ -414,7 +427,6 @@ mod tests {
         assert_eq!(entries.len(), 2);
         let entry = entries[1].log;
         assert_eq!(entry.sequence_id, 2);
-        assert_eq!(entry.last_flush_sequence_id, 1);
     }
 
     #[tokio::test]
@@ -432,9 +444,9 @@ mod tests {
 
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(5),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         };

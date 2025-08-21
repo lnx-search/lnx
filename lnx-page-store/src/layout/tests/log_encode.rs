@@ -1,10 +1,10 @@
 use chacha20poly1305::aead::Key;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
-use crate::PageFileId;
 use crate::layout::encrypt;
 use crate::layout::log::*;
 use crate::layout::page_metadata::PageMetadata;
+use crate::{PageFileId, PageId};
 
 fn sample_log_block(entry: LogEntry) -> LogBlock {
     let mut block = LogBlock::default();
@@ -21,9 +21,9 @@ fn cipher_1() -> encrypt::Cipher {
 #[case::encode_op_write(
     sample_log_block(LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 1,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Write,
     }),
@@ -32,9 +32,9 @@ fn cipher_1() -> encrypt::Cipher {
 #[case::encode_op_free(
     sample_log_block(LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 1,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
         }),
@@ -43,9 +43,9 @@ fn cipher_1() -> encrypt::Cipher {
 #[case::encode_op_flush(
     sample_log_block(LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 1,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Flush,
         }),
@@ -54,9 +54,9 @@ fn cipher_1() -> encrypt::Cipher {
 #[case::encode_op_update_table_metadata(
     sample_log_block(LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 1,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Write,
         }),
@@ -88,9 +88,9 @@ fn test_encode_log_errors(
 ) {
     let block = sample_log_block(LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 1,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Write,
     });
@@ -105,9 +105,9 @@ fn test_encode_log_errors(
 fn test_encode_block_full() {
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Write,
     };
@@ -149,9 +149,9 @@ fn test_encode_block_without_metadata(
     for _ in 0..n_blocks {
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(5),
             page_file_id: PageFileId(1),
             op: LogOp::Write,
         };
@@ -182,9 +182,9 @@ fn test_encode_block_with_metadata(#[case] encryption: bool, #[case] n_blocks: u
     for _ in 0..n_blocks {
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(5),
             page_file_id: PageFileId(1),
             op: LogOp::Write,
         };

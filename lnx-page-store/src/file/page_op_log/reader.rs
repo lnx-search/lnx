@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::Arc;
 
+use crate::PageId;
 use crate::file::stream_reader::{StreamReader, StreamReaderBuilder};
 use crate::file::{ctx, scheduler};
 use crate::layout::log;
@@ -23,6 +24,7 @@ pub struct LogFileReader {
     ctx: Arc<ctx::FileContext>,
     reader: StreamReader,
     scratch_space: [u8; log::LOG_BLOCK_SIZE],
+    next_page_id_to_decrypt: PageId,
 }
 
 impl LogFileReader {
@@ -43,6 +45,7 @@ impl LogFileReader {
             ctx,
             reader,
             scratch_space: [0; log::LOG_BLOCK_SIZE],
+            next_page_id_to_decrypt: PageId(0),
         }
     }
 
@@ -63,10 +66,18 @@ impl LogFileReader {
 
         let block = log::decode_log_block(
             self.ctx.cipher(),
-            &super::associated_data(self.reader.file_id(), position),
+            &super::op_log_associated_data(
+                self.reader.file_id(),
+                self.next_page_id_to_decrypt,
+                position,
+            ),
             &mut self.scratch_space,
         )
         .map_err(LogDecodeError::Decode)?;
+
+        if let Some(page_id) = block.last_page_id() {
+            self.next_page_id_to_decrypt = page_id;
+        }
 
         Ok(Some(block))
     }

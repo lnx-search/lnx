@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use crate::PageFileId;
 use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{DISK_ALIGN, ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
+use crate::{PageFileId, PageId};
 
 #[tokio::test]
 async fn test_single_entry_write_layout() {
@@ -24,9 +24,9 @@ async fn test_single_entry_write_layout() {
 
     let entry = LogEntry {
         sequence_id: 1,
-        last_flush_sequence_id: 0,
         transaction_id: 6,
         transaction_n_entries: 7,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -63,9 +63,9 @@ async fn test_non_zero_log_offset() {
 
     let entry = LogEntry {
         sequence_id: 1,
-        last_flush_sequence_id: 0,
         transaction_id: 6,
         transaction_n_entries: 7,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -100,12 +100,12 @@ async fn test_multiple_block_write_layout() {
 
     let mut writer = LogFileWriter::new(ctx, file, 0);
 
-    for _ in 0..15 {
+    for page_id in 0..15 {
         let entry = LogEntry {
             sequence_id: 1,
-            last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
+            page_id: PageId(page_id),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         };
@@ -134,9 +134,9 @@ async fn test_multiple_block_write_layout() {
         entries[0].log,
         LogEntry {
             sequence_id: 1,
-            last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
+            page_id: PageId(0),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         }
@@ -147,9 +147,9 @@ async fn test_multiple_block_write_layout() {
         entries[0].log,
         LogEntry {
             sequence_id: 12,
-            last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
+            page_id: PageId(11),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         }
@@ -177,9 +177,9 @@ async fn test_multiple_pages_write_layout() {
     for _ in 0..NUM_BLOCKS * 11 {
         let entry = LogEntry {
             sequence_id: 1,
-            last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
+            page_id: PageId(11),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         };
@@ -203,9 +203,9 @@ async fn test_multiple_pages_write_layout() {
             entries[0].log,
             LogEntry {
                 sequence_id: ((block_id * 11) + 1) as u32,
-                last_flush_sequence_id: 0,
                 transaction_id: 6,
                 transaction_n_entries: 7,
+                page_id: PageId(11),
                 page_file_id: PageFileId(1),
                 op: LogOp::Free,
             }

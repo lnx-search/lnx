@@ -2,12 +2,12 @@ use std::io;
 use std::io::{Seek, Write};
 use std::sync::Arc;
 
-use crate::PageFileId;
-use crate::file::page_op_log::associated_data;
+use crate::file::page_op_log::op_log_associated_data;
 use crate::file::page_op_log::reader::LogFileReader;
 use crate::file::{ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
+use crate::{PageFileId, PageId};
 
 const FILE_ID: u32 = 1;
 
@@ -56,15 +56,16 @@ fn make_sample_file(
     file.set_len(offset)?;
     file.seek(io::SeekFrom::Start(offset))?;
 
+    let mut last_page_id = PageId(0);
     let mut seq_id = 0;
     for block_id in 0..num_blocks {
         let mut block = log::LogBlock::default();
-        for _ in 0..7 {
+        for page_id in 0..7 {
             let entry = LogEntry {
                 sequence_id: seq_id,
-                last_flush_sequence_id: 0,
                 transaction_id: 0,
                 transaction_n_entries: 0,
+                page_id: PageId(((block_id * 7) + page_id) as u32),
                 page_file_id: PageFileId(1),
                 op: LogOp::Write,
             };
@@ -76,11 +77,17 @@ fn make_sample_file(
         let mut buffer = [0; log::LOG_BLOCK_SIZE];
         log::encode_log_block(
             ctx.cipher(),
-            &associated_data(FILE_ID, offset + (block_id * log::LOG_BLOCK_SIZE) as u64),
+            &op_log_associated_data(
+                FILE_ID,
+                last_page_id,
+                offset + (block_id * log::LOG_BLOCK_SIZE) as u64,
+            ),
             &block,
             &mut buffer,
         )
         .unwrap();
+
+        last_page_id = block.last_page_id().unwrap();
 
         file.write_all(&buffer)?;
         file.sync_all()?;

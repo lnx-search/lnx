@@ -15,11 +15,11 @@ use std::{io, mem};
 use parking_lot::Mutex;
 
 pub use self::reader::{LogDecodeError, LogFileReader};
+use crate::PageId;
 use crate::file::{ctx, scheduler, utils};
 use crate::layout::file_metadata::{self, Encryption};
 use crate::layout::log::LogEntry;
 use crate::layout::page_metadata::PageMetadata;
-
 // TODO: Move writer bit into the writer file, probably cleaner
 
 #[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
@@ -198,7 +198,7 @@ async fn initialise_log_file(
     let mut header_bytes = vec![0; file_metadata::HEADER_SIZE];
     file_metadata::encode_metadata(
         ctx.cipher(),
-        &associated_data(ring_file.id(), 0),
+        &op_log_associated_data(ring_file.id(), PageId(0), 0),
         &header,
         &mut header_bytes,
     )
@@ -219,9 +219,14 @@ fn log_file_name(file_id: u32) -> String {
 /// This method is used on all files and is used to prevent replay attacks
 /// and a bad actor gaining information about the system by taking and swapping
 /// around data in the files.
-pub fn associated_data(file_id: u32, start_pos: u64) -> [u8; 16] {
+pub fn op_log_associated_data(
+    file_id: u32,
+    last_page_id: PageId,
+    start_pos: u64,
+) -> [u8; 16] {
     let mut buffer = [0; 16];
     buffer[0..4].copy_from_slice(&file_id.to_le_bytes());
+    buffer[4..8].copy_from_slice(&last_page_id.0.to_be_bytes());
     buffer[8..16].copy_from_slice(&start_pos.to_le_bytes());
     buffer
 }
@@ -232,7 +237,7 @@ mod test_misc {
 
     #[test]
     fn test_associated_data() {
-        let data = associated_data(1, 4);
+        let data = op_log_associated_data(1, PageId(0), 4);
         assert_eq!(data, [1, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
     }
 

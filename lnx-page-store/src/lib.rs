@@ -21,7 +21,6 @@ mod layout;
 pub struct PageGroupId(pub(crate) u64);
 
 #[derive(
-    Debug,
     Copy,
     Clone,
     Ord,
@@ -39,9 +38,14 @@ pub struct PageGroupId(pub(crate) u64);
 /// A unique identifier for a file of pages.
 pub struct PageFileId(pub(crate) u32);
 
+impl std::fmt::Debug for PageFileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "PageFileId({})", self.0)
+    }
+}
+
 #[repr(transparent)]
 #[derive(
-    Debug,
     Copy,
     Clone,
     Ord,
@@ -56,6 +60,12 @@ pub struct PageFileId(pub(crate) u32);
 #[rkyv(derive(Debug), compare(PartialEq))]
 /// A unique ID for a page of data within a storage file.
 pub struct PageId(pub(crate) u32);
+
+impl std::fmt::Debug for PageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "PageId({})", self.0)
+    }
+}
 
 /// A RDMS style disk storage system.
 ///

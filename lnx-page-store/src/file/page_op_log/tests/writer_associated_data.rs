@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use rstest::rstest;
 
-use crate::PageFileId;
-use crate::file::page_op_log::associated_data;
+use crate::file::page_op_log::op_log_associated_data;
 use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{DISK_ALIGN, ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
+use crate::{PageFileId, PageId};
 
 #[rstest]
 #[tokio::test]
@@ -32,9 +32,9 @@ async fn test_single_block_correct_associated_data_tagging(
 
     let entry = LogEntry {
         sequence_id: 1,
-        last_flush_sequence_id: 0,
         transaction_id: 6,
         transaction_n_entries: 7,
+        page_id: PageId(5),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -45,7 +45,8 @@ async fn test_single_block_correct_associated_data_tagging(
     assert_eq!(content.len(), DISK_ALIGN + log_offset as usize);
 
     let buffer = &mut content[log_offset as usize..][..log::LOG_BLOCK_SIZE];
-    let expected_associated_data = associated_data(FILE_ID, log_offset);
+    let expected_associated_data =
+        op_log_associated_data(FILE_ID, PageId(0), log_offset);
     log::decode_log_block(ctx.cipher(), &expected_associated_data, buffer)
         .expect("block should be decodable");
 }
@@ -71,12 +72,12 @@ async fn test_multi_block_correct_associated_data_tagging(
 
     let mut writer = LogFileWriter::new(ctx.clone(), file, log_offset);
 
-    for _ in 0..15 {
+    for page_id in 0..15 {
         let entry = LogEntry {
             sequence_id: 1,
-            last_flush_sequence_id: 0,
             transaction_id: 6,
             transaction_n_entries: 7,
+            page_id: PageId(page_id),
             page_file_id: PageFileId(1),
             op: LogOp::Free,
         };
@@ -88,14 +89,18 @@ async fn test_multi_block_correct_associated_data_tagging(
     assert_eq!(content.len(), DISK_ALIGN + log_offset as usize);
 
     let buffer = &mut content[log_offset as usize..][..log::LOG_BLOCK_SIZE];
-    let expected_associated_data = associated_data(FILE_ID, log_offset);
+    let expected_associated_data =
+        op_log_associated_data(FILE_ID, PageId(0), log_offset);
     log::decode_log_block(ctx.cipher(), &expected_associated_data, buffer)
         .expect("block should be decodable");
 
     let buffer =
         &mut content[log_offset as usize + log::LOG_BLOCK_SIZE..][..log::LOG_BLOCK_SIZE];
-    let expected_associated_data =
-        associated_data(FILE_ID, log_offset + log::LOG_BLOCK_SIZE as u64);
+    let expected_associated_data = op_log_associated_data(
+        FILE_ID,
+        PageId(10),
+        log_offset + log::LOG_BLOCK_SIZE as u64,
+    );
     log::decode_log_block(ctx.cipher(), &expected_associated_data, buffer)
         .expect("block should be decodable");
 }

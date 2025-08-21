@@ -23,9 +23,9 @@ async fn test_writer_auto_flush() {
 
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -58,9 +58,9 @@ async fn test_log_writer_all_entries(
     for id in 0..number_of_entries {
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(1),
             page_file_id: PageFileId(id as u32),
             op: LogOp::Free,
         };
@@ -108,9 +108,9 @@ async fn test_log_writer_entries_and_metadata(
     for id in 0..number_of_entries {
         let entry = LogEntry {
             sequence_id: 0,
-            last_flush_sequence_id: 0,
             transaction_id: 0,
             transaction_n_entries: 0,
+            page_id: PageId(1),
             page_file_id: PageFileId(id as u32),
             op: LogOp::Free,
         };
@@ -159,9 +159,9 @@ async fn test_writer_no_close_on_write_error() {
 
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -193,9 +193,9 @@ async fn test_writer_propagate_lockout_error() {
 
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -253,9 +253,9 @@ async fn test_writer_storage_full() {
 
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
@@ -278,9 +278,9 @@ async fn test_writer_storage_full() {
 async fn fill_buffer(writer: &mut LogFileWriter) -> io::Result<()> {
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
+        page_id: PageId(1),
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };

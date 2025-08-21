@@ -1,9 +1,9 @@
 use chacha20poly1305::aead::Key;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 
-use crate::PageFileId;
 use crate::layout::encrypt;
 use crate::layout::log::*;
+use crate::{PageFileId, PageId};
 
 fn sample_log_block() -> LogBlock {
     let mut block = LogBlock::default();
@@ -11,10 +11,10 @@ fn sample_log_block() -> LogBlock {
         .push_entry(
             LogEntry {
                 sequence_id: 1,
-                last_flush_sequence_id: 2,
                 transaction_id: 3,
                 transaction_n_entries: 4,
-                page_file_id: PageFileId(1),
+                page_id: PageId(5),
+                page_file_id: PageFileId(6),
                 op: LogOp::Write,
             },
             None,
