@@ -150,8 +150,6 @@ impl Drop for AllocationGuard {
 
 #[cfg(test)]
 mod tests {
-    use std::alloc::alloc;
-
     use super::*;
 
     #[rstest::rstest]

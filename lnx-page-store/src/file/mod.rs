@@ -5,8 +5,8 @@ mod arena;
 mod buffer;
 mod ctx;
 mod page_data;
-mod page_table;
 mod page_op_log;
+mod page_table;
 mod scheduler;
 mod stream_reader;
 #[cfg(all(test, not(feature = "test-miri")))]

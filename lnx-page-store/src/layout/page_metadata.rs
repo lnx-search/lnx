@@ -2,7 +2,7 @@ use rkyv::rancor;
 use rkyv::ser::writer::Buffer;
 
 use crate::layout::encrypt;
-use crate::{PageGroupId, PageId};
+use crate::{PageFileId, PageGroupId, PageId};
 
 const ENTRIES_PER_BLOCK: usize = 63;
 const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
@@ -14,9 +14,10 @@ const EXPECTED_BUFFER_SIZE: usize = 4 << 10;
 pub struct PageMetadata {
     /// The block this page contains data for.
     pub(crate) group: PageGroupId,
-    /// The revision is a monotonic ID for each page within a block that
-    /// tracks the number of observed updates to the block.
-    pub(crate) revision: u64,
+    /// The [PageFileId] that the next page is located at.
+    pub(crate) next_page_file_id: PageFileId,
+    /// The [PageId] of the next that is part of the group.
+    pub(crate) next_page_id: PageId,
     /// The ID of the page.
     pub(crate) id: PageId,
     /// The length of the buffer within the page.
@@ -35,7 +36,8 @@ impl PageMetadata {
         Self {
             id: PageId(u32::MAX),
             group: PageGroupId(u64::MAX),
-            revision: 0,
+            next_page_file_id: PageFileId(0),
+            next_page_id: PageId(0),
             data_len: 0,
             context: [0; 40],
         }

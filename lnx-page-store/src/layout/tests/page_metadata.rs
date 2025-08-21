@@ -2,7 +2,6 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use hmac::digest::Key;
 
 use crate::layout::encrypt;
-use crate::layout::file_metadata::Encryption;
 use crate::layout::page_metadata::{
     DecodeError,
     PageMetadata,
@@ -10,12 +9,13 @@ use crate::layout::page_metadata::{
     decode_page_metadata_block,
     encode_page_metadata_block,
 };
-use crate::{PageGroupId, PageId};
+use crate::{PageFileId, PageGroupId, PageId};
 
 const SAMPLE_PAGE_METADATA: PageMetadata = PageMetadata {
     id: PageId(1),
     group: PageGroupId(1),
-    revision: 123,
+    next_page_file_id: PageFileId(1),
+    next_page_id: PageId(1),
     data_len: 124124,
     context: [1; 40],
 };

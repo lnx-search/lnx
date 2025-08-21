@@ -1,7 +1,6 @@
 use std::io;
 use std::sync::Arc;
 
-use crate::file::ctx::associated_data;
 use crate::file::stream_reader::{StreamReader, StreamReaderBuilder};
 use crate::file::{ctx, scheduler};
 use crate::layout::log;
@@ -64,7 +63,7 @@ impl LogFileReader {
 
         let block = log::decode_log_block(
             self.ctx.cipher(),
-            &associated_data(self.reader.file_id(), position),
+            &super::associated_data(self.reader.file_id(), position),
             &mut self.scratch_space,
         )
         .map_err(LogDecodeError::Decode)?;

@@ -3,7 +3,7 @@ use std::io::{Seek, Write};
 use std::sync::Arc;
 
 use crate::PageFileId;
-use crate::file::ctx::associated_data;
+use crate::file::page_op_log::associated_data;
 use crate::file::page_op_log::reader::LogFileReader;
 use crate::file::{ctx, scheduler};
 use crate::layout::log;

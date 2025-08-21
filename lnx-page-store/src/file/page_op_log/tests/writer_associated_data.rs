@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rstest::rstest;
 
 use crate::PageFileId;
-use crate::file::ctx::associated_data;
+use crate::file::page_op_log::associated_data;
 use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{DISK_ALIGN, ctx, scheduler};
 use crate::layout::log;
