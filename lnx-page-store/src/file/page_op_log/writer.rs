@@ -54,6 +54,8 @@ pub struct LogFileWriter {
 
     /// The [PageId] that was last modified.
     last_written_page_id: PageId,
+    /// The [PageId] that was written to disk and synced.
+    last_synced_page_id: PageId,
 
     inflight_iop: Option<InflightIop>,
 }
@@ -90,6 +92,7 @@ impl LogFileWriter {
             durable_sequence_id: 0,
 
             last_written_page_id: PageId(0),
+            last_synced_page_id: PageId(0),
 
             inflight_iop: None,
         }
@@ -224,12 +227,12 @@ impl LogFileWriter {
 
         // Update the currently flushed sequence ID.
         self.durable_sequence_id = self.next_sequence_id - 1;
+        self.last_synced_page_id = self.last_written_page_id;
 
         Ok(())
     }
 
     fn flush_log_block_to_mem(&mut self) -> io::Result<()> {
-        println!("writing block page ID: {:?}", self.last_written_page_id);
         let absolute_position_on_disk = self.get_absolute_block_position();
 
         let buffer_start = self.block_offset - log::LOG_BLOCK_SIZE;
@@ -345,6 +348,7 @@ impl LogFileWriter {
         let _ = self.take_memory_buffer();
         self.durable_sequence_id = self.flushed_sequence_id;
         self.next_sequence_id = self.flushed_sequence_id + 1;
+        self.last_written_page_id = self.last_synced_page_id;
     }
 }
 
