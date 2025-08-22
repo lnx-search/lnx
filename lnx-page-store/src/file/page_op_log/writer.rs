@@ -48,11 +48,6 @@ pub struct LogFileWriter {
 
     /// The unique monotonic ID assigned to each log entry.
     next_sequence_id: u32,
-    /// The sequence ID of the entry flushed to disk but not guaranteed to be
-    /// durable.
-    flushed_sequence_id: u32,
-    /// The sequence ID of the last successful durability flush.
-    durable_sequence_id: u32,
 
     /// The [PageId] that was last modified.
     last_written_page_id: PageId,
@@ -90,8 +85,6 @@ impl LogFileWriter {
             block_buffer_write_pos: 0,
 
             next_sequence_id: SEQUENCE_ID_START,
-            flushed_sequence_id: 0,
-            durable_sequence_id: 0,
 
             last_written_page_id: PageId(0),
 
@@ -121,19 +114,6 @@ impl LogFileWriter {
     /// Returns the sequence ID the writer is sitting at.
     pub fn current_sequence_id(&self) -> u32 {
         self.next_sequence_id - 1
-    }
-
-    #[inline]
-    /// Returns the last sequence ID that was written to disk.
-    pub fn flushed_sequence_id(&self) -> u32 {
-        self.flushed_sequence_id
-    }
-
-    #[inline]
-    /// Returns the last sequence ID that was flushed
-    /// to disk and made durable.
-    pub fn durable_sequence_id(&self) -> u32 {
-        self.durable_sequence_id
     }
 
     #[inline]
@@ -231,9 +211,6 @@ impl LogFileWriter {
         }
         self.file.fdatasync().await?;
 
-        // Update the currently flushed sequence ID.
-        self.durable_sequence_id = self.next_sequence_id - 1;
-
         Ok(())
     }
 
@@ -310,8 +287,6 @@ impl LogFileWriter {
         if let Some(iop) = self.inflight_iop.replace(iop) {
             complete_iop(iop).await?;
         }
-
-        self.flushed_sequence_id = self.next_sequence_id - 1;
 
         Ok(())
     }
@@ -401,7 +376,6 @@ mod tests {
 
         writer.write_log(entry, None).await.expect("write log");
         assert_eq!(writer.next_sequence_id, 2);
-        assert_eq!(writer.durable_sequence_id, 0);
 
         let entries = writer.wip_block.entries();
         assert_eq!(entries.len(), 1);
@@ -409,11 +383,9 @@ mod tests {
         assert_eq!(entry.sequence_id, 1);
 
         writer.sync().await.expect("sync log");
-        assert_eq!(writer.durable_sequence_id, 1);
 
         writer.write_log(entry, None).await.expect("write log");
         assert_eq!(writer.next_sequence_id, 3);
-        assert_eq!(writer.durable_sequence_id, 1);
 
         let entries = writer.wip_block.entries();
         assert_eq!(entries.len(), 2);

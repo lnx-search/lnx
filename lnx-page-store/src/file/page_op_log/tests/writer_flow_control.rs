@@ -4,11 +4,29 @@ use std::sync::Arc;
 
 use crate::file::page_op_log::op_log_associated_data;
 use crate::file::page_op_log::writer::LogFileWriter;
-use crate::file::{ctx, scheduler};
+use crate::file::{DISK_ALIGN, ctx, scheduler};
 use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
 use crate::layout::page_metadata::PageMetadata;
 use crate::{PageFileId, PageId};
+
+#[tokio::test]
+async fn test_close() {
+    let ctx = Arc::new(ctx::FileContext::for_test(false));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let tmp_file = tempfile::tempfile().unwrap();
+
+    let file = scheduler
+        .make_ring_file(1, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+
+    let mut writer = LogFileWriter::new(ctx, file, 0);
+    writer
+        .close()
+        .await
+        .expect("writer should close gracefully");
+}
 
 #[tokio::test]
 async fn test_auto_flush() {
@@ -20,6 +38,9 @@ async fn test_auto_flush() {
         .make_ring_file(1, tmp_file)
         .await
         .expect("Failed to make ring file");
+
+    let initial_len = file.get_len().await.unwrap();
+    assert_eq!(initial_len, 0);
 
     let mut writer = LogFileWriter::new(ctx, file, 0);
 
@@ -36,13 +57,15 @@ async fn test_auto_flush() {
         writer.write_log(entry, None).await.expect("write entry");
     }
 
-    assert_ne!(writer.flushed_sequence_id(), 0);
-    assert_eq!(writer.durable_sequence_id(), 0);
+    let file = writer.into_ring_file();
+    let post_write_len = file.get_len().await.unwrap();
+    assert_eq!(post_write_len, 128 << 10); // Flush single mem buffer.
 }
 
 #[rstest::rstest]
+#[trace]
 #[tokio::test]
-async fn test_all_entries(
+async fn test_all_entries_flush(
     #[values(true, false)] encryption: bool,
     #[values(1, 4, 8, 32)] number_of_entries: usize,
 ) {
@@ -54,6 +77,9 @@ async fn test_all_entries(
         .make_ring_file(1, tmp_file)
         .await
         .expect("Failed to make ring file");
+
+    let initial_len = file.get_len().await.unwrap();
+    assert_eq!(initial_len, 0);
 
     let mut writer = LogFileWriter::new(ctx, file, 0);
 
@@ -71,30 +97,23 @@ async fn test_all_entries(
 
     let sequence_id = writer.current_sequence_id();
     assert_eq!(sequence_id, number_of_entries as u32);
-    let sequence_id = writer.durable_sequence_id();
-    assert_eq!(sequence_id, 0);
 
     writer.sync().await.expect("flush");
 
     let sequence_id = writer.current_sequence_id();
     assert_eq!(sequence_id, number_of_entries as u32);
-    let sequence_id = writer.durable_sequence_id();
-    assert_eq!(sequence_id, number_of_entries as u32);
+
+    let file = writer.into_ring_file();
+    let post_flush_len = file.get_len().await.unwrap();
+    assert_eq!(post_flush_len, DISK_ALIGN as u64);
 }
 
 #[rstest::rstest]
-#[case::no_encryption_1_entries(false, 1)]
-#[case::no_encryption_4_entries(false, 4)]
-#[case::no_encryption_8_entries(false, 8)]
-#[case::no_encryption_32_entries(false, 32)]
-#[case::yes_encryption_1_entries(false, 1)]
-#[case::yes_encryption_4_entries(false, 4)]
-#[case::yes_encryption_8_entries(false, 8)]
-#[case::yes_encryption_32_entries(false, 32)]
+#[trace]
 #[tokio::test]
 async fn test_entries_and_metadata(
-    #[case] encryption: bool,
-    #[case] number_of_entries: usize,
+    #[values(false, true)] encryption: bool,
+    #[values(1, 4, 8, 32)] number_of_entries: usize,
 ) {
     let ctx = Arc::new(ctx::FileContext::for_test(encryption));
     let scheduler = scheduler::IoScheduler::for_test();
@@ -104,6 +123,9 @@ async fn test_entries_and_metadata(
         .make_ring_file(1, tmp_file)
         .await
         .expect("Failed to make ring file");
+
+    let initial_len = file.get_len().await.unwrap();
+    assert_eq!(initial_len, 0);
 
     let mut writer = LogFileWriter::new(ctx, file, 0);
 
@@ -130,15 +152,15 @@ async fn test_entries_and_metadata(
 
     let sequence_id = writer.current_sequence_id();
     assert_eq!(sequence_id, number_of_entries as u32);
-    let sequence_id = writer.durable_sequence_id();
-    assert_eq!(sequence_id, 0);
 
     writer.sync().await.expect("flush");
 
     let sequence_id = writer.current_sequence_id();
     assert_eq!(sequence_id, number_of_entries as u32);
-    let sequence_id = writer.durable_sequence_id();
-    assert_eq!(sequence_id, number_of_entries as u32);
+
+    let file = writer.into_ring_file();
+    let post_flush_len = file.get_len().await.unwrap();
+    assert_eq!(post_flush_len, DISK_ALIGN as u64);
 }
 
 #[tokio::test]
@@ -342,6 +364,27 @@ async fn test_readable_results_fuzz(
     )
     .expect("block should be decodable from expected byte position");
     assert_eq!(block.last_page_id(), Some(PageId(num_blocks)));
+}
+
+#[rstest::rstest]
+#[case::zero_offset(0)]
+#[should_panic(expected = "log offset must be a multiple of the disk alignment")]
+#[case::unaligned_offset1(13)]
+#[should_panic(expected = "log offset must be a multiple of the disk alignment")]
+#[case::unaligned_offset2(1024)]
+#[case::aligned_offset1(4096)]
+#[case::aligned_offset2(4096 * 3)]
+#[tokio::test]
+async fn test_log_offset(#[case] log_offset: u64) {
+    let ctx = Arc::new(ctx::FileContext::for_test(false));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let tmp_file = tempfile::tempfile().unwrap();
+
+    let file = scheduler
+        .make_ring_file(1, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+    let _writer = LogFileWriter::new(ctx, file, log_offset);
 }
 
 async fn fill_buffer(writer: &mut LogFileWriter) -> io::Result<()> {
