@@ -27,9 +27,11 @@ const SEQUENCE_ID_START: u32 = 1;
 pub struct LogFileWriter {
     ctx: Arc<ctx::FileContext>,
     file: scheduler::RingFile,
+    locked_out: bool,
 
     log_offset: u64,
     current_pos: u64,
+    block_absolute_pos: u64,
 
     /// The log block that is currently being filled with [LogEntry]s.
     /// When this is filled it produces a 512 byte block which is then
@@ -54,8 +56,6 @@ pub struct LogFileWriter {
 
     /// The [PageId] that was last modified.
     last_written_page_id: PageId,
-    /// The [PageId] that was written to disk and synced.
-    last_synced_page_id: PageId,
 
     inflight_iop: Option<InflightIop>,
 }
@@ -78,9 +78,11 @@ impl LogFileWriter {
         Self {
             ctx,
             file,
+            locked_out: false,
 
             log_offset,
             current_pos: 0,
+            block_absolute_pos: log::LOG_BLOCK_SIZE as u64,
 
             wip_block: log::LogBlock::default(),
             block_buffer: buffer,
@@ -92,7 +94,6 @@ impl LogFileWriter {
             durable_sequence_id: 0,
 
             last_written_page_id: PageId(0),
-            last_synced_page_id: PageId(0),
 
             inflight_iop: None,
         }
@@ -113,7 +114,7 @@ impl LogFileWriter {
     #[inline]
     /// Returns whether the file is locked out due to a prior error.
     pub fn is_locked_out(&self) -> bool {
-        self.file.is_locked_out()
+        self.file.is_locked_out() || self.locked_out
     }
 
     #[inline]
@@ -141,7 +142,7 @@ impl LogFileWriter {
     /// NOTE: This is not strictly tied to the file cursor, instead it is
     ///       the absolute position of the next block as if it is about to be written.
     pub fn position(&self) -> u64 {
-        self.get_absolute_block_position()
+        self.log_offset + self.block_absolute_pos
     }
 
     /// Consume the writer and return the inner ring file.
@@ -163,7 +164,7 @@ impl LogFileWriter {
         self.ensure_file_writeable()?;
         let result = self.write_log_inner(entry, metadata).await;
         if result.is_err() {
-            self.reset_to_last_flush();
+            self.locked_out = true;
         }
         result
     }
@@ -175,7 +176,7 @@ impl LogFileWriter {
         self.ensure_file_writeable()?;
         let result = self.sync_inner().await;
         if result.is_err() {
-            self.reset_to_last_flush();
+            self.locked_out = true;
         }
         result
     }
@@ -199,9 +200,14 @@ impl LogFileWriter {
 
         self.flush_log_block_to_mem()?;
 
+        if let Some(page_id) = self.wip_block.last_page_id() {
+            self.last_written_page_id = page_id;
+        }
+
         // When the block is full, we can reset it as the alignment will be maintained.
         self.wip_block.reset();
         self.block_offset += log::LOG_BLOCK_SIZE;
+        self.block_absolute_pos += log::LOG_BLOCK_SIZE as u64;
 
         let result = self.wip_block.push_entry(entry, metadata);
         assert!(result.is_ok(), "block should never be full after reset");
@@ -227,14 +233,12 @@ impl LogFileWriter {
 
         // Update the currently flushed sequence ID.
         self.durable_sequence_id = self.next_sequence_id - 1;
-        self.last_synced_page_id = self.last_written_page_id;
 
         Ok(())
     }
 
     fn flush_log_block_to_mem(&mut self) -> io::Result<()> {
-        let absolute_position_on_disk = self.get_absolute_block_position();
-
+        let start_position = self.position() - log::LOG_BLOCK_SIZE as u64;
         let buffer_start = self.block_offset - log::LOG_BLOCK_SIZE;
         let buffer = &mut self.block_buffer[buffer_start..][..log::LOG_BLOCK_SIZE];
         log::encode_log_block(
@@ -242,25 +246,14 @@ impl LogFileWriter {
             &super::op_log_associated_data(
                 self.file.id(),
                 self.last_written_page_id,
-                absolute_position_on_disk,
+                start_position,
             ),
             &self.wip_block,
             buffer,
         )
         .map_err(io::Error::other)?;
 
-        if let Some(page_id) = self.wip_block.last_page_id() {
-            self.last_written_page_id = page_id;
-        }
-
         Ok(())
-    }
-
-    /// Works out the absolute position of the block at it will be in the file.
-    fn get_absolute_block_position(&self) -> u64 {
-        self.log_offset
-            + self.current_pos
-            + (self.block_offset - log::LOG_BLOCK_SIZE) as u64
     }
 
     /// Submit the current memory buffer to the IO scheduler for writing
@@ -329,6 +322,12 @@ impl LogFileWriter {
     }
 
     fn ensure_file_writeable(&mut self) -> io::Result<()> {
+        if self.locked_out {
+            return Err(io::Error::new(
+                ErrorKind::ReadOnlyFilesystem,
+                "writer is locked due to prior error",
+            ));
+        }
         self.file.ensure_safe_state()
     }
 
@@ -338,17 +337,6 @@ impl LogFileWriter {
         self.block_buffer_write_pos = 0;
         self.block_offset = log::LOG_BLOCK_SIZE;
         block_buffer
-    }
-
-    /// Reset the current log block, memory buffer and cursors
-    /// to start from the last successful flush position
-    fn reset_to_last_flush(&mut self) {
-        tracing::info!("resetting log writer to last flush checkpoint");
-        self.wip_block.reset();
-        let _ = self.take_memory_buffer();
-        self.durable_sequence_id = self.flushed_sequence_id;
-        self.next_sequence_id = self.flushed_sequence_id + 1;
-        self.last_written_page_id = self.last_synced_page_id;
     }
 }
 
@@ -431,51 +419,5 @@ mod tests {
         assert_eq!(entries.len(), 2);
         let entry = entries[1].log;
         assert_eq!(entry.sequence_id, 2);
-    }
-
-    #[tokio::test]
-    async fn test_writer_reset_on_error() {
-        let ctx = Arc::new(ctx::FileContext::for_test(false));
-        let scheduler = scheduler::IoScheduler::for_test();
-        let tmp_file = tempfile::tempfile().unwrap();
-
-        let file = scheduler
-            .make_ring_file(1, tmp_file)
-            .await
-            .expect("Failed to make ring file");
-
-        let mut writer = LogFileWriter::new(ctx, file, 0);
-
-        let entry = LogEntry {
-            sequence_id: 0,
-            transaction_id: 0,
-            transaction_n_entries: 0,
-            page_id: PageId(5),
-            page_file_id: PageFileId(1),
-            op: LogOp::Free,
-        };
-        writer.write_log(entry, None).await.expect("write log");
-        writer.sync().await.expect("sync log");
-        assert_eq!(writer.next_sequence_id, 2);
-        assert_eq!(writer.flushed_sequence_id, 1);
-        assert_eq!(writer.durable_sequence_id, 1);
-
-        writer.write_log(entry, None).await.expect("write log");
-        assert_eq!(writer.next_sequence_id, 3);
-
-        let scenario = fail::FailScenario::setup();
-        fail::cfg("ringfile::submit_write", "return(-4)").unwrap();
-        tokio::task::yield_now().await;
-
-        writer
-            .write_log(entry, None)
-            .await
-            .expect("write log should not error because it is memory buffered");
-        writer.sync().await.expect_err("sync log should error");
-        assert_eq!(writer.next_sequence_id, 2);
-        assert_eq!(writer.flushed_sequence_id, 1);
-        assert_eq!(writer.durable_sequence_id, 1);
-
-        scenario.teardown();
     }
 }

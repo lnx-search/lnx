@@ -18,6 +18,8 @@ use crate::{PageFileId, PageId};
 
 /// The fixed size of a log block buffer in bytes.
 pub const LOG_BLOCK_SIZE: usize = 512;
+pub const MAX_BLOCK_NO_METADATA_ENTRIES: usize = 11;
+pub const MAX_BLOCK_ALL_METADATA_ENTRIES: usize = 4;
 
 /// Try to decode a [LogBlock] from the provided set of bytes.
 ///
@@ -268,7 +270,7 @@ mod tests {
     #[test]
     fn test_log_block_sizing_all_entries() {
         let mut block = LogBlock::default();
-        for _ in 0..11 {
+        for _ in 0..MAX_BLOCK_NO_METADATA_ENTRIES {
             block
                 .push_entry(
                     LogEntry {
@@ -302,7 +304,7 @@ mod tests {
     #[test]
     fn test_log_block_sizing_all_with_metadata() {
         let mut block = LogBlock::default();
-        for _ in 0..4 {
+        for _ in 0..MAX_BLOCK_ALL_METADATA_ENTRIES {
             block
                 .push_entry(
                     LogEntry {

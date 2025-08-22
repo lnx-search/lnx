@@ -41,6 +41,9 @@ async fn test_single_block_correct_associated_data_tagging(
     writer.write_log(entry, None).await.unwrap();
     writer.sync().await.unwrap();
 
+    dbg!(writer.position());
+    dbg!(log_offset);
+
     let mut content = std::fs::read(&path).expect("read log file");
     assert_eq!(content.len(), DISK_ALIGN + log_offset as usize);
 

@@ -2,14 +2,16 @@ use std::io;
 use std::io::ErrorKind;
 use std::sync::Arc;
 
+use crate::file::page_op_log::op_log_associated_data;
 use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{ctx, scheduler};
+use crate::layout::log;
 use crate::layout::log::{LogEntry, LogOp};
 use crate::layout::page_metadata::PageMetadata;
 use crate::{PageFileId, PageId};
 
 #[tokio::test]
-async fn test_writer_auto_flush() {
+async fn test_auto_flush() {
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();
@@ -40,7 +42,7 @@ async fn test_writer_auto_flush() {
 
 #[rstest::rstest]
 #[tokio::test]
-async fn test_log_writer_all_entries(
+async fn test_all_entries(
     #[values(true, false)] encryption: bool,
     #[values(1, 4, 8, 32)] number_of_entries: usize,
 ) {
@@ -90,7 +92,7 @@ async fn test_log_writer_all_entries(
 #[case::yes_encryption_8_entries(false, 8)]
 #[case::yes_encryption_32_entries(false, 32)]
 #[tokio::test]
-async fn test_log_writer_entries_and_metadata(
+async fn test_entries_and_metadata(
     #[case] encryption: bool,
     #[case] number_of_entries: usize,
 ) {
@@ -140,7 +142,7 @@ async fn test_log_writer_entries_and_metadata(
 }
 
 #[tokio::test]
-async fn test_writer_no_close_on_write_error() {
+async fn test_no_close_on_write_error_but_lockout() {
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();
@@ -165,16 +167,18 @@ async fn test_writer_no_close_on_write_error() {
         page_file_id: PageFileId(1),
         op: LogOp::Free,
     };
-    writer
+    let err = writer
         .write_log(entry, None)
         .await
-        .expect("write should not error");
+        .expect_err("write should return lockout");
+    assert_eq!(err.kind(), ErrorKind::ReadOnlyFilesystem);
+    assert_eq!(err.to_string(), "writer is locked due to prior error");
 
     scenario.teardown();
 }
 
 #[tokio::test]
-async fn test_writer_propagate_lockout_error() {
+async fn test_propagate_lockout_error() {
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();
@@ -209,7 +213,7 @@ async fn test_writer_propagate_lockout_error() {
 }
 
 #[tokio::test]
-async fn test_writer_flush_mem_buffer_i2o2_error() {
+async fn test_flush_mem_buffer_i2o2_error() {
     let _ = tracing_subscriber::fmt::try_init();
 
     let ctx = Arc::new(ctx::FileContext::for_test(false));
@@ -231,13 +235,13 @@ async fn test_writer_flush_mem_buffer_i2o2_error() {
     assert_eq!(error.kind(), ErrorKind::OutOfMemory);
 
     assert!(!writer.is_closed());
-    assert!(!writer.is_locked_out());
+    assert!(writer.is_locked_out());
 
     scenario.teardown();
 }
 
 #[tokio::test]
-async fn test_writer_storage_full() {
+async fn test_storage_full() {
     let ctx = Arc::new(ctx::FileContext::for_test(false));
     let scheduler = scheduler::IoScheduler::for_test();
     let tmp_file = tempfile::tempfile().unwrap();
@@ -267,12 +271,77 @@ async fn test_writer_storage_full() {
     assert_eq!(error.kind(), ErrorKind::StorageFull);
 
     assert!(!writer.is_closed());
-
-    // The file won't be locked out because the error will occur as the system
-    // goes to flush the memory buffer, so we don't get to fsync at all here.
-    assert!(!writer.is_locked_out());
+    assert!(writer.is_locked_out());
 
     scenario.teardown();
+}
+
+#[rstest::rstest]
+#[trace]
+#[tokio::test]
+async fn test_readable_results_fuzz(
+    #[values(false, true)] encryption: bool,
+    #[values(352352352, 934572, 1526491)] rng_seed: u64,
+    #[values(1, 4, 16, 423)] num_blocks: u32,
+) {
+    fastrand::seed(rng_seed);
+
+    let ctx = Arc::new(ctx::FileContext::for_test(encryption));
+    let scheduler = scheduler::IoScheduler::for_test();
+    let named_tmp_file = tempfile::NamedTempFile::new().unwrap();
+    let (tmp_file, path) = named_tmp_file.into_parts();
+
+    let file = scheduler
+        .make_ring_file(1, tmp_file)
+        .await
+        .expect("Failed to make ring file");
+    let mut writer = LogFileWriter::new(ctx.clone(), file, 0);
+
+    // Write initial pages that should go through as normal.
+    for page_id in 0..num_blocks {
+        let entry = LogEntry {
+            sequence_id: 0,
+            transaction_id: 0,
+            transaction_n_entries: 0,
+            page_id: PageId(page_id),
+            page_file_id: PageFileId(1),
+            op: LogOp::Free,
+        };
+        writer.write_log(entry, None).await.unwrap();
+    }
+    writer.sync().await.unwrap();
+
+    let entry = LogEntry {
+        sequence_id: 0,
+        transaction_id: 0,
+        transaction_n_entries: 0,
+        page_id: PageId(num_blocks),
+        page_file_id: PageFileId(1),
+        op: LogOp::Free,
+    };
+    writer.write_log(entry, None).await.unwrap();
+    writer.sync().await.unwrap();
+
+    let expected_block_position = writer.position() - log::LOG_BLOCK_SIZE as u64;
+    let mut buffer = std::fs::read(path).unwrap();
+
+    let block_buffer =
+        &mut buffer[expected_block_position as usize..][..log::LOG_BLOCK_SIZE];
+    let block = log::decode_log_block(
+        ctx.cipher(),
+        &op_log_associated_data(
+            1,
+            PageId(
+                (log::MAX_BLOCK_NO_METADATA_ENTRIES as u32
+                    * (num_blocks / log::MAX_BLOCK_NO_METADATA_ENTRIES as u32))
+                    .saturating_sub(1),
+            ),
+            expected_block_position,
+        ),
+        block_buffer,
+    )
+    .expect("block should be decodable from expected byte position");
+    assert_eq!(block.last_page_id(), Some(PageId(num_blocks)));
 }
 
 async fn fill_buffer(writer: &mut LogFileWriter) -> io::Result<()> {
