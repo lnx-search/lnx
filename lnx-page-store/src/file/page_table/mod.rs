@@ -2,13 +2,14 @@
 //!
 //! This file is not modified on every op, instead it is updated when the op log is rolled up.
 
+#[cfg(all(test, not(feature = "test-miri"), feature = "bench-lib-unstable"))]
+mod benches;
 mod dirty_marker;
+mod local;
 #[cfg(all(test, not(feature = "test-miri")))]
 mod tests;
 
-use crate::file::page_table::dirty_marker::DirtyMarkerTable;
 use crate::layout::file_metadata::Encryption;
-use crate::layout::page_metadata::PageMetadata;
 use crate::{PageFileId, PageId};
 
 // TODO: Situation: bad actor can do replay attack on the page table
@@ -30,7 +31,7 @@ pub struct MetadataHeader {
 /// currently allocated pages.
 pub struct GlobalPageTable {
     groups_to_page_file: papaya::HashMap<u64, PageLookup>,
-    page_tables: papaya::HashMap<PageFileId, LocalPageTable>,
+    page_tables: papaya::HashMap<PageFileId, local::LocalPageTable>,
 }
 
 /// The page lookup allows the system to locate the pages of a given
@@ -41,13 +42,6 @@ pub struct GlobalPageTable {
 struct PageLookup {
     first_page_file_id: PageFileId,
     first_page_id: PageId,
-}
-
-/// A [LocalPageTable] contains a lookup table mapping [PageId]s to their
-/// respective [PageMetadata] entries for a page file.
-struct LocalPageTable {
-    blocks: Vec<PageMetadata>,
-    dirty_marker_table: DirtyMarkerTable,
 }
 
 #[cfg(all(test, not(feature = "test-miri")))]

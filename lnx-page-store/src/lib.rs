@@ -61,6 +61,17 @@ impl std::fmt::Debug for PageFileId {
 /// A unique ID for a page of data within a storage file.
 pub struct PageId(pub(crate) u32);
 
+impl PageId {
+    /// A terminator page ID for ending a chain of pages.
+    pub const TERMINATOR: PageId = PageId(u32::MAX);
+
+    /// Returns if the page ID is a terminator value and not an actual
+    /// page identifier. This is used to signal the end of a chain.
+    pub fn is_terminator(&self) -> bool {
+        self.0 == u32::MAX
+    }
+}
+
 impl std::fmt::Debug for PageId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "PageId({})", self.0)

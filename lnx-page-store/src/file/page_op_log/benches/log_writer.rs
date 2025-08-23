@@ -2,10 +2,10 @@ extern crate test;
 
 use std::sync::Arc;
 
-use crate::PageFileId;
 use crate::file::page_op_log::writer::LogFileWriter;
 use crate::file::{ctx, scheduler};
 use crate::layout::log::{LogEntry, LogOp};
+use crate::{PageFileId, PageId};
 
 const NUM_ITER: usize = 100;
 
@@ -49,10 +49,10 @@ fn run_log_writer_single_entry_flush<const N_ITERS: usize>(
 
     let entry = LogEntry {
         sequence_id: 0,
-        last_flush_sequence_id: 0,
         transaction_id: 0,
         transaction_n_entries: 0,
         page_file_id: PageFileId(1),
+        page_id: PageId(1),
         op: LogOp::Free,
     };
 

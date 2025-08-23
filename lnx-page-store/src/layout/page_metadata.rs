@@ -28,16 +28,16 @@ pub struct PageMetadata {
 
 impl PageMetadata {
     pub(crate) fn is_empty(&self) -> bool {
-        self.id == PageId(u32::MAX)
+        self.id.is_terminator() && self.group == PageGroupId(u64::MAX)
     }
 
     /// Creates a new [PageMetadata] entry representing an empty page.
     pub(crate) const fn empty() -> Self {
         Self {
-            id: PageId(u32::MAX),
+            id: PageId::TERMINATOR,
             group: PageGroupId(u64::MAX),
             next_page_file_id: PageFileId(0),
-            next_page_id: PageId(0),
+            next_page_id: PageId::TERMINATOR,
             data_len: 0,
             context: [0; 40],
         }
