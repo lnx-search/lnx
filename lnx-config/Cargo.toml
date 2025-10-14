@@ -5,7 +5,7 @@ edition = "2024"
 description = "lnx config manages the binary service's settings."
 
 [dependencies]
-ahash = { workspace = true }
+foldhash = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 
