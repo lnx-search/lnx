@@ -12,8 +12,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
-/// lnx, why settle for less when you can have more?
-///
 /// lnx is a fast and efficient search engine for performing full-text search, user-facing search
 /// and analytics.
 pub struct Args {

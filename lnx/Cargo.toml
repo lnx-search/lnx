@@ -16,4 +16,3 @@ tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
 
 lnx-server = { path = "../lnx-server" }
-lnx-shell = { path = "../lnx-shell" }

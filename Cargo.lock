@@ -989,7 +989,6 @@ dependencies = [
  "anyhow",
  "clap",
  "lnx-server",
- "lnx-shell",
  "mimalloc",
  "tokio",
  "tracing",
@@ -1037,14 +1036,6 @@ dependencies = [
  "thiserror 2.0.3",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "lnx-shell"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "url",
 ]
 
 [[package]]
