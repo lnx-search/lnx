@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 #[doc(hidden)]
 pub mod access;
+pub mod file_id;
 mod state;
 
 #[derive(Debug, thiserror::Error)]

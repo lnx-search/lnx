@@ -9,6 +9,9 @@ foldhash = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+rstest = { workspace = true }
+
 [features]
 # Enables thread local state.
 thread-local = []
