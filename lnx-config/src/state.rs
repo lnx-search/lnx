@@ -10,7 +10,7 @@ struct StateEntry {
 }
 
 #[derive(Default)]
-struct State(RwLock<ahash::HashMap<TypeId, StateEntry>>);
+struct State(RwLock<foldhash::HashMap<TypeId, StateEntry>>);
 
 impl State {
     fn exists(&self, type_id: TypeId) -> bool {
