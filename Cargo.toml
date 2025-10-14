@@ -5,7 +5,6 @@ members = [
     "lnx-common",
     "lnx-query",
     "lnx-server",
-    "lnx-shell",
     "lnx-config",
 ]
 

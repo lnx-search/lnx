@@ -3,11 +3,10 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 use tracing::info;
-use url::Url;
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Run the lnx SQL server
+    /// Run the lnx server
     Run {
         #[arg(
             short,
@@ -25,15 +24,6 @@ pub enum Commands {
         ///
         /// NOTE: This does not include temporary files.
         data_path: PathBuf,
-    },
-    /// Run the lnx SQL shell
-    Shell {
-        #[arg(long, env = "LNX_HOST")]
-        /// The host lnx server to connect to.
-        ///
-        /// This can be either `http` or `https` URL containing any
-        /// necessary connection information.
-        host: Url,
     },
 }
 
@@ -58,9 +48,6 @@ impl Commands {
                     info!("You can access the local UI @ https://my.lnx.rs/dashboard{extra}")
                 }
             },
-            Commands::Shell { host } => {
-                info!(host = %host, "Connecting to the lnx API server");
-            },
         }
     }
 
@@ -71,7 +58,6 @@ impl Commands {
                 listen_address,
                 data_path,
             } => lnx_server::run(listen_address, data_path).await?,
-            Commands::Shell { .. } => {},
         }
 
         Ok(())
